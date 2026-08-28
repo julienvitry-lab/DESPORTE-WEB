@@ -2030,3 +2030,24 @@ footer {
   .route-analysis-heading { align-items: flex-start; flex-direction: column; }
   .route-segment-grid { grid-template-columns: 1fr; }
 }
+
+
+/* WEB019 · WEBCARTO004 · fiche détaillée des segments */
+.route-segment-detail { margin-top:14px; padding:14px; border:1px solid rgba(255,255,255,.10); border-radius:14px; background:rgba(7,15,20,.48); display:grid; gap:14px; }
+.route-segment-detail.hidden { display:none; }
+.route-segment-detail-head { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; }
+.route-segment-detail-head h4,.route-segment-detail h5 { margin:2px 0 8px; }
+.route-difficulty { padding:7px 10px; border-radius:999px; border:1px solid rgba(182,255,59,.35); color:var(--green); white-space:nowrap; }
+.route-segment-detail-stats { display:grid; grid-template-columns:repeat(4,minmax(120px,1fr)); gap:8px; }
+.route-segment-detail-stat { padding:9px 10px; border:1px solid rgba(255,255,255,.08); border-radius:10px; display:grid; gap:3px; }
+.route-segment-detail-stat span { color:var(--muted); font-size:10px; }
+.route-segment-detail-stat strong { font-size:13px; }
+.route-grade-bands { display:grid; gap:6px; }
+.route-grade-band { display:grid; grid-template-columns:90px 1fr 70px; gap:8px; align-items:center; font-size:11px; }
+.route-grade-track { height:8px; border-radius:999px; background:rgba(255,255,255,.08); overflow:hidden; }
+.route-grade-fill { height:100%; border-radius:inherit; background:currentColor; }
+.route-grade-band.easy{color:#75d7ff}.route-grade-band.moderate{color:#b6ff3b}.route-grade-band.hard{color:#ffd35c}.route-grade-band.extreme{color:#ff7a7a}
+.route-steepest-windows { display:grid; grid-template-columns:repeat(2,minmax(180px,1fr)); gap:8px; }
+.route-steep-window { padding:9px 10px; border:1px solid rgba(255,255,255,.08); border-radius:10px; display:flex; justify-content:space-between; gap:8px; font-size:11px; }
+.route-steep-window strong { color:var(--green); }
+@media(max-width:760px){.route-segment-detail-stats{grid-template-columns:repeat(2,minmax(110px,1fr))}.route-steepest-windows{grid-template-columns:1fr}.route-grade-band{grid-template-columns:78px 1fr 58px}}

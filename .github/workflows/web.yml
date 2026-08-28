@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB018
+name: Publier SPORT Web · WEB019
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB018.md"
+      - "docs/releases/WEB019.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB018
+      - name: Valider WEB019
         shell: bash
         run: |
           set -euo pipefail
@@ -47,10 +47,10 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB018"' web/app.js
+          grep -Fq 'webVersion: "WEB019"' web/app.js
 
-          # WEB018 · WEBCARTO003.
-          grep -Fq "WEB018 · WEBCARTO003" web/index.html
+          # WEB019 · WEBCARTO004.
+          grep -Fq "WEB019 · WEBCARTO004" web/index.html
           grep -Fq 'mapRouteModeSelect' web/index.html
           grep -Fq 'mapKmMarkersToggle' web/index.html
           grep -Fq 'mapRecenterButton' web/index.html
@@ -80,7 +80,10 @@ jobs:
           grep -Fq 'family=Comfortaa' web/index.html
           grep -Fq 'z-index: 4000' web/styles.css
 
-          echo "WEB018 : WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 + DASHBOARD002 + CORBEILLE001 + SYNCGUARD001 validés."
+          grep -Fq 'routeSegmentDetail' web/index.html
+          grep -Fq 'segmentGradeAnalysis' web/app.js
+          grep -Fq '.route-grade-band' web/styles.css
+          echo "WEB019 : WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 + DASHBOARD002 + CORBEILLE001 + SYNCGUARD001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -90,6 +93,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB018
+      - name: Publier SPORT Web · WEB019
         id: deployment
         uses: actions/deploy-pages@v4

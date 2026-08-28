@@ -620,7 +620,7 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB018 · WEBCARTO003</p>
+              <p class="eyebrow">WEB019 · WEBCARTO004</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
@@ -655,7 +655,7 @@
             </div>
           </div>
 
-          <p class="map-help">WEBCARTO003 · analyse automatique des ascensions et descentes, sélection synchronisée carte ↔ profil et zoom sur segment.</p>
+          <p class="map-help">WEBCARTO004 · fiche détaillée de chaque segment : répartition des pentes, passages les plus raides et indice de difficulté.</p>
           <div id="routeStats" class="route-stats"></div>
 
           <div id="routeAnalysis" class="route-analysis-card">
@@ -668,6 +668,24 @@
             </div>
             <p class="route-analysis-help">Cliquez sur un segment pour le mettre en évidence, zoomer automatiquement sur la carte et le retrouver sur le profil.</p>
             <div id="routeSegmentList" class="route-segment-list"></div>
+            <section id="routeSegmentDetail" class="route-segment-detail hidden" aria-live="polite">
+              <div class="route-segment-detail-head">
+                <div>
+                  <p class="eyebrow">WEB019 · WEBCARTO004</p>
+                  <h4 id="routeSegmentDetailTitle">Analyse du segment</h4>
+                </div>
+                <strong id="routeSegmentDifficulty" class="route-difficulty">—</strong>
+              </div>
+              <div id="routeSegmentDetailStats" class="route-segment-detail-stats"></div>
+              <div>
+                <h5>Répartition de la pente</h5>
+                <div id="routeGradeBands" class="route-grade-bands"></div>
+              </div>
+              <div>
+                <h5>Passages les plus raides</h5>
+                <div id="routeSteepestWindows" class="route-steepest-windows"></div>
+              </div>
+            </section>
           </div>
 
           <div class="profile-card">

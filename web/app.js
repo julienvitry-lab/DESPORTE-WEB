@@ -2377,6 +2377,7 @@ function detectRouteSegments(route) {
 function renderRouteAnalysis(route) {
   if (!ui.routeSegmentList || !ui.routeAnalysisMeta) return;
   selectedRouteSegment = null;
+  renderRouteSegmentDetail(null);
   ui.routeSegmentList.innerHTML = "";
   const segments = detectRouteSegments(route);
   route.segments = segments;
@@ -2427,6 +2428,62 @@ function renderRouteAnalysis(route) {
   addGroup("Descentes", descents);
 }
 
+function segmentGradeAnalysis(segment) {
+  const points = segment?.points || [];
+  const bands = [
+    { label: "0–5 %", min: 0, max: 5, cls: "easy" },
+    { label: "5–10 %", min: 5, max: 10, cls: "moderate" },
+    { label: "10–15 %", min: 10, max: 15, cls: "hard" },
+    { label: "≥ 15 %", min: 15, max: Infinity, cls: "extreme" }
+  ].map((band) => ({ ...band, meters: 0 }));
+  let total = 0;
+  for (let i=1;i<points.length;i++) {
+    const dx=Math.max(0,numberOrZero(points[i].distanceMeters)-numberOrZero(points[i-1].distanceMeters));
+    if (!dx) continue;
+    const grade=Math.abs(Number(points[i].gradePercent));
+    if (!Number.isFinite(grade)) continue;
+    const band=bands.find((b)=>grade>=b.min && grade<b.max);
+    if (band) band.meters += dx;
+    total += dx;
+  }
+  const windows = [100, 500].map((windowMeters) => {
+    let best=null, left=0;
+    for (let right=1;right<points.length;right++) {
+      while (left<right && numberOrZero(points[right].distanceMeters)-numberOrZero(points[left].distanceMeters)>windowMeters*1.15) left++;
+      let start=left;
+      while (start>0 && numberOrZero(points[right].distanceMeters)-numberOrZero(points[start].distanceMeters)<windowMeters*0.90) start--;
+      const dist=numberOrZero(points[right].distanceMeters)-numberOrZero(points[start].distanceMeters);
+      if (dist<windowMeters*0.75) continue;
+      const a=Number(points[start].altitudeMeters), b=Number(points[right].altitudeMeters);
+      if (!Number.isFinite(a)||!Number.isFinite(b)) continue;
+      const grade=((b-a)/dist)*100;
+      const score=segment.type==='climb'?grade:-grade;
+      if (!best || score>best.score) best={windowMeters,grade,score,startDistanceMeters:numberOrZero(points[start].distanceMeters),endDistanceMeters:numberOrZero(points[right].distanceMeters)};
+    }
+    return best;
+  }).filter(Boolean);
+  const vertical=segment.type==='climb'?segment.gainMeters:segment.lossMeters;
+  const avg=Math.abs(segment.averageGrade);
+  const difficultyScore=Math.round(vertical * (1 + avg/12) * (1 + Math.log10(1 + segment.distanceMeters/1000)));
+  const difficulty=difficultyScore>=1600?'Extrême':difficultyScore>=900?'Très difficile':difficultyScore>=450?'Difficile':difficultyScore>=200?'Soutenu':'Modéré';
+  return { bands, total, windows, difficultyScore, difficulty };
+}
+
+function renderRouteSegmentDetail(segment) {
+  if (!ui.routeSegmentDetail) return;
+  if (!segment) { ui.routeSegmentDetail.classList.add('hidden'); return; }
+  const analysis=segmentGradeAnalysis(segment);
+  const label=segment.type==='climb'?`Montée #${segment.rank}`:`Descente #${segment.rank}`;
+  ui.routeSegmentDetail.classList.remove('hidden');
+  ui.routeSegmentDetailTitle.textContent=`${label} · analyse détaillée`;
+  ui.routeSegmentDifficulty.textContent=`${analysis.difficulty} · ${analysis.difficultyScore} pts`;
+  const vertical=segment.type==='climb'?segment.gainMeters:segment.lossMeters;
+  const vals=[['Distance',`${(segment.distanceMeters/1000).toLocaleString('fr-FR',{maximumFractionDigits:2})} km`],[segment.type==='climb'?'D+':'D−',`${Math.round(vertical)} m`],['Pente moyenne',`${Math.abs(segment.averageGrade).toLocaleString('fr-FR',{maximumFractionDigits:1})} %`],['Pente max.',Number.isFinite(segment.maxGrade)?`${Math.abs(segment.maxGrade).toLocaleString('fr-FR',{maximumFractionDigits:1})} %`:'—']];
+  ui.routeSegmentDetailStats.innerHTML=vals.map(([k,v])=>`<div class="route-segment-detail-stat"><span>${k}</span><strong>${v}</strong></div>`).join('');
+  ui.routeGradeBands.innerHTML=analysis.bands.map((b)=>{const pct=analysis.total?Math.round(b.meters/analysis.total*100):0;return `<div class="route-grade-band ${b.cls}"><span>${b.label}</span><div class="route-grade-track"><div class="route-grade-fill" style="width:${pct}%"></div></div><strong>${pct} %</strong></div>`}).join('');
+  ui.routeSteepestWindows.innerHTML=analysis.windows.length?analysis.windows.map((w)=>`<div class="route-steep-window"><span>${w.windowMeters} m les plus raides · km ${(w.startDistanceMeters/1000).toLocaleString('fr-FR',{maximumFractionDigits:2})}</span><strong>${Math.abs(w.grade).toLocaleString('fr-FR',{maximumFractionDigits:1})} %</strong></div>`).join(''):'<span class="muted">Segment trop court pour calculer les passages raides.</span>';
+}
+
 function selectRouteSegment(segment) {
   if (!segment?.points?.length || !activityMapInstance || !window.L) return;
   selectedRouteSegment = segment;
@@ -2453,6 +2510,7 @@ function selectRouteSegment(segment) {
   });
   ui.routeAnalysisClearButton.disabled = false;
   profileSegmentHighlighter?.(segment);
+  renderRouteSegmentDetail(segment);
 
   const vertical = segment.type === "climb" ? segment.gainMeters : segment.lossMeters;
   const label = segment.type === "climb" ? `Montée #${segment.rank}` : `Descente #${segment.rank}`;
@@ -3349,7 +3407,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB018",
+            webVersion: "WEB019",
             row: wanted
           }
         );
@@ -3372,7 +3430,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB018"
+            webVersion: "WEB019"
           }
         );
         countDelta -= 1;
@@ -3382,7 +3440,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB018"
+      webVersion: "WEB019"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -3582,7 +3640,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB018"
+    webVersion: "WEB019"
   };
   if (row != null) event.row = row;
 
@@ -3591,7 +3649,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB018"
+    webVersion: "WEB019"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -4044,7 +4102,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB018",
+      webVersion: "WEB019",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -4110,7 +4168,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB018",
+    webVersion: "WEB019",
     androidVersion: 0,
     __synthetic: true
   };
@@ -5564,7 +5622,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB018",
+      webVersion: "WEB019",
       row: next
     }
   );
@@ -5600,7 +5658,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB018",
+        webVersion: "WEB019",
         row: patch
       }
     );
@@ -5612,7 +5670,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB018"
+      webVersion: "WEB019"
     },
     { merge: true }
   );
