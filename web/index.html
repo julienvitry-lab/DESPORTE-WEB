@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB023 · WEBCARTO008 · Comfortaa">
-  <title>SPORT Web · WEB023</title>
+  <meta name="description" content="SPORT Web · WEB024 · WEBANALYSE001 · Comfortaa">
+  <title>SPORT Web · WEB024</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB023 · WEBCARTO008 · Comfortaa · Firestore</div>
+      <div class="version">WEB024 · WEBANALYSE001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -774,6 +774,33 @@
                  viewBox="0 0 1000 240" preserveAspectRatio="none"
                  aria-label="Profil altimétrique de l'activité"></svg>
           </div>
+
+          <section id="performanceTerrainAnalysis" class="performance-terrain-analysis">
+            <div class="route-analysis-heading">
+              <div>
+                <p class="eyebrow">WEB024 · WEBANALYSE001</p>
+                <strong>Analyse performance et terrain</strong>
+                <span id="performanceTerrainMeta" class="muted">Croisement des données disponibles…</span>
+              </div>
+              <span id="performanceBenchmarkBadge" class="pill neutral">Benchmark</span>
+            </div>
+
+            <div id="performanceTerrainMetrics" class="performance-terrain-metrics"></div>
+
+            <div class="performance-analysis-columns">
+              <div class="performance-analysis-block">
+                <h4>Terrain</h4>
+                <div id="performanceGradeDistribution" class="performance-grade-distribution"></div>
+              </div>
+              <div class="performance-analysis-block">
+                <h4>Comparaison avec des activités proches</h4>
+                <div id="performanceBenchmark" class="performance-benchmark"></div>
+              </div>
+            </div>
+
+            <div id="performanceInsight" class="performance-insight"></div>
+            <p class="map-help">WEBANALYSE001 n’invente pas de données locales : l’allure/vitesse et la fréquence cardiaque sont celles de l’activité entière ; altitude et pente proviennent du tracé GPS. Une future publication des timestamps/FC point par point permettra l’analyse locale.</p>
+          </section>
         </section>
 
         <section class="detail-section panel">

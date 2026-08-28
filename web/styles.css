@@ -2106,3 +2106,36 @@ footer {
   .global-map-actions{width:100%}
   .global-map-actions button{flex:1 1 180px}
 }
+
+
+/* WEB024 · WEBANALYSE001 — performance + terrain */
+.performance-terrain-analysis{margin-top:18px;padding:18px;border:1px solid rgba(156,255,34,.20);border-radius:18px;background:linear-gradient(180deg,rgba(156,255,34,.035),rgba(255,255,255,.018));display:grid;gap:16px}
+.performance-terrain-metrics{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:10px}
+.performance-terrain-metric{padding:12px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.025);display:grid;gap:5px}
+.performance-terrain-metric span{font-size:.72rem;color:var(--muted)}
+.performance-terrain-metric strong{font-size:1rem;color:var(--text)}
+.performance-analysis-columns{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.performance-analysis-block{padding:14px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(5,10,12,.32)}
+.performance-analysis-block h4{margin:0 0 12px}
+.performance-grade-distribution{display:grid;gap:8px}
+.performance-grade-row{display:grid;grid-template-columns:125px 1fr 58px;align-items:center;gap:8px;font-size:.76rem}
+.performance-grade-row>span{color:var(--muted)}
+.performance-grade-row>strong{text-align:right}
+.performance-grade-track{height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden}
+.performance-grade-track i{display:block;height:100%;border-radius:inherit;background:#9cff22}
+.performance-grade-row.down .performance-grade-track i{background:#4fb3ff}
+.performance-grade-row.easy .performance-grade-track i{background:#9cff22}
+.performance-grade-row.moderate .performance-grade-track i{background:#ffe55c}
+.performance-grade-row.hard .performance-grade-track i{background:#ff9e42}
+.performance-grade-row.extreme .performance-grade-track i{background:#ff5e6c}
+.performance-benchmark{display:grid;gap:8px}
+.performance-benchmark-row{display:flex;justify-content:space-between;gap:12px;padding-bottom:7px;border-bottom:1px solid rgba(255,255,255,.06);font-size:.78rem}
+.performance-benchmark-row span{color:var(--muted)}
+.performance-benchmark-row strong{text-align:right}
+.performance-insight{padding:13px 14px;border-left:3px solid #9cff22;border-radius:10px;background:rgba(156,255,34,.055)}
+.performance-insight p{margin:6px 0 0;color:var(--muted);line-height:1.55}
+@media(max-width:760px){
+  .performance-terrain-metrics{grid-template-columns:repeat(2,minmax(120px,1fr))}
+  .performance-analysis-columns{grid-template-columns:1fr}
+  .performance-grade-row{grid-template-columns:105px 1fr 52px}
+}

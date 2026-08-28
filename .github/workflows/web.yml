@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB023
+name: Publier SPORT Web · WEB024
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB023.md"
+      - "docs/releases/WEB024.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB023
+      - name: Valider WEB024
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +47,7 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB023"' web/app.js
+          grep -Fq 'webVersion: "WEB024"' web/app.js
 
           # WEB022 · WEBCARTO007.
           grep -Fq "WEB020 · WEBCARTO005" web/index.html
@@ -107,7 +107,13 @@ jobs:
           grep -Fq 'function loadGlobalRoute' web/app.js
           grep -Fq 'function mapWithConcurrency' web/app.js
           grep -Fq '.global-activity-map' web/styles.css
-          echo "WEB023 : WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          grep -Fq 'WEB024 · WEBANALYSE001' web/index.html
+          grep -Fq 'performanceTerrainMetrics' web/index.html
+          grep -Fq 'function routeTerrainAnalysis' web/app.js
+          grep -Fq 'function benchmarkPerformance' web/app.js
+          grep -Fq 'function renderPerformanceTerrainAnalysis' web/app.js
+          grep -Fq '.performance-terrain-analysis' web/styles.css
+          echo "WEB024 : WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -117,6 +123,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB023
+      - name: Publier SPORT Web · WEB024
         id: deployment
         uses: actions/deploy-pages@v4

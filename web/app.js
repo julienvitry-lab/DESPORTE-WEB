@@ -91,6 +91,7 @@ const ui = Object.fromEntries(
     "recordsManagerSection", "recordsManagerStatus", "rebuildRecordsButton",
     "loadedLabel", "loadMoreButton", "loadAllButton", "refreshButton",
     "globalMapSection", "globalMapStatus", "globalMapCount", "globalActivityMap", "globalMapFilteredButton", "globalMapAllButton", "globalMapClearButton",
+    "performanceTerrainAnalysis", "performanceTerrainMeta", "performanceBenchmarkBadge", "performanceTerrainMetrics", "performanceGradeDistribution", "performanceBenchmark", "performanceInsight",
     "searchInput", "sportFilter", "yearFilter", "equipmentFilter",
     "landmarkFilter", "sourceFilter", "distanceFilter", "ascentFilter", "sortFilter",
     "activityList", "recordsList",
@@ -2162,7 +2163,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB023";
+  document.title = "SPORT Web · WEB024";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -2279,6 +2280,7 @@ async function renderCartography(activity) {
   ui.profileMeta.textContent = "";
   ui.profileLive.textContent = "Survolez la carte ou le profil pour suivre votre position.";
   ui.routeStats.innerHTML = "";
+  resetPerformanceTerrainAnalysis(activity);
   ui.mapStatus.textContent = "Chargement du tracé…";
   ui.mapStatus.className = "pill neutral";
   ui.activityMap.classList.remove("route-empty");
@@ -2319,6 +2321,7 @@ async function renderCartography(activity) {
 
     const sourceCount = numberOrZero(snapshot.data().source_point_count);
     renderRouteStats(route, sourceCount);
+    renderPerformanceTerrainAnalysis(activity, route);
     const previewCount = route.points.length;
     ui.mapStatus.textContent = `${formatNumber(previewCount)} points Web`;
     ui.mapStatus.className = "pill ok";
@@ -3670,6 +3673,204 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
 }
 
+
+function resetPerformanceTerrainAnalysis(activity) {
+  if (!ui.performanceTerrainMetrics) return;
+  ui.performanceTerrainMeta.textContent = "En attente du tracé GPS pour contextualiser la performance.";
+  ui.performanceBenchmarkBadge.textContent = "Benchmark";
+  ui.performanceBenchmarkBadge.className = "pill neutral";
+  ui.performanceTerrainMetrics.innerHTML = "";
+  ui.performanceGradeDistribution.innerHTML = "";
+  ui.performanceBenchmark.innerHTML = "";
+  ui.performanceInsight.innerHTML = "";
+
+  const basic = [
+    ["Allure / vitesse", primarySpeedMetric(activity)],
+    ["FC moyenne", formatHeartRate(activity.avg_hr)],
+    ["FC maximale", formatHeartRate(activity.max_hr)],
+    ["D+", formatMeters(activity.ascent_m)]
+  ];
+  for (const [label,value] of basic) {
+    const box=document.createElement("div");
+    box.className="performance-terrain-metric";
+    box.innerHTML=`<span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>`;
+    ui.performanceTerrainMetrics.appendChild(box);
+  }
+}
+
+function routeTerrainAnalysis(route) {
+  const points=route?.points || [];
+  if (points.length < 2) return null;
+  let total=0, climb10=0, climb15=0, descent10=0, flat=0;
+  const bands=[
+    {label:"Descente ≤ −10 %", key:"down", meters:0},
+    {label:"−10 à +3 %", key:"easy", meters:0},
+    {label:"+3 à +10 %", key:"moderate", meters:0},
+    {label:"+10 à +15 %", key:"hard", meters:0},
+    {label:"≥ +15 %", key:"extreme", meters:0}
+  ];
+  for(let i=1;i<points.length;i++){
+    const dx=Math.max(0,numberOrZero(points[i].distanceMeters)-numberOrZero(points[i-1].distanceMeters));
+    if(!dx) continue;
+    const g=Number(points[i].gradePercent);
+    if(!Number.isFinite(g)) continue;
+    total+=dx;
+    if(g<=-10){descent10+=dx;bands[0].meters+=dx;}
+    else if(g<3){flat+=dx;bands[1].meters+=dx;}
+    else if(g<10){bands[2].meters+=dx;}
+    else if(g<15){climb10+=dx;bands[3].meters+=dx;}
+    else {climb10+=dx;climb15+=dx;bands[4].meters+=dx;}
+  }
+  const stats=routeStatsForAnalysis(route);
+  return {
+    total,
+    bands,
+    climb10Pct: total ? climb10/total*100 : 0,
+    climb15Pct: total ? climb15/total*100 : 0,
+    descent10Pct: total ? descent10/total*100 : 0,
+    flatPct: total ? flat/total*100 : 0,
+    ...stats
+  };
+}
+
+function routeStatsForAnalysis(route){
+  const pts=route?.points||[];
+  const alts=pts.map(p=>Number(p.altitudeMeters)).filter(Number.isFinite);
+  const distance=pts.length?numberOrZero(pts[pts.length-1].distanceMeters):0;
+  const ascent=pts.length?numberOrZero(pts[pts.length-1].cumulativeAscentMeters):0;
+  return {
+    distanceMeters:distance,
+    ascentMeters:ascent,
+    ascentPerKm:distance>0?ascent/(distance/1000):0,
+    minAltitude:alts.length?Math.min(...alts):null,
+    maxAltitude:alts.length?Math.max(...alts):null,
+    altitudeRange:alts.length?Math.max(...alts)-Math.min(...alts):null
+  };
+}
+
+function comparableActivities(activity) {
+  const distance=numberOrZero(activity.distance_m);
+  const ascent=numberOrZero(activity.ascent_m);
+  const density=distance>0?ascent/(distance/1000):0;
+  const key=activityKey(activity);
+
+  return activities.filter((row)=>{
+    if(activityKey(row)===key || row.deleted_at_ms!=null) return false;
+    if(Number(row.sport)!==Number(activity.sport)) return false;
+    const d=numberOrZero(row.distance_m);
+    if(!distance || !d) return false;
+    if(d < distance*0.75 || d > distance*1.25) return false;
+    const rd=numberOrZero(row.ascent_m);
+    const rowDensity=d>0?rd/(d/1000):0;
+    const tolerance=Math.max(25,density*0.45);
+    return Math.abs(rowDensity-density)<=tolerance;
+  });
+}
+
+function benchmarkPerformance(activity) {
+  const peers=comparableActivities(activity);
+  const currentSpeed=averageSpeedKmh(activity);
+  const speeds=peers.map(averageSpeedKmh).filter(v=>Number.isFinite(v)&&v>0);
+  const hrs=peers.map(r=>Number(r.avg_hr)).filter(v=>Number.isFinite(v)&&v>0);
+  let rank=null;
+  if(Number.isFinite(currentSpeed) && currentSpeed>0 && speeds.length){
+    rank=1+speeds.filter(v=>v>currentSpeed).length;
+  }
+  const avgPeerSpeed=speeds.length?speeds.reduce((a,b)=>a+b,0)/speeds.length:null;
+  const avgPeerHr=hrs.length?hrs.reduce((a,b)=>a+b,0)/hrs.length:null;
+  return {peers,rank,avgPeerSpeed,avgPeerHr};
+}
+
+function formatBenchmarkSpeed(activity, speed){
+  if(!Number.isFinite(speed)||speed<=0) return "—";
+  const sport=Number(activity?.sport);
+  if([1,6,11,17].includes(sport)){
+    const seconds=Math.round(3600/speed);
+    const minutes=Math.floor(seconds/60), rest=seconds%60;
+    return `${minutes}:${String(rest).padStart(2,"0")} /km`;
+  }
+  return `${speed.toLocaleString("fr-FR",{maximumFractionDigits:1})} km/h`;
+}
+
+function performanceInsightText(activity,terrain,benchmark){
+  const parts=[];
+  if(terrain.ascentPerKm>=150) parts.push("profil très vertical");
+  else if(terrain.ascentPerKm>=80) parts.push("profil fortement vallonné");
+  else if(terrain.ascentPerKm>=30) parts.push("profil vallonné");
+  else parts.push("profil peu vertical");
+
+  if(terrain.climb15Pct>=15) parts.push(`${terrain.climb15Pct.toLocaleString("fr-FR",{maximumFractionDigits:0})} % du tracé au-dessus de 15 %`);
+  else if(terrain.climb10Pct>=15) parts.push(`${terrain.climb10Pct.toLocaleString("fr-FR",{maximumFractionDigits:0})} % du tracé au-dessus de 10 %`);
+
+  const avgHr=Number(activity.avg_hr),maxHr=Number(activity.max_hr);
+  if(Number.isFinite(avgHr)&&Number.isFinite(maxHr)&&maxHr>avgHr) {
+    parts.push(`FC ${Math.round(avgHr)} moy. / ${Math.round(maxHr)} max`);
+  }
+
+  if(benchmark.rank!=null && benchmark.peers.length>=2){
+    parts.push(`${benchmark.rank}e vitesse/allure sur ${benchmark.peers.length+1} activités comparables chargées`);
+  }
+  return parts.join(" · ");
+}
+
+function renderPerformanceTerrainAnalysis(activity, route) {
+  if(!ui.performanceTerrainMetrics) return;
+  const terrain=routeTerrainAnalysis(route);
+  if(!terrain){ resetPerformanceTerrainAnalysis(activity); return; }
+  const benchmark=benchmarkPerformance(activity);
+
+  ui.performanceTerrainMetrics.innerHTML="";
+  const altitudeLabel=Number.isFinite(terrain.minAltitude)&&Number.isFinite(terrain.maxAltitude)
+    ? `${Math.round(terrain.minAltitude)}–${Math.round(terrain.maxAltitude)} m` : "—";
+  const metrics=[
+    ["Allure / vitesse",primarySpeedMetric(activity)],
+    ["FC moyenne / max",`${formatHeartRate(activity.avg_hr)} / ${formatHeartRate(activity.max_hr)}`],
+    ["D+ par km",`${terrain.ascentPerKm.toLocaleString("fr-FR",{maximumFractionDigits:0})} m/km`],
+    ["Amplitude altitude",altitudeLabel],
+    ["Distance ≥ 10 %",`${terrain.climb10Pct.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`],
+    ["Distance ≥ 15 %",`${terrain.climb15Pct.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`]
+  ];
+  for(const [label,value] of metrics){
+    const box=document.createElement("div");
+    box.className="performance-terrain-metric";
+    box.innerHTML=`<span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>`;
+    ui.performanceTerrainMetrics.appendChild(box);
+  }
+
+  ui.performanceGradeDistribution.innerHTML=terrain.bands.map((band)=>{
+    const pct=terrain.total?band.meters/terrain.total*100:0;
+    return `<div class="performance-grade-row ${band.key}">
+      <span>${escapeHtml(band.label)}</span>
+      <div class="performance-grade-track"><i style="width:${Math.max(0,Math.min(100,pct))}%"></i></div>
+      <strong>${pct.toLocaleString("fr-FR",{maximumFractionDigits:1})} %</strong>
+    </div>`;
+  }).join("");
+
+  if(!benchmark.peers.length){
+    ui.performanceBenchmark.innerHTML='<p class="muted">Pas encore d’activité suffisamment proche dans le catalogue chargé.</p>';
+    ui.performanceBenchmarkBadge.textContent="0 comparable";
+    ui.performanceBenchmarkBadge.className="pill neutral";
+  } else {
+    const currentSpeed=averageSpeedKmh(activity);
+    const speedDelta=Number.isFinite(currentSpeed)&&Number.isFinite(benchmark.avgPeerSpeed)
+      ? currentSpeed-benchmark.avgPeerSpeed:null;
+    const hr=Number(activity.avg_hr);
+    const hrDelta=Number.isFinite(hr)&&Number.isFinite(benchmark.avgPeerHr)?hr-benchmark.avgPeerHr:null;
+    ui.performanceBenchmark.innerHTML=`
+      <div class="performance-benchmark-row"><span>Activités comparables chargées</span><strong>${benchmark.peers.length}</strong></div>
+      <div class="performance-benchmark-row"><span>Référence allure / vitesse</span><strong>${escapeHtml(formatBenchmarkSpeed(activity,benchmark.avgPeerSpeed))}</strong></div>
+      <div class="performance-benchmark-row"><span>Écart de vitesse</span><strong>${Number.isFinite(speedDelta)?`${speedDelta>=0?"+":""}${speedDelta.toLocaleString("fr-FR",{maximumFractionDigits:2})} km/h`:"—"}</strong></div>
+      <div class="performance-benchmark-row"><span>Écart FC moyenne</span><strong>${Number.isFinite(hrDelta)?`${hrDelta>=0?"+":""}${Math.round(hrDelta)} bpm`:"—"}</strong></div>
+      <div class="performance-benchmark-row"><span>Rang vitesse / allure</span><strong>${benchmark.rank!=null?`${benchmark.rank} / ${benchmark.peers.length+1}`:"—"}</strong></div>`;
+    ui.performanceBenchmarkBadge.textContent=`${benchmark.peers.length} comparable${benchmark.peers.length>1?"s":""}`;
+    ui.performanceBenchmarkBadge.className="pill ok";
+  }
+
+  ui.performanceInsight.innerHTML=`<strong>Lecture de la séance</strong><p>${escapeHtml(performanceInsightText(activity,terrain,benchmark))}</p>`;
+  ui.performanceTerrainMeta.textContent =
+    "Allure/FC globales croisées avec altitude et pente du tracé GPS ; benchmark limité au catalogue actuellement chargé.";
+}
+
 function renderPerformance(activity) {
   ui.detailPerformanceGrid.innerHTML = "";
 
@@ -4031,7 +4232,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB023",
+            webVersion: "WEB024",
             row: wanted
           }
         );
@@ -4054,7 +4255,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB023"
+            webVersion: "WEB024"
           }
         );
         countDelta -= 1;
@@ -4064,7 +4265,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB023"
+      webVersion: "WEB024"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -4264,7 +4465,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB023"
+    webVersion: "WEB024"
   };
   if (row != null) event.row = row;
 
@@ -4273,7 +4474,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB023"
+    webVersion: "WEB024"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -4726,7 +4927,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB023",
+      webVersion: "WEB024",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -4792,7 +4993,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB023",
+    webVersion: "WEB024",
     androidVersion: 0,
     __synthetic: true
   };
@@ -6246,7 +6447,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB023",
+      webVersion: "WEB024",
       row: next
     }
   );
@@ -6282,7 +6483,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB023",
+        webVersion: "WEB024",
         row: patch
       }
     );
@@ -6294,7 +6495,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB023"
+      webVersion: "WEB024"
     },
     { merge: true }
   );
