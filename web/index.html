@@ -4,15 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB003 · fiche activité complète">
-  <title>SPORT Web · WEB003</title>
+  <meta name="description" content="SPORT Web · WEB004 · cartographie + profil">
+  <title>SPORT Web · WEB004</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB003 · fiche activité complète · Firestore</div>
+      <div class="version">WEB004 · cartographie + profil · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -23,7 +24,7 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB003 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.
+      WEB004 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.
     </section>
 
     <section id="dashboard" class="hidden">
@@ -52,7 +53,7 @@
         <section class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB003</p>
+              <p class="eyebrow">WEB004</p>
               <h2>Répertoire avancé</h2>
               <p id="loadedLabel" class="muted">Chargement…</p>
             </div>
@@ -166,6 +167,28 @@
           <div id="detailSummaryGrid" class="detail-grid"></div>
         </section>
 
+        <section id="detailMapSection" class="detail-section panel">
+          <div class="map-heading">
+            <div class="section-heading">
+              <p class="eyebrow">WEB004 · CARTO</p>
+              <h2>Carte et profil altimétrique</h2>
+            </div>
+            <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
+          </div>
+
+          <div id="activityMap" class="activity-map"></div>
+
+          <div class="profile-card">
+            <div class="profile-title-row">
+              <strong>Profil altimétrique</strong>
+              <span id="profileMeta" class="muted"></span>
+            </div>
+            <svg id="elevationProfile" class="elevation-profile"
+                 viewBox="0 0 1000 240" preserveAspectRatio="none"
+                 aria-label="Profil altimétrique de l'activité"></svg>
+          </div>
+        </section>
+
         <section class="detail-section panel">
           <div class="section-heading">
             <p class="eyebrow">SPORT</p>
@@ -217,9 +240,10 @@
   </main>
 
   <footer>
-    SPORT Web · WEB003 · aucune écriture Firestore
+    SPORT Web · WEB004 · aucune écriture Firestore
   </footer>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

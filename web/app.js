@@ -18,7 +18,7 @@ import {
   startAfter
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB003 reste strictement en lecture seule.
+// WEB004 reste strictement en lecture seule.
 // La clé API Firebase Web identifie le projet ; l'accès aux données dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
   apiKey: "AIzaSyDALtXWRoNHiD9oc4SqxH4tn7HY_08NI1A",
@@ -51,6 +51,7 @@ const ui = Object.fromEntries(
     "previousActivityBottomButton", "nextActivityBottomButton", "detailPosition",
     "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics",
     "detailSummaryGrid", "detailPerformanceGrid", "detailPersonalGrid",
+    "detailMapSection", "mapStatus", "activityMap", "elevationProfile", "profileMeta",
     "detailLandmarks", "detailRecordsSection", "detailRecordsList",
     "detailImportGrid", "detailRawGrid"
   ].map((id) => [id, document.querySelector(`#${id}`)])
@@ -70,6 +71,11 @@ let equipmentRows = [];
 let landmarks = new Map();
 let activityLandmarks = new Map();
 let records = [];
+
+let activityMapInstance = null;
+let activityRouteLayer = null;
+let activityHoverMarker = null;
+let cartographyRequestToken = 0;
 
 wireEvents();
 
@@ -121,7 +127,7 @@ onAuthStateChanged(auth, async (user) => {
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB003 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB004 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -162,7 +168,7 @@ async function reloadAll() {
   try {
     await Promise.all([loadMeta(), loadReferenceCollections()]);
     await loadNextPage();
-    setMessage("WEB003 connecté à Firestore en lecture seule.", "success");
+    setMessage("WEB004 connecté à Firestore en lecture seule.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
@@ -522,7 +528,9 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB003";
+  document.title = "SPORT Web · WEB004";
+  cartographyRequestToken++;
+  destroyActivityMap();
   ui.detailView.classList.add("hidden");
   ui.catalogView.classList.remove("hidden");
 
@@ -572,6 +580,7 @@ function renderDetail(activity) {
 
   renderHeroMetrics(activity);
   renderSummary(activity);
+  renderCartography(activity);
   renderPerformance(activity);
   renderPersonal(activity);
   renderLinkedRecords(activity);
@@ -618,6 +627,396 @@ function renderSummary(activity) {
   addDetailItem(ui.detailSummaryGrid, "Calories", formatInteger(activity.calories));
   addDetailItem(ui.detailSummaryGrid, "Points GPS", formatInteger(activity.gps_point_count));
   addDetailItem(ui.detailSummaryGrid, "Enregistrements FIT", formatInteger(activity.record_count));
+}
+
+
+async function renderCartography(activity) {
+  const token = ++cartographyRequestToken;
+  destroyActivityMap();
+  ui.elevationProfile.innerHTML = "";
+  ui.profileMeta.textContent = "";
+  ui.mapStatus.textContent = "Chargement du tracé…";
+  ui.mapStatus.className = "pill neutral";
+  ui.activityMap.classList.remove("route-empty");
+  ui.activityMap.textContent = "";
+
+  const gpsCount = numberOrZero(activity.gps_point_count);
+  if (gpsCount <= 1) {
+    showRouteUnavailable("Cette activité ne contient pas de tracé GPS exploitable.");
+    return;
+  }
+
+  try {
+    const key = activityKey(activity);
+    const routeRef = doc(db, ROOT, currentUser.uid, "activity_routes", key);
+    const snapshot = await getDoc(routeRef);
+
+    if (token !== cartographyRequestToken || activityKey(activity) !== currentDetailId) return;
+
+    if (!snapshot.exists()) {
+      showRouteUnavailable(
+        "Tracé WEB004 non publié pour cette activité. "
+        + "Sur le téléphone principal : Firebase · SPORT Web → « Publier les tracés Web · CARTOWEB001 »."
+      );
+      return;
+    }
+
+    const route = normalizeRoute(snapshot.data());
+    if (route.points.length < 2) {
+      showRouteUnavailable("Le document activity_routes existe mais ne contient pas assez de points exploitables.");
+      return;
+    }
+
+    renderLeafletMap(route);
+    renderElevationProfile(route);
+
+    const sourceCount = numberOrZero(snapshot.data().source_point_count);
+    const previewCount = route.points.length;
+    ui.mapStatus.textContent = `${formatNumber(previewCount)} points Web`;
+    ui.mapStatus.className = "pill ok";
+    ui.profileMeta.textContent =
+      sourceCount > previewCount
+        ? `${formatNumber(previewCount)} points affichés sur ${formatNumber(sourceCount)} points GPS`
+        : `${formatNumber(previewCount)} points GPS`;
+
+    // Leaflet calcule mal sa taille si le conteneur vient juste de sortir de display:none.
+    window.setTimeout(() => {
+      if (token === cartographyRequestToken && activityMapInstance) {
+        activityMapInstance.invalidateSize(false);
+      }
+    }, 80);
+  } catch (error) {
+    console.error(error);
+    if (token !== cartographyRequestToken) return;
+    showRouteUnavailable(`Carte indisponible : ${error?.message || String(error)}`);
+  }
+}
+
+function normalizeRoute(data) {
+  const lat = Array.isArray(data?.lat) ? data.lat : [];
+  const lon = Array.isArray(data?.lon) ? data.lon : [];
+  const alt = Array.isArray(data?.alt_m) ? data.alt_m : [];
+  const distance = Array.isArray(data?.distance_m) ? data.distance_m : [];
+
+  const count = Math.min(lat.length, lon.length);
+  const points = [];
+  let cumulative = 0;
+  let previous = null;
+
+  for (let i = 0; i < count; i++) {
+    const latitude = Number(lat[i]);
+    const longitude = Number(lon[i]);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+        || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      continue;
+    }
+
+    if (previous) {
+      cumulative += haversineMeters(previous.latitude, previous.longitude, latitude, longitude);
+    }
+
+    const rawDistance = Number(distance[i]);
+    const distanceMeters = Number.isFinite(rawDistance) && rawDistance >= 0
+      ? rawDistance
+      : cumulative;
+
+    const rawAltitude = Number(alt[i]);
+    const altitudeMeters = Number.isFinite(rawAltitude) ? rawAltitude : null;
+
+    const point = {
+      latitude,
+      longitude,
+      altitudeMeters,
+      distanceMeters,
+      sourceIndex: i
+    };
+    points.push(point);
+    previous = point;
+  }
+
+  // Si les distances Firestore ne sont pas croissantes, on recalcule une distance cartographique.
+  let monotonic = true;
+  for (let i = 1; i < points.length; i++) {
+    if (points[i].distanceMeters + 0.1 < points[i - 1].distanceMeters) {
+      monotonic = false;
+      break;
+    }
+  }
+
+  if (!monotonic && points.length > 1) {
+    let d = 0;
+    points[0].distanceMeters = 0;
+    for (let i = 1; i < points.length; i++) {
+      d += haversineMeters(
+        points[i - 1].latitude,
+        points[i - 1].longitude,
+        points[i].latitude,
+        points[i].longitude
+      );
+      points[i].distanceMeters = d;
+    }
+  }
+
+  return { points };
+}
+
+function renderLeafletMap(route) {
+  if (!window.L) {
+    throw new Error("Leaflet n'a pas pu être chargé.");
+  }
+
+  const latLngs = route.points.map((point) => [point.latitude, point.longitude]);
+
+  activityMapInstance = window.L.map(ui.activityMap, {
+    zoomControl: true,
+    preferCanvas: true
+  });
+
+  window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "© OpenStreetMap"
+  }).addTo(activityMapInstance);
+
+  activityRouteLayer = window.L.polyline(latLngs, {
+    color: "#9cff22",
+    weight: 4,
+    opacity: 0.94,
+    lineJoin: "round"
+  }).addTo(activityMapInstance);
+
+  const start = latLngs[0];
+  const finish = latLngs[latLngs.length - 1];
+
+  window.L.circleMarker(start, {
+    radius: 6,
+    color: "#f4f7f5",
+    weight: 2,
+    fillColor: "#9cff22",
+    fillOpacity: 1
+  }).addTo(activityMapInstance).bindTooltip("Départ");
+
+  window.L.circleMarker(finish, {
+    radius: 6,
+    color: "#9cff22",
+    weight: 2,
+    fillColor: "#0b0d0c",
+    fillOpacity: 1
+  }).addTo(activityMapInstance).bindTooltip("Arrivée");
+
+  activityHoverMarker = window.L.circleMarker(start, {
+    radius: 6,
+    color: "#ffffff",
+    weight: 2,
+    fillColor: "#9cff22",
+    fillOpacity: 1,
+    interactive: false
+  }).addTo(activityMapInstance);
+
+  const bounds = activityRouteLayer.getBounds();
+  if (bounds.isValid()) {
+    activityMapInstance.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
+  }
+}
+
+function renderElevationProfile(route) {
+  const svg = ui.elevationProfile;
+  svg.innerHTML = "";
+
+  const altitudePoints = route.points.filter((point) => Number.isFinite(point.altitudeMeters));
+  if (altitudePoints.length < 2) {
+    const message = svgText(500, 120, "Altitude indisponible pour ce tracé", "profile-hover-label");
+    message.setAttribute("text-anchor", "middle");
+    svg.appendChild(message);
+    return;
+  }
+
+  const W = 1000;
+  const H = 240;
+  const left = 54;
+  const right = 20;
+  const top = 20;
+  const bottom = 42;
+  const plotW = W - left - right;
+  const plotH = H - top - bottom;
+
+  const maxDistance = Math.max(
+    1,
+    ...altitudePoints.map((point) => numberOrZero(point.distanceMeters))
+  );
+  const minAltitude = Math.min(...altitudePoints.map((point) => point.altitudeMeters));
+  const maxAltitude = Math.max(...altitudePoints.map((point) => point.altitudeMeters));
+  const altitudeSpan = Math.max(20, maxAltitude - minAltitude);
+  const yMin = minAltitude - altitudeSpan * 0.08;
+  const yMax = maxAltitude + altitudeSpan * 0.08;
+
+  const xFor = (distanceMeters) =>
+    left + (Math.max(0, distanceMeters) / maxDistance) * plotW;
+  const yFor = (altitudeMeters) =>
+    top + ((yMax - altitudeMeters) / Math.max(1, yMax - yMin)) * plotH;
+
+  for (let i = 0; i <= 4; i++) {
+    const y = top + (plotH * i) / 4;
+    const grid = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    grid.setAttribute("x1", left);
+    grid.setAttribute("x2", W - right);
+    grid.setAttribute("y1", y);
+    grid.setAttribute("y2", y);
+    grid.setAttribute("class", "profile-grid-line");
+    svg.appendChild(grid);
+
+    const altitudeLabel = yMax - ((yMax - yMin) * i) / 4;
+    const label = svgText(left - 8, y + 7, `${Math.round(altitudeLabel)} m`, "profile-label");
+    label.setAttribute("text-anchor", "end");
+    svg.appendChild(label);
+  }
+
+  const plotPoints = altitudePoints.map((point) => [
+    xFor(point.distanceMeters),
+    yFor(point.altitudeMeters),
+    point
+  ]);
+
+  const lineD = plotPoints
+    .map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`)
+    .join(" ");
+
+  const areaD =
+    `${lineD} L${plotPoints[plotPoints.length - 1][0].toFixed(2)},${(top + plotH).toFixed(2)} `
+    + `L${plotPoints[0][0].toFixed(2)},${(top + plotH).toFixed(2)} Z`;
+
+  const area = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  area.setAttribute("d", areaD);
+  area.setAttribute("class", "profile-area");
+  svg.appendChild(area);
+
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  line.setAttribute("d", lineD);
+  line.setAttribute("class", "profile-line");
+  svg.appendChild(line);
+
+  const startLabel = svgText(left, H - 11, "0 km", "profile-label");
+  svg.appendChild(startLabel);
+
+  const endLabel = svgText(
+    W - right,
+    H - 11,
+    `${(maxDistance / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km`,
+    "profile-label"
+  );
+  endLabel.setAttribute("text-anchor", "end");
+  svg.appendChild(endLabel);
+
+  const hoverLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  hoverLine.setAttribute("class", "profile-hover-line");
+  hoverLine.setAttribute("y1", top);
+  hoverLine.setAttribute("y2", top + plotH);
+  hoverLine.setAttribute("visibility", "hidden");
+  svg.appendChild(hoverLine);
+
+  const hoverDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  hoverDot.setAttribute("class", "profile-hover-dot");
+  hoverDot.setAttribute("r", "6");
+  hoverDot.setAttribute("visibility", "hidden");
+  svg.appendChild(hoverDot);
+
+  const hoverText = svgText(left + 12, top + 28, "", "profile-hover-label");
+  hoverText.setAttribute("visibility", "hidden");
+  svg.appendChild(hoverText);
+
+  const updateHover = (index) => {
+    const [x, y, point] = plotPoints[Math.max(0, Math.min(plotPoints.length - 1, index))];
+
+    hoverLine.setAttribute("x1", x);
+    hoverLine.setAttribute("x2", x);
+    hoverLine.setAttribute("visibility", "visible");
+
+    hoverDot.setAttribute("cx", x);
+    hoverDot.setAttribute("cy", y);
+    hoverDot.setAttribute("visibility", "visible");
+
+    const km = point.distanceMeters / 1000;
+    hoverText.textContent =
+      `${km.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km · `
+      + `${Math.round(point.altitudeMeters)} m`;
+    hoverText.setAttribute("x", Math.min(W - 260, Math.max(left + 10, x + 12)));
+    hoverText.setAttribute("visibility", "visible");
+
+    if (activityHoverMarker) {
+      activityHoverMarker.setLatLng([point.latitude, point.longitude]);
+    }
+  };
+
+  svg.addEventListener("pointermove", (event) => {
+    const box = svg.getBoundingClientRect();
+    if (box.width <= 0) return;
+
+    const x = ((event.clientX - box.left) / box.width) * W;
+    const clamped = Math.max(left, Math.min(W - right, x));
+    const ratio = (clamped - left) / plotW;
+    const targetDistance = ratio * maxDistance;
+
+    let bestIndex = 0;
+    let bestDelta = Infinity;
+    for (let i = 0; i < plotPoints.length; i++) {
+      const delta = Math.abs(plotPoints[i][2].distanceMeters - targetDistance);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestIndex = i;
+      }
+    }
+    updateHover(bestIndex);
+  });
+
+  svg.addEventListener("pointerleave", () => {
+    hoverLine.setAttribute("visibility", "hidden");
+    hoverDot.setAttribute("visibility", "hidden");
+    hoverText.setAttribute("visibility", "hidden");
+  });
+}
+
+function svgText(x, y, content, className) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  node.setAttribute("x", x);
+  node.setAttribute("y", y);
+  node.setAttribute("class", className);
+  node.textContent = content;
+  return node;
+}
+
+function showRouteUnavailable(message) {
+  destroyActivityMap();
+  ui.mapStatus.textContent = "Tracé indisponible";
+  ui.mapStatus.className = "pill neutral";
+  ui.profileMeta.textContent = "";
+  ui.elevationProfile.innerHTML = "";
+
+  ui.activityMap.className = "activity-map route-empty";
+  ui.activityMap.textContent = message;
+}
+
+function destroyActivityMap() {
+  if (activityMapInstance) {
+    activityMapInstance.remove();
+    activityMapInstance = null;
+  }
+  activityRouteLayer = null;
+  activityHoverMarker = null;
+
+  if (ui.activityMap) {
+    ui.activityMap.className = "activity-map";
+    ui.activityMap.textContent = "";
+  }
+}
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const toRad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toRad;
+  const dLon = (lon2 - lon1) * toRad;
+  const a =
+    Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLon / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
 }
 
 function renderPerformance(activity) {

@@ -499,3 +499,129 @@ footer {
   .detail-bottom-nav { grid-template-columns: 1fr 1fr; }
   .detail-bottom-nav .primary { grid-column: 1 / -1; grid-row: 1; }
 }
+
+
+/* WEB004 · CARTOWEB001 */
+.map-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.activity-map {
+  width: 100%;
+  height: min(58vh, 540px);
+  min-height: 360px;
+  margin-top: 4px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: #0b0e0c;
+}
+
+.activity-map .leaflet-control-attribution {
+  background: rgba(9,11,10,.8);
+  color: #a5b0a8;
+}
+
+.activity-map .leaflet-control-attribution a { color: #c3ff67; }
+
+.profile-card {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: #0d100e;
+}
+
+.profile-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.elevation-profile {
+  display: block;
+  width: 100%;
+  height: 245px;
+  overflow: visible;
+  touch-action: none;
+  border-radius: 10px;
+  background:
+    linear-gradient(to top, rgba(182,255,59,.025), transparent),
+    #0a0d0b;
+}
+
+.profile-grid-line {
+  stroke: #273029;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.profile-line {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.profile-area {
+  fill: rgba(182,255,59,.08);
+  stroke: none;
+}
+
+.profile-hover-line {
+  stroke: #f4f7f5;
+  stroke-width: 1;
+  stroke-dasharray: 5 5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.profile-hover-dot {
+  fill: var(--green);
+  stroke: #0a0d09;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.profile-label {
+  fill: #9ca9a0;
+  font: 24px ui-sans-serif, system-ui, sans-serif;
+  pointer-events: none;
+}
+
+.profile-hover-label {
+  fill: #f4f7f5;
+  font: 27px ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.route-empty {
+  display: grid;
+  place-items: center;
+  min-height: 270px;
+  padding: 28px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: 15px;
+  background: #0d100e;
+}
+
+@media (max-width: 760px) {
+  .map-heading { align-items: flex-start; flex-direction: column; }
+  .activity-map { height: 390px; min-height: 310px; }
+  .elevation-profile { height: 210px; }
+}
+
+@media (max-width: 470px) {
+  .activity-map { height: 330px; min-height: 280px; }
+  .profile-title-row { align-items: flex-start; flex-direction: column; }
+  .elevation-profile { height: 190px; }
+}

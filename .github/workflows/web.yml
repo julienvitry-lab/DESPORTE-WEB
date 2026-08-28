@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB003
+name: Publier SPORT Web · WEB004
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB003.md"
+      - "docs/releases/WEB004.md"
   workflow_dispatch:
 
 permissions:
@@ -30,7 +30,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB003
+      - name: Valider WEB004
         shell: bash
         run: |
           set -euo pipefail
@@ -39,19 +39,23 @@ jobs:
           test -f web/styles.css
           test -f web/app.js
 
-          grep -Fq "WEB003 · fiche activité complète" web/index.html
+          grep -Fq "WEB004 · cartographie + profil" web/index.html
           grep -Fq 'const PAGE_SIZE = 250' web/app.js
           grep -Fq 'function renderDetail(activity)' web/app.js
           grep -Fq 'function moveDetail(delta)' web/app.js
+          grep -Fq 'function renderCartography(activity)' web/app.js
+          grep -Fq '"activity_routes"' web/app.js
+          grep -Fq 'leaflet@1.9.4' web/index.html
+          grep -Fq 'Carte et profil altimétrique' web/index.html
           grep -Fq 'Données techniques Firestore' web/index.html
           grep -Fq 'projectId: "sport-505813"' web/app.js
 
           if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|writeBatch|runTransaction)\b' web/app.js; then
-            echo "::error::WEB003 doit rester strictement en lecture seule."
+            echo "::error::WEB004 doit rester strictement en lecture seule."
             exit 1
           fi
 
-          echo "WEB003 : catalogue avancé + fiche activité complète + navigation, lecture seule validés."
+          echo "WEB004 : fiche activité + carte Leaflet + profil altimétrique + navigation, lecture seule validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -61,6 +65,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB003
+      - name: Publier SPORT Web · WEB004
         id: deployment
         uses: actions/deploy-pages@v4
