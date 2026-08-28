@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB001
+name: Publier SPORT Web · WEB002
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB001.md"
+      - "docs/releases/WEB002.md"
   workflow_dispatch:
 
 permissions:
@@ -29,23 +29,26 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB001
+      - name: Valider WEB002
         shell: bash
         run: |
           set -euo pipefail
           test -f web/index.html
           test -f web/styles.css
           test -f web/app.js
-          grep -Fq "WEB001 · lecture seule" web/index.html
+          grep -Fq "WEB002 · répertoire avancé" web/index.html
           grep -Fq 'const ROOT = "sport_users"' web/app.js
+          grep -Fq 'const FETCH_BATCH = 250' web/app.js
+          grep -Fq 'activityLandmarks' web/app.js
+          grep -Fq 'loadEverything' web/app.js
+          grep -Fq 'copyCurrentLink' web/app.js
           grep -Fq 'projectId: "sport-505813"' web/app.js
-          grep -Fq 'userCollection("activities")' web/app.js
-          grep -Fq 'userCollection("activity_landmarks")' web/app.js
           if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|writeBatch|runTransaction)\b' web/app.js; then
-            echo "::error::WEB001 doit rester strictement en lecture seule."
+            echo "::error::WEB002 doit rester strictement en lecture seule."
             exit 1
           fi
-          echo "WEB001 : client Firestore authentifié et lecture seule validés."
+          node --check web/app.js
+          echo "WEB002 : répertoire avancé Firestore, navigation et lecture seule validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
