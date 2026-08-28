@@ -2530,6 +2530,7 @@ function selectKilometerSegment(segment) {
     node.classList.toggle("selected", node.dataset.segmentId === segment.id);
   });
   document.querySelectorAll(".route-segment-card.selected").forEach((node) => node.classList.remove("selected"));
+  document.querySelectorAll(".climb-subsegment-card.selected").forEach((node) => node.classList.remove("selected"));
   document.querySelectorAll(".route-km-card.selected").forEach((node) => node.classList.remove("selected"));
   if (ui.routeKmClearButton) ui.routeKmClearButton.disabled = false;
   if (ui.routeAnalysisClearButton) ui.routeAnalysisClearButton.disabled = false;
@@ -2537,6 +2538,143 @@ function selectKilometerSegment(segment) {
   ui.profileLive.textContent =
     `Kilomètre ${segment.rank} · D+ ${Math.round(segment.gainMeters)} m · D− ${Math.round(segment.lossMeters)} m` +
     (Number.isFinite(segment.averageGrade) ? ` · ${segment.averageGrade >= 0 ? "+" : ""}${segment.averageGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} % moy.` : "");
+}
+
+
+function classifyClimbGrade(grade) {
+  if (!Number.isFinite(grade)) return { key: "unknown", label: "Indéterminé", cls: "unknown", order: -1 };
+  if (grade < 5) return { key: "recovery", label: "Relance", cls: "recovery", order: 0 };
+  if (grade < 10) return { key: "steady", label: "Soutenu", cls: "steady", order: 1 };
+  if (grade < 15) return { key: "steep", label: "Raide", cls: "steep", order: 2 };
+  return { key: "very-steep", label: "Très raide", cls: "very-steep", order: 3 };
+}
+
+function smoothedGradeAt(points, index, windowMeters = 120) {
+  if (!points?.length) return null;
+  const center = numberOrZero(points[index]?.distanceMeters);
+  const half = windowMeters / 2;
+  let left = index, right = index;
+  while (left > 0 && center - numberOrZero(points[left].distanceMeters) < half) left--;
+  while (right < points.length - 1 && numberOrZero(points[right].distanceMeters) - center < half) right++;
+  const d = numberOrZero(points[right].distanceMeters) - numberOrZero(points[left].distanceMeters);
+  const a = Number(points[left].altitudeMeters), b = Number(points[right].altitudeMeters);
+  if (d < 35 || !Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return ((b - a) / d) * 100;
+}
+
+function buildClimbSubsegments(segment) {
+  if (!segment || segment.type !== "climb" || !segment.points?.length) return [];
+  const points = segment.points;
+  const labeled = points.map((point, index) => ({ point, index, grade: smoothedGradeAt(points, index, 120) }));
+  const raw = [];
+  let active = null;
+  for (const item of labeled) {
+    const category = classifyClimbGrade(item.grade);
+    if (!active || active.category.key !== category.key) {
+      if (active) raw.push(active);
+      active = { category, startIndex: item.index, endIndex: item.index, grades: [item.grade] };
+    } else {
+      active.endIndex = item.index;
+      active.grades.push(item.grade);
+    }
+  }
+  if (active) raw.push(active);
+
+  // Fusionne les zones très courtes avec leur voisine la plus proche pour éviter un découpage bruité.
+  const merged = raw.map((x) => ({ ...x }));
+  const zoneDistance = (z) => numberOrZero(points[z.endIndex]?.distanceMeters) - numberOrZero(points[z.startIndex]?.distanceMeters);
+  for (let i = 0; i < merged.length; i++) {
+    if (merged.length <= 1 || zoneDistance(merged[i]) >= 140) continue;
+    const prev = i > 0 ? merged[i-1] : null;
+    const next = i < merged.length-1 ? merged[i+1] : null;
+    let targetIndex;
+    if (!prev) targetIndex = i+1;
+    else if (!next) targetIndex = i-1;
+    else {
+      const currentOrder = merged[i].category.order;
+      targetIndex = Math.abs(prev.category.order-currentOrder) <= Math.abs(next.category.order-currentOrder) ? i-1 : i+1;
+    }
+    if (targetIndex < i) {
+      merged[targetIndex].endIndex = merged[i].endIndex;
+      merged.splice(i,1); i--;
+    } else {
+      merged[targetIndex].startIndex = merged[i].startIndex;
+      merged.splice(i,1); i--;
+    }
+  }
+
+  return merged.map((zone, index) => {
+    const zonePoints = points.slice(zone.startIndex, zone.endIndex + 1);
+    const first = zonePoints[0], last = zonePoints[zonePoints.length-1];
+    const distanceMeters = Math.max(1, numberOrZero(last.distanceMeters)-numberOrZero(first.distanceMeters));
+    const firstAlt = Number(first.altitudeMeters), lastAlt = Number(last.altitudeMeters);
+    const vertical = Number.isFinite(firstAlt)&&Number.isFinite(lastAlt) ? lastAlt-firstAlt : 0;
+    let gainMeters = 0, maxGrade = null;
+    for (let j=1;j<zonePoints.length;j++) {
+      const a=Number(zonePoints[j-1].altitudeMeters), b=Number(zonePoints[j].altitudeMeters);
+      if (Number.isFinite(a)&&Number.isFinite(b)&&b>a) gainMeters += b-a;
+      const g=smoothedGradeAt(points, zone.startIndex+j, 120);
+      if (Number.isFinite(g) && (maxGrade===null || g>maxGrade)) maxGrade=g;
+    }
+    const averageGrade = (vertical/distanceMeters)*100;
+    const category = classifyClimbGrade(Number.isFinite(averageGrade) ? averageGrade : 0);
+    return {
+      id: `${segment.id}-Z${index+1}`,
+      type: "climb-zone",
+      rank: index+1,
+      parentSegmentId: segment.id,
+      category,
+      points: zonePoints,
+      startDistanceMeters: numberOrZero(first.distanceMeters),
+      endDistanceMeters: numberOrZero(last.distanceMeters),
+      distanceMeters,
+      gainMeters,
+      averageGrade,
+      maxGrade,
+      startAltitude: Number.isFinite(firstAlt)?firstAlt:null,
+      endAltitude: Number.isFinite(lastAlt)?lastAlt:null
+    };
+  }).filter((z) => z.distanceMeters >= 60);
+}
+
+function renderClimbSubsegments(segment) {
+  if (!ui.climbSubsegmentsBlock || !ui.climbSubsegmentsList || !ui.climbSubsegmentsMeta) return;
+  if (!segment || segment.type !== "climb") {
+    ui.climbSubsegmentsBlock.classList.add("hidden");
+    ui.climbSubsegmentsList.innerHTML = "";
+    return;
+  }
+  const zones = buildClimbSubsegments(segment);
+  segment.subsegments = zones;
+  ui.climbSubsegmentsBlock.classList.remove("hidden");
+  ui.climbSubsegmentsMeta.textContent = `${zones.length} zone(s)`;
+  ui.climbSubsegmentsList.innerHTML = "";
+  for (const zone of zones) {
+    const button=document.createElement("button");
+    button.type="button";
+    button.className=`climb-subsegment-card ${zone.category.cls}`;
+    button.dataset.subsegmentId=zone.id;
+    const kmStart=(zone.startDistanceMeters/1000).toLocaleString("fr-FR",{maximumFractionDigits:2});
+    const kmEnd=(zone.endDistanceMeters/1000).toLocaleString("fr-FR",{maximumFractionDigits:2});
+    button.innerHTML=`
+      <span class="climb-zone-badge">Zone ${zone.rank} · ${zone.category.label}</span>
+      <strong>${(zone.distanceMeters/1000).toLocaleString("fr-FR",{maximumFractionDigits:2})} km · +${Math.round(zone.gainMeters)} m</strong>
+      <span>${zone.averageGrade>=0?"+":""}${zone.averageGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} % moy. · max ${Number.isFinite(zone.maxGrade)?`+${zone.maxGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`:"—"}</span>
+      <span>km ${kmStart} → ${kmEnd}</span>`;
+    button.addEventListener("click",()=>selectClimbSubsegment(zone));
+    ui.climbSubsegmentsList.appendChild(button);
+  }
+}
+
+function selectClimbSubsegment(zone) {
+  if (!zone?.points?.length) return;
+  // Réutilise le moteur carte/profil de WEBCARTO003 sans remplacer la fiche de l'ascension par une fiche secondaire.
+  const proxy={...zone,type:"kilometer"};
+  selectRouteSegment(proxy);
+  document.querySelectorAll(".climb-subsegment-card").forEach((node)=>node.classList.toggle("selected",node.dataset.subsegmentId===zone.id));
+  document.querySelectorAll(".route-segment-card").forEach((node)=>node.classList.toggle("selected",node.dataset.segmentId===zone.parentSegmentId));
+  if (ui.routeSegmentDetail) ui.routeSegmentDetail.classList.remove("hidden");
+  if (ui.profileLive) ui.profileLive.textContent=`Zone ${zone.rank} · ${zone.category.label} · ${(zone.distanceMeters/1000).toLocaleString("fr-FR",{maximumFractionDigits:2})} km · +${Math.round(zone.gainMeters)} m · ${zone.averageGrade>=0?"+":""}${zone.averageGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} % moy.`;
 }
 
 function segmentGradeAnalysis(segment) {
@@ -2582,7 +2720,7 @@ function segmentGradeAnalysis(segment) {
 
 function renderRouteSegmentDetail(segment) {
   if (!ui.routeSegmentDetail) return;
-  if (!segment) { ui.routeSegmentDetail.classList.add('hidden'); return; }
+  if (!segment) { ui.routeSegmentDetail.classList.add('hidden'); renderClimbSubsegments(null); return; }
   const analysis=segmentGradeAnalysis(segment);
   const label=segment.type==='climb'?`Montée #${segment.rank}`:`Descente #${segment.rank}`;
   ui.routeSegmentDetail.classList.remove('hidden');
@@ -2593,6 +2731,7 @@ function renderRouteSegmentDetail(segment) {
   ui.routeSegmentDetailStats.innerHTML=vals.map(([k,v])=>`<div class="route-segment-detail-stat"><span>${k}</span><strong>${v}</strong></div>`).join('');
   ui.routeGradeBands.innerHTML=analysis.bands.map((b)=>{const pct=analysis.total?Math.round(b.meters/analysis.total*100):0;return `<div class="route-grade-band ${b.cls}"><span>${b.label}</span><div class="route-grade-track"><div class="route-grade-fill" style="width:${pct}%"></div></div><strong>${pct} %</strong></div>`}).join('');
   ui.routeSteepestWindows.innerHTML=analysis.windows.length?analysis.windows.map((w)=>`<div class="route-steep-window"><span>${w.windowMeters} m les plus raides · km ${(w.startDistanceMeters/1000).toLocaleString('fr-FR',{maximumFractionDigits:2})}</span><strong>${Math.abs(w.grade).toLocaleString('fr-FR',{maximumFractionDigits:1})} %</strong></div>`).join(''):'<span class="muted">Segment trop court pour calculer les passages raides.</span>';
+  renderClimbSubsegments(segment);
 }
 
 function selectRouteSegment(segment) {
@@ -3520,7 +3659,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB020",
+            webVersion: "WEB021",
             row: wanted
           }
         );
@@ -3543,7 +3682,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB020"
+            webVersion: "WEB021"
           }
         );
         countDelta -= 1;
@@ -3553,7 +3692,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB020"
+      webVersion: "WEB021"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -3753,7 +3892,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB020"
+    webVersion: "WEB021"
   };
   if (row != null) event.row = row;
 
@@ -3762,7 +3901,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB020"
+    webVersion: "WEB021"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -4215,7 +4354,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB020",
+      webVersion: "WEB021",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -4281,7 +4420,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB020",
+    webVersion: "WEB021",
     androidVersion: 0,
     __synthetic: true
   };
@@ -5735,7 +5874,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB020",
+      webVersion: "WEB021",
       row: next
     }
   );
@@ -5771,7 +5910,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB020",
+        webVersion: "WEB021",
         row: patch
       }
     );
@@ -5783,7 +5922,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB020"
+      webVersion: "WEB021"
     },
     { merge: true }
   );

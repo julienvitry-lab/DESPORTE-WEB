@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB020
+name: Publier SPORT Web · WEB021
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB020.md"
+      - "docs/releases/WEB021.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB020
+      - name: Valider WEB021
         shell: bash
         run: |
           set -euo pipefail
@@ -47,9 +47,9 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB020"' web/app.js
+          grep -Fq 'webVersion: "WEB021"' web/app.js
 
-          # WEB020 · WEBCARTO004.
+          # WEB021 · WEBCARTO006.
           grep -Fq "WEB020 · WEBCARTO005" web/index.html
           grep -Fq 'mapRouteModeSelect' web/index.html
           grep -Fq 'mapKmMarkersToggle' web/index.html
@@ -89,7 +89,13 @@ jobs:
           grep -Fq 'function renderKilometerAnalysis' web/app.js
           grep -Fq 'function selectKilometerSegment' web/app.js
           grep -Fq '.route-km-card' web/styles.css
-          echo "WEB020 : WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 + DASHBOARD002 + CORBEILLE001 + SYNCGUARD001 validés."
+          grep -Fq 'WEB021 · WEBCARTO006' web/index.html
+          grep -Fq 'climbSubsegmentsList' web/index.html
+          grep -Fq 'function buildClimbSubsegments' web/app.js
+          grep -Fq 'function renderClimbSubsegments' web/app.js
+          grep -Fq 'function selectClimbSubsegment' web/app.js
+          grep -Fq '.climb-subsegment-card' web/styles.css
+          echo "WEB021 : WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -99,6 +105,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB020
+      - name: Publier SPORT Web · WEB021
         id: deployment
         uses: actions/deploy-pages@v4

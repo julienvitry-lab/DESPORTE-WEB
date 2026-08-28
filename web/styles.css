@@ -2061,3 +2061,17 @@ footer {
 .route-km-number{font-weight:800;color:#9cff22;font-size:1.05rem}
 .route-km-card span:not(.route-km-number){font-size:.86rem;color:var(--muted)}
 .route-km-card b{color:var(--text);font-weight:700}
+
+
+/* WEB021 · WEBCARTO006 — sous-segments automatiques des ascensions */
+.climb-subsegments-block{margin-top:2px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)}
+.climb-subsegments-block.hidden{display:none}
+.route-subsegment-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.climb-subsegments-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:9px;margin-top:10px}
+.climb-subsegment-card{position:relative;display:flex;flex-direction:column;gap:5px;text-align:left;padding:11px 12px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:rgba(255,255,255,.035);color:inherit;cursor:pointer;overflow:hidden}
+.climb-subsegment-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:currentColor}
+.climb-subsegment-card:hover,.climb-subsegment-card.selected{border-color:currentColor;box-shadow:0 0 0 1px currentColor inset}
+.climb-subsegment-card.recovery{color:#72d8ff}.climb-subsegment-card.steady{color:#b6ff3b}.climb-subsegment-card.steep{color:#ffd35c}.climb-subsegment-card.very-steep{color:#ff7a7a}.climb-subsegment-card.unknown{color:#b7c0c8}
+.climb-subsegment-card strong{color:var(--text)}
+.climb-subsegment-card span:not(.climb-zone-badge){color:var(--muted);font-size:11px}
+.climb-zone-badge{font-size:11px;font-weight:800;color:currentColor;text-transform:uppercase;letter-spacing:.04em}
