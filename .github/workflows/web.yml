@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB019
+name: Publier SPORT Web · WEB020
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB019.md"
+      - "docs/releases/WEB020.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB019
+      - name: Valider WEB020
         shell: bash
         run: |
           set -euo pipefail
@@ -47,10 +47,10 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB019"' web/app.js
+          grep -Fq 'webVersion: "WEB020"' web/app.js
 
-          # WEB019 · WEBCARTO004.
-          grep -Fq "WEB019 · WEBCARTO004" web/index.html
+          # WEB020 · WEBCARTO004.
+          grep -Fq "WEB020 · WEBCARTO005" web/index.html
           grep -Fq 'mapRouteModeSelect' web/index.html
           grep -Fq 'mapKmMarkersToggle' web/index.html
           grep -Fq 'mapRecenterButton' web/index.html
@@ -83,7 +83,13 @@ jobs:
           grep -Fq 'routeSegmentDetail' web/index.html
           grep -Fq 'segmentGradeAnalysis' web/app.js
           grep -Fq '.route-grade-band' web/styles.css
-          echo "WEB019 : WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 + DASHBOARD002 + CORBEILLE001 + SYNCGUARD001 validés."
+          grep -Fq "WEB020 · WEBCARTO005" web/index.html
+          grep -Fq 'routeKmAnalysisList' web/index.html
+          grep -Fq 'function buildKilometerSegments' web/app.js
+          grep -Fq 'function renderKilometerAnalysis' web/app.js
+          grep -Fq 'function selectKilometerSegment' web/app.js
+          grep -Fq '.route-km-card' web/styles.css
+          echo "WEB020 : WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 + DASHBOARD002 + CORBEILLE001 + SYNCGUARD001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -93,6 +99,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB019
+      - name: Publier SPORT Web · WEB020
         id: deployment
         uses: actions/deploy-pages@v4

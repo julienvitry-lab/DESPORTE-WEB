@@ -103,7 +103,7 @@ const ui = Object.fromEntries(
     "addLandmarkSelect",
     "detailMapSection", "mapStatus", "mapStage", "activityMap", "mapLayerSelect", "mapRouteModeSelect",
     "mapKmMarkersToggle", "mapRecenterButton", "mapFullscreenButton", "mapSlopeLegend",
-    "routeStats", "routeAnalysis", "routeAnalysisMeta", "routeSegmentList", "routeAnalysisClearButton", "elevationProfile", "profileMeta", "profileLive",
+    "routeStats", "routeAnalysis", "routeAnalysisMeta", "routeSegmentList", "routeAnalysisClearButton", "routeKmAnalysisMeta", "routeKmAnalysisList", "routeKmClearButton", "elevationProfile", "profileMeta", "profileLive",
     "detailLandmarks", "detailRecordsSection", "detailRecordsList",
     "detailImportGrid", "detailRawGrid"
   ].map((id) => [id, document.querySelector(`#${id}`)])
@@ -299,6 +299,7 @@ function wireEvents() {
   ui.mapKmMarkersToggle.addEventListener("click", toggleKmMarkers);
   ui.mapRecenterButton.addEventListener("click", recenterActivityMap);
   ui.routeAnalysisClearButton.addEventListener("click", clearRouteSegmentSelection);
+  ui.routeKmClearButton?.addEventListener("click", clearRouteSegmentSelection);
   ui.mapFullscreenButton.addEventListener("click", toggleMapFullscreen);
   document.addEventListener("fullscreenchange", handleFullscreenChange);
 
@@ -2068,6 +2069,7 @@ async function renderCartography(activity) {
     renderLeafletMap(route);
     renderElevationProfile(route);
     renderRouteAnalysis(route);
+    renderKilometerAnalysis(route);
 
     const sourceCount = numberOrZero(snapshot.data().source_point_count);
     renderRouteStats(route, sourceCount);
@@ -2428,6 +2430,115 @@ function renderRouteAnalysis(route) {
   addGroup("Descentes", descents);
 }
 
+
+function buildKilometerSegments(route) {
+  const points = route?.points || [];
+  if (points.length < 2) return [];
+  const totalDistance = numberOrZero(points[points.length - 1].distanceMeters);
+  if (totalDistance <= 0) return [];
+  const result = [];
+  const count = Math.ceil(totalDistance / 1000);
+
+  for (let kmIndex = 0; kmIndex < count; kmIndex++) {
+    const startMeters = kmIndex * 1000;
+    const endMeters = Math.min(totalDistance, (kmIndex + 1) * 1000);
+    const segmentPoints = points.filter((p) =>
+      numberOrZero(p.distanceMeters) >= startMeters - 0.1 &&
+      numberOrZero(p.distanceMeters) <= endMeters + 0.1
+    );
+    const before = [...points].reverse().find((p) => numberOrZero(p.distanceMeters) <= startMeters);
+    const after = points.find((p) => numberOrZero(p.distanceMeters) >= endMeters);
+    if (before && (!segmentPoints.length || segmentPoints[0] !== before)) segmentPoints.unshift(before);
+    if (after && segmentPoints[segmentPoints.length - 1] !== after) segmentPoints.push(after);
+    if (segmentPoints.length < 2) continue;
+
+    let gainMeters = 0, lossMeters = 0, maxGrade = null;
+    const altitudes = [];
+    for (let i = 0; i < segmentPoints.length; i++) {
+      const alt = Number(segmentPoints[i].altitudeMeters);
+      if (Number.isFinite(alt)) altitudes.push(alt);
+      const grade = Number(segmentPoints[i].gradePercent);
+      if (Number.isFinite(grade) && (maxGrade === null || Math.abs(grade) > Math.abs(maxGrade))) maxGrade = grade;
+      if (i > 0) {
+        const a = Number(segmentPoints[i-1].altitudeMeters), b = Number(segmentPoints[i].altitudeMeters);
+        if (Number.isFinite(a) && Number.isFinite(b)) {
+          const delta = b-a;
+          if (delta > 0) gainMeters += delta; else lossMeters += -delta;
+        }
+      }
+    }
+    const firstAlt = Number(segmentPoints[0].altitudeMeters);
+    const lastAlt = Number(segmentPoints[segmentPoints.length-1].altitudeMeters);
+    const distanceMeters = Math.max(1, endMeters-startMeters);
+    const averageGrade = Number.isFinite(firstAlt) && Number.isFinite(lastAlt)
+      ? ((lastAlt-firstAlt)/distanceMeters)*100 : null;
+
+    result.push({
+      id: `KM-${kmIndex+1}`,
+      type: "kilometer",
+      rank: kmIndex+1,
+      points: segmentPoints,
+      startDistanceMeters: startMeters,
+      endDistanceMeters: endMeters,
+      distanceMeters,
+      gainMeters,
+      lossMeters,
+      averageGrade,
+      maxGrade,
+      minAltitude: altitudes.length ? Math.min(...altitudes) : null,
+      maxAltitude: altitudes.length ? Math.max(...altitudes) : null
+    });
+  }
+  return result;
+}
+
+function renderKilometerAnalysis(route) {
+  if (!ui.routeKmAnalysisList || !ui.routeKmAnalysisMeta) return;
+  const segments = buildKilometerSegments(route);
+  route.kilometerSegments = segments;
+  ui.routeKmAnalysisList.innerHTML = "";
+  ui.routeKmAnalysisMeta.textContent = `${segments.length} tronçon(s) · dernier tronçon adapté à la distance réelle`;
+  if (ui.routeKmClearButton) ui.routeKmClearButton.disabled = true;
+
+  for (const segment of segments) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "route-km-card";
+    button.dataset.segmentId = segment.id;
+    const distanceLabel = segment.distanceMeters >= 995
+      ? `km ${segment.rank}`
+      : `${(segment.distanceMeters/1000).toLocaleString("fr-FR",{maximumFractionDigits:2})} km`;
+    const avg = Number.isFinite(segment.averageGrade)
+      ? `${segment.averageGrade >= 0 ? "+" : ""}${segment.averageGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`
+      : "—";
+    const max = Number.isFinite(segment.maxGrade)
+      ? `${segment.maxGrade >= 0 ? "+" : ""}${segment.maxGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`
+      : "—";
+    button.innerHTML = `
+      <span class="route-km-number">${distanceLabel}</span>
+      <span><b>D+</b> ${Math.round(segment.gainMeters)} m · <b>D−</b> ${Math.round(segment.lossMeters)} m</span>
+      <span><b>Altitude</b> ${Number.isFinite(segment.minAltitude)?Math.round(segment.minAltitude):"—"}–${Number.isFinite(segment.maxAltitude)?Math.round(segment.maxAltitude):"—"} m</span>
+      <span><b>Pente</b> ${avg} moy. · ${max} max.</span>`;
+    button.addEventListener("click", () => selectKilometerSegment(segment));
+    ui.routeKmAnalysisList.appendChild(button);
+  }
+}
+
+function selectKilometerSegment(segment) {
+  selectRouteSegment(segment);
+  document.querySelectorAll(".route-km-card").forEach((node) => {
+    node.classList.toggle("selected", node.dataset.segmentId === segment.id);
+  });
+  document.querySelectorAll(".route-segment-card.selected").forEach((node) => node.classList.remove("selected"));
+  document.querySelectorAll(".route-km-card.selected").forEach((node) => node.classList.remove("selected"));
+  if (ui.routeKmClearButton) ui.routeKmClearButton.disabled = false;
+  if (ui.routeAnalysisClearButton) ui.routeAnalysisClearButton.disabled = false;
+  if (ui.routeSegmentDetail) ui.routeSegmentDetail.classList.add("hidden");
+  ui.profileLive.textContent =
+    `Kilomètre ${segment.rank} · D+ ${Math.round(segment.gainMeters)} m · D− ${Math.round(segment.lossMeters)} m` +
+    (Number.isFinite(segment.averageGrade) ? ` · ${segment.averageGrade >= 0 ? "+" : ""}${segment.averageGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} % moy.` : "");
+}
+
 function segmentGradeAnalysis(segment) {
   const points = segment?.points || [];
   const bands = [
@@ -2510,8 +2621,9 @@ function selectRouteSegment(segment) {
   });
   ui.routeAnalysisClearButton.disabled = false;
   profileSegmentHighlighter?.(segment);
-  renderRouteSegmentDetail(segment);
+  if (segment.type !== "kilometer") renderRouteSegmentDetail(segment);
 
+  if (segment.type === "kilometer") return;
   const vertical = segment.type === "climb" ? segment.gainMeters : segment.lossMeters;
   const label = segment.type === "climb" ? `Montée #${segment.rank}` : `Descente #${segment.rank}`;
   ui.profileLive.textContent = `${label} · ${(segment.distanceMeters / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km · ${segment.type === "climb" ? "+" : "−"}${Math.round(vertical)} m · ${segment.averageGrade >= 0 ? "+" : ""}${segment.averageGrade.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} % moy.`;
@@ -2525,6 +2637,7 @@ function clearRouteSegmentSelection() {
   activitySegmentHighlightLayer = null;
   document.querySelectorAll(".route-segment-card.selected").forEach((node) => node.classList.remove("selected"));
   if (ui.routeAnalysisClearButton) ui.routeAnalysisClearButton.disabled = true;
+  if (ui.routeKmClearButton) ui.routeKmClearButton.disabled = true;
   profileSegmentHighlighter?.(null);
   if (ui.profileLive) ui.profileLive.textContent = "Survolez la carte ou le profil pour suivre votre position.";
   recenterActivityMap();
@@ -3407,7 +3520,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB019",
+            webVersion: "WEB020",
             row: wanted
           }
         );
@@ -3430,7 +3543,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB019"
+            webVersion: "WEB020"
           }
         );
         countDelta -= 1;
@@ -3440,7 +3553,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB019"
+      webVersion: "WEB020"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -3640,7 +3753,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB019"
+    webVersion: "WEB020"
   };
   if (row != null) event.row = row;
 
@@ -3649,7 +3762,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB019"
+    webVersion: "WEB020"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -4102,7 +4215,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB019",
+      webVersion: "WEB020",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -4168,7 +4281,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB019",
+    webVersion: "WEB020",
     androidVersion: 0,
     __synthetic: true
   };
@@ -5622,7 +5735,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB019",
+      webVersion: "WEB020",
       row: next
     }
   );
@@ -5658,7 +5771,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB019",
+        webVersion: "WEB020",
         row: patch
       }
     );
@@ -5670,7 +5783,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB019"
+      webVersion: "WEB020"
     },
     { merge: true }
   );

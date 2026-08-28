@@ -2051,3 +2051,13 @@ footer {
 .route-steep-window { padding:9px 10px; border:1px solid rgba(255,255,255,.08); border-radius:10px; display:flex; justify-content:space-between; gap:8px; font-size:11px; }
 .route-steep-window strong { color:var(--green); }
 @media(max-width:760px){.route-segment-detail-stats{grid-template-columns:repeat(2,minmax(110px,1fr))}.route-steepest-windows{grid-template-columns:1fr}.route-grade-band{grid-template-columns:78px 1fr 58px}}
+
+
+/* WEB020 · WEBCARTO005 — analyse kilomètre par kilomètre */
+.route-km-analysis-card{margin-top:18px;padding:18px;border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.025)}
+.route-km-analysis-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:14px}
+.route-km-card{display:flex;flex-direction:column;gap:6px;text-align:left;padding:13px 14px;border:1px solid rgba(255,255,255,.11);border-radius:14px;background:rgba(255,255,255,.035);color:inherit;cursor:pointer}
+.route-km-card:hover,.route-km-card.selected{border-color:rgba(156,255,34,.75);box-shadow:0 0 0 1px rgba(156,255,34,.18) inset;background:rgba(156,255,34,.07)}
+.route-km-number{font-weight:800;color:#9cff22;font-size:1.05rem}
+.route-km-card span:not(.route-km-number){font-size:.86rem;color:var(--muted)}
+.route-km-card b{color:var(--text);font-weight:700}
