@@ -27,7 +27,7 @@ import {
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB016 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
+// WEB017 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
 // Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
@@ -101,7 +101,8 @@ const ui = Object.fromEntries(
     "interopStatus", "interopEditor", "editTitleInput", "editDescriptionInput", "editNoteInput",
     "editEquipmentSelect", "editFeelingSelect", "editDifficultySelect", "editPrivacySelect",
     "addLandmarkSelect",
-    "detailMapSection", "mapStatus", "mapStage", "activityMap", "mapLayerSelect", "mapFullscreenButton",
+    "detailMapSection", "mapStatus", "mapStage", "activityMap", "mapLayerSelect", "mapRouteModeSelect",
+    "mapKmMarkersToggle", "mapRecenterButton", "mapFullscreenButton", "mapSlopeLegend",
     "routeStats", "elevationProfile", "profileMeta", "profileLive",
     "detailLandmarks", "detailRecordsSection", "detailRecordsList",
     "detailImportGrid", "detailRawGrid"
@@ -187,7 +188,11 @@ let editorActivityKey = null;
 
 let activityMapInstance = null;
 let activityRouteLayer = null;
+let activityRouteLayers = [];
+let activityKmMarkersLayer = null;
+let activityRouteBounds = null;
 let activityHoverMarker = null;
+let showKmMarkers = true;
 let cartographyRequestToken = 0;
 let activityBaseLayers = {};
 let activityBaseLayer = null;
@@ -287,6 +292,9 @@ function wireEvents() {
   });
 
   ui.mapLayerSelect.addEventListener("change", () => switchBaseLayer(ui.mapLayerSelect.value));
+  ui.mapRouteModeSelect.addEventListener("change", () => redrawRouteOverlay());
+  ui.mapKmMarkersToggle.addEventListener("click", toggleKmMarkers);
+  ui.mapRecenterButton.addEventListener("click", recenterActivityMap);
   ui.mapFullscreenButton.addEventListener("click", toggleMapFullscreen);
   document.addEventListener("fullscreenchange", handleFullscreenChange);
 
@@ -415,7 +423,7 @@ onAuthStateChanged(auth, async (user) => {
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB016 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB017 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -468,7 +476,7 @@ async function reloadAll() {
     renderTrash();
     await loadNextPage();
     await loadWebDashboard();
-    setMessage("WEB016 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    setMessage("WEB017 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
@@ -1505,7 +1513,7 @@ async function trashActivityFromWeb(activity) {
 
     showCatalog(false);
     setMessage(
-      "WEB016 · activité mise à la corbeille et propagée vers téléphone + tablette.",
+      "WEB017 · activité mise à la corbeille et propagée vers téléphone + tablette.",
       "success"
     );
 
@@ -1554,7 +1562,7 @@ async function restoreActivityFromWeb(activity) {
     renderTrash();
 
     setMessage(
-      "WEB016 · activité restaurée et propagée vers téléphone + tablette.",
+      "WEB017 · activité restaurée et propagée vers téléphone + tablette.",
       "success"
     );
 
@@ -1908,7 +1916,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB016";
+  document.title = "SPORT Web · WEB017";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -2153,7 +2161,40 @@ function normalizeRoute(data) {
     }
   }
 
+  calculateRouteGrades(points);
   return { points };
+}
+
+function calculateRouteGrades(points) {
+  if (!Array.isArray(points) || points.length < 2) return;
+  const targetWindowMeters = 120;
+
+  for (let i = 0; i < points.length; i++) {
+    const current = points[i];
+    if (!Number.isFinite(current.altitudeMeters)) {
+      current.gradePercent = null;
+      continue;
+    }
+
+    let before = i;
+    let after = i;
+    while (before > 0
+        && current.distanceMeters - points[before].distanceMeters < targetWindowMeters / 2) {
+      before--;
+    }
+    while (after < points.length - 1
+        && points[after].distanceMeters - current.distanceMeters < targetWindowMeters / 2) {
+      after++;
+    }
+
+    const p1 = points[before];
+    const p2 = points[after];
+    const horizontal = Number(p2.distanceMeters) - Number(p1.distanceMeters);
+    const vertical = Number(p2.altitudeMeters) - Number(p1.altitudeMeters);
+    current.gradePercent = Number.isFinite(horizontal) && horizontal >= 25 && Number.isFinite(vertical)
+      ? Math.max(-35, Math.min(35, (vertical / horizontal) * 100))
+      : null;
+  }
 }
 
 function routeStats(route) {
@@ -2166,11 +2207,16 @@ function routeStats(route) {
   const ascent = route.points.length
     ? numberOrZero(route.points[route.points.length - 1].cumulativeAscentMeters)
     : 0;
+  const grades = route.points
+    .map((point) => point.gradePercent)
+    .filter((value) => Number.isFinite(value));
   return {
     distanceMeters: distance,
     ascentMeters: ascent,
     minAltitude: altitudes.length ? Math.min(...altitudes) : null,
-    maxAltitude: altitudes.length ? Math.max(...altitudes) : null
+    maxAltitude: altitudes.length ? Math.max(...altitudes) : null,
+    maxClimbGrade: grades.length ? Math.max(0, ...grades) : null,
+    maxDescentGrade: grades.length ? Math.min(0, ...grades) : null
   };
 }
 
@@ -2182,6 +2228,8 @@ function renderRouteStats(route, sourceCount) {
     ["D+ profil", formatMeters(stats.ascentMeters)],
     ["Altitude min.", Number.isFinite(stats.minAltitude) ? formatMeters(stats.minAltitude) : "—"],
     ["Altitude max.", Number.isFinite(stats.maxAltitude) ? formatMeters(stats.maxAltitude) : "—"],
+    ["Pente max. +", Number.isFinite(stats.maxClimbGrade) ? `${stats.maxClimbGrade.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %` : "—"],
+    ["Pente max. −", Number.isFinite(stats.maxDescentGrade) ? `${stats.maxDescentGrade.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %` : "—"],
     ["Points", `${formatNumber(route.points.length)} / ${formatNumber(sourceCount || route.points.length)}`]
   ];
 
@@ -2224,12 +2272,8 @@ function renderLeafletMap(route) {
   activityBaseLayer = activityBaseLayers[preferredLayer] || activityBaseLayers.osm;
   activityBaseLayer.addTo(activityMapInstance);
 
-  activityRouteLayer = window.L.polyline(latLngs, {
-    color: "#9cff22",
-    weight: 4,
-    opacity: 0.94,
-    lineJoin: "round"
-  }).addTo(activityMapInstance);
+  activityRouteBounds = window.L.latLngBounds(latLngs);
+  redrawRouteOverlay();
 
   const start = route.points[0];
   const finish = route.points[route.points.length - 1];
@@ -2252,10 +2296,8 @@ function renderLeafletMap(route) {
   }).addTo(activityMapInstance);
   activityHoverMarker.bindTooltip("", { direction: "top", offset: [0, -6], opacity: 0.95 });
 
-  const bounds = activityRouteLayer.getBounds();
-  if (bounds.isValid()) {
-    activityMapInstance.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
-  }
+  renderKmMarkers(route);
+  recenterActivityMap();
 
   activityMapInstance.on("mousemove", (event) => {
     if (!profileHoverUpdater) return;
@@ -2282,6 +2324,132 @@ function renderLeafletMap(route) {
   };
 }
 
+function redrawRouteOverlay() {
+  if (!activityMapInstance || !activeRoute?.points?.length) return;
+
+  for (const layer of activityRouteLayers) {
+    try { activityMapInstance.removeLayer(layer); } catch (_) {}
+  }
+  activityRouteLayers = [];
+  activityRouteLayer = null;
+
+  const mode = ui.mapRouteModeSelect?.value || "classic";
+  if (ui.mapSlopeLegend) ui.mapSlopeLegend.classList.toggle("hidden", mode !== "slope");
+
+  if (mode === "slope") {
+    for (let i = 1; i < activeRoute.points.length; i++) {
+      const p1 = activeRoute.points[i - 1];
+      const p2 = activeRoute.points[i];
+      const grade = Number.isFinite(p2.gradePercent) ? p2.gradePercent : p1.gradePercent;
+      const layer = window.L.polyline(
+        [[p1.latitude, p1.longitude], [p2.latitude, p2.longitude]],
+        {
+          color: gradeColor(grade),
+          weight: 5,
+          opacity: 0.96,
+          lineJoin: "round",
+          lineCap: "round",
+          interactive: false
+        }
+      ).addTo(activityMapInstance);
+      activityRouteLayers.push(layer);
+    }
+  } else {
+    activityRouteLayer = window.L.polyline(
+      activeRoute.points.map((point) => [point.latitude, point.longitude]),
+      {
+        color: "#9cff22",
+        weight: 4,
+        opacity: 0.94,
+        lineJoin: "round",
+        lineCap: "round",
+        interactive: false
+      }
+    ).addTo(activityMapInstance);
+    activityRouteLayers.push(activityRouteLayer);
+  }
+}
+
+function gradeColor(rawGrade) {
+  const grade = Number(rawGrade);
+  if (!Number.isFinite(grade)) return "#9cff22";
+  if (grade <= -6) return "#38a7ff";
+  if (grade < -2) return "#63c7ff";
+  if (grade < 3) return "#9cff22";
+  if (grade < 7) return "#ffe55c";
+  if (grade < 12) return "#ff9e42";
+  return "#ff5a57";
+}
+
+function routeMarkerStepKm(route) {
+  const totalKm = numberOrZero(route?.points?.[route.points.length - 1]?.distanceMeters) / 1000;
+  if (totalKm <= 30) return 1;
+  if (totalKm <= 100) return 5;
+  if (totalKm <= 250) return 10;
+  return 20;
+}
+
+function renderKmMarkers(route) {
+  if (!activityMapInstance || !window.L || !route?.points?.length) return;
+  if (activityKmMarkersLayer) {
+    activityMapInstance.removeLayer(activityKmMarkersLayer);
+    activityKmMarkersLayer = null;
+  }
+
+  const group = window.L.layerGroup();
+  const stepKm = routeMarkerStepKm(route);
+  const maxDistance = numberOrZero(route.points[route.points.length - 1].distanceMeters);
+
+  for (let km = stepKm; km * 1000 < maxDistance - 100; km += stepKm) {
+    const target = km * 1000;
+    let best = route.points[0];
+    let bestDelta = Infinity;
+    for (const point of route.points) {
+      const delta = Math.abs(numberOrZero(point.distanceMeters) - target);
+      if (delta < bestDelta) {
+        best = point;
+        bestDelta = delta;
+      }
+    }
+
+    const marker = window.L.marker([best.latitude, best.longitude], {
+      interactive: false,
+      icon: window.L.divIcon({
+        className: "route-km-icon",
+        html: `<span>${km}</span>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      })
+    });
+    group.addLayer(marker);
+  }
+
+  activityKmMarkersLayer = group;
+  if (showKmMarkers) group.addTo(activityMapInstance);
+  updateKmMarkerButton();
+}
+
+function toggleKmMarkers() {
+  showKmMarkers = !showKmMarkers;
+  if (activityMapInstance && activityKmMarkersLayer) {
+    if (showKmMarkers) activityKmMarkersLayer.addTo(activityMapInstance);
+    else activityMapInstance.removeLayer(activityKmMarkersLayer);
+  }
+  updateKmMarkerButton();
+}
+
+function updateKmMarkerButton() {
+  if (!ui.mapKmMarkersToggle) return;
+  ui.mapKmMarkersToggle.classList.toggle("active", showKmMarkers);
+  ui.mapKmMarkersToggle.setAttribute("aria-pressed", showKmMarkers ? "true" : "false");
+  ui.mapKmMarkersToggle.textContent = showKmMarkers ? "Km ✓" : "Km";
+}
+
+function recenterActivityMap() {
+  if (!activityMapInstance || !activityRouteBounds?.isValid?.()) return;
+  activityMapInstance.fitBounds(activityRouteBounds, { padding: [28, 28], maxZoom: 16 });
+}
+
 function routeEndIcon(letter, finish) {
   return window.L.divIcon({
     className: `route-end-icon${finish ? " finish" : ""}`,
@@ -2296,7 +2464,12 @@ function switchBaseLayer(key) {
   if (activityBaseLayer) activityMapInstance.removeLayer(activityBaseLayer);
   activityBaseLayer = activityBaseLayers[key];
   activityBaseLayer.addTo(activityMapInstance);
-  if (activityRouteLayer) activityRouteLayer.bringToFront();
+  for (const layer of activityRouteLayers) {
+    if (typeof layer?.bringToFront === "function") layer.bringToFront();
+  }
+  if (activityKmMarkersLayer && showKmMarkers && activityMapInstance.hasLayer(activityKmMarkersLayer)) {
+    activityKmMarkersLayer.eachLayer((layer) => layer.setZIndexOffset?.(600));
+  }
 }
 
 async function toggleMapFullscreen() {
@@ -2445,7 +2618,10 @@ function renderElevationProfile(route) {
 
     const km = point.distanceMeters / 1000;
     const gain = numberOrZero(point.cumulativeAscentMeters);
-    const compact = `${km.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km · ${Math.round(point.altitudeMeters)} m`;
+    const grade = Number.isFinite(point.gradePercent)
+      ? `${point.gradePercent >= 0 ? "+" : ""}${point.gradePercent.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %`
+      : "pente —";
+    const compact = `${km.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km · ${Math.round(point.altitudeMeters)} m · ${grade}`;
     hoverText.textContent = compact;
     hoverText.setAttribute("x", Math.min(W - 260, Math.max(left + 10, x + 12)));
     hoverText.setAttribute("visibility", "visible");
@@ -2456,7 +2632,7 @@ function renderElevationProfile(route) {
     if (activityHoverMarker) {
       activityHoverMarker.setLatLng([point.latitude, point.longitude]);
       activityHoverMarker.setTooltipContent(
-        `${km.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km · ${Math.round(point.altitudeMeters)} m · D+ ${Math.round(gain)} m`
+        `${km.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km · ${Math.round(point.altitudeMeters)} m · ${grade} · D+ ${Math.round(gain)} m`
       );
       activityHoverMarker.openTooltip();
     }
@@ -2525,6 +2701,9 @@ function destroyActivityMap() {
     activityMapInstance = null;
   }
   activityRouteLayer = null;
+  activityRouteLayers = [];
+  activityKmMarkersLayer = null;
+  activityRouteBounds = null;
   activityHoverMarker = null;
   activityBaseLayers = {};
   activityBaseLayer = null;
@@ -2909,7 +3088,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB016",
+            webVersion: "WEB017",
             row: wanted
           }
         );
@@ -2932,7 +3111,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB016"
+            webVersion: "WEB017"
           }
         );
         countDelta -= 1;
@@ -2942,7 +3121,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB016"
+      webVersion: "WEB017"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -2971,7 +3150,7 @@ async function rebuildRecordsFromFirestore() {
 
     setRecordsManagerStatus("Records recalculés et synchronisés", "ok");
     setMessage(
-      "WEB016 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
+      "WEB017 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
       "success"
     );
   } catch (error) {
@@ -3062,7 +3241,7 @@ async function commitWebMutation(args) {
     window.setTimeout(() => {
       setInteropStatus("Hors ligne · modification en attente", "pending");
       setMessage(
-        "WEB016 · réseau indisponible : modification conservée localement et reprise automatiquement au retour de la connexion.",
+        "WEB017 · réseau indisponible : modification conservée localement et reprise automatiquement au retour de la connexion.",
         "info"
       );
       renderSyncHealth();
@@ -3142,7 +3321,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB016"
+    webVersion: "WEB017"
   };
   if (row != null) event.row = row;
 
@@ -3151,7 +3330,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB016"
+    webVersion: "WEB017"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -3201,7 +3380,7 @@ async function flushPendingWebMutations() {
 
   webMutationRetryRunning = true;
   ui.syncHealthRetryButton.disabled = true;
-  setMessage(`WEB016 · reprise de ${queue.length} mutation(s) Web en attente…`, "info");
+  setMessage(`WEB017 · reprise de ${queue.length} mutation(s) Web en attente…`, "info");
 
   try {
     while (queue.length && navigator.onLine) {
@@ -3213,14 +3392,14 @@ async function flushPendingWebMutations() {
 
     if (!queue.length) {
       await publishWebHealth("OK", "");
-      setMessage("WEB016 · toutes les mutations Web en attente ont été réémises.", "success");
+      setMessage("WEB017 · toutes les mutations Web en attente ont été réémises.", "success");
     } else {
       await publishWebHealth("OFFLINE", "");
     }
   } catch (error) {
     await publishWebHealth("ERROR", String(error?.message || error));
     setMessage(
-      "WEB016 · reprise automatique interrompue : " + (error?.message || error),
+      "WEB017 · reprise automatique interrompue : " + (error?.message || error),
       "error"
     );
   } finally {
@@ -3330,7 +3509,7 @@ async function persistActivityEdits(activity, title, description, note, generati
 
       setInteropStatus("Synchronisé automatiquement", "ok");
       setMessage(
-        "WEB016 · modification propagée automatiquement vers téléphone et tablette.",
+        "WEB017 · modification propagée automatiquement vers téléphone et tablette.",
         "success"
       );
     }
@@ -3449,7 +3628,7 @@ async function saveImmediateActivityFields(partialPatch, successLabel) {
     applyFiltersAndRender();
 
     setInteropStatus(successLabel || "Synchronisé automatiquement", "ok");
-    setMessage("WEB016 · modification propagée automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB017 · modification propagée automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec de synchronisation automatique", "error");
@@ -3521,7 +3700,7 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
     renderPersonal(activity);
     applyFiltersAndRender();
     setInteropStatus("Repère synchronisé automatiquement", "ok");
-    setMessage("WEB016 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB017 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec repère", "error");
@@ -3604,7 +3783,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB016",
+      webVersion: "WEB017",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -3670,7 +3849,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB016",
+    webVersion: "WEB017",
     androidVersion: 0,
     __synthetic: true
   };
@@ -3897,11 +4076,11 @@ function supportedReplayCollection(table) {
 async function replaySyncEvent(event) {
   const collectionName=supportedReplayCollection(event.table);
   if(!collectionName || !event.row || event.operation==="DELETE") return;
-  const confirmed=window.confirm(`Réappliquer cette version de ${syncTableLabel(event.table)} « ${event.rowKey} » ?\n\nCette action crée une nouvelle modification WEB016, qui devient la version la plus récente et sera envoyée au téléphone et à la tablette.`);
+  const confirmed=window.confirm(`Réappliquer cette version de ${syncTableLabel(event.table)} « ${event.rowKey} » ?\n\nCette action crée une nouvelle modification WEB017, qui devient la version la plus récente et sera envoyée au téléphone et à la tablette.`);
   if(!confirmed) return;
   try {
     await commitWebMutation({ table:String(event.table), rowKey:String(event.rowKey), operation:"UPSERT", row:event.row, materializedCollection:collectionName, materializedData:event.row });
-    setMessage("WEB016 · version réappliquée et propagée aux trois plateformes.","success");
+    setMessage("WEB017 · version réappliquée et propagée aux trois plateformes.","success");
   } catch(error){ handleError(error,"Résolution du conflit impossible"); }
 }
 
@@ -3936,7 +4115,7 @@ function startInteropWatch() {
     (error) => {
       console.error(error);
       setInteropStatus("Temps réel interrompu", "error");
-      setMessage("WEB016 · écoute temps réel indisponible : " + (error?.message || error), "error");
+      setMessage("WEB017 · écoute temps réel indisponible : " + (error?.message || error), "error");
     }
   );
 }
@@ -3963,7 +4142,7 @@ function applyRealtimeChange(event) {
 
       if (currentDetailId === rowKey) {
         showCatalog(false);
-        setMessage("WEB016 · suppression définitive reçue d’un appareil Android.", "info");
+        setMessage("WEB017 · suppression définitive reçue d’un appareil Android.", "info");
       }
       void loadWebDashboard();
       return;
@@ -3984,13 +4163,13 @@ function applyRealtimeChange(event) {
         trashActivities.set(rowKey, { ...merged });
         if (currentDetailId === rowKey) {
           showCatalog(false);
-          if (!fromWeb) setMessage("WEB016 · mise à la corbeille reçue d’un appareil Android.", "success");
+          if (!fromWeb) setMessage("WEB017 · mise à la corbeille reçue d’un appareil Android.", "success");
         }
       } else {
         trashActivities.delete(rowKey);
         if (!activities.some((item) => activityKey(item) === rowKey)) activities.push(merged);
         if (!fromWeb && row.deleted_at_ms === null) {
-          setMessage("WEB016 · restauration reçue d’un appareil Android.", "success");
+          setMessage("WEB017 · restauration reçue d’un appareil Android.", "success");
         }
       }
 
@@ -4080,7 +4259,7 @@ function applyRealtimeChange(event) {
 
   if (!fromWeb) {
     setInteropStatus("Modification Android reçue", "ok");
-    setMessage("WEB016 · changement reçu automatiquement depuis un appareil Android.", "success");
+    setMessage("WEB017 · changement reçu automatiquement depuis un appareil Android.", "success");
   }
 }
 
@@ -4268,7 +4447,7 @@ function openLandmarkEditor(code, row) {
   }
 
   ui.landmarkEditor.classList.remove("hidden");
-  ui.landmarkEditorEyebrow.textContent = "WEB016 · MODIFICATION AUTOMATIQUE";
+  ui.landmarkEditorEyebrow.textContent = "WEB017 · MODIFICATION AUTOMATIQUE";
   ui.landmarkEditorTitle.textContent = row.name || `Repère ${safeCode}`;
   ui.landmarkEditorHint.textContent =
     "Aucun bouton Enregistrer. Le code reste fixe ; un changement de type est refusé lorsqu’une référence GPS existe.";
@@ -4442,7 +4621,7 @@ async function persistLandmarkEditor(generation) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB016 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB017 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === landmarkAutosaveGeneration) {
@@ -4491,14 +4670,14 @@ async function createLandmarkFromWeb() {
     landmarkEditorDirty = false;
     ui.landmarkCodeInput.disabled = true;
     ui.createLandmarkButton.classList.add("hidden");
-    ui.landmarkEditorEyebrow.textContent = "WEB016 · REPÈRE CRÉÉ";
+    ui.landmarkEditorEyebrow.textContent = "WEB017 · REPÈRE CRÉÉ";
     ui.landmarkEditorTitle.textContent = row.name;
     populateLandmarkEditor(row.code, row);
 
     rebuildLandmarkFilter();
     renderLandmarkManager();
 
-    setMessage("WEB016 · nouveau repère créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB017 · nouveau repère créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setLandmarkEditorStatus("Création impossible", "error");
@@ -4562,7 +4741,7 @@ async function deleteCurrentLandmarkIfUnused() {
     rebuildLandmarkFilter();
     renderLandmarkManager();
 
-    setMessage("WEB016 · repère inutilisé supprimé sur les trois plateformes.", "success");
+    setMessage("WEB017 · repère inutilisé supprimé sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setLandmarkEditorStatus("Suppression impossible", "error");
@@ -4786,7 +4965,7 @@ function openEquipmentEditor(item) {
   }
 
   ui.equipmentEditor.classList.remove("hidden");
-  ui.equipmentEditorEyebrow.textContent = "WEB016 · MODIFICATION AUTOMATIQUE";
+  ui.equipmentEditorEyebrow.textContent = "WEB017 · MODIFICATION AUTOMATIQUE";
   ui.equipmentEditorTitle.textContent = equipmentDisplayName(item);
   ui.equipmentEditorHint.textContent =
     "Aucun bouton Enregistrer : les changements sont envoyés automatiquement vers téléphone et tablette.";
@@ -4982,7 +5161,7 @@ async function persistEquipmentEditor(generation) {
     renderEquipmentManager();
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
-    setMessage("WEB016 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB017 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === equipmentAutosaveGeneration) {
@@ -5027,7 +5206,7 @@ async function createEquipmentFromWeb() {
     equipmentEditorRowId = id;
     equipmentEditorDirty = false;
     ui.createEquipmentButton.classList.add("hidden");
-    ui.equipmentEditorEyebrow.textContent = "WEB016 · MATÉRIEL CRÉÉ";
+    ui.equipmentEditorEyebrow.textContent = "WEB017 · MATÉRIEL CRÉÉ";
     ui.equipmentEditorTitle.textContent = equipmentDisplayName(row);
     ui.equipmentEditorHint.textContent =
       "Le matériel est créé. Toute modification ultérieure est maintenant automatique.";
@@ -5037,7 +5216,7 @@ async function createEquipmentFromWeb() {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB016 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB017 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setEquipmentEditorStatus("Création impossible", "error");
@@ -5081,7 +5260,7 @@ async function updateEquipmentStatus(item, status) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage(`WEB016 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
+    setMessage(`WEB017 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
   } catch (error) {
     handleError(error, "Changement de statut du matériel impossible");
   }
@@ -5095,7 +5274,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
   if (snapshot.size > MAX_EQUIPMENT_RENAME_CASCADE) {
     throw new Error(
       `Ce matériel est associé à ${snapshot.size} activités. ` +
-      `Par sécurité, WEB016 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
+      `Par sécurité, WEB017 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
     );
   }
 
@@ -5124,7 +5303,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB016",
+      webVersion: "WEB017",
       row: next
     }
   );
@@ -5160,7 +5339,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB016",
+        webVersion: "WEB017",
         row: patch
       }
     );
@@ -5172,7 +5351,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB016"
+      webVersion: "WEB017"
     },
     { merge: true }
   );
@@ -5187,8 +5366,8 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
 
   setMessage(
     snapshot.size > 0
-      ? `WEB016 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
-      : "WEB016 · matériel renommé sur les trois plateformes.",
+      ? `WEB017 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
+      : "WEB017 · matériel renommé sur les trois plateformes.",
     "success"
   );
 }

@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB016
+name: Publier SPORT Web · WEB017
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB016.md"
+      - "docs/releases/WEB017.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB016
+      - name: Valider WEB017
         shell: bash
         run: |
           set -euo pipefail
@@ -37,7 +37,7 @@ jobs:
           test -f web/styles.css
           test -f web/app.js
 
-          grep -Fq "WEB016 · SYNCHEALTH001" web/index.html
+          grep -Fq "WEB017 · SYNCHEALTH001" web/index.html
           grep -Fq "Santé de la synchronisation" web/index.html
           grep -Fq "syncHealthRetryButton" web/index.html
 
@@ -47,7 +47,19 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB016"' web/app.js
+          grep -Fq 'webVersion: "WEB017"' web/app.js
+
+          # WEB017 · WEBCARTO002.
+          grep -Fq "WEB017 · CARTO+" web/index.html
+          grep -Fq 'mapRouteModeSelect' web/index.html
+          grep -Fq 'mapKmMarkersToggle' web/index.html
+          grep -Fq 'mapRecenterButton' web/index.html
+          grep -Fq 'function calculateRouteGrades' web/app.js
+          grep -Fq 'function redrawRouteOverlay' web/app.js
+          grep -Fq 'function renderKmMarkers' web/app.js
+          grep -Fq 'function recenterActivityMap' web/app.js
+          grep -Fq '.route-km-icon' web/styles.css
+          grep -Fq '.map-slope-legend' web/styles.css
 
           # Héritages critiques.
           grep -Fq 'function trashActivityFromWeb' web/app.js
@@ -60,7 +72,7 @@ jobs:
           grep -Fq 'family=Comfortaa' web/index.html
           grep -Fq 'z-index: 4000' web/styles.css
 
-          echo "WEB016 : SYNCHEALTH001 + reprise réseau + DASHBOARD002 + CORBEILLE001 + SYNCGUARD001 validés."
+          echo "WEB017 : WEBCARTO002 + SYNCHEALTH001 + DASHBOARD002 + CORBEILLE001 + SYNCGUARD001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -70,6 +82,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB016
+      - name: Publier SPORT Web · WEB017
         id: deployment
         uses: actions/deploy-pages@v4

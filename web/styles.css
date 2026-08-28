@@ -1678,7 +1678,7 @@ footer {
 }
 
 
-/* WEB016 · SYNCHEALTH001 */
+/* WEB017 · SYNCHEALTH001 */
 .sync-health-panel {
   scroll-margin-top: 94px;
 }
@@ -1860,4 +1860,118 @@ footer {
   .sync-health-card-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* WEB017 · WEBCARTO002 · cartographie avancée */
+.map-stage-toolbar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.map-tool-button {
+  min-height: 40px;
+  padding-inline: 12px;
+  border-color: rgba(255,255,255,.18);
+  background: rgba(9,11,10,.90);
+  box-shadow: 0 2px 10px rgba(0,0,0,.25);
+  backdrop-filter: blur(10px);
+}
+
+.map-tool-button.active {
+  color: #0a0d09;
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.map-help {
+  margin: 9px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.map-slope-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 900;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  max-width: calc(100% - 24px);
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 11px;
+  color: #eef4ef;
+  background: rgba(9,11,10,.88);
+  box-shadow: 0 2px 10px rgba(0,0,0,.25);
+  backdrop-filter: blur(10px);
+  font-size: 10px;
+}
+
+.map-slope-legend.hidden { display: none; }
+
+.map-slope-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.map-slope-legend .grade {
+  width: 18px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--green);
+}
+
+.map-slope-legend .grade.downhill { background: #38a7ff; }
+.map-slope-legend .grade.flat { background: #9cff22; }
+.map-slope-legend .grade.climb { background: #ffe55c; }
+.map-slope-legend .grade.steep { background: #ff5a57; }
+
+.route-km-icon {
+  background: transparent;
+  border: 0;
+}
+
+.route-km-icon span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  color: #0a0d09;
+  background: #9cff22;
+  box-shadow: 0 2px 8px rgba(0,0,0,.45);
+  font: 800 10px "Comfortaa", ui-sans-serif, system-ui, sans-serif;
+}
+
+.route-stats {
+  grid-template-columns: repeat(7, minmax(105px, 1fr));
+}
+
+@media (max-width: 980px) {
+  .route-stats { grid-template-columns: repeat(4, minmax(105px, 1fr)); }
+  .map-stage-toolbar { max-width: calc(100% - 58px); }
+  .map-layer-control select { min-width: 118px; }
+}
+
+@media (max-width: 760px) {
+  .map-stage-toolbar {
+    position: relative;
+    top: auto;
+    right: auto;
+    z-index: 900;
+    max-width: none;
+    padding: 9px;
+    justify-content: flex-start;
+    background: #0b0e0c;
+  }
+  .map-layer-control,
+  .map-tool-button,
+  .map-fullscreen-button { flex: 1 1 auto; }
+  .map-layer-control select { min-width: 102px; }
+  .route-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .map-slope-legend { bottom: 8px; left: 8px; max-width: calc(100% - 16px); }
 }
