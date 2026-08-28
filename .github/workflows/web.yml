@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB028
+name: Publier SPORT Web · WEB029
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB028.md"
+      - "docs/releases/WEB029.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB028
+      - name: Valider WEB029
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +47,7 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB028"' web/app.js
+          grep -Fq 'webVersion: "WEB029"' web/app.js
 
           # WEB022 · WEBCARTO007.
           grep -Fq "WEB020 · WEBCARTO005" web/index.html
@@ -136,7 +136,14 @@ jobs:
           grep -Fq 'table: "personal_landmarks"' web/app.js
           grep -Fq 'setLandmarkOccurrence(target, row.code, 1)' web/app.js
           grep -Fq '.recurring-climb-actions' web/styles.css
-          echo "WEB028 : WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          grep -Fq 'WEB029 · WEBCARTO010' web/index.html
+          grep -Fq 'globalMapModeSelect' web/index.html
+          grep -Fq 'globalMapYearSelect' web/index.html
+          grep -Fq 'function buildDensityCells' web/app.js
+          grep -Fq 'function renderGlobalDensity' web/app.js
+          grep -Fq 'densityTileForPoint' web/app.js
+          grep -Fq '.global-map-density-controls' web/styles.css
+          echo "WEB029 : WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -146,6 +153,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB028
+      - name: Publier SPORT Web · WEB029
         id: deployment
         uses: actions/deploy-pages@v4

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB028 · WEBREPERES002 · Comfortaa">
-  <title>SPORT Web · WEB028</title>
+  <meta name="description" content="SPORT Web · WEB029 · WEBCARTO010 · Comfortaa">
+  <title>SPORT Web · WEB029</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB028 · WEBREPERES002 · Comfortaa · Firestore</div>
+      <div class="version">WEB029 · WEBCARTO010 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -487,8 +487,9 @@
         <section id="globalMapSection" class="panel global-map-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB023 · WEBCARTO008</p>
-              <h2>Carte globale des activités</h2>
+              <!-- Héritage WEB023 · WEBCARTO008 -->
+              <p class="eyebrow">WEB029 · WEBCARTO010</p>
+              <h2>Carte globale et densité de pratique</h2>
               <p id="globalMapStatus" class="muted">Affiche les tracés des activités filtrées ou de tout l’historique chargé.</p>
             </div>
             <div class="panel-actions global-map-actions">
@@ -498,22 +499,49 @@
             </div>
           </div>
 
+          <div class="global-map-density-controls">
+            <label>
+              <span>Vue</span>
+              <select id="globalMapModeSelect">
+                <option value="routes">Tracés</option>
+                <option value="density">Densité de passages</option>
+              </select>
+            </label>
+            <label>
+              <span>Année</span>
+              <select id="globalMapYearSelect">
+                <option value="all">Toutes</option>
+              </select>
+            </label>
+            <label>
+              <span>Sport</span>
+              <select id="globalMapSportSelect">
+                <option value="all">Tous</option>
+                <option value="running">Course / trail</option>
+                <option value="cycling">Vélo</option>
+                <option value="hiking">Randonnée / marche</option>
+                <option value="other">Autres</option>
+              </select>
+            </label>
+          </div>
+
           <div class="global-map-summary">
             <span id="globalMapCount" class="pill neutral">0 tracé</span>
-            <span class="muted">Cliquez sur un tracé pour ouvrir l’activité correspondante.</span>
+            <span id="globalMapHotspot" class="pill neutral">0 zone</span>
+            <span id="globalMapSummaryText" class="muted">Cliquez sur un tracé pour ouvrir l’activité correspondante.</span>
           </div>
 
           <div id="globalActivityMap" class="global-activity-map route-empty">
             Lancez la cartographie pour afficher vos activités GPS.
           </div>
 
-          <div class="global-map-legend">
+          <div id="globalMapLegend" class="global-map-legend">
             <span><i class="global-map-line running"></i>Course / trail</span>
             <span><i class="global-map-line cycling"></i>Vélo</span>
             <span><i class="global-map-line hiking"></i>Randonnée / marche</span>
             <span><i class="global-map-line other"></i>Autres</span>
           </div>
-          <p class="map-help">WEBCARTO008 · les tracés sont lus à la demande depuis <code>activity_routes</code>. Le bouton « Tout charger » complète d’abord le catalogue Firestore afin que la carte puisse couvrir tout l’historique disponible.</p>
+          <p class="map-help">WEBCARTO010 · la vue Densité compte le nombre d’activités passant dans chaque zone d’environ 200–300 m, et non le nombre brut de points GPS. Une activité ne compte donc qu’une fois par zone, ce qui évite de favoriser les appareils enregistrant plus de points.</p>
         </section>
 
         <section class="panel">

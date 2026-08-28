@@ -2221,3 +2221,18 @@ footer {
 @media(max-width:560px){
   .recurring-climb-actions button{flex:1 1 170px}
 }
+
+
+/* WEB029 · WEBCARTO010 — densité spatiale et filtres de la carte globale */
+.global-map-density-controls{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 12px}
+.global-map-density-controls label{display:grid;gap:5px;min-width:155px}
+.global-map-density-controls label>span{font-size:.7rem;color:var(--muted)}
+.global-map-density-controls select{min-width:155px}
+.global-map-density{display:inline-block;width:14px;height:14px;border-radius:50%;background:#9cff22;border:1px solid rgba(156,255,34,.9)}
+.global-map-density.low{opacity:.3;transform:scale(.75)}
+.global-map-density.medium{opacity:.62}
+.global-map-density.high{opacity:1;box-shadow:0 0 0 4px rgba(156,255,34,.12)}
+@media(max-width:760px){
+  .global-map-density-controls label{flex:1 1 145px;min-width:0}
+  .global-map-density-controls select{width:100%;min-width:0}
+}

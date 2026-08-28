@@ -90,7 +90,7 @@ const ui = Object.fromEntries(
     "createLandmarkButton", "landmarkManagerList",
     "recordsManagerSection", "recordsManagerStatus", "rebuildRecordsButton",
     "loadedLabel", "loadMoreButton", "loadAllButton", "refreshButton",
-    "globalMapSection", "globalMapStatus", "globalMapCount", "globalActivityMap", "globalMapFilteredButton", "globalMapAllButton", "globalMapClearButton",
+    "globalMapSection", "globalMapStatus", "globalMapCount", "globalMapHotspot", "globalMapSummaryText", "globalActivityMap", "globalMapFilteredButton", "globalMapAllButton", "globalMapClearButton", "globalMapModeSelect", "globalMapYearSelect", "globalMapSportSelect", "globalMapLegend",
     "performanceTerrainAnalysis", "performanceTerrainMeta", "performanceBenchmarkBadge", "performanceTerrainMetrics", "performanceGradeDistribution", "performanceBenchmark", "performanceInsight",
     "performanceProgression", "performanceProgressionMeta", "performanceProgressionTrend", "performanceProgressionSummary", "performanceProgressionWindows", "performanceProgressionChart", "performanceProgressionHistory",
     "recurringLandmarksAnalysis", "recurringLandmarksMeta", "recurringLandmarksList", "scanRecurringClimbsButton", "recurringClimbsStatus", "recurringClimbsList",
@@ -198,6 +198,8 @@ let globalMapRouteCache = new Map();
 let globalMapRenderedKeys = new Set();
 let globalMapIsBusy = false;
 let globalMapIsStale = true;
+let globalMapLastLoadEverything = false;
+let globalMapDensityCells = [];
 
 let activityMapInstance = null;
 let activityRouteLayer = null;
@@ -315,6 +317,10 @@ function wireEvents() {
   });
 
   ui.scanRecurringClimbsButton?.addEventListener("click", () => { void analyzeRecurringClimbsForCurrentActivity(); });
+  ui.globalMapModeSelect?.addEventListener("change", markGlobalMapStale);
+  ui.globalMapYearSelect?.addEventListener("change", markGlobalMapStale);
+  ui.globalMapSportSelect?.addEventListener("change", markGlobalMapStale);
+
   ui.globalMapFilteredButton?.addEventListener("click", () => { void renderGlobalActivityMap(false); });
   ui.globalMapAllButton?.addEventListener("click", () => { void renderGlobalActivityMap(true); });
   ui.globalMapClearButton?.addEventListener("click", clearGlobalActivityMap);
@@ -1970,7 +1976,7 @@ function markGlobalMapStale() {
   globalMapIsStale = true;
   if (!ui.globalMapStatus || !globalMapRenderedKeys.size || globalMapIsBusy) return;
   ui.globalMapStatus.textContent =
-    "Les filtres du répertoire ont changé. Relancez « Cartographier la sélection » pour actualiser la carte.";
+    "Les filtres ou options de la carte ont changé. Relancez la cartographie pour actualiser la vue.";
 }
 
 async function loadGlobalRoute(activity) {
@@ -2019,9 +2025,9 @@ function ensureGlobalMap() {
     zoomControl: true
   });
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "© OpenStreetMap"
+  L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+    maxZoom: 17,
+    attribution: "© OpenStreetMap · SRTM · OpenTopoMap"
   }).addTo(globalMapInstance);
 
   globalMapLayer = L.featureGroup().addTo(globalMapInstance);
@@ -2052,9 +2058,124 @@ function clearGlobalActivityMap() {
     ui.globalMapCount.textContent = "0 tracé";
     ui.globalMapCount.className = "pill neutral";
   }
+  if (ui.globalMapHotspot) {
+    ui.globalMapHotspot.textContent = "0 zone";
+    ui.globalMapHotspot.className = "pill neutral";
+  }
+  if (ui.globalMapSummaryText) {
+    ui.globalMapSummaryText.textContent = "Cliquez sur un tracé pour ouvrir l’activité correspondante.";
+  }
+  globalMapDensityCells = [];
   if (ui.globalMapFilteredButton) ui.globalMapFilteredButton.disabled = false;
   if (ui.globalMapAllButton) ui.globalMapAllButton.disabled = false;
   if (ui.globalMapClearButton) ui.globalMapClearButton.disabled = true;
+}
+
+
+function refreshGlobalMapYearOptions() {
+  if (!ui.globalMapYearSelect) return;
+  const current = ui.globalMapYearSelect.value || "all";
+  const years = [...new Set(activities
+    .map((activity) => new Date(numberOrZero(activity.start_time_ms)).getFullYear())
+    .filter((year) => Number.isFinite(year) && year >= 2000 && year <= 2100))]
+    .sort((a,b) => b-a);
+  ui.globalMapYearSelect.innerHTML = '<option value="all">Toutes</option>' +
+    years.map((year) => `<option value="${year}">${year}</option>`).join("");
+  ui.globalMapYearSelect.value = years.includes(Number(current)) ? current : "all";
+}
+
+function globalMapSecondaryFilters(source) {
+  const year = ui.globalMapYearSelect?.value || "all";
+  const sport = ui.globalMapSportSelect?.value || "all";
+  return source.filter((activity) => {
+    if (year !== "all") {
+      const activityYear = new Date(numberOrZero(activity.start_time_ms)).getFullYear();
+      if (String(activityYear) !== year) return false;
+    }
+    if (sport !== "all" && globalMapSportClass(activity) !== sport) return false;
+    return true;
+  });
+}
+
+function densityTileForPoint(latitude, longitude, zoom = 17) {
+  const lat = Math.max(-85.05112878, Math.min(85.05112878, Number(latitude)));
+  const lon = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const n = 2 ** zoom;
+  const x = Math.floor((lon + 180) / 360 * n);
+  const latRad = lat * Math.PI / 180;
+  const y = Math.floor((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2 * n);
+  return { x, y, zoom, key: `${zoom}:${x}:${y}` };
+}
+
+function densityTileCenter(tile) {
+  const n = 2 ** tile.zoom;
+  const lon = (tile.x + 0.5) / n * 360 - 180;
+  const mercator = Math.PI * (1 - 2 * (tile.y + 0.5) / n);
+  const lat = Math.atan(Math.sinh(mercator)) * 180 / Math.PI;
+  return [lat, lon];
+}
+
+function buildDensityCells(items) {
+  const cells = new Map();
+  for (const item of items) {
+    if (!item?.route?.points?.length) continue;
+    const perActivity = new Set();
+    for (const point of item.route.points) {
+      const tile = densityTileForPoint(point.latitude, point.longitude, 17);
+      if (!tile || perActivity.has(tile.key)) continue;
+      perActivity.add(tile.key);
+      const existing = cells.get(tile.key) || { ...tile, count: 0, activities: [] };
+      existing.count++;
+      existing.activities.push(item.activity);
+      cells.set(tile.key, existing);
+    }
+  }
+  return [...cells.values()].sort((a,b) => b.count-a.count);
+}
+
+function densityCellStyle(count, maxCount) {
+  const ratio = maxCount > 1 ? Math.log1p(count) / Math.log1p(maxCount) : 1;
+  return {
+    radius: 5 + ratio * 13,
+    fillOpacity: 0.16 + ratio * 0.64,
+    opacity: 0.35 + ratio * 0.55,
+    weight: 1 + ratio * 2
+  };
+}
+
+function renderGlobalDensity(items) {
+  const cells = buildDensityCells(items);
+  globalMapDensityCells = cells;
+  if (!cells.length) return { cellCount: 0, maxCount: 0 };
+
+  const maxCount = cells[0].count;
+  for (const cell of cells) {
+    const center = densityTileCenter(cell);
+    const style = densityCellStyle(cell.count, maxCount);
+    const circle = L.circleMarker(center, {
+      radius: style.radius,
+      color: "#9cff22",
+      fillColor: "#9cff22",
+      fillOpacity: style.fillOpacity,
+      opacity: style.opacity,
+      weight: style.weight,
+      interactive: true
+    });
+    const recent = [...cell.activities]
+      .sort((a,b) => numberOrZero(b.start_time_ms)-numberOrZero(a.start_time_ms))
+      .slice(0,5);
+    circle.bindTooltip(
+      `<strong>${cell.count} activité${cell.count>1?"s":""}</strong><br>` +
+      recent.map((activity) => `${escapeHtml(formatDate(activity.start_time_ms))} · ${escapeHtml(activity.custom_title || sportName(activity.sport))}`).join("<br>"),
+      { sticky: true }
+    );
+    circle.on("click", () => {
+      if (cell.activities.length === 1) showActivity(cell.activities[0]);
+    });
+    circle.addTo(globalMapLayer);
+  }
+  return { cellCount: cells.length, maxCount };
 }
 
 async function renderGlobalActivityMap(loadEverything) {
@@ -2067,15 +2188,18 @@ async function renderGlobalActivityMap(loadEverything) {
   if (ui.globalMapClearButton) ui.globalMapClearButton.disabled = false;
 
   try {
+    globalMapLastLoadEverything = Boolean(loadEverything);
     if (loadEverything && moreActivities) {
       ui.globalMapStatus.textContent = "Chargement de tout le catalogue avant cartographie…";
       await loadAllActivities();
       if (token !== globalMapRequestToken) return;
     }
 
-    const source = loadEverything
+    refreshGlobalMapYearOptions();
+    const baseSource = loadEverything
       ? activities.filter((activity) => activity.deleted_at_ms == null)
       : [...filteredActivities];
+    const source = globalMapSecondaryFilters(baseSource);
 
     const candidates = source.filter((activity) => numberOrZero(activity.gps_point_count) > 1);
     if (!candidates.length) {
@@ -2106,31 +2230,62 @@ async function renderGlobalActivityMap(loadEverything) {
 
     let routeCount = 0;
     let pointCount = 0;
-    for (const item of loaded) {
-      if (!item?.route?.points?.length) continue;
-      const { activity, route } = item;
-      const latLngs = route.points.map((point) => [point.latitude, point.longitude]);
-      const color = globalMapSportColor(activity);
-      const line = L.polyline(latLngs, {
-        color,
-        weight: 3,
-        opacity: 0.56,
-        interactive: true
-      });
+    const usable = loaded.filter((item) => item?.route?.points?.length);
+    const mode = ui.globalMapModeSelect?.value || "routes";
 
-      const title = activity.custom_title || sportName(activity.sport);
-      line.bindTooltip(
-        `${escapeHtml(title)}<br>${escapeHtml(formatDate(activity.start_time_ms))} · ${escapeHtml(formatDistance(activity.distance_m))}`,
-        { sticky: true }
-      );
-      line.on("mouseover", () => line.setStyle({ weight: 6, opacity: 0.95 }));
-      line.on("mouseout", () => line.setStyle({ weight: 3, opacity: 0.56 }));
-      line.on("click", () => showActivity(activity));
-      line.addTo(globalMapLayer);
-
+    for (const item of usable) {
       routeCount++;
-      pointCount += route.points.length;
-      globalMapRenderedKeys.add(activityKey(activity));
+      pointCount += item.route.points.length;
+      globalMapRenderedKeys.add(activityKey(item.activity));
+    }
+
+    if (mode === "density") {
+      const density = renderGlobalDensity(usable);
+      ui.globalMapHotspot.textContent = density.maxCount
+        ? `Pic ${formatNumber(density.maxCount)} passage${density.maxCount>1?"s":""}`
+        : "0 zone";
+      ui.globalMapHotspot.className = density.maxCount ? "pill ok" : "pill neutral";
+      ui.globalMapSummaryText.textContent =
+        "La densité compte des activités distinctes par zone, pas les points GPS.";
+      if (ui.globalMapLegend) {
+        ui.globalMapLegend.innerHTML =
+          '<span><i class="global-map-density low"></i>Peu fréquenté</span>' +
+          '<span><i class="global-map-density medium"></i>Fréquenté</span>' +
+          '<span><i class="global-map-density high"></i>Très fréquenté</span>';
+      }
+    } else {
+      globalMapDensityCells = [];
+      for (const item of usable) {
+        const { activity, route } = item;
+        const latLngs = route.points.map((point) => [point.latitude, point.longitude]);
+        const color = globalMapSportColor(activity);
+        const line = L.polyline(latLngs, {
+          color,
+          weight: 3,
+          opacity: 0.56,
+          interactive: true
+        });
+
+        const title = activity.custom_title || sportName(activity.sport);
+        line.bindTooltip(
+          `${escapeHtml(title)}<br>${escapeHtml(formatDate(activity.start_time_ms))} · ${escapeHtml(formatDistance(activity.distance_m))}`,
+          { sticky: true }
+        );
+        line.on("mouseover", () => line.setStyle({ weight: 6, opacity: 0.95 }));
+        line.on("mouseout", () => line.setStyle({ weight: 3, opacity: 0.56 }));
+        line.on("click", () => showActivity(activity));
+        line.addTo(globalMapLayer);
+      }
+      ui.globalMapHotspot.textContent = "Vue tracés";
+      ui.globalMapHotspot.className = "pill neutral";
+      ui.globalMapSummaryText.textContent = "Cliquez sur un tracé pour ouvrir l’activité correspondante.";
+      if (ui.globalMapLegend) {
+        ui.globalMapLegend.innerHTML =
+          '<span><i class="global-map-line running"></i>Course / trail</span>' +
+          '<span><i class="global-map-line cycling"></i>Vélo</span>' +
+          '<span><i class="global-map-line hiking"></i>Randonnée / marche</span>' +
+          '<span><i class="global-map-line other"></i>Autres</span>';
+      }
     }
 
     if (!routeCount) {
@@ -2147,10 +2302,13 @@ async function renderGlobalActivityMap(loadEverything) {
     window.setTimeout(() => map.invalidateSize(false), 80);
 
     globalMapIsStale = false;
-    ui.globalMapCount.textContent = `${formatNumber(routeCount)} tracé${routeCount > 1 ? "s" : ""}`;
+    ui.globalMapCount.textContent = `${formatNumber(routeCount)} activité${routeCount > 1 ? "s" : ""}`;
     ui.globalMapCount.className = "pill ok";
+    const modeLabel = (ui.globalMapModeSelect?.value || "routes") === "density" ? "densité" : "tracés";
+    const yearLabel = ui.globalMapYearSelect?.value === "all" ? "toutes années" : ui.globalMapYearSelect.value;
+    const sportLabel = ui.globalMapSportSelect?.selectedOptions?.[0]?.textContent || "Tous";
     ui.globalMapStatus.textContent =
-      `${formatNumber(routeCount)} activité(s) cartographiée(s) · ${formatNumber(pointCount)} points Web · ` +
+      `${formatNumber(routeCount)} activité(s) · vue ${modeLabel} · ${yearLabel} · ${sportLabel} · ` +
       `${formatNumber(candidates.length - routeCount)} tracé(s) absent(s) ou inexploitable(s).`;
   } catch (error) {
     console.error(error);
@@ -2178,7 +2336,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB028";
+  document.title = "SPORT Web · WEB029";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -4861,7 +5019,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB028",
+            webVersion: "WEB029",
             row: wanted
           }
         );
@@ -4884,7 +5042,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB028"
+            webVersion: "WEB029"
           }
         );
         countDelta -= 1;
@@ -4894,7 +5052,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB028"
+      webVersion: "WEB029"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5094,7 +5252,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB028"
+    webVersion: "WEB029"
   };
   if (row != null) event.row = row;
 
@@ -5103,7 +5261,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB028"
+    webVersion: "WEB029"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -5556,7 +5714,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB028",
+      webVersion: "WEB029",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -5622,7 +5780,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB028",
+    webVersion: "WEB029",
     androidVersion: 0,
     __synthetic: true
   };
@@ -7076,7 +7234,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB028",
+      webVersion: "WEB029",
       row: next
     }
   );
@@ -7112,7 +7270,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB028",
+        webVersion: "WEB029",
         row: patch
       }
     );
@@ -7124,7 +7282,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB028"
+      webVersion: "WEB029"
     },
     { merge: true }
   );
