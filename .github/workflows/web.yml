@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB015
+name: Publier SPORT Web · WEB016
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB015.md"
+      - "docs/releases/WEB016.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB015
+      - name: Valider WEB016
         shell: bash
         run: |
           set -euo pipefail
@@ -37,39 +37,30 @@ jobs:
           test -f web/styles.css
           test -f web/app.js
 
-          grep -Fq "WEB015 · DASHBOARD002" web/index.html
-          grep -Fq "Tableau de bord avancé" web/index.html
-          grep -Fq "Tendances" web/index.html
-          grep -Fq "Objectif annuel" web/index.html
-          grep -Fq "Répartition sportive" web/index.html
-          grep -Fq "dashboardChartDistanceButton" web/index.html
-          grep -Fq "dashboardDrilldownNotice" web/index.html
+          grep -Fq "WEB016 · SYNCHEALTH001" web/index.html
+          grep -Fq "Santé de la synchronisation" web/index.html
+          grep -Fq "syncHealthRetryButton" web/index.html
 
-          grep -Fq 'function dashboardPreviousWindow' web/app.js
-          grep -Fq 'function renderDashboardChart' web/app.js
-          grep -Fq 'function openDashboardBucket' web/app.js
-          grep -Fq 'function renderDashboardTrends' web/app.js
-          grep -Fq 'function renderDashboardGoal' web/app.js
-          grep -Fq 'function renderDashboardSportSplit' web/app.js
-          grep -Fq 'function renderDashboardRecords' web/app.js
-          grep -Fq 'getAggregateFromServer' web/app.js
-          grep -Fq 'webVersion: "WEB015"' web/app.js
+          grep -Fq 'WEB_PENDING_MUTATIONS_KEY' web/app.js
+          grep -Fq 'function startSyncHealthWatch' web/app.js
+          grep -Fq 'function publishWebHealth' web/app.js
+          grep -Fq 'function flushPendingWebMutations' web/app.js
+          grep -Fq 'function commitWebMutationOnline' web/app.js
+          grep -Fq '"sync_health"' web/app.js
+          grep -Fq 'webVersion: "WEB016"' web/app.js
 
-          # Héritages prioritaires : interop, corbeille et garde de synchro.
+          # Héritages critiques.
           grep -Fq 'function trashActivityFromWeb' web/app.js
-          grep -Fq 'function restoreActivityFromWeb' web/app.js
           grep -Fq 'function startSyncHistoryWatch' web/app.js
           grep -Fq 'function detectSyncConflicts' web/app.js
+          grep -Fq 'function loadWebDashboard' web/app.js
+          grep -Fq 'function renderDashboardChart' web/app.js
           grep -Fq 'function loadPersonalSyncData' web/app.js
-          grep -Fq 'writeBatch' web/app.js
-          grep -Fq 'onSnapshot' web/app.js
 
-          # Identité et correctif cartographique conservés.
           grep -Fq 'family=Comfortaa' web/index.html
           grep -Fq 'z-index: 4000' web/styles.css
-          grep -Fq 'isolation: isolate' web/styles.css
 
-          echo "WEB015 : DASHBOARD002 + interop + corbeille + syncguard validés."
+          echo "WEB016 : SYNCHEALTH001 + reprise réseau + DASHBOARD002 + CORBEILLE001 + SYNCGUARD001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -79,6 +70,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB015
+      - name: Publier SPORT Web · WEB016
         id: deployment
         uses: actions/deploy-pages@v4

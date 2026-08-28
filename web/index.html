@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB015 · CORBEILLE001 · Comfortaa">
-  <title>SPORT Web · WEB015</title>
+  <meta name="description" content="SPORT Web · WEB016 · CORBEILLE001 · Comfortaa">
+  <title>SPORT Web · WEB016</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB015 · CORBEILLE001 · Comfortaa · Firestore</div>
+      <div class="version">WEB016 · CORBEILLE001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -27,7 +27,7 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB015 · CORBEILLE001 ajoute une corbeille interopérable et réversible : une mise à la corbeille ou une restauration se propage automatiquement entre Web, téléphone et tablette.
+      WEB016 · SYNCHEALTH001 surveille maintenant la santé de Web, du téléphone et de la tablette : dernière présence, file d’attente, erreur éventuelle et reprise automatique des mutations Web après une coupure réseau.
     </section>
 
     <section id="dashboard" class="hidden">
@@ -47,7 +47,7 @@
         <section id="webDashboardSection" class="panel web-dashboard-panel dashboard002-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB015 · DASHBOARD002</p>
+              <p class="eyebrow">WEB016 · DASHBOARD002</p>
               <h2>Tableau de bord avancé</h2>
               <p id="webDashboardMeta" class="muted">Calcul des indicateurs Firestore…</p>
             </div>
@@ -131,7 +131,7 @@
         <section id="personalSyncSection" class="panel personal-sync-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB015 · PERSONAL001</p>
+              <p class="eyebrow">WEB016 · PERSONAL001</p>
               <h2>Objectifs et suivi du poids</h2>
               <p id="personalSyncMeta" class="muted">Chargement des données personnelles synchronisées…</p>
             </div>
@@ -189,7 +189,7 @@
         <section id="syncCenterSection" class="panel sync-center-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB015 · SYNCGUARD001</p>
+              <p class="eyebrow">WEB016 · SYNCGUARD001</p>
               <h2>Centre de synchronisation</h2>
               <p id="syncCenterMeta" class="muted">Lecture des derniers événements Firestore…</p>
             </div>
@@ -223,10 +223,39 @@
           <div id="syncHistoryList" class="sync-history-list"></div>
         </section>
 
+        <section id="syncHealthSection" class="panel sync-health-panel">
+          <div class="panel-title-row">
+            <div>
+              <p class="eyebrow">WEB016 · SYNCHEALTH001</p>
+              <h2>Santé de la synchronisation</h2>
+              <p id="syncHealthMeta" class="muted">Recherche des clients SPORT connectés…</p>
+            </div>
+            <div class="sync-health-actions">
+              <button id="syncHealthRefreshButton" class="secondary" type="button">Actualiser l’état</button>
+              <button id="syncHealthRetryButton" class="primary" type="button">Relancer les envois Web</button>
+            </div>
+          </div>
+
+          <div class="sync-health-metric-grid">
+            <article class="sync-health-metric"><span>Clients connus</span><strong id="syncHealthClientCount">—</strong></article>
+            <article class="sync-health-metric"><span>Clients OK</span><strong id="syncHealthHealthyCount">—</strong></article>
+            <article class="sync-health-metric"><span>Mutations en attente</span><strong id="syncHealthPendingCount">—</strong></article>
+            <article class="sync-health-metric"><span>Erreurs signalées</span><strong id="syncHealthErrorCount">—</strong></article>
+            <article class="sync-health-metric"><span>Réseau Web</span><strong id="syncHealthNetwork">—</strong></article>
+          </div>
+
+          <div class="sync-health-note">
+            <strong>🛡️ Reprise automatique</strong>
+            <span>Si le navigateur est hors ligne, les mutations Web ordinaires sont gardées localement puis réémises automatiquement au retour du réseau. Les opérations batch complexes restent protégées et exigent une connexion active.</span>
+          </div>
+
+          <div id="syncHealthList" class="sync-health-list"></div>
+        </section>
+
         <section id="trashSection" class="panel trash-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB015 · CORBEILLE001</p>
+              <p class="eyebrow">WEB016 · CORBEILLE001</p>
               <h2>Corbeille synchronisée</h2>
               <p id="trashMeta" class="muted">Lecture des activités en corbeille…</p>
             </div>
@@ -244,7 +273,7 @@
 
           <div class="trash-safety-note">
             <strong>♻ Réversible sur les 3 plateformes</strong>
-            <span>WEB015 ne supprime ni les repères liés, ni le tracé Web, ni le fichier FIT local. La suppression définitive reste volontairement hors de cette version.</span>
+            <span>WEB016 ne supprime ni les repères liés, ni le tracé Web, ni le fichier FIT local. La suppression définitive reste volontairement hors de cette version.</span>
           </div>
 
           <div id="trashList" class="trash-list"></div>
@@ -262,7 +291,7 @@
         <section id="equipmentManagerSection" class="panel equipment-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB015 · MATÉRIEL001</p>
+              <p class="eyebrow">WEB016 · MATÉRIEL001</p>
               <h2>Matériel synchronisé</h2>
               <p id="equipmentManagerMeta" class="muted">Chargement du matériel…</p>
             </div>
@@ -388,7 +417,7 @@
         <section id="landmarkManagerSection" class="panel landmark-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB015 · REPÈRE013</p>
+              <p class="eyebrow">WEB016 · REPÈRE013</p>
               <h2>Repères personnels synchronisés</h2>
               <p id="landmarkManagerMeta" class="muted">Chargement des repères…</p>
             </div>
@@ -458,7 +487,7 @@
         <section class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB015 · MÉTIER001</p>
+              <p class="eyebrow">WEB016 · MÉTIER001</p>
               <h2>Répertoire avancé</h2>
               <p id="loadedLabel" class="muted">Chargement…</p>
             </div>
@@ -542,10 +571,10 @@
         <section id="recordsManagerSection" class="panel compact records-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB015 · RECORDS001</p>
+              <p class="eyebrow">WEB016 · RECORDS001</p>
               <h2>Records SPORT</h2>
               <p class="muted">
-                Distance, durée et D+ sont des données dérivées des activités. WEB015 les recalcule
+                Distance, durée et D+ sont des données dérivées des activités. WEB016 les recalcule
                 depuis Firestore plutôt que de permettre une valeur manuelle incohérente.
               </p>
             </div>
@@ -591,7 +620,7 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB015 · CARTO+</p>
+              <p class="eyebrow">WEB016 · CARTO+</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
@@ -636,7 +665,7 @@
         <section class="detail-section panel">
           <div class="section-heading interop-heading">
             <div>
-              <p class="eyebrow">WEB015 · MÉTIER001</p>
+              <p class="eyebrow">WEB016 · MÉTIER001</p>
               <h2>Matériel, repères et notes</h2>
             </div>
             <div id="interopStatus" class="pill ok">Synchronisation active</div>
@@ -761,7 +790,7 @@
   </main>
 
   <footer>
-    SPORT Web · WEB015 · interopérabilité contrôlée Firestore
+    SPORT Web · WEB016 · interopérabilité contrôlée Firestore
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

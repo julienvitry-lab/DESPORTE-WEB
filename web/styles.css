@@ -1676,3 +1676,188 @@ footer {
   .dashboard-sport-split { align-items:flex-start; }
   .dashboard-drilldown-notice { align-items:stretch; flex-direction:column; }
 }
+
+
+/* WEB016 · SYNCHEALTH001 */
+.sync-health-panel {
+  scroll-margin-top: 94px;
+}
+
+.sync-health-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sync-health-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.sync-health-metric {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #0d100e;
+}
+
+.sync-health-metric span,
+.sync-health-metric strong {
+  display: block;
+}
+
+.sync-health-metric span {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.sync-health-metric strong {
+  margin-top: 6px;
+  font-size: 18px;
+}
+
+.sync-health-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(182,255,59,.18);
+  border-radius: 13px;
+  background: rgba(182,255,59,.035);
+}
+
+.sync-health-note strong {
+  white-space: nowrap;
+}
+
+.sync-health-note span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.sync-health-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 13px;
+}
+
+.sync-health-card {
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #0e110f;
+}
+
+.sync-health-card.state-ok {
+  border-color: rgba(182,255,59,.24);
+}
+
+.sync-health-card.state-error,
+.sync-health-card.state-offline {
+  border-color: rgba(255,100,100,.35);
+}
+
+.sync-health-card.state-pending,
+.sync-health-card.state-syncing,
+.sync-health-card.state-stale {
+  border-color: rgba(255,205,85,.26);
+}
+
+.sync-health-card-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.sync-health-card-heading > div strong,
+.sync-health-card-heading > div span {
+  display: block;
+}
+
+.sync-health-card-heading > div span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.sync-health-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.sync-health-card-grid > div {
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0b0e0c;
+}
+
+.sync-health-card-grid span,
+.sync-health-card-grid strong {
+  display: block;
+}
+
+.sync-health-card-grid span {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.sync-health-card-grid strong {
+  margin-top: 4px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.sync-health-error {
+  margin-top: 9px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: rgba(255,90,90,.08);
+  color: #ffb0b0;
+  font-size: 11px;
+}
+
+.health-network-ok {
+  color: var(--green) !important;
+}
+
+.health-network-error {
+  color: #ff8a8a !important;
+}
+
+@media (max-width: 900px) {
+  .sync-health-metric-grid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .sync-health-card-grid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .sync-health-actions,
+  .sync-health-actions button {
+    width: 100%;
+  }
+
+  .sync-health-note {
+    flex-direction: column;
+  }
+
+  .sync-health-card-grid {
+    grid-template-columns: 1fr;
+  }
+}

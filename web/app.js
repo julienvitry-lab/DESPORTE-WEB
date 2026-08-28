@@ -27,7 +27,7 @@ import {
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB015 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
+// WEB016 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
 // Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
@@ -57,6 +57,9 @@ const ui = Object.fromEntries(
     "personalSyncSection", "personalSyncMeta", "personalSyncStatus", "goalSportSelect",
     "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
     "syncEventCount", "syncConflictCount", "syncLastSource", "syncConflictBanner", "syncHistoryList",
+    "syncHealthSection", "syncHealthMeta", "syncHealthClientCount", "syncHealthHealthyCount",
+    "syncHealthPendingCount", "syncHealthErrorCount", "syncHealthNetwork", "syncHealthList",
+    "syncHealthRefreshButton", "syncHealthRetryButton",
     "trashSection", "trashMeta", "trashSearchInput", "trashRefreshButton", "trashCount", "trashActiveEstimate", "trashLastChange", "trashList",
     "goalDistanceInput", "goalAscentInput", "goalDurationInput", "goalTargetNameInput",
     "goalTargetDateInput", "goalPrepDistanceInput", "goalPrepAscentInput", "goalSaveStatus", "goalProgress",
@@ -166,6 +169,14 @@ const SYNC_HISTORY_LIMIT = 120;
 const CONFLICT_WINDOW_MS = 30_000;
 let interopWatchStartedAtMs = 0;
 const webDeviceId = loadWebDeviceId();
+
+let syncHealthUnsubscribe = null;
+let syncHealthRows = [];
+let syncHealthHeartbeatTimer = null;
+let webMutationRetryRunning = false;
+const WEB_PENDING_MUTATIONS_KEY = "sport_web016_pending_mutations";
+const SYNC_HEALTH_STALE_MS = 15 * 60 * 1000;
+const SYNC_HEALTH_HEARTBEAT_MS = 60 * 1000;
 
 const AUTOSAVE_DELAY_MS = 800;
 let activityAutosaveTimer = null;
@@ -366,6 +377,22 @@ function wireEvents() {
 
   ui.rebuildRecordsButton.addEventListener("click", () => { void rebuildRecordsFromFirestore(); });
 
+  ui.syncHealthRefreshButton.addEventListener("click", () => {
+    void publishWebHealth(navigator.onLine ? "OK" : "OFFLINE", "");
+    renderSyncHealth();
+  });
+  ui.syncHealthRetryButton.addEventListener("click", () => { void flushPendingWebMutations(); });
+
+  window.addEventListener("online", () => {
+    renderSyncHealth();
+    void publishWebHealth("OK", "");
+    void flushPendingWebMutations();
+  });
+  window.addEventListener("offline", () => {
+    renderSyncHealth();
+    void publishWebHealth("OFFLINE", "");
+  });
+
   window.addEventListener("keydown", (event) => {
     if (ui.detailView.classList.contains("hidden")) return;
     if (event.key === "Escape") showCatalog();
@@ -380,13 +407,15 @@ onAuthStateChanged(auth, async (user) => {
   if (!user) {
     stopInteropWatch();
     stopSyncHistoryWatch();
+    stopSyncHealthWatch();
+    stopWebHealthHeartbeat();
     ui.authState.textContent = "Non connecté";
     ui.authState.className = "pill neutral auth-pill";
     ui.loginButton.classList.remove("hidden");
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB015 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB016 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -401,6 +430,10 @@ onAuthStateChanged(auth, async (user) => {
   await reloadAll();
   startInteropWatch();
   startSyncHistoryWatch();
+  startSyncHealthWatch();
+  startWebHealthHeartbeat();
+  await publishWebHealth(navigator.onLine ? "OK" : "OFFLINE", "");
+  if (navigator.onLine) void flushPendingWebMutations();
 });
 
 function userCollection(name) {
@@ -435,7 +468,7 @@ async function reloadAll() {
     renderTrash();
     await loadNextPage();
     await loadWebDashboard();
-    setMessage("WEB015 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    setMessage("WEB016 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
@@ -1472,7 +1505,7 @@ async function trashActivityFromWeb(activity) {
 
     showCatalog(false);
     setMessage(
-      "WEB015 · activité mise à la corbeille et propagée vers téléphone + tablette.",
+      "WEB016 · activité mise à la corbeille et propagée vers téléphone + tablette.",
       "success"
     );
 
@@ -1521,7 +1554,7 @@ async function restoreActivityFromWeb(activity) {
     renderTrash();
 
     setMessage(
-      "WEB015 · activité restaurée et propagée vers téléphone + tablette.",
+      "WEB016 · activité restaurée et propagée vers téléphone + tablette.",
       "success"
     );
 
@@ -1875,7 +1908,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB015";
+  document.title = "SPORT Web · WEB016";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -2876,7 +2909,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB015",
+            webVersion: "WEB016",
             row: wanted
           }
         );
@@ -2899,7 +2932,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB015"
+            webVersion: "WEB016"
           }
         );
         countDelta -= 1;
@@ -2909,7 +2942,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB015"
+      webVersion: "WEB016"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -2938,7 +2971,7 @@ async function rebuildRecordsFromFirestore() {
 
     setRecordsManagerStatus("Records recalculés et synchronisés", "ok");
     setMessage(
-      "WEB015 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
+      "WEB016 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
       "success"
     );
   } catch (error) {
@@ -3019,7 +3052,51 @@ function setInteropStatus(text, state = "ok") {
     "pill ok";
 }
 
-async function commitWebMutation({
+async function commitWebMutation(args) {
+  if (!currentUser) throw new Error("Connexion Firebase absente.");
+
+  const payload = normalizePendingMutation(args);
+
+  if (!navigator.onLine) {
+    enqueuePendingWebMutation(payload);
+    window.setTimeout(() => {
+      setInteropStatus("Hors ligne · modification en attente", "pending");
+      setMessage(
+        "WEB016 · réseau indisponible : modification conservée localement et reprise automatiquement au retour de la connexion.",
+        "info"
+      );
+      renderSyncHealth();
+    }, 0);
+    return { queued: true, now: Date.now() };
+  }
+
+  try {
+    const result = await commitWebMutationOnline(payload);
+    await publishWebHealth("OK", "");
+    return result;
+  } catch (error) {
+    await publishWebHealth("ERROR", String(error?.message || error));
+    throw error;
+  }
+}
+
+function normalizePendingMutation(args) {
+  return {
+    table: String(args?.table ?? ""),
+    rowKey: String(args?.rowKey ?? ""),
+    operation: String(args?.operation ?? "UPSERT"),
+    row: args?.row ?? null,
+    materializedCollection: String(args?.materializedCollection ?? ""),
+    materializedData: args?.materializedData ?? null,
+    deleteMaterialized: Boolean(args?.deleteMaterialized),
+    metaIncrements: args?.metaIncrements && typeof args.metaIncrements === "object"
+      ? { ...args.metaIncrements }
+      : null,
+    queuedAtMs: Date.now()
+  };
+}
+
+async function commitWebMutationOnline({
   table,
   rowKey,
   operation,
@@ -3065,15 +3142,16 @@ async function commitWebMutation({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB015"
+    webVersion: "WEB016"
   };
   if (row != null) event.row = row;
 
   batch.set(changeRef, event);
+
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB015"
+    webVersion: "WEB016"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -3083,9 +3161,73 @@ async function commitWebMutation({
   }
 
   batch.set(metaRef, metaPatch, { merge: true });
-
   await batch.commit();
-  return { eventId, now };
+  return { eventId, now, queued: false };
+}
+
+function pendingWebMutations() {
+  try {
+    const raw = localStorage.getItem(WEB_PENDING_MUTATIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingWebMutations(items) {
+  localStorage.setItem(WEB_PENDING_MUTATIONS_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+  renderSyncHealth();
+}
+
+function enqueuePendingWebMutation(payload) {
+  const queue = pendingWebMutations();
+  queue.push({ ...payload, localQueueId: `${Date.now()}_${Math.random().toString(36).slice(2, 9)}` });
+  savePendingWebMutations(queue);
+}
+
+async function flushPendingWebMutations() {
+  if (!currentUser || !navigator.onLine || webMutationRetryRunning) {
+    renderSyncHealth();
+    return;
+  }
+
+  let queue = pendingWebMutations();
+  if (!queue.length) {
+    await publishWebHealth("OK", "");
+    renderSyncHealth();
+    return;
+  }
+
+  webMutationRetryRunning = true;
+  ui.syncHealthRetryButton.disabled = true;
+  setMessage(`WEB016 · reprise de ${queue.length} mutation(s) Web en attente…`, "info");
+
+  try {
+    while (queue.length && navigator.onLine) {
+      const mutation = queue[0];
+      await commitWebMutationOnline(mutation);
+      queue.shift();
+      savePendingWebMutations(queue);
+    }
+
+    if (!queue.length) {
+      await publishWebHealth("OK", "");
+      setMessage("WEB016 · toutes les mutations Web en attente ont été réémises.", "success");
+    } else {
+      await publishWebHealth("OFFLINE", "");
+    }
+  } catch (error) {
+    await publishWebHealth("ERROR", String(error?.message || error));
+    setMessage(
+      "WEB016 · reprise automatique interrompue : " + (error?.message || error),
+      "error"
+    );
+  } finally {
+    webMutationRetryRunning = false;
+    ui.syncHealthRetryButton.disabled = false;
+    renderSyncHealth();
+  }
 }
 
 function scheduleCurrentActivityAutosave() {
@@ -3188,7 +3330,7 @@ async function persistActivityEdits(activity, title, description, note, generati
 
       setInteropStatus("Synchronisé automatiquement", "ok");
       setMessage(
-        "WEB015 · modification propagée automatiquement vers téléphone et tablette.",
+        "WEB016 · modification propagée automatiquement vers téléphone et tablette.",
         "success"
       );
     }
@@ -3307,7 +3449,7 @@ async function saveImmediateActivityFields(partialPatch, successLabel) {
     applyFiltersAndRender();
 
     setInteropStatus(successLabel || "Synchronisé automatiquement", "ok");
-    setMessage("WEB015 · modification propagée automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB016 · modification propagée automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec de synchronisation automatique", "error");
@@ -3379,7 +3521,7 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
     renderPersonal(activity);
     applyFiltersAndRender();
     setInteropStatus("Repère synchronisé automatiquement", "ok");
-    setMessage("WEB015 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB016 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec repère", "error");
@@ -3396,6 +3538,241 @@ function applyActivityLandmarkLocally(activityId, code, row, operation) {
 
   if (list.length) activityLandmarks.set(key, list);
   else activityLandmarks.delete(key);
+}
+
+
+function stopSyncHealthWatch() {
+  if (syncHealthUnsubscribe) {
+    try { syncHealthUnsubscribe(); } catch {}
+  }
+  syncHealthUnsubscribe = null;
+  syncHealthRows = [];
+}
+
+function startSyncHealthWatch() {
+  stopSyncHealthWatch();
+  if (!currentUser) return;
+
+  syncHealthUnsubscribe = onSnapshot(
+    userCollection("sync_health"),
+    (snapshot) => {
+      syncHealthRows = snapshot.docs.map((item) => ({ __healthId: item.id, ...item.data() }));
+      renderSyncHealth();
+    },
+    (error) => {
+      console.error(error);
+      ui.syncHealthMeta.textContent = "État de santé Firestore indisponible";
+    }
+  );
+}
+
+function stopWebHealthHeartbeat() {
+  if (syncHealthHeartbeatTimer) window.clearInterval(syncHealthHeartbeatTimer);
+  syncHealthHeartbeatTimer = null;
+}
+
+function startWebHealthHeartbeat() {
+  stopWebHealthHeartbeat();
+  syncHealthHeartbeatTimer = window.setInterval(() => {
+    if (!currentUser) return;
+    void publishWebHealth(navigator.onLine ? "OK" : "OFFLINE", "");
+  }, SYNC_HEALTH_HEARTBEAT_MS);
+}
+
+async function publishWebHealth(state = "OK", errorMessage = "") {
+  renderSyncHealth();
+  if (!currentUser || !navigator.onLine) return;
+
+  try {
+    const now = Date.now();
+    const batch = writeBatch(db);
+    const ref = doc(db, ROOT, currentUser.uid, "sync_health", webDeviceId);
+    const platform =
+      navigator.userAgentData?.platform ||
+      navigator.platform ||
+      "Navigateur";
+
+    const health = {
+      deviceId: webDeviceId,
+      clientType: "WEB",
+      deviceLabel: `Web · ${platform}`,
+      state: String(state || "OK"),
+      online: true,
+      pendingMutations: pendingWebMutations().length,
+      lastError: String(errorMessage || ""),
+      lastSeenAt: serverTimestamp(),
+      lastSeenAtMs: now,
+      lastSyncAtMs: state === "OK" ? now : 0,
+      lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
+      webVersion: "WEB016",
+      androidVersion: 0
+    };
+    batch.set(ref, health, { merge: true });
+    await batch.commit();
+  } catch (error) {
+    console.error("SYNCHEALTH001 publishWebHealth", error);
+  }
+}
+
+function healthTimeMs(row) {
+  const timestamp = row?.lastSeenAt;
+  if (timestamp && typeof timestamp.toMillis === "function") return timestamp.toMillis();
+  if (timestamp?.seconds) return Number(timestamp.seconds) * 1000;
+  return Number(row?.lastSeenAtMs) || 0;
+}
+
+function healthSyncMs(row) {
+  return Number(row?.lastSyncAtMs) || healthTimeMs(row);
+}
+
+function healthClientLabel(row) {
+  const type = String(row?.clientType || "").toUpperCase();
+  const label = String(row?.deviceLabel || row?.deviceId || "Client SPORT");
+  if (type === "WEB") return label;
+  return `Android · ${label}`;
+}
+
+function healthState(row, now = Date.now()) {
+  if (String(row?.state || "").toUpperCase() === "ERROR") return "ERROR";
+  if (String(row?.state || "").toUpperCase() === "OFFLINE") return "OFFLINE";
+  const seen = healthTimeMs(row);
+  if (!seen || now - seen > SYNC_HEALTH_STALE_MS) return "STALE";
+  if (Number(row?.pendingMutations) > 0) return "PENDING";
+  if (String(row?.state || "").toUpperCase() === "SYNCING") return "SYNCING";
+  return "OK";
+}
+
+function healthStateLabel(state) {
+  return {
+    OK: "OK",
+    SYNCING: "Synchronisation…",
+    PENDING: "En attente",
+    OFFLINE: "Hors ligne",
+    STALE: "Inactif / ancien",
+    ERROR: "Erreur"
+  }[state] || state;
+}
+
+function renderSyncHealth() {
+  if (!ui.syncHealthList) return;
+
+  const now = Date.now();
+  const localQueue = pendingWebMutations();
+  let rows = syncHealthRows.slice();
+
+  const currentIndex = rows.findIndex((row) => String(row.deviceId || row.__healthId) === webDeviceId);
+  const syntheticWeb = {
+    deviceId: webDeviceId,
+    clientType: "WEB",
+    deviceLabel: `Web · ${navigator.userAgentData?.platform || navigator.platform || "Navigateur"}`,
+    state: navigator.onLine ? (localQueue.length ? "PENDING" : "OK") : "OFFLINE",
+    pendingMutations: localQueue.length,
+    lastError: "",
+    lastSeenAtMs: now,
+    lastSyncAtMs: now,
+    webVersion: "WEB016",
+    androidVersion: 0,
+    __synthetic: true
+  };
+  if (currentIndex >= 0) rows[currentIndex] = { ...rows[currentIndex], ...syntheticWeb };
+  else rows.unshift(syntheticWeb);
+
+  rows.sort((a, b) => {
+    const aWeb = String(a.clientType).toUpperCase() === "WEB" ? 0 : 1;
+    const bWeb = String(b.clientType).toUpperCase() === "WEB" ? 0 : 1;
+    if (aWeb !== bWeb) return aWeb - bWeb;
+    return healthClientLabel(a).localeCompare(healthClientLabel(b), "fr");
+  });
+
+  const states = rows.map((row) => healthState(row, now));
+  const healthy = states.filter((state) => state === "OK" || state === "SYNCING").length;
+  const pending = rows.reduce((sum, row) => sum + Math.max(0, Number(row.pendingMutations) || 0), 0);
+  const errors = states.filter((state) => state === "ERROR").length;
+
+  ui.syncHealthClientCount.textContent = formatNumber(rows.length);
+  ui.syncHealthHealthyCount.textContent = formatNumber(healthy);
+  ui.syncHealthPendingCount.textContent = formatNumber(pending);
+  ui.syncHealthErrorCount.textContent = formatNumber(errors);
+  ui.syncHealthNetwork.textContent = navigator.onLine ? "En ligne" : "Hors ligne";
+  ui.syncHealthNetwork.className = navigator.onLine ? "health-network-ok" : "health-network-error";
+  ui.syncHealthRetryButton.disabled = !navigator.onLine || localQueue.length === 0 || webMutationRetryRunning;
+
+  const androidCount = rows.filter((row) => String(row.clientType).toUpperCase() === "ANDROID").length;
+  ui.syncHealthMeta.textContent =
+    `${rows.length} client(s) connu(s) · ${androidCount} Android · heartbeat Web 60 s · inactif après 15 min sans nouvelle`;
+
+  ui.syncHealthList.innerHTML = "";
+  const fragment = document.createDocumentFragment();
+
+  for (const row of rows) {
+    const state = healthState(row, now);
+    const card = document.createElement("article");
+    card.className = `sync-health-card state-${state.toLowerCase()}`;
+
+    const heading = document.createElement("div");
+    heading.className = "sync-health-card-heading";
+
+    const title = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = healthClientLabel(row);
+    const version = document.createElement("span");
+    version.textContent = String(row.clientType).toUpperCase() === "WEB"
+      ? String(row.webVersion || "Web")
+      : `SPORT v${row.androidVersion || "?"}`;
+    title.append(strong, version);
+
+    const badge = document.createElement("span");
+    badge.className =
+      state === "OK" ? "pill ok" :
+      state === "ERROR" || state === "OFFLINE" ? "pill error" :
+      "pill pending";
+    badge.textContent = healthStateLabel(state);
+
+    heading.append(title, badge);
+
+    const grid = document.createElement("div");
+    grid.className = "sync-health-card-grid";
+    grid.append(
+      healthDatum("Dernière présence", relativeHealthTime(healthTimeMs(row), now)),
+      healthDatum("Dernier échange", relativeHealthTime(healthSyncMs(row), now)),
+      healthDatum("En attente", formatNumber(Math.max(0, Number(row.pendingMutations) || 0))),
+      healthDatum("Dernier état", String(row.lastStatus || "—"))
+    );
+
+    card.append(heading, grid);
+
+    if (row.lastError) {
+      const error = document.createElement("div");
+      error.className = "sync-health-error";
+      error.textContent = `Erreur : ${row.lastError}`;
+      card.appendChild(error);
+    }
+
+    fragment.appendChild(card);
+  }
+
+  ui.syncHealthList.appendChild(fragment);
+}
+
+function healthDatum(label, value) {
+  const box = document.createElement("div");
+  const span = document.createElement("span");
+  span.textContent = label;
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  box.append(span, strong);
+  return box;
+}
+
+function relativeHealthTime(ms, now = Date.now()) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  const delta = Math.max(0, now - value);
+  if (delta < 15_000) return "à l’instant";
+  if (delta < 60_000) return `${Math.round(delta / 1000)} s`;
+  if (delta < 3_600_000) return `${Math.round(delta / 60_000)} min`;
+  if (delta < 86_400_000) return `${Math.round(delta / 3_600_000)} h`;
+  return `${Math.round(delta / 86_400_000)} j`;
 }
 
 function stopSyncHistoryWatch() {
@@ -3520,11 +3897,11 @@ function supportedReplayCollection(table) {
 async function replaySyncEvent(event) {
   const collectionName=supportedReplayCollection(event.table);
   if(!collectionName || !event.row || event.operation==="DELETE") return;
-  const confirmed=window.confirm(`Réappliquer cette version de ${syncTableLabel(event.table)} « ${event.rowKey} » ?\n\nCette action crée une nouvelle modification WEB015, qui devient la version la plus récente et sera envoyée au téléphone et à la tablette.`);
+  const confirmed=window.confirm(`Réappliquer cette version de ${syncTableLabel(event.table)} « ${event.rowKey} » ?\n\nCette action crée une nouvelle modification WEB016, qui devient la version la plus récente et sera envoyée au téléphone et à la tablette.`);
   if(!confirmed) return;
   try {
     await commitWebMutation({ table:String(event.table), rowKey:String(event.rowKey), operation:"UPSERT", row:event.row, materializedCollection:collectionName, materializedData:event.row });
-    setMessage("WEB015 · version réappliquée et propagée aux trois plateformes.","success");
+    setMessage("WEB016 · version réappliquée et propagée aux trois plateformes.","success");
   } catch(error){ handleError(error,"Résolution du conflit impossible"); }
 }
 
@@ -3559,7 +3936,7 @@ function startInteropWatch() {
     (error) => {
       console.error(error);
       setInteropStatus("Temps réel interrompu", "error");
-      setMessage("WEB015 · écoute temps réel indisponible : " + (error?.message || error), "error");
+      setMessage("WEB016 · écoute temps réel indisponible : " + (error?.message || error), "error");
     }
   );
 }
@@ -3586,7 +3963,7 @@ function applyRealtimeChange(event) {
 
       if (currentDetailId === rowKey) {
         showCatalog(false);
-        setMessage("WEB015 · suppression définitive reçue d’un appareil Android.", "info");
+        setMessage("WEB016 · suppression définitive reçue d’un appareil Android.", "info");
       }
       void loadWebDashboard();
       return;
@@ -3607,13 +3984,13 @@ function applyRealtimeChange(event) {
         trashActivities.set(rowKey, { ...merged });
         if (currentDetailId === rowKey) {
           showCatalog(false);
-          if (!fromWeb) setMessage("WEB015 · mise à la corbeille reçue d’un appareil Android.", "success");
+          if (!fromWeb) setMessage("WEB016 · mise à la corbeille reçue d’un appareil Android.", "success");
         }
       } else {
         trashActivities.delete(rowKey);
         if (!activities.some((item) => activityKey(item) === rowKey)) activities.push(merged);
         if (!fromWeb && row.deleted_at_ms === null) {
-          setMessage("WEB015 · restauration reçue d’un appareil Android.", "success");
+          setMessage("WEB016 · restauration reçue d’un appareil Android.", "success");
         }
       }
 
@@ -3703,7 +4080,7 @@ function applyRealtimeChange(event) {
 
   if (!fromWeb) {
     setInteropStatus("Modification Android reçue", "ok");
-    setMessage("WEB015 · changement reçu automatiquement depuis un appareil Android.", "success");
+    setMessage("WEB016 · changement reçu automatiquement depuis un appareil Android.", "success");
   }
 }
 
@@ -3891,7 +4268,7 @@ function openLandmarkEditor(code, row) {
   }
 
   ui.landmarkEditor.classList.remove("hidden");
-  ui.landmarkEditorEyebrow.textContent = "WEB015 · MODIFICATION AUTOMATIQUE";
+  ui.landmarkEditorEyebrow.textContent = "WEB016 · MODIFICATION AUTOMATIQUE";
   ui.landmarkEditorTitle.textContent = row.name || `Repère ${safeCode}`;
   ui.landmarkEditorHint.textContent =
     "Aucun bouton Enregistrer. Le code reste fixe ; un changement de type est refusé lorsqu’une référence GPS existe.";
@@ -4065,7 +4442,7 @@ async function persistLandmarkEditor(generation) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB015 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB016 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === landmarkAutosaveGeneration) {
@@ -4114,14 +4491,14 @@ async function createLandmarkFromWeb() {
     landmarkEditorDirty = false;
     ui.landmarkCodeInput.disabled = true;
     ui.createLandmarkButton.classList.add("hidden");
-    ui.landmarkEditorEyebrow.textContent = "WEB015 · REPÈRE CRÉÉ";
+    ui.landmarkEditorEyebrow.textContent = "WEB016 · REPÈRE CRÉÉ";
     ui.landmarkEditorTitle.textContent = row.name;
     populateLandmarkEditor(row.code, row);
 
     rebuildLandmarkFilter();
     renderLandmarkManager();
 
-    setMessage("WEB015 · nouveau repère créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB016 · nouveau repère créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setLandmarkEditorStatus("Création impossible", "error");
@@ -4185,7 +4562,7 @@ async function deleteCurrentLandmarkIfUnused() {
     rebuildLandmarkFilter();
     renderLandmarkManager();
 
-    setMessage("WEB015 · repère inutilisé supprimé sur les trois plateformes.", "success");
+    setMessage("WEB016 · repère inutilisé supprimé sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setLandmarkEditorStatus("Suppression impossible", "error");
@@ -4409,7 +4786,7 @@ function openEquipmentEditor(item) {
   }
 
   ui.equipmentEditor.classList.remove("hidden");
-  ui.equipmentEditorEyebrow.textContent = "WEB015 · MODIFICATION AUTOMATIQUE";
+  ui.equipmentEditorEyebrow.textContent = "WEB016 · MODIFICATION AUTOMATIQUE";
   ui.equipmentEditorTitle.textContent = equipmentDisplayName(item);
   ui.equipmentEditorHint.textContent =
     "Aucun bouton Enregistrer : les changements sont envoyés automatiquement vers téléphone et tablette.";
@@ -4605,7 +4982,7 @@ async function persistEquipmentEditor(generation) {
     renderEquipmentManager();
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
-    setMessage("WEB015 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB016 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === equipmentAutosaveGeneration) {
@@ -4650,7 +5027,7 @@ async function createEquipmentFromWeb() {
     equipmentEditorRowId = id;
     equipmentEditorDirty = false;
     ui.createEquipmentButton.classList.add("hidden");
-    ui.equipmentEditorEyebrow.textContent = "WEB015 · MATÉRIEL CRÉÉ";
+    ui.equipmentEditorEyebrow.textContent = "WEB016 · MATÉRIEL CRÉÉ";
     ui.equipmentEditorTitle.textContent = equipmentDisplayName(row);
     ui.equipmentEditorHint.textContent =
       "Le matériel est créé. Toute modification ultérieure est maintenant automatique.";
@@ -4660,7 +5037,7 @@ async function createEquipmentFromWeb() {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB015 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB016 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setEquipmentEditorStatus("Création impossible", "error");
@@ -4704,7 +5081,7 @@ async function updateEquipmentStatus(item, status) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage(`WEB015 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
+    setMessage(`WEB016 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
   } catch (error) {
     handleError(error, "Changement de statut du matériel impossible");
   }
@@ -4718,7 +5095,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
   if (snapshot.size > MAX_EQUIPMENT_RENAME_CASCADE) {
     throw new Error(
       `Ce matériel est associé à ${snapshot.size} activités. ` +
-      `Par sécurité, WEB015 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
+      `Par sécurité, WEB016 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
     );
   }
 
@@ -4747,7 +5124,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB015",
+      webVersion: "WEB016",
       row: next
     }
   );
@@ -4783,7 +5160,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB015",
+        webVersion: "WEB016",
         row: patch
       }
     );
@@ -4795,7 +5172,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB015"
+      webVersion: "WEB016"
     },
     { merge: true }
   );
@@ -4810,8 +5187,8 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
 
   setMessage(
     snapshot.size > 0
-      ? `WEB015 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
-      : "WEB015 · matériel renommé sur les trois plateformes.",
+      ? `WEB016 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
+      : "WEB016 · matériel renommé sur les trois plateformes.",
     "success"
   );
 }
