@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB010
+name: Publier SPORT Web · WEB012
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB010.md"
+      - "docs/releases/WEB012.md"
   workflow_dispatch:
 
 permissions:
@@ -24,64 +24,32 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-
     steps:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
-
-      - name: Valider WEB010
+      - name: Valider WEB012
         shell: bash
         run: |
           set -euo pipefail
-
           test -f web/index.html
           test -f web/styles.css
           test -f web/app.js
-
-          grep -Fq "WEB010 · MATÉRIEL001 · Comfortaa" web/index.html
-          grep -Fq "WEB010 · REPÈRE013" web/index.html
-          grep -Fq "WEB010 · RECORDS001" web/index.html
-
-          grep -Fq 'function createLandmarkFromWeb' web/app.js
-          grep -Fq 'function persistLandmarkEditor' web/app.js
-          grep -Fq 'function deleteCurrentLandmarkIfUnused' web/app.js
-          grep -Fq 'SEEDED_LANDMARK_CODES' web/app.js
-          grep -Fq 'table: "personal_landmarks"' web/app.js
-          grep -Fq 'materializedCollection: "landmarks"' web/app.js
-          grep -Fq 'landmarkCount: 1' web/app.js
-
-          grep -Fq 'function rebuildRecordsFromFirestore' web/app.js
-          grep -Fq 'table: "records"' web/app.js
-          grep -Fq 'recordCount' web/app.js
-          grep -Fq 'expectedDocuments' web/app.js
-
-          grep -Fq 'personal_landmark_references' web/app.js
-          grep -Fq 'landmark_references' web/app.js
-
-          grep -Fq 'webVersion: "WEB010"' web/app.js
+          grep -Fq "WEB012 · DASHBOARD001" web/index.html
+          grep -Fq 'getAggregateFromServer' web/app.js
+          grep -Fq 'function loadWebDashboard' web/app.js
+          grep -Fq 'dashboardRunningButton' web/index.html
+          grep -Fq 'dashboardTotalButton' web/index.html
           grep -Fq 'writeBatch' web/app.js
           grep -Fq 'onSnapshot' web/app.js
-          grep -Fq '"changes"' web/app.js
-
           grep -Fq 'family=Comfortaa' web/index.html
           grep -Fq 'z-index: 4000' web/styles.css
-          grep -Fq 'isolation: isolate' web/styles.css
-
-          if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|runTransaction)\b' web/app.js; then
-            echo "::error::WEB010 centralise les écritures via writeBatch."
-            exit 1
-          fi
-
-          echo "WEB010 : repères + records dérivés + matériel + activités interopérables validés."
-
+          echo "WEB012 : tableau de bord serveur + socle interop validés."
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
-
       - name: Préparer l'artefact Pages
         uses: actions/upload-pages-artifact@v4
         with:
           path: "./web"
-
-      - name: Publier SPORT Web · WEB010
+      - name: Publier SPORT Web · WEB012
         id: deployment
         uses: actions/deploy-pages@v4

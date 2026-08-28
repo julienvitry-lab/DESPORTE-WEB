@@ -12,6 +12,9 @@ import {
   doc,
   getDoc,
   getDocs,
+  getAggregateFromServer,
+  count,
+  sum,
   increment,
   limit,
   onSnapshot,
@@ -24,7 +27,7 @@ import {
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB010 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
+// WEB012 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
 // Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
@@ -50,6 +53,10 @@ const ui = Object.fromEntries(
     "authState", "loginButton", "logoutButton", "messageBox", "dashboard",
     "catalogView", "identityLine", "activityCount", "equipmentCount",
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
+    "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
+    "dashboardWeekButton", "dashboardMonthButton", "dashboardYearButton", "dashboardTotalButton",
+    "dashboardActivityValue", "dashboardDistanceValue", "dashboardDurationValue", "dashboardAscentValue",
+    "dashboardEquipmentMeta", "dashboardEquipmentList", "dashboardRecentList",
     "equipmentManagerSection", "equipmentManagerMeta", "equipmentManagerSearch",
     "equipmentManagerStatusFilter", "newEquipmentButton", "equipmentEditor",
     "equipmentEditorEyebrow", "equipmentEditorTitle", "equipmentEditorHint",
@@ -95,6 +102,10 @@ let loading = false;
 let loadingAll = false;
 let catalogScrollY = 0;
 let currentDetailId = null;
+
+let dashboardSport = 1;
+let dashboardPeriod = "WEEK";
+let dashboardLoadGeneration = 0;
 
 let equipmentRows = [];
 let equipmentEditorMode = "closed";
@@ -152,6 +163,13 @@ function wireEvents() {
 
   ui.logoutButton.addEventListener("click", () => signOut(auth));
   ui.refreshButton.addEventListener("click", () => reloadAll());
+
+  ui.dashboardRunningButton.addEventListener("click", () => selectDashboardSport(1));
+  ui.dashboardCyclingButton.addEventListener("click", () => selectDashboardSport(2));
+  ui.dashboardWeekButton.addEventListener("click", () => selectDashboardPeriod("WEEK"));
+  ui.dashboardMonthButton.addEventListener("click", () => selectDashboardPeriod("MONTH"));
+  ui.dashboardYearButton.addEventListener("click", () => selectDashboardPeriod("YEAR"));
+  ui.dashboardTotalButton.addEventListener("click", () => selectDashboardPeriod("TOTAL"));
   ui.loadMoreButton.addEventListener("click", () => loadNextPage());
   ui.loadAllButton.addEventListener("click", () => loadAllActivities());
 
@@ -298,7 +316,7 @@ onAuthStateChanged(auth, async (user) => {
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB010 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB012 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -341,10 +359,180 @@ async function reloadAll() {
   try {
     await Promise.all([loadMeta(), loadReferenceCollections()]);
     await loadNextPage();
-    setMessage("WEB010 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    await loadWebDashboard();
+    setMessage("WEB012 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
+}
+
+function selectDashboardSport(sport) {
+  dashboardSport = sport === 2 ? 2 : 1;
+  renderDashboardChoices();
+  void loadWebDashboard();
+}
+
+function selectDashboardPeriod(period) {
+  dashboardPeriod = ["WEEK", "MONTH", "YEAR", "TOTAL"].includes(period) ? period : "WEEK";
+  renderDashboardChoices();
+  void loadWebDashboard();
+}
+
+function renderDashboardChoices() {
+  ui.dashboardRunningButton.classList.toggle("active", dashboardSport === 1);
+  ui.dashboardCyclingButton.classList.toggle("active", dashboardSport === 2);
+  ui.dashboardWeekButton.classList.toggle("active", dashboardPeriod === "WEEK");
+  ui.dashboardMonthButton.classList.toggle("active", dashboardPeriod === "MONTH");
+  ui.dashboardYearButton.classList.toggle("active", dashboardPeriod === "YEAR");
+  ui.dashboardTotalButton.classList.toggle("active", dashboardPeriod === "TOTAL");
+}
+
+function dashboardPeriodStart(period, now = new Date()) {
+  const date = new Date(now);
+  date.setHours(0, 0, 0, 0);
+  if (period === "WEEK") {
+    const day = (date.getDay() + 6) % 7;
+    date.setDate(date.getDate() - day);
+    return date.getTime();
+  }
+  if (period === "MONTH") {
+    date.setDate(1);
+    return date.getTime();
+  }
+  if (period === "YEAR") {
+    date.setMonth(0, 1);
+    return date.getTime();
+  }
+  return 0;
+}
+
+function dashboardPeriodLabel() {
+  if (dashboardPeriod === "WEEK") return "cette semaine";
+  if (dashboardPeriod === "MONTH") return "ce mois";
+  if (dashboardPeriod === "YEAR") return "cette année";
+  return "depuis le début";
+}
+
+async function loadWebDashboard() {
+  if (!currentUser) return;
+  const generation = ++dashboardLoadGeneration;
+  renderDashboardChoices();
+  ui.webDashboardMeta.textContent = "Calcul des indicateurs Firestore…";
+
+  try {
+    let metrics;
+    const startMs = dashboardPeriodStart(dashboardPeriod);
+
+    if (dashboardPeriod === "TOTAL") {
+      const totalQuery = query(userCollection("activities"), where("sport", "==", dashboardSport));
+      const aggregate = await getAggregateFromServer(totalQuery, {
+        activityCount: count(),
+        distance: sum("distance_m"),
+        duration: sum("elapsed_time_ms"),
+        ascent: sum("ascent_m")
+      });
+      const data = aggregate.data();
+      metrics = {
+        activityCount: Number(data.activityCount) || 0,
+        distance: Number(data.distance) || 0,
+        duration: Number(data.duration) || 0,
+        ascent: Number(data.ascent) || 0
+      };
+    } else {
+      // Une seule contrainte de plage évite d'imposer un index composite sport + date.
+      const snapshot = await getDocs(query(userCollection("activities"), where("start_time_ms", ">=", startMs)));
+      metrics = { activityCount: 0, distance: 0, duration: 0, ascent: 0 };
+      snapshot.forEach((item) => {
+        const row = item.data();
+        if (Number(row.sport) !== dashboardSport || row.deleted_at_ms != null) return;
+        metrics.activityCount += 1;
+        metrics.distance += Number(row.distance_m) || 0;
+        metrics.duration += Number(row.elapsed_time_ms) || 0;
+        metrics.ascent += Number(row.ascent_m) || 0;
+      });
+    }
+
+    const recentSnapshot = await getDocs(query(userCollection("activities"), orderBy("start_time_ms", "desc"), limit(40)));
+    const recent = [];
+    recentSnapshot.forEach((item) => {
+      const row = { __docId: item.id, ...item.data() };
+      if (Number(row.sport) === dashboardSport && row.deleted_at_ms == null && recent.length < 5) recent.push(row);
+    });
+
+    if (generation !== dashboardLoadGeneration) return;
+
+    ui.dashboardActivityValue.textContent = formatNumber(metrics.activityCount);
+    ui.dashboardDistanceValue.textContent = formatDistance(metrics.distance);
+    ui.dashboardDurationValue.textContent = formatDuration(metrics.duration);
+    ui.dashboardAscentValue.textContent = formatMeters(metrics.ascent);
+    ui.webDashboardMeta.textContent = `${sportName(dashboardSport)} · ${dashboardPeriodLabel()} · calcul serveur`;
+
+    renderDashboardEquipment();
+    renderDashboardRecent(recent);
+  } catch (error) {
+    console.error(error);
+    if (generation !== dashboardLoadGeneration) return;
+    ui.webDashboardMeta.textContent = "Tableau de bord indisponible";
+    ui.dashboardActivityValue.textContent = "—";
+    ui.dashboardDistanceValue.textContent = "—";
+    ui.dashboardDurationValue.textContent = "—";
+    ui.dashboardAscentValue.textContent = "—";
+  }
+}
+
+function renderDashboardEquipment() {
+  const category = dashboardSport === 2 ? "BIKE" : "SHOES";
+  const rows = equipmentRows
+    .filter((item) => String(item.category ?? "").toUpperCase() === category)
+    .filter((item) => String(item.status ?? "ACTIVE").toUpperCase() === "ACTIVE")
+    .sort((a, b) => (Number(b.last_use_date_ms) || 0) - (Number(a.last_use_date_ms) || 0));
+
+  ui.dashboardEquipmentMeta.textContent = `${rows.length} actif${rows.length > 1 ? "s" : ""}`;
+  ui.dashboardEquipmentList.innerHTML = "";
+  if (!rows.length) {
+    ui.dashboardEquipmentList.innerHTML = '<div class="empty compact-empty">Aucun matériel actif.</div>';
+    return;
+  }
+  rows.slice(0, 4).forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "dashboard-list-row";
+    const main = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = equipmentDisplayName(item);
+    const meta = document.createElement("span");
+    meta.textContent = `${formatDistance(item.total_distance_m)} · ${formatDuration(item.total_duration_ms)} · ${formatMeters(item.total_ascent_m)}`;
+    main.append(title, meta);
+    const countNode = document.createElement("span");
+    countNode.className = "dashboard-list-value";
+    countNode.textContent = `${formatNumber(item.activity_count ?? 0)} act.`;
+    card.append(main, countNode);
+    ui.dashboardEquipmentList.appendChild(card);
+  });
+}
+
+function renderDashboardRecent(rows) {
+  ui.dashboardRecentList.innerHTML = "";
+  if (!rows.length) {
+    ui.dashboardRecentList.innerHTML = '<div class="empty compact-empty">Aucune activité récente.</div>';
+    return;
+  }
+  rows.forEach((activity) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "dashboard-list-row dashboard-activity-row";
+    button.addEventListener("click", () => showActivity(activity));
+    const main = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = activity.custom_title || sportName(activity.sport);
+    const meta = document.createElement("span");
+    meta.textContent = `${formatDate(activity.start_time_ms)} · ${formatDistance(activity.distance_m)} · ${formatMeters(activity.ascent_m)}`;
+    main.append(title, meta);
+    const duration = document.createElement("span");
+    duration.className = "dashboard-list-value";
+    duration.textContent = formatDuration(activity.elapsed_time_ms);
+    button.append(main, duration);
+    ui.dashboardRecentList.appendChild(button);
+  });
 }
 
 async function loadMeta() {
@@ -717,7 +905,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB010";
+  document.title = "SPORT Web · WEB012";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -1722,7 +1910,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB010",
+            webVersion: "WEB012",
             row: wanted
           }
         );
@@ -1745,7 +1933,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB010"
+            webVersion: "WEB012"
           }
         );
         countDelta -= 1;
@@ -1755,7 +1943,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB010"
+      webVersion: "WEB012"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -1784,7 +1972,7 @@ async function rebuildRecordsFromFirestore() {
 
     setRecordsManagerStatus("Records recalculés et synchronisés", "ok");
     setMessage(
-      "WEB010 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
+      "WEB012 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
       "success"
     );
   } catch (error) {
@@ -1911,7 +2099,7 @@ async function commitWebMutation({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB010"
+    webVersion: "WEB012"
   };
   if (row != null) event.row = row;
 
@@ -1919,7 +2107,7 @@ async function commitWebMutation({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB010"
+    webVersion: "WEB012"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -2034,7 +2222,7 @@ async function persistActivityEdits(activity, title, description, note, generati
 
       setInteropStatus("Synchronisé automatiquement", "ok");
       setMessage(
-        "WEB010 · modification propagée automatiquement vers téléphone et tablette.",
+        "WEB012 · modification propagée automatiquement vers téléphone et tablette.",
         "success"
       );
     }
@@ -2153,7 +2341,7 @@ async function saveImmediateActivityFields(partialPatch, successLabel) {
     applyFiltersAndRender();
 
     setInteropStatus(successLabel || "Synchronisé automatiquement", "ok");
-    setMessage("WEB010 · modification propagée automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB012 · modification propagée automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec de synchronisation automatique", "error");
@@ -2225,7 +2413,7 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
     renderPersonal(activity);
     applyFiltersAndRender();
     setInteropStatus("Repère synchronisé automatiquement", "ok");
-    setMessage("WEB010 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB012 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec repère", "error");
@@ -2275,7 +2463,7 @@ function startInteropWatch() {
     (error) => {
       console.error(error);
       setInteropStatus("Temps réel interrompu", "error");
-      setMessage("WEB010 · écoute temps réel indisponible : " + (error?.message || error), "error");
+      setMessage("WEB012 · écoute temps réel indisponible : " + (error?.message || error), "error");
     }
   );
 }
@@ -2343,6 +2531,7 @@ function applyRealtimeChange(event) {
     equipmentRows = equipmentRows.filter((item) => String(item.id ?? item.__docId) !== rowKey);
     if (operation !== "DELETE" && row) equipmentRows.push({ __docId: rowKey, ...row });
     renderEquipmentManager();
+    renderDashboardEquipment();
 
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
@@ -2362,7 +2551,7 @@ function applyRealtimeChange(event) {
 
   if (!fromWeb) {
     setInteropStatus("Modification Android reçue", "ok");
-    setMessage("WEB010 · changement reçu automatiquement depuis un appareil Android.", "success");
+    setMessage("WEB012 · changement reçu automatiquement depuis un appareil Android.", "success");
   }
 }
 
@@ -2550,7 +2739,7 @@ function openLandmarkEditor(code, row) {
   }
 
   ui.landmarkEditor.classList.remove("hidden");
-  ui.landmarkEditorEyebrow.textContent = "WEB010 · MODIFICATION AUTOMATIQUE";
+  ui.landmarkEditorEyebrow.textContent = "WEB012 · MODIFICATION AUTOMATIQUE";
   ui.landmarkEditorTitle.textContent = row.name || `Repère ${safeCode}`;
   ui.landmarkEditorHint.textContent =
     "Aucun bouton Enregistrer. Le code reste fixe ; un changement de type est refusé lorsqu’une référence GPS existe.";
@@ -2724,7 +2913,7 @@ async function persistLandmarkEditor(generation) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB010 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB012 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === landmarkAutosaveGeneration) {
@@ -2773,14 +2962,14 @@ async function createLandmarkFromWeb() {
     landmarkEditorDirty = false;
     ui.landmarkCodeInput.disabled = true;
     ui.createLandmarkButton.classList.add("hidden");
-    ui.landmarkEditorEyebrow.textContent = "WEB010 · REPÈRE CRÉÉ";
+    ui.landmarkEditorEyebrow.textContent = "WEB012 · REPÈRE CRÉÉ";
     ui.landmarkEditorTitle.textContent = row.name;
     populateLandmarkEditor(row.code, row);
 
     rebuildLandmarkFilter();
     renderLandmarkManager();
 
-    setMessage("WEB010 · nouveau repère créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB012 · nouveau repère créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setLandmarkEditorStatus("Création impossible", "error");
@@ -2844,7 +3033,7 @@ async function deleteCurrentLandmarkIfUnused() {
     rebuildLandmarkFilter();
     renderLandmarkManager();
 
-    setMessage("WEB010 · repère inutilisé supprimé sur les trois plateformes.", "success");
+    setMessage("WEB012 · repère inutilisé supprimé sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setLandmarkEditorStatus("Suppression impossible", "error");
@@ -3068,7 +3257,7 @@ function openEquipmentEditor(item) {
   }
 
   ui.equipmentEditor.classList.remove("hidden");
-  ui.equipmentEditorEyebrow.textContent = "WEB010 · MODIFICATION AUTOMATIQUE";
+  ui.equipmentEditorEyebrow.textContent = "WEB012 · MODIFICATION AUTOMATIQUE";
   ui.equipmentEditorTitle.textContent = equipmentDisplayName(item);
   ui.equipmentEditorHint.textContent =
     "Aucun bouton Enregistrer : les changements sont envoyés automatiquement vers téléphone et tablette.";
@@ -3264,7 +3453,7 @@ async function persistEquipmentEditor(generation) {
     renderEquipmentManager();
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
-    setMessage("WEB010 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB012 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === equipmentAutosaveGeneration) {
@@ -3309,7 +3498,7 @@ async function createEquipmentFromWeb() {
     equipmentEditorRowId = id;
     equipmentEditorDirty = false;
     ui.createEquipmentButton.classList.add("hidden");
-    ui.equipmentEditorEyebrow.textContent = "WEB010 · MATÉRIEL CRÉÉ";
+    ui.equipmentEditorEyebrow.textContent = "WEB012 · MATÉRIEL CRÉÉ";
     ui.equipmentEditorTitle.textContent = equipmentDisplayName(row);
     ui.equipmentEditorHint.textContent =
       "Le matériel est créé. Toute modification ultérieure est maintenant automatique.";
@@ -3319,7 +3508,7 @@ async function createEquipmentFromWeb() {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB010 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB012 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setEquipmentEditorStatus("Création impossible", "error");
@@ -3363,7 +3552,7 @@ async function updateEquipmentStatus(item, status) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage(`WEB010 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
+    setMessage(`WEB012 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
   } catch (error) {
     handleError(error, "Changement de statut du matériel impossible");
   }
@@ -3377,7 +3566,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
   if (snapshot.size > MAX_EQUIPMENT_RENAME_CASCADE) {
     throw new Error(
       `Ce matériel est associé à ${snapshot.size} activités. ` +
-      `Par sécurité, WEB010 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
+      `Par sécurité, WEB012 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
     );
   }
 
@@ -3406,7 +3595,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB010",
+      webVersion: "WEB012",
       row: next
     }
   );
@@ -3442,7 +3631,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB010",
+        webVersion: "WEB012",
         row: patch
       }
     );
@@ -3454,7 +3643,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB010"
+      webVersion: "WEB012"
     },
     { merge: true }
   );
@@ -3469,8 +3658,8 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
 
   setMessage(
     snapshot.size > 0
-      ? `WEB010 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
-      : "WEB010 · matériel renommé sur les trois plateformes.",
+      ? `WEB012 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
+      : "WEB012 · matériel renommé sur les trois plateformes.",
     "success"
   );
 }
