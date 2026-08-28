@@ -1939,6 +1939,16 @@ function datum(label, value, extraClass = "") {
 }
 
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[character]));
+}
+
 function globalMapSportClass(activity) {
   const sport = Number(activity?.sport);
   if ([1, 6].includes(sport)) return "running";
