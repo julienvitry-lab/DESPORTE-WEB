@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB011
+name: Publier SPORT Web · WEB015
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB011.md"
+      - "docs/releases/WEB015.md"
   workflow_dispatch:
 
 permissions:
@@ -29,45 +29,47 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB011
+      - name: Valider WEB015
         shell: bash
         run: |
           set -euo pipefail
-
           test -f web/index.html
           test -f web/styles.css
           test -f web/app.js
 
-          grep -Fq "WEB011 · CORBEILLE001" web/index.html
-          grep -Fq "Corbeille synchronisée" web/index.html
-          grep -Fq "Mettre à la corbeille" web/index.html
-          grep -Fq "La suppression définitive reste volontairement hors de cette version" web/index.html
+          grep -Fq "WEB015 · DASHBOARD002" web/index.html
+          grep -Fq "Tableau de bord avancé" web/index.html
+          grep -Fq "Tendances" web/index.html
+          grep -Fq "Objectif annuel" web/index.html
+          grep -Fq "Répartition sportive" web/index.html
+          grep -Fq "dashboardChartDistanceButton" web/index.html
+          grep -Fq "dashboardDrilldownNotice" web/index.html
 
-          grep -Fq "function loadTrashActivities" web/app.js
-          grep -Fq "function trashActivityFromWeb" web/app.js
-          grep -Fq "function restoreActivityFromWeb" web/app.js
-          grep -Fq "function topActiveActivityByField" web/app.js
-          grep -Fq "deleted_at_ms" web/app.js
-          grep -Fq 'webVersion: "WEB011"' web/app.js
+          grep -Fq 'function dashboardPreviousWindow' web/app.js
+          grep -Fq 'function renderDashboardChart' web/app.js
+          grep -Fq 'function openDashboardBucket' web/app.js
+          grep -Fq 'function renderDashboardTrends' web/app.js
+          grep -Fq 'function renderDashboardGoal' web/app.js
+          grep -Fq 'function renderDashboardSportSplit' web/app.js
+          grep -Fq 'function renderDashboardRecords' web/app.js
+          grep -Fq 'getAggregateFromServer' web/app.js
+          grep -Fq 'webVersion: "WEB015"' web/app.js
 
-          grep -Fq 'operation: "UPSERT"' web/app.js
-          grep -Fq 'materializedCollection: "activities"' web/app.js
-
-          # Base interop/historique conservée.
-          grep -Fq 'writeBatch' web/app.js
-          grep -Fq 'onSnapshot' web/app.js
+          # Héritages prioritaires : interop, corbeille et garde de synchro.
+          grep -Fq 'function trashActivityFromWeb' web/app.js
+          grep -Fq 'function restoreActivityFromWeb' web/app.js
           grep -Fq 'function startSyncHistoryWatch' web/app.js
           grep -Fq 'function detectSyncConflicts' web/app.js
-
-          # Fonctions WEB012-014 et métiers précédents conservées.
-          grep -Fq 'function loadWebDashboard' web/app.js
           grep -Fq 'function loadPersonalSyncData' web/app.js
-          grep -Fq 'function createEquipmentFromWeb' web/app.js
-          grep -Fq 'function createLandmarkFromWeb' web/app.js
+          grep -Fq 'writeBatch' web/app.js
+          grep -Fq 'onSnapshot' web/app.js
+
+          # Identité et correctif cartographique conservés.
           grep -Fq 'family=Comfortaa' web/index.html
           grep -Fq 'z-index: 4000' web/styles.css
+          grep -Fq 'isolation: isolate' web/styles.css
 
-          echo "WEB011 : corbeille réversible Web ↔ téléphone ↔ tablette + base WEB014 validées."
+          echo "WEB015 : DASHBOARD002 + interop + corbeille + syncguard validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -77,6 +79,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB011
+      - name: Publier SPORT Web · WEB015
         id: deployment
         uses: actions/deploy-pages@v4

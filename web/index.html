@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB011 · CORBEILLE001 · Comfortaa">
-  <title>SPORT Web · WEB011</title>
+  <meta name="description" content="SPORT Web · WEB015 · CORBEILLE001 · Comfortaa">
+  <title>SPORT Web · WEB015</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB011 · CORBEILLE001 · Comfortaa · Firestore</div>
+      <div class="version">WEB015 · CORBEILLE001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -27,7 +27,7 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB011 · CORBEILLE001 ajoute une corbeille interopérable et réversible : une mise à la corbeille ou une restauration se propage automatiquement entre Web, téléphone et tablette.
+      WEB015 · CORBEILLE001 ajoute une corbeille interopérable et réversible : une mise à la corbeille ou une restauration se propage automatiquement entre Web, téléphone et tablette.
     </section>
 
     <section id="dashboard" class="hidden">
@@ -44,11 +44,11 @@
           </div>
         </div>
 
-        <section id="webDashboardSection" class="panel web-dashboard-panel">
+        <section id="webDashboardSection" class="panel web-dashboard-panel dashboard002-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB011 · DASHBOARD001</p>
-              <h2>Tableau de bord</h2>
+              <p class="eyebrow">WEB015 · DASHBOARD002</p>
+              <h2>Tableau de bord avancé</h2>
               <p id="webDashboardMeta" class="muted">Calcul des indicateurs Firestore…</p>
             </div>
             <div class="dashboard-switches">
@@ -66,16 +66,47 @@
           </div>
 
           <div class="dashboard-metric-grid">
-            <article class="dashboard-metric"><span>Activités</span><strong id="dashboardActivityValue">—</strong></article>
-            <article class="dashboard-metric"><span>Distance</span><strong id="dashboardDistanceValue">—</strong></article>
-            <article class="dashboard-metric"><span>Temps</span><strong id="dashboardDurationValue">—</strong></article>
-            <article class="dashboard-metric"><span>D+</span><strong id="dashboardAscentValue">—</strong></article>
+            <article class="dashboard-metric"><span>Activités</span><strong id="dashboardActivityValue">—</strong><small id="dashboardActivityDelta" class="dashboard-delta">—</small></article>
+            <article class="dashboard-metric"><span>Distance</span><strong id="dashboardDistanceValue">—</strong><small id="dashboardDistanceDelta" class="dashboard-delta">—</small></article>
+            <article class="dashboard-metric"><span>Temps</span><strong id="dashboardDurationValue">—</strong><small id="dashboardDurationDelta" class="dashboard-delta">—</small></article>
+            <article class="dashboard-metric"><span>D+</span><strong id="dashboardAscentValue">—</strong><small id="dashboardAscentDelta" class="dashboard-delta">—</small></article>
+          </div>
+          <p id="dashboardComparisonMeta" class="muted dashboard-comparison-meta">Comparaison avec la période précédente comparable.</p>
+
+          <div class="dashboard-chart-card">
+            <div class="dashboard-chart-heading">
+              <div>
+                <h3 id="dashboardChartTitle">Évolution</h3>
+                <span id="dashboardChartMeta" class="muted">Clique sur une barre pour ouvrir les activités correspondantes.</span>
+              </div>
+              <div class="dashboard-choice-group dashboard-chart-choices">
+                <button id="dashboardChartDistanceButton" class="secondary dashboard-choice active" type="button">Distance</button>
+                <button id="dashboardChartAscentButton" class="secondary dashboard-choice" type="button">D+</button>
+                <button id="dashboardChartDurationButton" class="secondary dashboard-choice" type="button">Temps</button>
+              </div>
+            </div>
+            <div id="dashboardChart" class="dashboard-chart" aria-label="Graphique des activités"></div>
           </div>
 
-          <div class="dashboard-columns">
+          <div class="dashboard-insight-grid">
+            <article class="dashboard-insight-card">
+              <div class="dashboard-column-heading"><h3>Tendances</h3><span class="muted">30 / 90 / 365 jours</span></div>
+              <div id="dashboardTrends" class="dashboard-trends"></div>
+            </article>
+            <article class="dashboard-insight-card">
+              <div class="dashboard-column-heading"><h3>Objectif annuel</h3><span id="dashboardGoalMeta" class="muted"></span></div>
+              <div id="dashboardGoalSummary" class="dashboard-goal-summary"></div>
+            </article>
+            <article class="dashboard-insight-card">
+              <div class="dashboard-column-heading"><h3>Répartition sportive</h3><span class="muted">distance</span></div>
+              <div id="dashboardSportSplit" class="dashboard-sport-split"></div>
+            </article>
+          </div>
+
+          <div class="dashboard-columns dashboard-columns-3">
             <div class="dashboard-column">
               <div class="dashboard-column-heading">
-                <h3>Matériel actif</h3>
+                <h3>Matériel sur la période</h3>
                 <span id="dashboardEquipmentMeta" class="muted"></span>
               </div>
               <div id="dashboardEquipmentList" class="dashboard-list"></div>
@@ -87,13 +118,20 @@
               </div>
               <div id="dashboardRecentList" class="dashboard-list"></div>
             </div>
+            <div class="dashboard-column">
+              <div class="dashboard-column-heading">
+                <h3>Records</h3>
+                <span class="muted">SPORT</span>
+              </div>
+              <div id="dashboardRecordsList" class="dashboard-list"></div>
+            </div>
           </div>
         </section>
 
         <section id="personalSyncSection" class="panel personal-sync-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB011 · PERSONAL001</p>
+              <p class="eyebrow">WEB015 · PERSONAL001</p>
               <h2>Objectifs et suivi du poids</h2>
               <p id="personalSyncMeta" class="muted">Chargement des données personnelles synchronisées…</p>
             </div>
@@ -151,7 +189,7 @@
         <section id="syncCenterSection" class="panel sync-center-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB011 · SYNCGUARD001</p>
+              <p class="eyebrow">WEB015 · SYNCGUARD001</p>
               <h2>Centre de synchronisation</h2>
               <p id="syncCenterMeta" class="muted">Lecture des derniers événements Firestore…</p>
             </div>
@@ -188,7 +226,7 @@
         <section id="trashSection" class="panel trash-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB011 · CORBEILLE001</p>
+              <p class="eyebrow">WEB015 · CORBEILLE001</p>
               <h2>Corbeille synchronisée</h2>
               <p id="trashMeta" class="muted">Lecture des activités en corbeille…</p>
             </div>
@@ -206,7 +244,7 @@
 
           <div class="trash-safety-note">
             <strong>♻ Réversible sur les 3 plateformes</strong>
-            <span>WEB011 ne supprime ni les repères liés, ni le tracé Web, ni le fichier FIT local. La suppression définitive reste volontairement hors de cette version.</span>
+            <span>WEB015 ne supprime ni les repères liés, ni le tracé Web, ni le fichier FIT local. La suppression définitive reste volontairement hors de cette version.</span>
           </div>
 
           <div id="trashList" class="trash-list"></div>
@@ -224,7 +262,7 @@
         <section id="equipmentManagerSection" class="panel equipment-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB011 · MATÉRIEL001</p>
+              <p class="eyebrow">WEB015 · MATÉRIEL001</p>
               <h2>Matériel synchronisé</h2>
               <p id="equipmentManagerMeta" class="muted">Chargement du matériel…</p>
             </div>
@@ -350,7 +388,7 @@
         <section id="landmarkManagerSection" class="panel landmark-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB011 · REPÈRE013</p>
+              <p class="eyebrow">WEB015 · REPÈRE013</p>
               <h2>Repères personnels synchronisés</h2>
               <p id="landmarkManagerMeta" class="muted">Chargement des repères…</p>
             </div>
@@ -420,7 +458,7 @@
         <section class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB011 · MÉTIER001</p>
+              <p class="eyebrow">WEB015 · MÉTIER001</p>
               <h2>Répertoire avancé</h2>
               <p id="loadedLabel" class="muted">Chargement…</p>
             </div>
@@ -428,6 +466,11 @@
               <button id="loadMoreButton" class="secondary">Charger 250 de plus</button>
               <button id="loadAllButton" class="secondary">Charger tout</button>
             </div>
+          </div>
+
+          <div id="dashboardDrilldownNotice" class="dashboard-drilldown-notice hidden">
+            <span id="dashboardDrilldownLabel">Filtre issu du tableau de bord</span>
+            <button id="clearDashboardDrilldownButton" class="secondary" type="button">Effacer ce filtre</button>
           </div>
 
           <div class="filters">
@@ -499,10 +542,10 @@
         <section id="recordsManagerSection" class="panel compact records-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB011 · RECORDS001</p>
+              <p class="eyebrow">WEB015 · RECORDS001</p>
               <h2>Records SPORT</h2>
               <p class="muted">
-                Distance, durée et D+ sont des données dérivées des activités. WEB011 les recalcule
+                Distance, durée et D+ sont des données dérivées des activités. WEB015 les recalcule
                 depuis Firestore plutôt que de permettre une valeur manuelle incohérente.
               </p>
             </div>
@@ -548,7 +591,7 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB011 · CARTO+</p>
+              <p class="eyebrow">WEB015 · CARTO+</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
@@ -593,7 +636,7 @@
         <section class="detail-section panel">
           <div class="section-heading interop-heading">
             <div>
-              <p class="eyebrow">WEB011 · MÉTIER001</p>
+              <p class="eyebrow">WEB015 · MÉTIER001</p>
               <h2>Matériel, repères et notes</h2>
             </div>
             <div id="interopStatus" class="pill ok">Synchronisation active</div>
@@ -718,7 +761,7 @@
   </main>
 
   <footer>
-    SPORT Web · WEB011 · interopérabilité contrôlée Firestore
+    SPORT Web · WEB015 · interopérabilité contrôlée Firestore
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

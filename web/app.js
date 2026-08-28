@@ -27,7 +27,7 @@ import {
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB011 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
+// WEB015 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
 // Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
@@ -63,7 +63,12 @@ const ui = Object.fromEntries(
     "weightDateInput", "weightKgInput", "weightSaveStatus", "weightSummary", "weightHistory",
     "dashboardWeekButton", "dashboardMonthButton", "dashboardYearButton", "dashboardTotalButton",
     "dashboardActivityValue", "dashboardDistanceValue", "dashboardDurationValue", "dashboardAscentValue",
-    "dashboardEquipmentMeta", "dashboardEquipmentList", "dashboardRecentList",
+    "dashboardActivityDelta", "dashboardDistanceDelta", "dashboardDurationDelta", "dashboardAscentDelta",
+    "dashboardComparisonMeta", "dashboardChartTitle", "dashboardChartMeta", "dashboardChart",
+    "dashboardChartDistanceButton", "dashboardChartAscentButton", "dashboardChartDurationButton",
+    "dashboardTrends", "dashboardGoalMeta", "dashboardGoalSummary", "dashboardSportSplit",
+    "dashboardEquipmentMeta", "dashboardEquipmentList", "dashboardRecentList", "dashboardRecordsList",
+    "dashboardDrilldownNotice", "dashboardDrilldownLabel", "clearDashboardDrilldownButton",
     "equipmentManagerSection", "equipmentManagerMeta", "equipmentManagerSearch",
     "equipmentManagerStatusFilter", "newEquipmentButton", "equipmentEditor",
     "equipmentEditorEyebrow", "equipmentEditorTitle", "equipmentEditorHint",
@@ -114,7 +119,12 @@ let trashMutationRunning = false;
 
 let dashboardSport = 1;
 let dashboardPeriod = "WEEK";
+let dashboardChartMetric = "distance";
 let dashboardLoadGeneration = 0;
+let dashboardDrilldownStartMs = 0;
+let dashboardDrilldownEndMs = 0;
+let dashboardDrilldownText = "";
+let dashboardRefreshTimer = null;
 
 let sportGoals = new Map();
 let journalEntries = new Map();
@@ -195,6 +205,10 @@ function wireEvents() {
   ui.dashboardMonthButton.addEventListener("click", () => selectDashboardPeriod("MONTH"));
   ui.dashboardYearButton.addEventListener("click", () => selectDashboardPeriod("YEAR"));
   ui.dashboardTotalButton.addEventListener("click", () => selectDashboardPeriod("TOTAL"));
+  ui.dashboardChartDistanceButton.addEventListener("click", () => selectDashboardChartMetric("distance"));
+  ui.dashboardChartAscentButton.addEventListener("click", () => selectDashboardChartMetric("ascent"));
+  ui.dashboardChartDurationButton.addEventListener("click", () => selectDashboardChartMetric("duration"));
+  ui.clearDashboardDrilldownButton.addEventListener("click", () => clearDashboardDrilldown(true));
 
   ui.goalSportSelect.addEventListener("change", () => {
     selectedGoalSport = Number(ui.goalSportSelect.value) || 0;
@@ -230,7 +244,10 @@ function wireEvents() {
     ui.landmarkFilter, ui.sourceFilter, ui.distanceFilter,
     ui.ascentFilter, ui.sortFilter
   ].forEach((element) => {
-    element.addEventListener(element.tagName === "INPUT" ? "input" : "change", applyFiltersAndRender);
+    element.addEventListener(element.tagName === "INPUT" ? "input" : "change", (event) => {
+      if (event.isTrusted && dashboardDrilldownStartMs > 0) clearDashboardDrilldown(false);
+      applyFiltersAndRender();
+    });
   });
 
   ui.backToCatalogButton.addEventListener("click", () => {
@@ -369,7 +386,7 @@ onAuthStateChanged(auth, async (user) => {
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB011 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB015 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -418,7 +435,7 @@ async function reloadAll() {
     renderTrash();
     await loadNextPage();
     await loadWebDashboard();
-    setMessage("WEB011 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    setMessage("WEB015 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
@@ -664,6 +681,12 @@ function selectDashboardPeriod(period) {
   void loadWebDashboard();
 }
 
+function selectDashboardChartMetric(metric) {
+  dashboardChartMetric = ["distance", "ascent", "duration"].includes(metric) ? metric : "distance";
+  renderDashboardChoices();
+  void loadWebDashboard();
+}
+
 function renderDashboardChoices() {
   ui.dashboardRunningButton.classList.toggle("active", dashboardSport === 1);
   ui.dashboardCyclingButton.classList.toggle("active", dashboardSport === 2);
@@ -671,6 +694,9 @@ function renderDashboardChoices() {
   ui.dashboardMonthButton.classList.toggle("active", dashboardPeriod === "MONTH");
   ui.dashboardYearButton.classList.toggle("active", dashboardPeriod === "YEAR");
   ui.dashboardTotalButton.classList.toggle("active", dashboardPeriod === "TOTAL");
+  ui.dashboardChartDistanceButton.classList.toggle("active", dashboardChartMetric === "distance");
+  ui.dashboardChartAscentButton.classList.toggle("active", dashboardChartMetric === "ascent");
+  ui.dashboardChartDurationButton.classList.toggle("active", dashboardChartMetric === "duration");
 }
 
 function dashboardPeriodStart(period, now = new Date()) {
@@ -692,11 +718,102 @@ function dashboardPeriodStart(period, now = new Date()) {
   return 0;
 }
 
+function dashboardPreviousWindow(period, nowMs = Date.now()) {
+  if (period === "TOTAL") return null;
+  const now = new Date(nowMs);
+  const currentStart = dashboardPeriodStart(period, now);
+  let previousStartDate;
+  let previousEndDate;
+
+  if (period === "WEEK") {
+    previousStartDate = new Date(currentStart - 7 * 86400000);
+    previousEndDate = new Date(previousStartDate.getTime() + (nowMs - currentStart));
+  } else if (period === "MONTH") {
+    const start = new Date(currentStart);
+    previousStartDate = new Date(start.getFullYear(), start.getMonth() - 1, 1);
+    const next = new Date(start.getFullYear(), start.getMonth(), 1);
+    previousEndDate = new Date(previousStartDate.getTime() + (nowMs - currentStart));
+    if (previousEndDate >= next) previousEndDate = new Date(next.getTime() - 1);
+  } else {
+    const start = new Date(currentStart);
+    previousStartDate = new Date(start.getFullYear() - 1, 0, 1);
+    previousEndDate = new Date(now);
+    previousEndDate.setFullYear(previousEndDate.getFullYear() - 1);
+  }
+
+  return {
+    currentStart,
+    currentEnd: nowMs,
+    previousStart: previousStartDate.getTime(),
+    previousEnd: previousEndDate.getTime()
+  };
+}
+
 function dashboardPeriodLabel() {
   if (dashboardPeriod === "WEEK") return "cette semaine";
   if (dashboardPeriod === "MONTH") return "ce mois";
   if (dashboardPeriod === "YEAR") return "cette année";
   return "depuis le début";
+}
+
+function metricsFromRows(rows, sport = dashboardSport) {
+  const metrics = { activityCount: 0, distance: 0, duration: 0, ascent: 0 };
+  for (const row of rows) {
+    if (sport != null && Number(row.sport) !== Number(sport)) continue;
+    if (row.deleted_at_ms != null) continue;
+    metrics.activityCount += 1;
+    metrics.distance += Number(row.distance_m) || 0;
+    metrics.duration += Number(row.elapsed_time_ms) || 0;
+    metrics.ascent += Number(row.ascent_m) || 0;
+  }
+  return metrics;
+}
+
+async function fetchDashboardAggregateForSport(sport) {
+  const aggregateQuery = query(
+    userCollection("activities"),
+    where("sport", "==", Number(sport)),
+    where("deleted_at_ms", "==", null)
+  );
+  const aggregate = await getAggregateFromServer(aggregateQuery, {
+    activityCount: count(),
+    distance: sum("distance_m"),
+    duration: sum("elapsed_time_ms"),
+    ascent: sum("ascent_m")
+  });
+  const data = aggregate.data();
+  return {
+    activityCount: Number(data.activityCount) || 0,
+    distance: Number(data.distance) || 0,
+    duration: Number(data.duration) || 0,
+    ascent: Number(data.ascent) || 0
+  };
+}
+
+function dashboardDeltaText(current, previous) {
+  const now = Number(current) || 0;
+  const before = Number(previous) || 0;
+  if (before === 0 && now === 0) return { text: "—", direction: "flat" };
+  if (before === 0) return { text: "+ nouveau", direction: "up" };
+  const pct = ((now - before) / Math.abs(before)) * 100;
+  const rounded = Math.round(Math.abs(pct));
+  if (Math.abs(pct) < 0.5) return { text: "≈ stable", direction: "flat" };
+  return {
+    text: `${pct > 0 ? "+" : "−"}${rounded} %`,
+    direction: pct > 0 ? "up" : "down"
+  };
+}
+
+function setDashboardDelta(node, current, previous, enabled = true) {
+  node.className = "dashboard-delta";
+  if (!enabled) {
+    node.textContent = "Historique complet";
+    node.classList.add("flat");
+    return;
+  }
+  const delta = dashboardDeltaText(current, previous);
+  node.textContent = delta.text;
+  node.classList.add(delta.direction);
 }
 
 async function loadWebDashboard() {
@@ -706,93 +823,375 @@ async function loadWebDashboard() {
   ui.webDashboardMeta.textContent = "Calcul des indicateurs Firestore…";
 
   try {
-    let metrics;
-    const startMs = dashboardPeriodStart(dashboardPeriod);
+    const nowMs = Date.now();
+    const currentStart = dashboardPeriodStart(dashboardPeriod, new Date(nowMs));
+    const compareWindow = dashboardPreviousWindow(dashboardPeriod, nowMs);
+    const trendStart = startOfDayMs(nowMs - 364 * 86400000);
+    const queryStart = dashboardPeriod === "TOTAL"
+      ? trendStart
+      : Math.min(compareWindow.previousStart, trendStart);
 
-    if (dashboardPeriod === "TOTAL") {
-      const totalQuery = query(userCollection("activities"), where("sport", "==", dashboardSport));
-      const aggregate = await getAggregateFromServer(totalQuery, {
-        activityCount: count(),
-        distance: sum("distance_m"),
-        duration: sum("elapsed_time_ms"),
-        ascent: sum("ascent_m")
-      });
-      const data = aggregate.data();
-      metrics = {
-        activityCount: Number(data.activityCount) || 0,
-        distance: Number(data.distance) || 0,
-        duration: Number(data.duration) || 0,
-        ascent: Number(data.ascent) || 0
-      };
-    } else {
-      // Une seule contrainte de plage évite d'imposer un index composite sport + date.
-      const snapshot = await getDocs(query(userCollection("activities"), where("start_time_ms", ">=", startMs)));
-      metrics = { activityCount: 0, distance: 0, duration: 0, ascent: 0 };
-      snapshot.forEach((item) => {
-        const row = item.data();
-        if (Number(row.sport) !== dashboardSport || row.deleted_at_ms != null) return;
-        metrics.activityCount += 1;
-        metrics.distance += Number(row.distance_m) || 0;
-        metrics.duration += Number(row.elapsed_time_ms) || 0;
-        metrics.ascent += Number(row.ascent_m) || 0;
-      });
-    }
+    const [windowSnapshot, recentSnapshot] = await Promise.all([
+      getDocs(query(userCollection("activities"), where("start_time_ms", ">=", queryStart))),
+      getDocs(query(userCollection("activities"), orderBy("start_time_ms", "desc"), limit(50)))
+    ]);
 
-    const recentSnapshot = await getDocs(query(userCollection("activities"), orderBy("start_time_ms", "desc"), limit(40)));
+    const allWindowRows = [];
+    windowSnapshot.forEach((item) => {
+      const row = { __docId: item.id, ...item.data() };
+      if (row.deleted_at_ms == null) allWindowRows.push(row);
+    });
+
     const recent = [];
     recentSnapshot.forEach((item) => {
       const row = { __docId: item.id, ...item.data() };
       if (Number(row.sport) === dashboardSport && row.deleted_at_ms == null && recent.length < 5) recent.push(row);
     });
 
+    let currentRows = [];
+    let previousRows = [];
+    let currentMetrics;
+    let previousMetrics = { activityCount: 0, distance: 0, duration: 0, ascent: 0 };
+    let splitMetrics;
+
+    if (dashboardPeriod === "TOTAL") {
+      const [selectedTotal, runTotal, bikeTotal] = await Promise.all([
+        fetchDashboardAggregateForSport(dashboardSport),
+        fetchDashboardAggregateForSport(1),
+        fetchDashboardAggregateForSport(2)
+      ]);
+      currentMetrics = selectedTotal;
+      splitMetrics = { running: runTotal, cycling: bikeTotal };
+      currentRows = allWindowRows.filter((row) => Number(row.sport) === dashboardSport && Number(row.start_time_ms) >= trendStart);
+    } else {
+      currentRows = allWindowRows.filter((row) =>
+        Number(row.start_time_ms) >= compareWindow.currentStart &&
+        Number(row.start_time_ms) <= compareWindow.currentEnd &&
+        Number(row.sport) === dashboardSport
+      );
+      previousRows = allWindowRows.filter((row) =>
+        Number(row.start_time_ms) >= compareWindow.previousStart &&
+        Number(row.start_time_ms) <= compareWindow.previousEnd &&
+        Number(row.sport) === dashboardSport
+      );
+      currentMetrics = metricsFromRows(currentRows, dashboardSport);
+      previousMetrics = metricsFromRows(previousRows, dashboardSport);
+      const allCurrentRows = allWindowRows.filter((row) =>
+        Number(row.start_time_ms) >= compareWindow.currentStart && Number(row.start_time_ms) <= compareWindow.currentEnd
+      );
+      splitMetrics = {
+        running: metricsFromRows(allCurrentRows, 1),
+        cycling: metricsFromRows(allCurrentRows, 2)
+      };
+    }
+
+    const trendRows = allWindowRows.filter((row) =>
+      Number(row.start_time_ms) >= trendStart && Number(row.sport) === dashboardSport
+    );
+
     if (generation !== dashboardLoadGeneration) return;
 
-    ui.dashboardActivityValue.textContent = formatNumber(metrics.activityCount);
-    ui.dashboardDistanceValue.textContent = formatDistance(metrics.distance);
-    ui.dashboardDurationValue.textContent = formatDuration(metrics.duration);
-    ui.dashboardAscentValue.textContent = formatMeters(metrics.ascent);
-    ui.webDashboardMeta.textContent = `${sportName(dashboardSport)} · ${dashboardPeriodLabel()} · calcul serveur`;
+    ui.dashboardActivityValue.textContent = formatNumber(currentMetrics.activityCount);
+    ui.dashboardDistanceValue.textContent = formatDistance(currentMetrics.distance);
+    ui.dashboardDurationValue.textContent = formatDuration(currentMetrics.duration);
+    ui.dashboardAscentValue.textContent = formatMeters(currentMetrics.ascent);
 
-    renderDashboardEquipment();
+    const compareEnabled = dashboardPeriod !== "TOTAL";
+    setDashboardDelta(ui.dashboardActivityDelta, currentMetrics.activityCount, previousMetrics.activityCount, compareEnabled);
+    setDashboardDelta(ui.dashboardDistanceDelta, currentMetrics.distance, previousMetrics.distance, compareEnabled);
+    setDashboardDelta(ui.dashboardDurationDelta, currentMetrics.duration, previousMetrics.duration, compareEnabled);
+    setDashboardDelta(ui.dashboardAscentDelta, currentMetrics.ascent, previousMetrics.ascent, compareEnabled);
+
+    ui.dashboardComparisonMeta.textContent = compareEnabled
+      ? "Écart par rapport à la période précédente, comparée au même stade."
+      : "Le total utilise les agrégations Firestore ; le graphique montre les 12 derniers mois.";
+    ui.webDashboardMeta.textContent = `${sportName(dashboardSport)} · ${dashboardPeriodLabel()} · DASHBOARD002`;
+
+    renderDashboardChart(currentRows, nowMs);
+    renderDashboardTrends(trendRows, nowMs);
+    renderDashboardGoal(trendRows, nowMs);
+    renderDashboardSportSplit(splitMetrics);
+    renderDashboardEquipment(currentRows);
     renderDashboardRecent(recent);
+    renderDashboardRecords();
   } catch (error) {
     console.error(error);
     if (generation !== dashboardLoadGeneration) return;
     ui.webDashboardMeta.textContent = "Tableau de bord indisponible";
-    ui.dashboardActivityValue.textContent = "—";
-    ui.dashboardDistanceValue.textContent = "—";
-    ui.dashboardDurationValue.textContent = "—";
-    ui.dashboardAscentValue.textContent = "—";
+    [ui.dashboardActivityValue, ui.dashboardDistanceValue, ui.dashboardDurationValue, ui.dashboardAscentValue].forEach((node) => node.textContent = "—");
+    [ui.dashboardActivityDelta, ui.dashboardDistanceDelta, ui.dashboardDurationDelta, ui.dashboardAscentDelta].forEach((node) => node.textContent = "—");
+    ui.dashboardChart.innerHTML = '<div class="empty compact-empty">Graphique indisponible.</div>';
   }
 }
 
-function renderDashboardEquipment() {
-  const category = dashboardSport === 2 ? "BIKE" : "SHOES";
-  const rows = equipmentRows
-    .filter((item) => String(item.category ?? "").toUpperCase() === category)
-    .filter((item) => String(item.status ?? "ACTIVE").toUpperCase() === "ACTIVE")
-    .sort((a, b) => (Number(b.last_use_date_ms) || 0) - (Number(a.last_use_date_ms) || 0));
+function startOfDayMs(ms) {
+  const date = new Date(ms);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
 
-  ui.dashboardEquipmentMeta.textContent = `${rows.length} actif${rows.length > 1 ? "s" : ""}`;
-  ui.dashboardEquipmentList.innerHTML = "";
-  if (!rows.length) {
-    ui.dashboardEquipmentList.innerHTML = '<div class="empty compact-empty">Aucun matériel actif.</div>';
+function dashboardChartBuckets(nowMs) {
+  const buckets = [];
+  const now = new Date(nowMs);
+
+  if (dashboardPeriod === "WEEK") {
+    const start = new Date(dashboardPeriodStart("WEEK", now));
+    for (let i = 0; i < 7; i += 1) {
+      const a = new Date(start); a.setDate(a.getDate() + i);
+      const b = new Date(a); b.setDate(b.getDate() + 1);
+      buckets.push({ start: a.getTime(), end: b.getTime(), label: new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(a).replace(".", "") });
+    }
+    return buckets;
+  }
+
+  if (dashboardPeriod === "MONTH") {
+    const start = new Date(dashboardPeriodStart("MONTH", now));
+    const next = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    for (let a = new Date(start); a < next; a.setDate(a.getDate() + 1)) {
+      const b = new Date(a); b.setDate(b.getDate() + 1);
+      buckets.push({ start: a.getTime(), end: b.getTime(), label: String(a.getDate()) });
+    }
+    return buckets;
+  }
+
+  if (dashboardPeriod === "YEAR") {
+    const year = now.getFullYear();
+    for (let month = 0; month < 12; month += 1) {
+      const a = new Date(year, month, 1);
+      const b = new Date(year, month + 1, 1);
+      buckets.push({ start: a.getTime(), end: b.getTime(), label: new Intl.DateTimeFormat("fr-FR", { month: "short" }).format(a).replace(".", "") });
+    }
+    return buckets;
+  }
+
+  const start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+  for (let i = 0; i < 12; i += 1) {
+    const a = new Date(start.getFullYear(), start.getMonth() + i, 1);
+    const b = new Date(a.getFullYear(), a.getMonth() + 1, 1);
+    buckets.push({ start: a.getTime(), end: b.getTime(), label: new Intl.DateTimeFormat("fr-FR", { month: "short" }).format(a).replace(".", "") });
+  }
+  return buckets;
+}
+
+function dashboardChartValue(metrics) {
+  if (dashboardChartMetric === "ascent") return metrics.ascent;
+  if (dashboardChartMetric === "duration") return metrics.duration / 3600000;
+  return metrics.distance / 1000;
+}
+
+function dashboardChartValueLabel(value) {
+  if (dashboardChartMetric === "ascent") return `${Math.round(value).toLocaleString("fr-FR")} m`;
+  if (dashboardChartMetric === "duration") return `${Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} h`;
+  return `${Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km`;
+}
+
+function renderDashboardChart(rows, nowMs) {
+  const buckets = dashboardChartBuckets(nowMs);
+  const chartRows = dashboardPeriod === "TOTAL"
+    ? rows.filter((row) => Number(row.start_time_ms) >= buckets[0].start)
+    : rows;
+
+  const values = buckets.map((bucket) => {
+    const bucketRows = chartRows.filter((row) => Number(row.start_time_ms) >= bucket.start && Number(row.start_time_ms) < bucket.end);
+    const metrics = metricsFromRows(bucketRows, dashboardSport);
+    return { ...bucket, metrics, value: dashboardChartValue(metrics) };
+  });
+  const maxValue = Math.max(0, ...values.map((item) => item.value));
+
+  const metricLabel = dashboardChartMetric === "ascent" ? "D+" : dashboardChartMetric === "duration" ? "Temps" : "Distance";
+  ui.dashboardChartTitle.textContent = `${metricLabel} · ${dashboardPeriod === "TOTAL" ? "12 derniers mois" : dashboardPeriodLabel()}`;
+  ui.dashboardChartMeta.textContent = "Clique sur une barre pour ouvrir les activités correspondantes.";
+  ui.dashboardChart.innerHTML = "";
+
+  const fragment = document.createDocumentFragment();
+  values.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "dashboard-bar-button";
+    const pct = maxValue > 0 ? Math.max(item.value > 0 ? 5 : 0, (item.value / maxValue) * 100) : 0;
+    button.title = `${item.label} · ${dashboardChartValueLabel(item.value)} · ${item.metrics.activityCount} activité(s)`;
+    button.addEventListener("click", () => { void openDashboardBucket(item); });
+
+    const value = document.createElement("span");
+    value.className = "dashboard-bar-value";
+    value.textContent = item.value > 0 ? dashboardChartValueLabel(item.value) : "";
+    const stage = document.createElement("span");
+    stage.className = "dashboard-bar-stage";
+    const bar = document.createElement("span");
+    bar.className = "dashboard-bar-fill";
+    bar.style.height = `${pct}%`;
+    stage.appendChild(bar);
+    const label = document.createElement("span");
+    label.className = "dashboard-bar-label";
+    label.textContent = item.label;
+    button.append(value, stage, label);
+    fragment.appendChild(button);
+  });
+  ui.dashboardChart.appendChild(fragment);
+}
+
+async function openDashboardBucket(bucket) {
+  if (!currentUser) return;
+  setMessage("Chargement des activités de la période sélectionnée…", "info");
+  try {
+    const snap = await getDocs(query(
+      userCollection("activities"),
+      where("start_time_ms", ">=", bucket.start),
+      where("start_time_ms", "<", bucket.end)
+    ));
+    const merged = new Map(activities.map((item) => [activityKey(item), item]));
+    snap.forEach((item) => {
+      const row = { __docId: item.id, ...item.data() };
+      if (row.deleted_at_ms == null) merged.set(activityKey(row), row);
+    });
+    activities = [...merged.values()];
+    rebuildDynamicFilters();
+    dashboardDrilldownStartMs = bucket.start;
+    dashboardDrilldownEndMs = bucket.end;
+    dashboardDrilldownText = `${sportName(dashboardSport)} · ${formatDashboardBucketRange(bucket.start, bucket.end)}`;
+    ui.sportFilter.value = String(dashboardSport);
+    ui.yearFilter.value = "";
+    ui.dashboardDrilldownLabel.textContent = `Filtre DASHBOARD002 : ${dashboardDrilldownText}`;
+    ui.dashboardDrilldownNotice.classList.remove("hidden");
+    applyFiltersAndRender();
+    const catalogueHeading = ui.loadedLabel?.closest("section");
+    if (catalogueHeading) catalogueHeading.scrollIntoView({ behavior: "smooth", block: "start" });
+    setMessage(`DASHBOARD002 · ${filteredActivities.length} activité(s) affichée(s) pour ${dashboardDrilldownText}.`, "success");
+  } catch (error) {
+    handleError(error, "Ouverture des activités du graphique impossible");
+  }
+}
+
+function clearDashboardDrilldown(rerender = true) {
+  dashboardDrilldownStartMs = 0;
+  dashboardDrilldownEndMs = 0;
+  dashboardDrilldownText = "";
+  ui.dashboardDrilldownNotice.classList.add("hidden");
+  if (rerender) applyFiltersAndRender();
+}
+
+function formatDashboardBucketRange(startMs, endMs) {
+  const fmt = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+  const a = new Date(startMs);
+  const b = new Date(Math.max(startMs, endMs - 1));
+  const left = fmt.format(a);
+  const right = fmt.format(b);
+  return left === right ? left : `${left} → ${right}`;
+}
+
+function renderDashboardTrends(rows, nowMs) {
+  const windows = [30, 90, 365];
+  ui.dashboardTrends.innerHTML = "";
+  for (const days of windows) {
+    const start = startOfDayMs(nowMs - (days - 1) * 86400000);
+    const periodRows = rows.filter((row) => Number(row.start_time_ms) >= start);
+    const metrics = metricsFromRows(periodRows, dashboardSport);
+    const card = document.createElement("div");
+    card.className = "dashboard-trend-row";
+    const label = document.createElement("strong");
+    label.textContent = `${days} j`;
+    const data = document.createElement("span");
+    data.textContent = `${formatDistance(metrics.distance)} · ${formatMeters(metrics.ascent)} · ${metrics.activityCount} act.`;
+    const weekly = document.createElement("small");
+    const weeks = Math.max(1, days / 7);
+    weekly.textContent = `${(metrics.distance / 1000 / weeks).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km / semaine`;
+    card.append(label, data, weekly);
+    ui.dashboardTrends.appendChild(card);
+  }
+}
+
+function renderDashboardGoal(rows, nowMs) {
+  const goal = sportGoals.get(String(dashboardSport));
+  ui.dashboardGoalSummary.innerHTML = "";
+  if (!goal || !goalConfigured(goal)) {
+    ui.dashboardGoalMeta.textContent = "non configuré";
+    ui.dashboardGoalSummary.innerHTML = '<div class="empty compact-empty">Aucun objectif configuré pour ce sport.</div>';
     return;
   }
-  rows.slice(0, 4).forEach((item) => {
-    const card = document.createElement("div");
-    card.className = "dashboard-list-row";
+
+  const yearStart = new Date(new Date(nowMs).getFullYear(), 0, 1).getTime();
+  const yearRows = rows.filter((row) => Number(row.start_time_ms) >= yearStart);
+  const metrics = metricsFromRows(yearRows, dashboardSport);
+  const specs = [
+    ["Distance", metrics.distance / 1000, Number(goal.annual_distance_km) || 0, "km"],
+    ["D+", metrics.ascent, Number(goal.annual_ascent_m) || 0, "m"],
+    ["Durée", metrics.duration / 3600000, Number(goal.annual_duration_h) || 0, "h"]
+  ].filter((spec) => spec[2] > 0);
+
+  ui.dashboardGoalMeta.textContent = goal.target_name ? String(goal.target_name) : `${new Date(nowMs).getFullYear()}`;
+  if (!specs.length) {
+    ui.dashboardGoalSummary.innerHTML = '<div class="empty compact-empty">Objectif qualitatif configuré.</div>';
+    return;
+  }
+
+  for (const [label, actual, target, unit] of specs) {
+    const pct = target > 0 ? (actual / target) * 100 : 0;
+    const row = document.createElement("div");
+    row.className = "dashboard-goal-row";
+    const head = document.createElement("div");
+    const name = document.createElement("strong"); name.textContent = label;
+    const value = document.createElement("span");
+    value.textContent = `${actual.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} / ${target.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} ${unit}`;
+    head.append(name, value);
+    const track = document.createElement("div"); track.className = "dashboard-goal-track";
+    const fill = document.createElement("div"); fill.className = "dashboard-goal-fill"; fill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    track.appendChild(fill);
+    const footer = document.createElement("small"); footer.textContent = `${Math.round(pct)} %`;
+    row.append(head, track, footer);
+    ui.dashboardGoalSummary.appendChild(row);
+  }
+}
+
+function renderDashboardSportSplit(splitMetrics) {
+  const run = Number(splitMetrics?.running?.distance) || 0;
+  const bike = Number(splitMetrics?.cycling?.distance) || 0;
+  const total = run + bike;
+  const runPct = total > 0 ? (run / total) * 100 : 0;
+  const bikePct = total > 0 ? (bike / total) * 100 : 0;
+  ui.dashboardSportSplit.innerHTML = "";
+
+  const donut = document.createElement("div");
+  donut.className = "dashboard-split-donut";
+  donut.style.setProperty("--run-pct", `${runPct}%`);
+  const center = document.createElement("span"); center.textContent = total > 0 ? formatDistance(total) : "0 km";
+  donut.appendChild(center);
+
+  const legend = document.createElement("div"); legend.className = "dashboard-split-legend";
+  const runRow = document.createElement("div"); runRow.innerHTML = `<span class="split-dot run"></span><strong>Course</strong><span>${formatDistance(run)} · ${runPct.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} %</span>`;
+  const bikeRow = document.createElement("div"); bikeRow.innerHTML = `<span class="split-dot bike"></span><strong>Vélo</strong><span>${formatDistance(bike)} · ${bikePct.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} %</span>`;
+  legend.append(runRow, bikeRow);
+  ui.dashboardSportSplit.append(donut, legend);
+}
+
+function renderDashboardEquipment(rows) {
+  const byName = new Map();
+  for (const activity of rows) {
+    if (Number(activity.sport) !== dashboardSport || activity.deleted_at_ms != null) continue;
+    const name = String(activity.equipment_name ?? "").trim();
+    if (!name) continue;
+    const current = byName.get(name) || { name, count: 0, distance: 0, duration: 0, ascent: 0 };
+    current.count += 1;
+    current.distance += Number(activity.distance_m) || 0;
+    current.duration += Number(activity.elapsed_time_ms) || 0;
+    current.ascent += Number(activity.ascent_m) || 0;
+    byName.set(name, current);
+  }
+  const ranked = [...byName.values()].sort((a, b) => b.distance - a.distance || b.count - a.count);
+
+  ui.dashboardEquipmentMeta.textContent = ranked.length ? `${ranked.length} utilisé(s)` : "aucun";
+  ui.dashboardEquipmentList.innerHTML = "";
+  if (!ranked.length) {
+    ui.dashboardEquipmentList.innerHTML = '<div class="empty compact-empty">Aucun matériel renseigné sur cette période.</div>';
+    return;
+  }
+  ranked.slice(0, 5).forEach((item) => {
+    const card = document.createElement("div"); card.className = "dashboard-list-row";
     const main = document.createElement("div");
-    const title = document.createElement("strong");
-    title.textContent = equipmentDisplayName(item);
-    const meta = document.createElement("span");
-    meta.textContent = `${formatDistance(item.total_distance_m)} · ${formatDuration(item.total_duration_ms)} · ${formatMeters(item.total_ascent_m)}`;
+    const title = document.createElement("strong"); title.textContent = item.name;
+    const meta = document.createElement("span"); meta.textContent = `${formatDistance(item.distance)} · ${formatMeters(item.ascent)} · ${formatDuration(item.duration)}`;
     main.append(title, meta);
-    const countNode = document.createElement("span");
-    countNode.className = "dashboard-list-value";
-    countNode.textContent = `${formatNumber(item.activity_count ?? 0)} act.`;
-    card.append(main, countNode);
-    ui.dashboardEquipmentList.appendChild(card);
+    const countNode = document.createElement("span"); countNode.className = "dashboard-list-value"; countNode.textContent = `${item.count} act.`;
+    card.append(main, countNode); ui.dashboardEquipmentList.appendChild(card);
   });
 }
 
@@ -803,22 +1202,46 @@ function renderDashboardRecent(rows) {
     return;
   }
   rows.forEach((activity) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "dashboard-list-row dashboard-activity-row";
+    const button = document.createElement("button"); button.type = "button"; button.className = "dashboard-list-row dashboard-activity-row";
     button.addEventListener("click", () => showActivity(activity));
     const main = document.createElement("div");
-    const title = document.createElement("strong");
-    title.textContent = activity.custom_title || sportName(activity.sport);
-    const meta = document.createElement("span");
-    meta.textContent = `${formatDate(activity.start_time_ms)} · ${formatDistance(activity.distance_m)} · ${formatMeters(activity.ascent_m)}`;
+    const title = document.createElement("strong"); title.textContent = activity.custom_title || sportName(activity.sport);
+    const meta = document.createElement("span"); meta.textContent = `${formatDate(activity.start_time_ms)} · ${formatDistance(activity.distance_m)} · ${formatMeters(activity.ascent_m)}`;
     main.append(title, meta);
-    const duration = document.createElement("span");
-    duration.className = "dashboard-list-value";
-    duration.textContent = formatDuration(activity.elapsed_time_ms);
-    button.append(main, duration);
-    ui.dashboardRecentList.appendChild(button);
+    const duration = document.createElement("span"); duration.className = "dashboard-list-value"; duration.textContent = formatDuration(activity.elapsed_time_ms);
+    button.append(main, duration); ui.dashboardRecentList.appendChild(button);
   });
+}
+
+function renderDashboardRecords() {
+  ui.dashboardRecordsList.innerHTML = "";
+  const standard = records
+    .filter((record) => ["distance", "duration", "ascent"].includes(String(record.record_type ?? "").toLowerCase()))
+    .sort((a, b) => ["distance", "duration", "ascent"].indexOf(String(a.record_type).toLowerCase()) - ["distance", "duration", "ascent"].indexOf(String(b.record_type).toLowerCase()));
+  if (!standard.length) {
+    ui.dashboardRecordsList.innerHTML = '<div class="empty compact-empty">Aucun record matérialisé.</div>';
+    return;
+  }
+  standard.forEach((record) => {
+    const activityId = Number(record.activity_id);
+    const linked = activities.find((activity) => Number(activity.id ?? activity.__docId) === activityId);
+    const button = document.createElement("button"); button.type = "button"; button.className = "dashboard-list-row dashboard-activity-row";
+    button.addEventListener("click", () => { void openRecordActivity(record); });
+    const main = document.createElement("div");
+    const title = document.createElement("strong"); title.textContent = recordLabel(record.record_type);
+    const meta = document.createElement("span"); meta.textContent = linked ? `${formatDate(linked.start_time_ms)} · ${linked.custom_title || sportName(linked.sport)}` : `Activité #${activityId || "?"}`;
+    main.append(title, meta);
+    const value = document.createElement("span"); value.className = "dashboard-list-value"; value.textContent = formatRecordValue(record);
+    button.append(main, value); ui.dashboardRecordsList.appendChild(button);
+  });
+}
+
+function scheduleDashboardRefresh() {
+  if (dashboardRefreshTimer) clearTimeout(dashboardRefreshTimer);
+  dashboardRefreshTimer = window.setTimeout(() => {
+    dashboardRefreshTimer = null;
+    void loadWebDashboard();
+  }, 1200);
 }
 
 async function loadMeta() {
@@ -1049,7 +1472,7 @@ async function trashActivityFromWeb(activity) {
 
     showCatalog(false);
     setMessage(
-      "WEB011 · activité mise à la corbeille et propagée vers téléphone + tablette.",
+      "WEB015 · activité mise à la corbeille et propagée vers téléphone + tablette.",
       "success"
     );
 
@@ -1098,7 +1521,7 @@ async function restoreActivityFromWeb(activity) {
     renderTrash();
 
     setMessage(
-      "WEB011 · activité restaurée et propagée vers téléphone + tablette.",
+      "WEB015 · activité restaurée et propagée vers téléphone + tablette.",
       "success"
     );
 
@@ -1307,6 +1730,10 @@ function applyFiltersAndRender() {
   filteredActivities = activities.filter((activity) => {
     if (activity.deleted_at_ms != null) return false;
     if (sport && String(activity.sport ?? "") !== sport) return false;
+    if (dashboardDrilldownStartMs > 0) {
+      const startTime = numberOrZero(activity.start_time_ms);
+      if (startTime < dashboardDrilldownStartMs || startTime >= dashboardDrilldownEndMs) return false;
+    }
 
     const date = dateFromMs(activity.start_time_ms);
     if (year && (!date || String(date.getFullYear()) !== year)) return false;
@@ -1448,7 +1875,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB011";
+  document.title = "SPORT Web · WEB015";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -2449,7 +2876,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB011",
+            webVersion: "WEB015",
             row: wanted
           }
         );
@@ -2472,7 +2899,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB011"
+            webVersion: "WEB015"
           }
         );
         countDelta -= 1;
@@ -2482,7 +2909,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB011"
+      webVersion: "WEB015"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -2511,7 +2938,7 @@ async function rebuildRecordsFromFirestore() {
 
     setRecordsManagerStatus("Records recalculés et synchronisés", "ok");
     setMessage(
-      "WEB011 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
+      "WEB015 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
       "success"
     );
   } catch (error) {
@@ -2638,7 +3065,7 @@ async function commitWebMutation({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB011"
+    webVersion: "WEB015"
   };
   if (row != null) event.row = row;
 
@@ -2646,7 +3073,7 @@ async function commitWebMutation({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB011"
+    webVersion: "WEB015"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -2761,7 +3188,7 @@ async function persistActivityEdits(activity, title, description, note, generati
 
       setInteropStatus("Synchronisé automatiquement", "ok");
       setMessage(
-        "WEB011 · modification propagée automatiquement vers téléphone et tablette.",
+        "WEB015 · modification propagée automatiquement vers téléphone et tablette.",
         "success"
       );
     }
@@ -2880,7 +3307,7 @@ async function saveImmediateActivityFields(partialPatch, successLabel) {
     applyFiltersAndRender();
 
     setInteropStatus(successLabel || "Synchronisé automatiquement", "ok");
-    setMessage("WEB011 · modification propagée automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB015 · modification propagée automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec de synchronisation automatique", "error");
@@ -2952,7 +3379,7 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
     renderPersonal(activity);
     applyFiltersAndRender();
     setInteropStatus("Repère synchronisé automatiquement", "ok");
-    setMessage("WEB011 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB015 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec repère", "error");
@@ -3093,11 +3520,11 @@ function supportedReplayCollection(table) {
 async function replaySyncEvent(event) {
   const collectionName=supportedReplayCollection(event.table);
   if(!collectionName || !event.row || event.operation==="DELETE") return;
-  const confirmed=window.confirm(`Réappliquer cette version de ${syncTableLabel(event.table)} « ${event.rowKey} » ?\n\nCette action crée une nouvelle modification WEB011, qui devient la version la plus récente et sera envoyée au téléphone et à la tablette.`);
+  const confirmed=window.confirm(`Réappliquer cette version de ${syncTableLabel(event.table)} « ${event.rowKey} » ?\n\nCette action crée une nouvelle modification WEB015, qui devient la version la plus récente et sera envoyée au téléphone et à la tablette.`);
   if(!confirmed) return;
   try {
     await commitWebMutation({ table:String(event.table), rowKey:String(event.rowKey), operation:"UPSERT", row:event.row, materializedCollection:collectionName, materializedData:event.row });
-    setMessage("WEB011 · version réappliquée et propagée aux trois plateformes.","success");
+    setMessage("WEB015 · version réappliquée et propagée aux trois plateformes.","success");
   } catch(error){ handleError(error,"Résolution du conflit impossible"); }
 }
 
@@ -3132,7 +3559,7 @@ function startInteropWatch() {
     (error) => {
       console.error(error);
       setInteropStatus("Temps réel interrompu", "error");
-      setMessage("WEB011 · écoute temps réel indisponible : " + (error?.message || error), "error");
+      setMessage("WEB015 · écoute temps réel indisponible : " + (error?.message || error), "error");
     }
   );
 }
@@ -3155,10 +3582,11 @@ function applyRealtimeChange(event) {
       rebuildDynamicFilters();
       applyFiltersAndRender();
       renderTrash();
+      scheduleDashboardRefresh();
 
       if (currentDetailId === rowKey) {
         showCatalog(false);
-        setMessage("WEB011 · suppression définitive reçue d’un appareil Android.", "info");
+        setMessage("WEB015 · suppression définitive reçue d’un appareil Android.", "info");
       }
       void loadWebDashboard();
       return;
@@ -3179,13 +3607,13 @@ function applyRealtimeChange(event) {
         trashActivities.set(rowKey, { ...merged });
         if (currentDetailId === rowKey) {
           showCatalog(false);
-          if (!fromWeb) setMessage("WEB011 · mise à la corbeille reçue d’un appareil Android.", "success");
+          if (!fromWeb) setMessage("WEB015 · mise à la corbeille reçue d’un appareil Android.", "success");
         }
       } else {
         trashActivities.delete(rowKey);
         if (!activities.some((item) => activityKey(item) === rowKey)) activities.push(merged);
         if (!fromWeb && row.deleted_at_ms === null) {
-          setMessage("WEB011 · restauration reçue d’un appareil Android.", "success");
+          setMessage("WEB015 · restauration reçue d’un appareil Android.", "success");
         }
       }
 
@@ -3275,7 +3703,7 @@ function applyRealtimeChange(event) {
 
   if (!fromWeb) {
     setInteropStatus("Modification Android reçue", "ok");
-    setMessage("WEB011 · changement reçu automatiquement depuis un appareil Android.", "success");
+    setMessage("WEB015 · changement reçu automatiquement depuis un appareil Android.", "success");
   }
 }
 
@@ -3463,7 +3891,7 @@ function openLandmarkEditor(code, row) {
   }
 
   ui.landmarkEditor.classList.remove("hidden");
-  ui.landmarkEditorEyebrow.textContent = "WEB011 · MODIFICATION AUTOMATIQUE";
+  ui.landmarkEditorEyebrow.textContent = "WEB015 · MODIFICATION AUTOMATIQUE";
   ui.landmarkEditorTitle.textContent = row.name || `Repère ${safeCode}`;
   ui.landmarkEditorHint.textContent =
     "Aucun bouton Enregistrer. Le code reste fixe ; un changement de type est refusé lorsqu’une référence GPS existe.";
@@ -3637,7 +4065,7 @@ async function persistLandmarkEditor(generation) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB011 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB015 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === landmarkAutosaveGeneration) {
@@ -3686,14 +4114,14 @@ async function createLandmarkFromWeb() {
     landmarkEditorDirty = false;
     ui.landmarkCodeInput.disabled = true;
     ui.createLandmarkButton.classList.add("hidden");
-    ui.landmarkEditorEyebrow.textContent = "WEB011 · REPÈRE CRÉÉ";
+    ui.landmarkEditorEyebrow.textContent = "WEB015 · REPÈRE CRÉÉ";
     ui.landmarkEditorTitle.textContent = row.name;
     populateLandmarkEditor(row.code, row);
 
     rebuildLandmarkFilter();
     renderLandmarkManager();
 
-    setMessage("WEB011 · nouveau repère créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB015 · nouveau repère créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setLandmarkEditorStatus("Création impossible", "error");
@@ -3757,7 +4185,7 @@ async function deleteCurrentLandmarkIfUnused() {
     rebuildLandmarkFilter();
     renderLandmarkManager();
 
-    setMessage("WEB011 · repère inutilisé supprimé sur les trois plateformes.", "success");
+    setMessage("WEB015 · repère inutilisé supprimé sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setLandmarkEditorStatus("Suppression impossible", "error");
@@ -3981,7 +4409,7 @@ function openEquipmentEditor(item) {
   }
 
   ui.equipmentEditor.classList.remove("hidden");
-  ui.equipmentEditorEyebrow.textContent = "WEB011 · MODIFICATION AUTOMATIQUE";
+  ui.equipmentEditorEyebrow.textContent = "WEB015 · MODIFICATION AUTOMATIQUE";
   ui.equipmentEditorTitle.textContent = equipmentDisplayName(item);
   ui.equipmentEditorHint.textContent =
     "Aucun bouton Enregistrer : les changements sont envoyés automatiquement vers téléphone et tablette.";
@@ -4177,7 +4605,7 @@ async function persistEquipmentEditor(generation) {
     renderEquipmentManager();
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
-    setMessage("WEB011 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB015 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === equipmentAutosaveGeneration) {
@@ -4222,7 +4650,7 @@ async function createEquipmentFromWeb() {
     equipmentEditorRowId = id;
     equipmentEditorDirty = false;
     ui.createEquipmentButton.classList.add("hidden");
-    ui.equipmentEditorEyebrow.textContent = "WEB011 · MATÉRIEL CRÉÉ";
+    ui.equipmentEditorEyebrow.textContent = "WEB015 · MATÉRIEL CRÉÉ";
     ui.equipmentEditorTitle.textContent = equipmentDisplayName(row);
     ui.equipmentEditorHint.textContent =
       "Le matériel est créé. Toute modification ultérieure est maintenant automatique.";
@@ -4232,7 +4660,7 @@ async function createEquipmentFromWeb() {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB011 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB015 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setEquipmentEditorStatus("Création impossible", "error");
@@ -4276,7 +4704,7 @@ async function updateEquipmentStatus(item, status) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage(`WEB011 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
+    setMessage(`WEB015 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
   } catch (error) {
     handleError(error, "Changement de statut du matériel impossible");
   }
@@ -4290,7 +4718,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
   if (snapshot.size > MAX_EQUIPMENT_RENAME_CASCADE) {
     throw new Error(
       `Ce matériel est associé à ${snapshot.size} activités. ` +
-      `Par sécurité, WEB011 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
+      `Par sécurité, WEB015 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
     );
   }
 
@@ -4319,7 +4747,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB011",
+      webVersion: "WEB015",
       row: next
     }
   );
@@ -4355,7 +4783,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB011",
+        webVersion: "WEB015",
         row: patch
       }
     );
@@ -4367,7 +4795,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB011"
+      webVersion: "WEB015"
     },
     { merge: true }
   );
@@ -4382,8 +4810,8 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
 
   setMessage(
     snapshot.size > 0
-      ? `WEB011 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
-      : "WEB011 · matériel renommé sur les trois plateformes.",
+      ? `WEB015 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
+      : "WEB015 · matériel renommé sur les trois plateformes.",
     "success"
   );
 }
