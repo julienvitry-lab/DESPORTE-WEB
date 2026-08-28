@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB012 · DASHBOARD001 · Comfortaa">
-  <title>SPORT Web · WEB012</title>
+  <meta name="description" content="SPORT Web · WEB013 · PERSONAL001 · Comfortaa">
+  <title>SPORT Web · WEB013</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB012 · DASHBOARD001 · Comfortaa · Firestore</div>
+      <div class="version">WEB013 · PERSONAL001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -27,7 +27,7 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB012 ajoute un tableau de bord serveur Course à pied / Vélo, sans sacrifier l’interopérabilité des activités, matériels et repères.
+      WEB013 synchronise désormais les objectifs annuels et le suivi du poids entre Web, téléphone et tablette, avec le tableau de bord WEB012 conservé.
     </section>
 
     <section id="dashboard" class="hidden">
@@ -47,7 +47,7 @@
         <section id="webDashboardSection" class="panel web-dashboard-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB012 · DASHBOARD001</p>
+              <p class="eyebrow">WEB013 · DASHBOARD001</p>
               <h2>Tableau de bord</h2>
               <p id="webDashboardMeta" class="muted">Calcul des indicateurs Firestore…</p>
             </div>
@@ -90,6 +90,64 @@
           </div>
         </section>
 
+        <section id="personalSyncSection" class="panel personal-sync-panel">
+          <div class="panel-title-row">
+            <div>
+              <p class="eyebrow">WEB013 · PERSONAL001</p>
+              <h2>Objectifs et suivi du poids</h2>
+              <p id="personalSyncMeta" class="muted">Chargement des données personnelles synchronisées…</p>
+            </div>
+            <span id="personalSyncStatus" class="pill ok">Interop active</span>
+          </div>
+
+          <div class="personal-sync-columns">
+            <div class="personal-sync-card">
+              <div class="personal-card-heading">
+                <div>
+                  <p class="eyebrow">GOALS009</p>
+                  <h3>Objectifs sportifs</h3>
+                </div>
+                <select id="goalSportSelect" aria-label="Sport de l'objectif">
+                  <option value="1">Course à pied</option>
+                  <option value="2">Vélo</option>
+                  <option value="5">Natation</option>
+                  <option value="11">Marche</option>
+                  <option value="17">Randonnée</option>
+                  <option value="0">Autres sports</option>
+                </select>
+              </div>
+
+              <div class="goal-editor-grid">
+                <label>Distance annuelle (km)<input id="goalDistanceInput" type="number" min="0" step="10"></label>
+                <label>D+ annuel (m)<input id="goalAscentInput" type="number" min="0" step="100"></label>
+                <label>Durée annuelle (h)<input id="goalDurationInput" type="number" min="0" step="1"></label>
+                <label>Objectif / course<input id="goalTargetNameInput" type="text" maxlength="140" placeholder="Nom de l'objectif"></label>
+                <label>Date cible<input id="goalTargetDateInput" type="date"></label>
+                <label>Prépa 90 j · distance (km)<input id="goalPrepDistanceInput" type="number" min="0" step="5"></label>
+                <label>Prépa 90 j · D+ (m)<input id="goalPrepAscentInput" type="number" min="0" step="100"></label>
+              </div>
+              <div class="autosave-row"><span class="autosave-dot"></span><span id="goalSaveStatus" class="muted">Synchronisation automatique</span></div>
+              <div id="goalProgress" class="goal-progress"></div>
+            </div>
+
+            <div class="personal-sync-card">
+              <div class="personal-card-heading">
+                <div>
+                  <p class="eyebrow">WEIGHT002</p>
+                  <h3>Suivi du poids</h3>
+                </div>
+                <span id="weightSummary" class="muted">—</span>
+              </div>
+              <div class="weight-editor-row">
+                <label>Date<input id="weightDateInput" type="date"></label>
+                <label>Poids (kg)<input id="weightKgInput" type="number" min="20" max="300" step="0.1" inputmode="decimal"></label>
+              </div>
+              <div class="autosave-row"><span class="autosave-dot"></span><span id="weightSaveStatus" class="muted">Synchronisation automatique</span></div>
+              <div id="weightHistory" class="weight-history"></div>
+            </div>
+          </div>
+        </section>
+
         <div class="metric-grid">
           <article class="metric"><span>Activités</span><strong id="activityCount">—</strong></article>
           <article class="metric"><span>Matériels</span><strong id="equipmentCount">—</strong></article>
@@ -102,7 +160,7 @@
         <section id="equipmentManagerSection" class="panel equipment-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB012 · MATÉRIEL001</p>
+              <p class="eyebrow">WEB013 · MATÉRIEL001</p>
               <h2>Matériel synchronisé</h2>
               <p id="equipmentManagerMeta" class="muted">Chargement du matériel…</p>
             </div>
@@ -228,7 +286,7 @@
         <section id="landmarkManagerSection" class="panel landmark-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB012 · REPÈRE013</p>
+              <p class="eyebrow">WEB013 · REPÈRE013</p>
               <h2>Repères personnels synchronisés</h2>
               <p id="landmarkManagerMeta" class="muted">Chargement des repères…</p>
             </div>
@@ -298,7 +356,7 @@
         <section class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB012 · MÉTIER001</p>
+              <p class="eyebrow">WEB013 · MÉTIER001</p>
               <h2>Répertoire avancé</h2>
               <p id="loadedLabel" class="muted">Chargement…</p>
             </div>
@@ -377,10 +435,10 @@
         <section id="recordsManagerSection" class="panel compact records-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB012 · RECORDS001</p>
+              <p class="eyebrow">WEB013 · RECORDS001</p>
               <h2>Records SPORT</h2>
               <p class="muted">
-                Distance, durée et D+ sont des données dérivées des activités. WEB012 les recalcule
+                Distance, durée et D+ sont des données dérivées des activités. WEB013 les recalcule
                 depuis Firestore plutôt que de permettre une valeur manuelle incohérente.
               </p>
             </div>
@@ -425,7 +483,7 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB012 · CARTO+</p>
+              <p class="eyebrow">WEB013 · CARTO+</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
@@ -470,7 +528,7 @@
         <section class="detail-section panel">
           <div class="section-heading interop-heading">
             <div>
-              <p class="eyebrow">WEB012 · MÉTIER001</p>
+              <p class="eyebrow">WEB013 · MÉTIER001</p>
               <h2>Matériel, repères et notes</h2>
             </div>
             <div id="interopStatus" class="pill ok">Synchronisation active</div>
@@ -595,7 +653,7 @@
   </main>
 
   <footer>
-    SPORT Web · WEB012 · interopérabilité contrôlée Firestore
+    SPORT Web · WEB013 · interopérabilité contrôlée Firestore
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

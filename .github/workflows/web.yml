@@ -1,23 +1,16 @@
-name: Publier SPORT Web · WEB012
-
+name: Publier SPORT Web · WEB013
 on:
   push:
     branches: [main]
-    paths:
-      - "web/**"
-      - ".github/workflows/web.yml"
-      - "docs/releases/WEB012.md"
+    paths: ["web/**", ".github/workflows/web.yml", "docs/releases/WEB013.md"]
   workflow_dispatch:
-
 permissions:
   contents: read
   pages: write
   id-token: write
-
 concurrency:
   group: "sport-web-pages"
   cancel-in-progress: false
-
 jobs:
   deploy:
     environment:
@@ -27,29 +20,27 @@ jobs:
     steps:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
-      - name: Valider WEB012
+      - name: Valider WEB013
         shell: bash
         run: |
           set -euo pipefail
-          test -f web/index.html
-          test -f web/styles.css
-          test -f web/app.js
-          grep -Fq "WEB012 · DASHBOARD001" web/index.html
-          grep -Fq 'getAggregateFromServer' web/app.js
+          grep -Fq "WEB013 · PERSONAL001" web/index.html
+          grep -Fq 'table: "sport_goals"' web/app.js
+          grep -Fq 'table:"journal_entries"' web/app.js
+          grep -Fq 'function loadPersonalSyncData' web/app.js
+          grep -Fq 'function persistGoalRow' web/app.js
+          grep -Fq 'function persistWeight' web/app.js
           grep -Fq 'function loadWebDashboard' web/app.js
-          grep -Fq 'dashboardRunningButton' web/index.html
-          grep -Fq 'dashboardTotalButton' web/index.html
           grep -Fq 'writeBatch' web/app.js
           grep -Fq 'onSnapshot' web/app.js
           grep -Fq 'family=Comfortaa' web/index.html
-          grep -Fq 'z-index: 4000' web/styles.css
-          echo "WEB012 : tableau de bord serveur + socle interop validés."
+          echo "WEB013 : objectifs + poids interopérables + dashboard validés."
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
       - name: Préparer l'artefact Pages
         uses: actions/upload-pages-artifact@v4
         with:
           path: "./web"
-      - name: Publier SPORT Web · WEB012
+      - name: Publier SPORT Web · WEB013
         id: deployment
         uses: actions/deploy-pages@v4

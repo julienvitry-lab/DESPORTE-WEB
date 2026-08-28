@@ -27,7 +27,7 @@ import {
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB012 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
+// WEB013 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
 // Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
@@ -54,6 +54,10 @@ const ui = Object.fromEntries(
     "catalogView", "identityLine", "activityCount", "equipmentCount",
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
     "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
+    "personalSyncSection", "personalSyncMeta", "personalSyncStatus", "goalSportSelect",
+    "goalDistanceInput", "goalAscentInput", "goalDurationInput", "goalTargetNameInput",
+    "goalTargetDateInput", "goalPrepDistanceInput", "goalPrepAscentInput", "goalSaveStatus", "goalProgress",
+    "weightDateInput", "weightKgInput", "weightSaveStatus", "weightSummary", "weightHistory",
     "dashboardWeekButton", "dashboardMonthButton", "dashboardYearButton", "dashboardTotalButton",
     "dashboardActivityValue", "dashboardDistanceValue", "dashboardDurationValue", "dashboardAscentValue",
     "dashboardEquipmentMeta", "dashboardEquipmentList", "dashboardRecentList",
@@ -106,6 +110,18 @@ let currentDetailId = null;
 let dashboardSport = 1;
 let dashboardPeriod = "WEEK";
 let dashboardLoadGeneration = 0;
+
+let sportGoals = new Map();
+let journalEntries = new Map();
+let selectedGoalSport = 1;
+let goalEditorDirty = false;
+let goalAutosaveTimer = null;
+let goalAutosaveQueue = Promise.resolve();
+let goalAutosaveGeneration = 0;
+let weightEditorDirty = false;
+let weightAutosaveTimer = null;
+let weightAutosaveQueue = Promise.resolve();
+let weightAutosaveGeneration = 0;
 
 let equipmentRows = [];
 let equipmentEditorMode = "closed";
@@ -170,6 +186,24 @@ function wireEvents() {
   ui.dashboardMonthButton.addEventListener("click", () => selectDashboardPeriod("MONTH"));
   ui.dashboardYearButton.addEventListener("click", () => selectDashboardPeriod("YEAR"));
   ui.dashboardTotalButton.addEventListener("click", () => selectDashboardPeriod("TOTAL"));
+
+  ui.goalSportSelect.addEventListener("change", () => {
+    selectedGoalSport = Number(ui.goalSportSelect.value) || 0;
+    goalEditorDirty = false;
+    populateGoalEditor();
+    void loadGoalProgress();
+  });
+  [ui.goalDistanceInput, ui.goalAscentInput, ui.goalDurationInput, ui.goalTargetNameInput,
+   ui.goalTargetDateInput, ui.goalPrepDistanceInput, ui.goalPrepAscentInput].forEach((element) => {
+    element.addEventListener("input", scheduleGoalAutosave);
+    element.addEventListener("change", () => { void flushGoalAutosave(); });
+  });
+  ui.weightDateInput.addEventListener("change", () => {
+    weightEditorDirty = false;
+    populateWeightEditorForDate();
+  });
+  ui.weightKgInput.addEventListener("input", scheduleWeightAutosave);
+  ui.weightKgInput.addEventListener("change", () => { void flushWeightAutosave(); });
   ui.loadMoreButton.addEventListener("click", () => loadNextPage());
   ui.loadAllButton.addEventListener("click", () => loadAllActivities());
 
@@ -316,7 +350,7 @@ onAuthStateChanged(auth, async (user) => {
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB012 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB013 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -348,6 +382,8 @@ async function reloadAll() {
   landmarkReferences = new Map();
   activityLandmarks = new Map();
   records = [];
+  sportGoals = new Map();
+  journalEntries = new Map();
   currentDetailId = null;
 
   ui.activityList.innerHTML = "";
@@ -357,14 +393,242 @@ async function reloadAll() {
   setMessage("Lecture Firestore en cours…", "info");
 
   try {
-    await Promise.all([loadMeta(), loadReferenceCollections()]);
+    await Promise.all([loadMeta(), loadReferenceCollections(), loadPersonalSyncData()]);
     await loadNextPage();
     await loadWebDashboard();
-    setMessage("WEB012 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    setMessage("WEB013 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
 }
+
+async function loadPersonalSyncData() {
+  const [goalSnap, journalSnap] = await Promise.all([
+    getDocs(userCollection("sport_goals")),
+    getDocs(userCollection("journal_entries"))
+  ]);
+  sportGoals.clear();
+  goalSnap.forEach((item) => sportGoals.set(String(item.id), { __docId: item.id, ...item.data() }));
+  journalEntries.clear();
+  journalSnap.forEach((item) => journalEntries.set(String(item.id), { __docId: item.id, ...item.data() }));
+
+  if (!ui.weightDateInput.value) ui.weightDateInput.value = dateInputLocalValue(Date.now());
+  populateGoalEditor();
+  populateWeightEditorForDate();
+  renderWeightHistory();
+  updatePersonalSyncMeta();
+  void loadGoalProgress();
+}
+
+function updatePersonalSyncMeta() {
+  const configuredGoals = [...sportGoals.values()].filter((goal) => goalConfigured(goal)).length;
+  const weightCount = [...journalEntries.values()].filter((entry) => Number(entry.weight_kg) > 0).length;
+  ui.personalSyncMeta.textContent = `${configuredGoals} objectif(s) configuré(s) · ${weightCount} mesure(s) de poids dans Firestore`;
+}
+
+function goalConfigured(goal) {
+  if (!goal) return false;
+  return (Number(goal.annual_distance_km) || 0) > 0 || (Number(goal.annual_ascent_m) || 0) > 0 ||
+    (Number(goal.annual_duration_h) || 0) > 0 || String(goal.target_name || "").trim() ||
+    String(goal.target_date || "").trim() || (Number(goal.prep_distance_90_km) || 0) > 0 ||
+    (Number(goal.prep_ascent_90_m) || 0) > 0;
+}
+
+function populateGoalEditor() {
+  const goal = sportGoals.get(String(selectedGoalSport)) || {};
+  ui.goalSportSelect.value = String(selectedGoalSport);
+  ui.goalDistanceInput.value = numericInputValue(goal.annual_distance_km);
+  ui.goalAscentInput.value = numericInputValue(goal.annual_ascent_m);
+  ui.goalDurationInput.value = numericInputValue(goal.annual_duration_h);
+  ui.goalTargetNameInput.value = String(goal.target_name ?? "");
+  ui.goalTargetDateInput.value = String(goal.target_date ?? "");
+  ui.goalPrepDistanceInput.value = numericInputValue(goal.prep_distance_90_km);
+  ui.goalPrepAscentInput.value = numericInputValue(goal.prep_ascent_90_m);
+  ui.goalSaveStatus.textContent = "Synchronisation automatique";
+}
+
+function scheduleGoalAutosave() {
+  goalEditorDirty = true;
+  goalAutosaveGeneration += 1;
+  const generation = goalAutosaveGeneration;
+  if (goalAutosaveTimer) clearTimeout(goalAutosaveTimer);
+  ui.goalSaveStatus.textContent = "Modification détectée…";
+  goalAutosaveTimer = window.setTimeout(() => {
+    goalAutosaveTimer = null;
+    void queueGoalAutosave(generation);
+  }, AUTOSAVE_DELAY_MS);
+}
+
+function flushGoalAutosave() {
+  if (!goalEditorDirty) return goalAutosaveQueue;
+  if (goalAutosaveTimer) { clearTimeout(goalAutosaveTimer); goalAutosaveTimer = null; }
+  goalAutosaveGeneration += 1;
+  return queueGoalAutosave(goalAutosaveGeneration);
+}
+
+function queueGoalAutosave(generation) {
+  const sport = selectedGoalSport;
+  const row = goalRowFromEditor(sport);
+  const run = () => persistGoalRow(sport, row, generation);
+  goalAutosaveQueue = goalAutosaveQueue.then(run, run);
+  return goalAutosaveQueue;
+}
+
+function goalRowFromEditor(sport) {
+  return {
+    sport: Number(sport),
+    annual_distance_km: Math.max(0, Number(ui.goalDistanceInput.value) || 0),
+    annual_ascent_m: Math.max(0, Math.round(Number(ui.goalAscentInput.value) || 0)),
+    annual_duration_h: Math.max(0, Number(ui.goalDurationInput.value) || 0),
+    target_name: String(ui.goalTargetNameInput.value ?? "").trim(),
+    target_date: String(ui.goalTargetDateInput.value ?? "").trim(),
+    prep_distance_90_km: Math.max(0, Number(ui.goalPrepDistanceInput.value) || 0),
+    prep_ascent_90_m: Math.max(0, Math.round(Number(ui.goalPrepAscentInput.value) || 0)),
+    updated_at_ms: Date.now()
+  };
+}
+
+async function persistGoalRow(sport, row, generation) {
+  const key = String(sport);
+  ui.goalSaveStatus.textContent = "Synchronisation vers les 3 plateformes…";
+  try {
+    await commitWebMutation({
+      table: "sport_goals", rowKey: key, operation: "UPSERT", row,
+      materializedCollection: "sport_goals", materializedData: row
+    });
+    sportGoals.set(key, { __docId: key, ...row });
+    if (generation === goalAutosaveGeneration && selectedGoalSport === sport) {
+      goalEditorDirty = false;
+      ui.goalSaveStatus.textContent = "Synchronisé automatiquement";
+    }
+    updatePersonalSyncMeta();
+    void loadGoalProgress();
+  } catch (error) {
+    if (generation === goalAutosaveGeneration) ui.goalSaveStatus.textContent = "Échec de synchronisation";
+    handleError(error, "Objectif impossible à synchroniser");
+  }
+}
+
+async function loadGoalProgress() {
+  const sport = selectedGoalSport;
+  const goal = sportGoals.get(String(sport));
+  if (!goal || !goalConfigured(goal)) {
+    ui.goalProgress.innerHTML = '<span class="muted">Aucun objectif configuré pour ce sport.</span>';
+    return;
+  }
+  try {
+    const start = new Date(); start.setMonth(0,1); start.setHours(0,0,0,0);
+    const snapshot = await getDocs(query(userCollection("activities"), where("start_time_ms", ">=", start.getTime())));
+    let distance=0, ascent=0, duration=0;
+    snapshot.forEach((item) => {
+      const row=item.data(); if (Number(row.sport)!==sport || row.deleted_at_ms!=null) return;
+      distance += Number(row.distance_m)||0; ascent += Number(row.ascent_m)||0; duration += Number(row.elapsed_time_ms)||0;
+    });
+    if (selectedGoalSport !== sport) return;
+    const cards=[];
+    if (Number(goal.annual_distance_km)>0) cards.push(goalProgressDatum("Distance", distance/1000, Number(goal.annual_distance_km), "km"));
+    if (Number(goal.annual_ascent_m)>0) cards.push(goalProgressDatum("D+", ascent, Number(goal.annual_ascent_m), "m"));
+    if (Number(goal.annual_duration_h)>0) cards.push(goalProgressDatum("Durée", duration/3600000, Number(goal.annual_duration_h), "h"));
+    ui.goalProgress.innerHTML=""; cards.forEach((card)=>ui.goalProgress.appendChild(card));
+  } catch (error) { console.error(error); }
+}
+
+function goalProgressDatum(label, actual, target, unit) {
+  const box=document.createElement("div"); box.className="goal-progress-item";
+  const pct=target>0?Math.max(0,Math.min(999,(actual/target)*100)):0;
+  const head=document.createElement("div"); head.className="goal-progress-head";
+  const name=document.createElement("strong"); name.textContent=label;
+  const value=document.createElement("span"); value.textContent=`${actual.toLocaleString("fr-FR",{maximumFractionDigits:1})} / ${target.toLocaleString("fr-FR",{maximumFractionDigits:1})} ${unit} · ${Math.round(pct)} %`;
+  head.append(name,value);
+  const track=document.createElement("div"); track.className="goal-progress-track";
+  const fill=document.createElement("div"); fill.className="goal-progress-fill"; fill.style.width=`${Math.min(100,pct)}%`; track.appendChild(fill);
+  box.append(head,track); return box;
+}
+
+function populateWeightEditorForDate() {
+  const key = String(dayStartMsFromDateInput(ui.weightDateInput.value));
+  const entry = journalEntries.get(key);
+  ui.weightKgInput.value = entry?.weight_kg == null ? "" : String(Number(entry.weight_kg));
+  ui.weightSaveStatus.textContent = "Synchronisation automatique";
+}
+
+function scheduleWeightAutosave() {
+  weightEditorDirty = true;
+  weightAutosaveGeneration += 1;
+  const generation=weightAutosaveGeneration;
+  if (weightAutosaveTimer) clearTimeout(weightAutosaveTimer);
+  ui.weightSaveStatus.textContent="Modification détectée…";
+  weightAutosaveTimer=window.setTimeout(()=>{ weightAutosaveTimer=null; void queueWeightAutosave(generation); }, AUTOSAVE_DELAY_MS);
+}
+
+function flushWeightAutosave() {
+  if (!weightEditorDirty) return weightAutosaveQueue;
+  if (weightAutosaveTimer) { clearTimeout(weightAutosaveTimer); weightAutosaveTimer=null; }
+  weightAutosaveGeneration += 1;
+  return queueWeightAutosave(weightAutosaveGeneration);
+}
+
+function queueWeightAutosave(generation) {
+  const dayStartMs=dayStartMsFromDateInput(ui.weightDateInput.value);
+  const existing=journalEntries.get(String(dayStartMs));
+  const weight=Number(String(ui.weightKgInput.value||"").replace(",","."));
+  const run=()=>persistWeight(dayStartMs, existing, weight, generation);
+  weightAutosaveQueue=weightAutosaveQueue.then(run,run); return weightAutosaveQueue;
+}
+
+async function persistWeight(dayStartMs, existing, weight, generation) {
+  if (!Number.isFinite(weight) || weight<20 || weight>300) {
+    ui.weightSaveStatus.textContent="Poids attendu entre 20 et 300 kg"; return;
+  }
+  const key=String(dayStartMs); const now=Date.now();
+  const row={
+    day_start_ms: dayStartMs,
+    sleep_hours: existing?.sleep_hours ?? null,
+    sleep_quality: Number(existing?.sleep_quality)||3,
+    energy: Number(existing?.energy)||3,
+    fatigue: Number(existing?.fatigue)||3,
+    motivation: Number(existing?.motivation)||3,
+    stress: Number(existing?.stress)||3,
+    soreness: Number(existing?.soreness)||3,
+    digestion: Number(existing?.digestion)||3,
+    resting_hr: existing?.resting_hr ?? null,
+    weight_kg: Math.round(weight*10)/10,
+    note: String(existing?.note ?? ""),
+    updated_at_ms: now
+  };
+  ui.weightSaveStatus.textContent="Synchronisation vers les 3 plateformes…";
+  try {
+    await commitWebMutation({ table:"journal_entries", rowKey:key, operation:"UPSERT", row,
+      materializedCollection:"journal_entries", materializedData:row });
+    journalEntries.set(key,{__docId:key,...row});
+    if (generation===weightAutosaveGeneration) { weightEditorDirty=false; ui.weightSaveStatus.textContent="Synchronisé automatiquement"; }
+    renderWeightHistory(); updatePersonalSyncMeta();
+  } catch(error) { if(generation===weightAutosaveGeneration) ui.weightSaveStatus.textContent="Échec de synchronisation"; handleError(error,"Poids impossible à synchroniser"); }
+}
+
+function renderWeightHistory() {
+  const rows=[...journalEntries.values()].filter((e)=>Number(e.weight_kg)>0).sort((a,b)=>(Number(b.day_start_ms)||0)-(Number(a.day_start_ms)||0));
+  ui.weightHistory.innerHTML="";
+  if (!rows.length) { ui.weightSummary.textContent="Aucune mesure"; ui.weightHistory.innerHTML='<div class="empty compact-empty">Historique vide.</div>'; return; }
+  const latest=Number(rows[0].weight_kg), oldest=Number(rows[rows.length-1].weight_kg), delta=latest-oldest;
+  ui.weightSummary.textContent=`${latest.toLocaleString("fr-FR",{minimumFractionDigits:1,maximumFractionDigits:1})} kg · ${rows.length} mesure(s)` + (rows.length>1?` · ${delta>=0?"+":""}${delta.toLocaleString("fr-FR",{maximumFractionDigits:1})} kg`:"");
+  rows.slice(0,30).forEach((entry)=>{
+    const row=document.createElement("button"); row.type="button"; row.className="weight-history-row";
+    row.addEventListener("click",()=>{ ui.weightDateInput.value=dateInputLocalValue(Number(entry.day_start_ms)); populateWeightEditorForDate(); });
+    const date=document.createElement("span"); date.textContent=new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"}).format(new Date(Number(entry.day_start_ms)));
+    const value=document.createElement("strong"); value.textContent=`${Number(entry.weight_kg).toLocaleString("fr-FR",{minimumFractionDigits:1,maximumFractionDigits:1})} kg`;
+    row.append(date,value); ui.weightHistory.appendChild(row);
+  });
+}
+
+function dateInputLocalValue(ms) {
+  const d=new Date(Number(ms)); if(Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function dayStartMsFromDateInput(value) {
+  const text=String(value||"").trim(); const d=text?new Date(`${text}T00:00:00`):new Date(); d.setHours(0,0,0,0); return d.getTime();
+}
+function numericInputValue(value) { const n=Number(value); return Number.isFinite(n)&&n!==0?String(n):""; }
 
 function selectDashboardSport(sport) {
   dashboardSport = sport === 2 ? 2 : 1;
@@ -905,7 +1169,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB012";
+  document.title = "SPORT Web · WEB013";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -1910,7 +2174,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB012",
+            webVersion: "WEB013",
             row: wanted
           }
         );
@@ -1933,7 +2197,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB012"
+            webVersion: "WEB013"
           }
         );
         countDelta -= 1;
@@ -1943,7 +2207,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB012"
+      webVersion: "WEB013"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -1972,7 +2236,7 @@ async function rebuildRecordsFromFirestore() {
 
     setRecordsManagerStatus("Records recalculés et synchronisés", "ok");
     setMessage(
-      "WEB012 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
+      "WEB013 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
       "success"
     );
   } catch (error) {
@@ -2099,7 +2363,7 @@ async function commitWebMutation({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB012"
+    webVersion: "WEB013"
   };
   if (row != null) event.row = row;
 
@@ -2107,7 +2371,7 @@ async function commitWebMutation({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB012"
+    webVersion: "WEB013"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -2222,7 +2486,7 @@ async function persistActivityEdits(activity, title, description, note, generati
 
       setInteropStatus("Synchronisé automatiquement", "ok");
       setMessage(
-        "WEB012 · modification propagée automatiquement vers téléphone et tablette.",
+        "WEB013 · modification propagée automatiquement vers téléphone et tablette.",
         "success"
       );
     }
@@ -2341,7 +2605,7 @@ async function saveImmediateActivityFields(partialPatch, successLabel) {
     applyFiltersAndRender();
 
     setInteropStatus(successLabel || "Synchronisé automatiquement", "ok");
-    setMessage("WEB012 · modification propagée automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB013 · modification propagée automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec de synchronisation automatique", "error");
@@ -2413,7 +2677,7 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
     renderPersonal(activity);
     applyFiltersAndRender();
     setInteropStatus("Repère synchronisé automatiquement", "ok");
-    setMessage("WEB012 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB013 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec repère", "error");
@@ -2463,7 +2727,7 @@ function startInteropWatch() {
     (error) => {
       console.error(error);
       setInteropStatus("Temps réel interrompu", "error");
-      setMessage("WEB012 · écoute temps réel indisponible : " + (error?.message || error), "error");
+      setMessage("WEB013 · écoute temps réel indisponible : " + (error?.message || error), "error");
     }
   );
 }
@@ -2547,11 +2811,24 @@ function applyRealtimeChange(event) {
     setRecordsManagerStatus(fromWeb ? "Records synchronisés" : "Records Android reçus", "ok");
     const current = currentDetailActivity();
     if (current) renderLinkedRecords(current);
+  } else if (table === "sport_goals") {
+    if (operation === "DELETE") sportGoals.delete(rowKey);
+    else if (row) sportGoals.set(rowKey, { __docId: rowKey, ...row });
+    if (!goalEditorDirty && String(selectedGoalSport) === rowKey) populateGoalEditor();
+    updatePersonalSyncMeta();
+    void loadGoalProgress();
+  } else if (table === "journal_entries") {
+    if (operation === "DELETE") journalEntries.delete(rowKey);
+    else if (row) journalEntries.set(rowKey, { __docId: rowKey, ...row });
+    const selectedKey = String(dayStartMsFromDateInput(ui.weightDateInput.value));
+    if (!weightEditorDirty && selectedKey === rowKey) populateWeightEditorForDate();
+    renderWeightHistory();
+    updatePersonalSyncMeta();
   }
 
   if (!fromWeb) {
     setInteropStatus("Modification Android reçue", "ok");
-    setMessage("WEB012 · changement reçu automatiquement depuis un appareil Android.", "success");
+    setMessage("WEB013 · changement reçu automatiquement depuis un appareil Android.", "success");
   }
 }
 
@@ -2739,7 +3016,7 @@ function openLandmarkEditor(code, row) {
   }
 
   ui.landmarkEditor.classList.remove("hidden");
-  ui.landmarkEditorEyebrow.textContent = "WEB012 · MODIFICATION AUTOMATIQUE";
+  ui.landmarkEditorEyebrow.textContent = "WEB013 · MODIFICATION AUTOMATIQUE";
   ui.landmarkEditorTitle.textContent = row.name || `Repère ${safeCode}`;
   ui.landmarkEditorHint.textContent =
     "Aucun bouton Enregistrer. Le code reste fixe ; un changement de type est refusé lorsqu’une référence GPS existe.";
@@ -2913,7 +3190,7 @@ async function persistLandmarkEditor(generation) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB012 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB013 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === landmarkAutosaveGeneration) {
@@ -2962,14 +3239,14 @@ async function createLandmarkFromWeb() {
     landmarkEditorDirty = false;
     ui.landmarkCodeInput.disabled = true;
     ui.createLandmarkButton.classList.add("hidden");
-    ui.landmarkEditorEyebrow.textContent = "WEB012 · REPÈRE CRÉÉ";
+    ui.landmarkEditorEyebrow.textContent = "WEB013 · REPÈRE CRÉÉ";
     ui.landmarkEditorTitle.textContent = row.name;
     populateLandmarkEditor(row.code, row);
 
     rebuildLandmarkFilter();
     renderLandmarkManager();
 
-    setMessage("WEB012 · nouveau repère créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB013 · nouveau repère créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setLandmarkEditorStatus("Création impossible", "error");
@@ -3033,7 +3310,7 @@ async function deleteCurrentLandmarkIfUnused() {
     rebuildLandmarkFilter();
     renderLandmarkManager();
 
-    setMessage("WEB012 · repère inutilisé supprimé sur les trois plateformes.", "success");
+    setMessage("WEB013 · repère inutilisé supprimé sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setLandmarkEditorStatus("Suppression impossible", "error");
@@ -3257,7 +3534,7 @@ function openEquipmentEditor(item) {
   }
 
   ui.equipmentEditor.classList.remove("hidden");
-  ui.equipmentEditorEyebrow.textContent = "WEB012 · MODIFICATION AUTOMATIQUE";
+  ui.equipmentEditorEyebrow.textContent = "WEB013 · MODIFICATION AUTOMATIQUE";
   ui.equipmentEditorTitle.textContent = equipmentDisplayName(item);
   ui.equipmentEditorHint.textContent =
     "Aucun bouton Enregistrer : les changements sont envoyés automatiquement vers téléphone et tablette.";
@@ -3453,7 +3730,7 @@ async function persistEquipmentEditor(generation) {
     renderEquipmentManager();
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
-    setMessage("WEB012 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB013 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === equipmentAutosaveGeneration) {
@@ -3498,7 +3775,7 @@ async function createEquipmentFromWeb() {
     equipmentEditorRowId = id;
     equipmentEditorDirty = false;
     ui.createEquipmentButton.classList.add("hidden");
-    ui.equipmentEditorEyebrow.textContent = "WEB012 · MATÉRIEL CRÉÉ";
+    ui.equipmentEditorEyebrow.textContent = "WEB013 · MATÉRIEL CRÉÉ";
     ui.equipmentEditorTitle.textContent = equipmentDisplayName(row);
     ui.equipmentEditorHint.textContent =
       "Le matériel est créé. Toute modification ultérieure est maintenant automatique.";
@@ -3508,7 +3785,7 @@ async function createEquipmentFromWeb() {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB012 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB013 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setEquipmentEditorStatus("Création impossible", "error");
@@ -3552,7 +3829,7 @@ async function updateEquipmentStatus(item, status) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage(`WEB012 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
+    setMessage(`WEB013 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
   } catch (error) {
     handleError(error, "Changement de statut du matériel impossible");
   }
@@ -3566,7 +3843,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
   if (snapshot.size > MAX_EQUIPMENT_RENAME_CASCADE) {
     throw new Error(
       `Ce matériel est associé à ${snapshot.size} activités. ` +
-      `Par sécurité, WEB012 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
+      `Par sécurité, WEB013 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
     );
   }
 
@@ -3595,7 +3872,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB012",
+      webVersion: "WEB013",
       row: next
     }
   );
@@ -3631,7 +3908,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB012",
+        webVersion: "WEB013",
         row: patch
       }
     );
@@ -3643,7 +3920,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB012"
+      webVersion: "WEB013"
     },
     { merge: true }
   );
@@ -3658,8 +3935,8 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
 
   setMessage(
     snapshot.size > 0
-      ? `WEB012 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
-      : "WEB012 · matériel renommé sur les trois plateformes.",
+      ? `WEB013 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
+      : "WEB013 · matériel renommé sur les trois plateformes.",
     "success"
   );
 }

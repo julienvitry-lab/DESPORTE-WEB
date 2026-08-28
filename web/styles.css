@@ -1434,3 +1434,26 @@ footer {
   .dashboard-metric-grid { grid-template-columns:repeat(2,1fr); }
   .dashboard-columns { grid-template-columns:1fr; }
 }
+
+
+/* WEB013 · PERSONAL001 */
+.personal-sync-panel { background: linear-gradient(145deg,rgba(182,255,59,.035),transparent 48%),var(--panel); }
+.personal-sync-columns { display:grid; grid-template-columns:1.1fr .9fr; gap:12px; margin-top:15px; }
+.personal-sync-card { padding:15px; border:1px solid var(--line); border-radius:15px; background:#0e110f; }
+.personal-card-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px; }
+.personal-card-heading h3 { margin:0; font-size:17px; }
+.goal-editor-grid { display:grid; grid-template-columns:repeat(2,minmax(130px,1fr)); gap:9px; }
+.autosave-row { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:11px; }
+.goal-progress { display:grid; gap:8px; margin-top:13px; }
+.goal-progress-item { padding:10px; border:1px solid var(--line); border-radius:11px; background:#0b0e0c; }
+.goal-progress-head { display:flex; justify-content:space-between; gap:10px; font-size:11px; }
+.goal-progress-head span { color:var(--muted); }
+.goal-progress-track { height:6px; overflow:hidden; margin-top:7px; border-radius:999px; background:#252c26; }
+.goal-progress-fill { height:100%; border-radius:999px; background:var(--green); }
+.weight-editor-row { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+.weight-history { display:grid; gap:6px; margin-top:12px; max-height:300px; overflow:auto; }
+.weight-history-row { display:flex; justify-content:space-between; width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:10px; background:#0b0e0c; color:inherit; }
+.weight-history-row span { color:var(--muted); }
+.weight-history-row strong { color:var(--green); }
+@media(max-width:850px){ .personal-sync-columns{grid-template-columns:1fr;} }
+@media(max-width:520px){ .goal-editor-grid,.weight-editor-row{grid-template-columns:1fr;} .personal-card-heading{align-items:flex-start;flex-direction:column;} }
