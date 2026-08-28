@@ -2177,7 +2177,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB025";
+  document.title = "SPORT Web · WEB026";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -3215,8 +3215,8 @@ function renderLeafletMap(route) {
     })
   };
 
-  const preferredLayer = ui.mapLayerSelect.value || "osm";
-  activityBaseLayer = activityBaseLayers[preferredLayer] || activityBaseLayers.osm;
+  const preferredLayer = ui.mapLayerSelect.value || "topo";
+  activityBaseLayer = activityBaseLayers[preferredLayer] || activityBaseLayers.topo;
   activityBaseLayer.addTo(activityMapInstance);
 
   activityRouteBounds = window.L.latLngBounds(latLngs);
@@ -4493,7 +4493,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB025",
+            webVersion: "WEB026",
             row: wanted
           }
         );
@@ -4516,7 +4516,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB025"
+            webVersion: "WEB026"
           }
         );
         countDelta -= 1;
@@ -4526,7 +4526,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB025"
+      webVersion: "WEB026"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -4726,7 +4726,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB025"
+    webVersion: "WEB026"
   };
   if (row != null) event.row = row;
 
@@ -4735,7 +4735,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB025"
+    webVersion: "WEB026"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -5188,7 +5188,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB025",
+      webVersion: "WEB026",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -5254,7 +5254,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB025",
+    webVersion: "WEB026",
     androidVersion: 0,
     __synthetic: true
   };
@@ -6708,7 +6708,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB025",
+      webVersion: "WEB026",
       row: next
     }
   );
@@ -6744,7 +6744,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB025",
+        webVersion: "WEB026",
         row: patch
       }
     );
@@ -6756,7 +6756,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB025"
+      webVersion: "WEB026"
     },
     { merge: true }
   );
