@@ -1975,3 +1975,58 @@ footer {
   .route-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .map-slope-legend { bottom: 8px; left: 8px; max-width: calc(100% - 16px); }
 }
+
+
+/* WEB018 · WEBCARTO003 · analyse des ascensions/descentes */
+.route-analysis-card {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: #0d100e;
+}
+.route-analysis-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.route-analysis-heading > div { display: grid; gap: 4px; }
+.route-analysis-help { margin: 8px 0 12px; color: var(--muted); font-size: 11px; }
+.route-segment-list { display: grid; gap: 14px; }
+.route-segment-group h4 { margin: 0 0 8px; font-size: 12px; color: #dce7df; }
+.route-segment-grid { display: grid; grid-template-columns: repeat(3, minmax(190px, 1fr)); gap: 8px; }
+.route-segment-card {
+  display: grid;
+  gap: 5px;
+  min-height: 108px;
+  padding: 11px 12px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: #101410;
+  box-shadow: none;
+}
+.route-segment-card:hover { border-color: rgba(182,255,59,.48); transform: translateY(-1px); }
+.route-segment-card.selected { border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.16); }
+.route-segment-card.climb .route-segment-title { color: var(--green); }
+.route-segment-card.descent .route-segment-title { color: #63c7ff; }
+.route-segment-card strong { font-size: 14px; }
+.route-segment-card span { font-size: 10px; color: var(--muted); }
+.route-segment-title { font-weight: 800; }
+.route-analysis-empty { padding: 14px; border: 1px dashed var(--line-strong); border-radius: 12px; color: var(--muted); text-align: center; }
+.profile-segment-highlight {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+@media (max-width: 900px) { .route-segment-grid { grid-template-columns: repeat(2, minmax(160px, 1fr)); } }
+@media (max-width: 620px) {
+  .route-analysis-heading { align-items: flex-start; flex-direction: column; }
+  .route-segment-grid { grid-template-columns: 1fr; }
+}
