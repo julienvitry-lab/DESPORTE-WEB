@@ -90,7 +90,7 @@ const ui = Object.fromEntries(
     "createLandmarkButton", "landmarkManagerList",
     "recordsManagerSection", "recordsManagerStatus", "rebuildRecordsButton",
     "loadedLabel", "loadMoreButton", "loadAllButton", "refreshButton",
-    "globalMapSection", "globalMapStatus", "globalMapCount", "globalMapHotspot", "globalMapSummaryText", "globalActivityMap", "globalMapFilteredButton", "globalMapAllButton", "globalMapClearButton", "globalMapModeSelect", "globalMapYearSelect", "globalMapSportSelect", "globalMapLegend",
+    "globalMapSection", "globalMapStatus", "globalMapCount", "globalMapHotspot", "globalMapSummaryText", "globalActivityMap", "globalMapFilteredButton", "globalMapAllButton", "globalMapClearButton", "globalMapModeSelect", "globalMapYearSelect", "globalMapSportSelect", "globalMapDensityZoomSelect", "globalMapLegend", "globalHotspotExplorer", "globalHotspotMeta", "globalHotspotList", "globalHotspotResetButton",
     "performanceTerrainAnalysis", "performanceTerrainMeta", "performanceBenchmarkBadge", "performanceTerrainMetrics", "performanceGradeDistribution", "performanceBenchmark", "performanceInsight",
     "performanceProgression", "performanceProgressionMeta", "performanceProgressionTrend", "performanceProgressionSummary", "performanceProgressionWindows", "performanceProgressionChart", "performanceProgressionHistory",
     "recurringLandmarksAnalysis", "recurringLandmarksMeta", "recurringLandmarksList", "scanRecurringClimbsButton", "recurringClimbsStatus", "recurringClimbsList",
@@ -320,6 +320,13 @@ function wireEvents() {
   ui.globalMapModeSelect?.addEventListener("change", markGlobalMapStale);
   ui.globalMapYearSelect?.addEventListener("change", markGlobalMapStale);
   ui.globalMapSportSelect?.addEventListener("change", markGlobalMapStale);
+  ui.globalMapDensityZoomSelect?.addEventListener("change", markGlobalMapStale);
+  ui.globalHotspotResetButton?.addEventListener("click", () => {
+    if (globalMapLayer && globalMapInstance) {
+      const bounds = globalMapLayer.getBounds();
+      if (bounds.isValid()) globalMapInstance.fitBounds(bounds.pad(0.04), { animate: true, maxZoom: 15 });
+    }
+  });
 
   ui.globalMapFilteredButton?.addEventListener("click", () => { void renderGlobalActivityMap(false); });
   ui.globalMapAllButton?.addEventListener("click", () => { void renderGlobalActivityMap(true); });
@@ -2066,6 +2073,9 @@ function clearGlobalActivityMap() {
     ui.globalMapSummaryText.textContent = "Cliquez sur un tracé pour ouvrir l’activité correspondante.";
   }
   globalMapDensityCells = [];
+  if (ui.globalHotspotExplorer) ui.globalHotspotExplorer.classList.add("hidden");
+  if (ui.globalHotspotList) ui.globalHotspotList.innerHTML = "";
+  if (ui.globalHotspotMeta) ui.globalHotspotMeta.textContent = "Classement des zones de densité.";
   if (ui.globalMapFilteredButton) ui.globalMapFilteredButton.disabled = false;
   if (ui.globalMapAllButton) ui.globalMapAllButton.disabled = false;
   if (ui.globalMapClearButton) ui.globalMapClearButton.disabled = true;
@@ -2122,7 +2132,8 @@ function buildDensityCells(items) {
     if (!item?.route?.points?.length) continue;
     const perActivity = new Set();
     for (const point of item.route.points) {
-      const tile = densityTileForPoint(point.latitude, point.longitude, 17);
+      const zoom = Number(ui.globalMapDensityZoomSelect?.value || 17);
+      const tile = densityTileForPoint(point.latitude, point.longitude, zoom);
       if (!tile || perActivity.has(tile.key)) continue;
       perActivity.add(tile.key);
       const existing = cells.get(tile.key) || { ...tile, count: 0, activities: [] };
@@ -2144,9 +2155,86 @@ function densityCellStyle(count, maxCount) {
   };
 }
 
+
+function hotspotDominantSport(activities) {
+  const counts = new Map();
+  for (const activity of activities) {
+    const cls = globalMapSportClass(activity);
+    counts.set(cls, (counts.get(cls) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a,b) => b[1]-a[1])[0]?.[0] || "other";
+}
+
+function hotspotSportLabel(cls) {
+  if (cls === "running") return "Course / trail";
+  if (cls === "cycling") return "Vélo";
+  if (cls === "hiking") return "Randonnée / marche";
+  return "Autres";
+}
+
+function renderGlobalHotspotExplorer(cells) {
+  if (!ui.globalHotspotExplorer || !ui.globalHotspotList || !ui.globalHotspotMeta) return;
+  const top = cells.slice(0, 12);
+
+  if (!top.length) {
+    ui.globalHotspotExplorer.classList.add("hidden");
+    ui.globalHotspotList.innerHTML = "";
+    return;
+  }
+
+  ui.globalHotspotExplorer.classList.remove("hidden");
+  ui.globalHotspotMeta.textContent =
+    `Top ${top.length} · ${cells.length} zone(s) fréquentée(s) · granularité ${ui.globalMapDensityZoomSelect?.selectedOptions?.[0]?.textContent || "standard"}`;
+  ui.globalHotspotList.innerHTML = "";
+
+  top.forEach((cell,index) => {
+    const center = densityTileCenter(cell);
+    const dominant = hotspotDominantSport(cell.activities);
+    const recent = [...cell.activities]
+      .sort((a,b) => numberOrZero(b.start_time_ms)-numberOrZero(a.start_time_ms))
+      .slice(0,3);
+
+    const card = document.createElement("article");
+    card.className = "global-hotspot-card";
+    card.innerHTML = `
+      <button type="button" class="global-hotspot-focus">
+        <span class="global-hotspot-rank">#${index+1}</span>
+        <span class="global-hotspot-main">
+          <strong>${formatNumber(cell.count)} passage${cell.count>1?"s":""}</strong>
+          <small>${escapeHtml(hotspotSportLabel(dominant))} dominant · zone ${Math.round(center[0]*1000)/1000}, ${Math.round(center[1]*1000)/1000}</small>
+        </span>
+        <span class="pill ${index < 3 ? "ok" : "neutral"}">${index < 3 ? "Top 3" : "Secteur"}</span>
+      </button>
+      <div class="global-hotspot-recent">
+        ${recent.map((activity) =>
+          `<button type="button" data-hotspot-activity="${escapeHtml(activityKey(activity))}">
+            <span>${escapeHtml(formatDate(activity.start_time_ms))}</span>
+            <strong>${escapeHtml(activity.custom_title || sportName(activity.sport))}</strong>
+            <small>${escapeHtml(formatDistance(activity.distance_m))}</small>
+          </button>`
+        ).join("")}
+      </div>`;
+
+    card.querySelector(".global-hotspot-focus")?.addEventListener("click", () => {
+      if (!globalMapInstance) return;
+      globalMapInstance.setView(center, Math.min(18, cell.zoom + 1), { animate: true });
+    });
+
+    card.querySelectorAll("[data-hotspot-activity]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const target = cell.activities.find((activity) => activityKey(activity) === button.dataset.hotspotActivity);
+        if (target) showActivity(target);
+      });
+    });
+
+    ui.globalHotspotList.appendChild(card);
+  });
+}
+
 function renderGlobalDensity(items) {
   const cells = buildDensityCells(items);
   globalMapDensityCells = cells;
+  renderGlobalHotspotExplorer(cells);
   if (!cells.length) return { cellCount: 0, maxCount: 0 };
 
   const maxCount = cells[0].count;
@@ -2255,6 +2343,8 @@ async function renderGlobalActivityMap(loadEverything) {
       }
     } else {
       globalMapDensityCells = [];
+      if (ui.globalHotspotExplorer) ui.globalHotspotExplorer.classList.add("hidden");
+      if (ui.globalHotspotList) ui.globalHotspotList.innerHTML = "";
       for (const item of usable) {
         const { activity, route } = item;
         const latLngs = route.points.map((point) => [point.latitude, point.longitude]);
@@ -2336,7 +2426,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB029";
+  document.title = "SPORT Web · WEB030";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -5019,7 +5109,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB029",
+            webVersion: "WEB030",
             row: wanted
           }
         );
@@ -5042,7 +5132,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB029"
+            webVersion: "WEB030"
           }
         );
         countDelta -= 1;
@@ -5052,7 +5142,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB029"
+      webVersion: "WEB030"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5252,7 +5342,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB029"
+    webVersion: "WEB030"
   };
   if (row != null) event.row = row;
 
@@ -5261,7 +5351,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB029"
+    webVersion: "WEB030"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -5714,7 +5804,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB029",
+      webVersion: "WEB030",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -5780,7 +5870,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB029",
+    webVersion: "WEB030",
     androidVersion: 0,
     __synthetic: true
   };
@@ -7234,7 +7324,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB029",
+      webVersion: "WEB030",
       row: next
     }
   );
@@ -7270,7 +7360,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB029",
+        webVersion: "WEB030",
         row: patch
       }
     );
@@ -7282,7 +7372,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB029"
+      webVersion: "WEB030"
     },
     { merge: true }
   );

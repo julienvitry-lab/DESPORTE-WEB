@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB029 · WEBCARTO010 · Comfortaa">
-  <title>SPORT Web · WEB029</title>
+  <meta name="description" content="SPORT Web · WEB030 · WEBCARTO011 · Comfortaa">
+  <title>SPORT Web · WEB030</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB029 · WEBCARTO010 · Comfortaa · Firestore</div>
+      <div class="version">WEB030 · WEBCARTO011 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -488,8 +488,9 @@
           <div class="panel-title-row">
             <div>
               <!-- Héritage WEB023 · WEBCARTO008 -->
-              <p class="eyebrow">WEB029 · WEBCARTO010</p>
-              <h2>Carte globale et densité de pratique</h2>
+              <!-- Héritage WEB029 · WEBCARTO010 -->
+              <p class="eyebrow">WEB030 · WEBCARTO011</p>
+              <h2>Carte globale et explorateur de secteurs</h2>
               <p id="globalMapStatus" class="muted">Affiche les tracés des activités filtrées ou de tout l’historique chargé.</p>
             </div>
             <div class="panel-actions global-map-actions">
@@ -523,6 +524,14 @@
                 <option value="other">Autres</option>
               </select>
             </label>
+            <label>
+              <span>Granularité</span>
+              <select id="globalMapDensityZoomSelect">
+                <option value="18">Fine · ~150 m</option>
+                <option value="17" selected>Standard · ~300 m</option>
+                <option value="16">Large · ~600 m</option>
+              </select>
+            </label>
           </div>
 
           <div class="global-map-summary">
@@ -541,7 +550,20 @@
             <span><i class="global-map-line hiking"></i>Randonnée / marche</span>
             <span><i class="global-map-line other"></i>Autres</span>
           </div>
-          <p class="map-help">WEBCARTO010 · la vue Densité compte le nombre d’activités passant dans chaque zone d’environ 200–300 m, et non le nombre brut de points GPS. Une activité ne compte donc qu’une fois par zone, ce qui évite de favoriser les appareils enregistrant plus de points.</p>
+
+          <section id="globalHotspotExplorer" class="global-hotspot-explorer hidden">
+            <div class="global-hotspot-head">
+              <div>
+                <p class="eyebrow">WEB030 · WEBCARTO011</p>
+                <strong>Secteurs les plus fréquentés</strong>
+                <span id="globalHotspotMeta" class="muted">Classement des zones de densité.</span>
+              </div>
+              <button id="globalHotspotResetButton" class="secondary compact" type="button">Vue générale</button>
+            </div>
+            <div id="globalHotspotList" class="global-hotspot-list"></div>
+          </section>
+
+          <p class="map-help">WEBCARTO011 · la vue Densité compte les activités distinctes par zone. La granularité permet d’explorer les secteurs fins (~150 m), standards (~300 m) ou larges (~600 m). Cliquez sur un secteur du classement pour zoomer dessus et retrouver ses passages récents.</p>
         </section>
 
         <section class="panel">
