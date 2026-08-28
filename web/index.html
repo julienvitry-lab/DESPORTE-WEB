@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB008 · EDITION002 · Comfortaa">
-  <title>SPORT Web · WEB008</title>
+  <meta name="description" content="SPORT Web · WEB009 · MATÉRIEL001 · Comfortaa">
+  <title>SPORT Web · WEB009</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB008 · EDITION002 · Comfortaa · Firestore</div>
+      <div class="version">WEB009 · MATÉRIEL001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -27,7 +27,7 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB008 étend l’édition interopérable : matériel, ressenti, difficulté, confidentialité, description, titre, note et repères se synchronisent automatiquement sur les trois plateformes.
+      WEB009 ajoute la gestion interopérable du matériel : créer, modifier, mettre en réserve, archiver ou réactiver un matériel depuis le Web propage le changement vers téléphone et tablette.
     </section>
 
     <section id="dashboard" class="hidden">
@@ -53,10 +53,136 @@
           <article class="metric"><span>Documents bootstrap</span><strong id="expectedDocuments">—</strong></article>
         </div>
 
+        <section id="equipmentManagerSection" class="panel equipment-manager-panel">
+          <div class="panel-title-row">
+            <div>
+              <p class="eyebrow">WEB009 · MATÉRIEL001</p>
+              <h2>Matériel synchronisé</h2>
+              <p id="equipmentManagerMeta" class="muted">Chargement du matériel…</p>
+            </div>
+            <div class="panel-actions equipment-manager-actions">
+              <input id="equipmentManagerSearch" class="equipment-manager-search" type="search"
+                     placeholder="Rechercher un matériel…">
+              <select id="equipmentManagerStatusFilter" aria-label="Filtrer le matériel par statut">
+                <option value="">Tous les statuts</option>
+                <option value="ACTIVE">Actifs</option>
+                <option value="STORED">En réserve</option>
+                <option value="RETIRED">Archivés</option>
+              </select>
+              <button id="newEquipmentButton" class="primary" type="button">+ Nouveau matériel</button>
+            </div>
+          </div>
+
+          <div id="equipmentEditor" class="equipment-editor hidden">
+            <div class="equipment-editor-heading">
+              <div>
+                <p id="equipmentEditorEyebrow" class="eyebrow">NOUVEAU MATÉRIEL</p>
+                <h3 id="equipmentEditorTitle">Créer un matériel</h3>
+                <p id="equipmentEditorHint" class="muted">
+                  La création est volontaire ; ensuite toutes les modifications sont synchronisées automatiquement.
+                </p>
+              </div>
+              <button id="closeEquipmentEditorButton" class="secondary" type="button">Fermer</button>
+            </div>
+
+            <div class="equipment-form-grid">
+              <label>
+                Catégorie
+                <select id="equipmentCategoryInput">
+                  <option value="SHOES">Chaussures</option>
+                  <option value="BIKE">Vélo</option>
+                  <option value="HOME_TRAINER">Home trainer</option>
+                  <option value="HEADLAMP">Lampe frontale</option>
+                  <option value="BACKPACK">Sac à dos</option>
+                  <option value="POLES">Bâtons</option>
+                  <option value="WATCH">Montre</option>
+                  <option value="HEART_RATE_SENSOR">Capteur cardiaque</option>
+                  <option value="OTHER">Autre</option>
+                </select>
+              </label>
+
+              <label>
+                Nom personnalisé
+                <input id="equipmentCustomNameInput" type="text" maxlength="120" placeholder="Ex. SALOMON Ultra Glide 3">
+              </label>
+
+              <label>
+                Marque
+                <input id="equipmentBrandInput" type="text" maxlength="80" placeholder="Ex. Salomon">
+              </label>
+
+              <label>
+                Modèle
+                <input id="equipmentModelInput" type="text" maxlength="100" placeholder="Ex. Ultra Glide 3">
+              </label>
+
+              <label>
+                Exemplaire n°
+                <input id="equipmentSpecimenInput" type="number" min="1" max="99" step="1" value="1">
+              </label>
+
+              <label>
+                Statut
+                <select id="equipmentStatusInput">
+                  <option value="ACTIVE">Actif</option>
+                  <option value="STORED">En réserve</option>
+                  <option value="RETIRED">Retiré / archivé</option>
+                </select>
+              </label>
+
+              <label>
+                Date d’achat
+                <input id="equipmentPurchaseDateInput" type="date">
+              </label>
+
+              <label>
+                Prix d’achat (€)
+                <input id="equipmentPriceInput" type="number" min="0" step="0.01" inputmode="decimal">
+              </label>
+
+              <label>
+                Alerte distance (km)
+                <input id="equipmentWarningDistanceInput" type="number" min="0" step="10" inputmode="decimal">
+              </label>
+
+              <label>
+                Critique distance (km)
+                <input id="equipmentCriticalDistanceInput" type="number" min="0" step="10" inputmode="decimal">
+              </label>
+
+              <label>
+                Alerte durée (h)
+                <input id="equipmentWarningDurationInput" type="number" min="0" step="1" inputmode="decimal">
+              </label>
+
+              <label>
+                Critique durée (h)
+                <input id="equipmentCriticalDurationInput" type="number" min="0" step="1" inputmode="decimal">
+              </label>
+
+              <label class="equipment-notes-field">
+                Notes
+                <textarea id="equipmentNotesInput" rows="3" maxlength="1000"
+                          placeholder="Entretien, particularités, usage…"></textarea>
+              </label>
+            </div>
+
+            <div class="equipment-editor-footer">
+              <div>
+                <span id="equipmentEditorStatus" class="pill ok">Prêt</span>
+                <span id="equipmentEditorId" class="muted"></span>
+              </div>
+              <button id="createEquipmentButton" class="primary" type="button">Créer et synchroniser</button>
+            </div>
+          </div>
+
+          <div id="equipmentManagerList" class="equipment-manager-list"></div>
+        </section>
+
         <section class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB008 · EDITION002</p>
+              <p class="eyebrow">WEB009 · EDITION002 + MATÉRIEL001</p>
               <h2>Répertoire avancé</h2>
               <p id="loadedLabel" class="muted">Chargement…</p>
             </div>
@@ -173,7 +299,7 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB008 · CARTO+</p>
+              <p class="eyebrow">WEB009 · CARTO+</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
@@ -218,7 +344,7 @@
         <section class="detail-section panel">
           <div class="section-heading interop-heading">
             <div>
-              <p class="eyebrow">WEB008 · EDITION002</p>
+              <p class="eyebrow">WEB009 · EDITION002 + MATÉRIEL001</p>
               <h2>Matériel, repères et notes</h2>
             </div>
             <div id="interopStatus" class="pill ok">Synchronisation active</div>
@@ -343,7 +469,7 @@
   </main>
 
   <footer>
-    SPORT Web · WEB008 · interopérabilité contrôlée Firestore
+    SPORT Web · WEB009 · interopérabilité contrôlée Firestore
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

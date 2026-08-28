@@ -980,3 +980,197 @@ footer {
     grid-column: auto;
   }
 }
+
+
+/* WEB009 · gestion interopérable du matériel */
+.equipment-manager-panel {
+  scroll-margin-top: 94px;
+}
+
+.equipment-manager-actions {
+  justify-content: flex-end;
+}
+
+.equipment-manager-search {
+  min-width: 220px;
+}
+
+.equipment-manager-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.equipment-manager-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(280px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #0e110f;
+}
+
+.equipment-manager-main {
+  min-width: 0;
+}
+
+.equipment-manager-main strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.equipment-manager-main span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.equipment-manager-usage {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(80px, 1fr));
+  gap: 7px;
+}
+
+.equipment-manager-usage > div {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0b0e0c;
+}
+
+.equipment-manager-usage strong,
+.equipment-manager-usage span {
+  display: block;
+}
+
+.equipment-manager-usage strong {
+  color: var(--green);
+  font-size: 13px;
+}
+
+.equipment-manager-usage span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.equipment-manager-card-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.equipment-retire-button {
+  border-color: rgba(255,100,100,.28);
+}
+
+.equipment-editor {
+  margin-top: 17px;
+  padding: 16px;
+  border: 1px solid rgba(182,255,59,.28);
+  border-radius: 15px;
+  background: rgba(182,255,59,.035);
+}
+
+.equipment-editor-heading,
+.equipment-editor-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+}
+
+.equipment-editor-heading h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.equipment-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.equipment-form-grid textarea {
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0d100e;
+  resize: vertical;
+  font: inherit;
+  outline: none;
+}
+
+.equipment-form-grid textarea:focus {
+  border-color: var(--green2);
+  box-shadow: 0 0 0 3px rgba(182,255,59,.08);
+}
+
+.equipment-notes-field {
+  grid-column: span 2;
+}
+
+.equipment-editor-footer {
+  margin-top: 13px;
+}
+
+.equipment-editor-footer > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1000px) {
+  .equipment-manager-card {
+    grid-template-columns: 1fr;
+  }
+
+  .equipment-manager-card-actions {
+    justify-content: flex-start;
+  }
+
+  .equipment-form-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .equipment-manager-actions,
+  .equipment-manager-actions input,
+  .equipment-manager-actions select,
+  .equipment-manager-actions button {
+    width: 100%;
+  }
+
+  .equipment-manager-search {
+    min-width: 0;
+  }
+
+  .equipment-manager-usage {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .equipment-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .equipment-notes-field {
+    grid-column: auto;
+  }
+
+  .equipment-editor-heading,
+  .equipment-editor-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

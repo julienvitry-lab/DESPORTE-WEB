@@ -12,6 +12,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   limit,
   onSnapshot,
   orderBy,
@@ -23,7 +24,7 @@ import {
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB008 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
+// WEB009 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
 // Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
@@ -36,6 +37,7 @@ const firebaseConfig = {
 
 const ROOT = "sport_users";
 const PAGE_SIZE = 250;
+const MAX_EQUIPMENT_RENAME_CASCADE = 180;
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -48,6 +50,16 @@ const ui = Object.fromEntries(
     "authState", "loginButton", "logoutButton", "messageBox", "dashboard",
     "catalogView", "identityLine", "activityCount", "equipmentCount",
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
+    "equipmentManagerSection", "equipmentManagerMeta", "equipmentManagerSearch",
+    "equipmentManagerStatusFilter", "newEquipmentButton", "equipmentEditor",
+    "equipmentEditorEyebrow", "equipmentEditorTitle", "equipmentEditorHint",
+    "closeEquipmentEditorButton", "equipmentCategoryInput", "equipmentCustomNameInput",
+    "equipmentBrandInput", "equipmentModelInput", "equipmentSpecimenInput",
+    "equipmentStatusInput", "equipmentPurchaseDateInput", "equipmentPriceInput",
+    "equipmentWarningDistanceInput", "equipmentCriticalDistanceInput",
+    "equipmentWarningDurationInput", "equipmentCriticalDurationInput",
+    "equipmentNotesInput", "equipmentEditorStatus", "equipmentEditorId",
+    "createEquipmentButton", "equipmentManagerList",
     "loadedLabel", "loadMoreButton", "loadAllButton", "refreshButton",
     "searchInput", "sportFilter", "yearFilter", "equipmentFilter",
     "landmarkFilter", "sourceFilter", "distanceFilter", "ascentFilter", "sortFilter",
@@ -78,6 +90,13 @@ let catalogScrollY = 0;
 let currentDetailId = null;
 
 let equipmentRows = [];
+let equipmentEditorMode = "closed";
+let equipmentEditorRowId = null;
+let equipmentEditorDirty = false;
+let equipmentAutosaveTimer = null;
+let equipmentAutosaveQueue = Promise.resolve();
+let equipmentAutosaveGeneration = 0;
+
 let landmarks = new Map();
 let activityLandmarks = new Map();
 let records = [];
@@ -193,6 +212,43 @@ function wireEvents() {
     if (ui.addLandmarkSelect.value) void addSelectedLandmark();
   });
 
+  ui.newEquipmentButton.addEventListener("click", openNewEquipmentEditor);
+  ui.closeEquipmentEditorButton.addEventListener("click", closeEquipmentEditor);
+  ui.createEquipmentButton.addEventListener("click", () => { void createEquipmentFromWeb(); });
+  ui.equipmentManagerSearch.addEventListener("input", renderEquipmentManager);
+  ui.equipmentManagerStatusFilter.addEventListener("change", renderEquipmentManager);
+
+  [
+    ui.equipmentNotesInput,
+    ui.equipmentPriceInput,
+    ui.equipmentPurchaseDateInput,
+    ui.equipmentWarningDistanceInput,
+    ui.equipmentCriticalDistanceInput,
+    ui.equipmentWarningDurationInput,
+    ui.equipmentCriticalDurationInput
+  ].forEach((element) => {
+    element.addEventListener("input", scheduleEquipmentAutosave);
+    element.addEventListener("change", () => { void flushEquipmentAutosave(); });
+  });
+
+  [
+    ui.equipmentCustomNameInput,
+    ui.equipmentBrandInput,
+    ui.equipmentModelInput
+  ].forEach((element) => {
+    // L'identité visuelle peut nécessiter de renommer les activités associées.
+    // On attend donc la validation du champ (blur/changement), sans bouton Enregistrer.
+    element.addEventListener("change", () => { void saveEquipmentEditorImmediate(); });
+  });
+
+  [
+    ui.equipmentCategoryInput,
+    ui.equipmentSpecimenInput,
+    ui.equipmentStatusInput
+  ].forEach((element) => {
+    element.addEventListener("change", () => { void saveEquipmentEditorImmediate(); });
+  });
+
   window.addEventListener("keydown", (event) => {
     if (ui.detailView.classList.contains("hidden")) return;
     if (event.key === "Escape") showCatalog();
@@ -212,7 +268,7 @@ onAuthStateChanged(auth, async (user) => {
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB008 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB009 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -254,7 +310,7 @@ async function reloadAll() {
   try {
     await Promise.all([loadMeta(), loadReferenceCollections()]);
     await loadNextPage();
-    setMessage("WEB008 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    setMessage("WEB009 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
@@ -309,6 +365,7 @@ async function loadReferenceCollections() {
   recordSnap.forEach((item) => records.push({ __docId: item.id, ...item.data() }));
 
   renderRecords();
+  renderEquipmentManager();
   rebuildLandmarkFilter();
 }
 
@@ -614,7 +671,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB008";
+  document.title = "SPORT Web · WEB009";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -1550,7 +1607,8 @@ async function commitWebMutation({
   row,
   materializedCollection,
   materializedData,
-  deleteMaterialized = false
+  deleteMaterialized = false,
+  metaIncrements = null
 }) {
   if (!currentUser) throw new Error("Connexion Firebase absente.");
 
@@ -1588,20 +1646,24 @@ async function commitWebMutation({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB008"
+    webVersion: "WEB009"
   };
   if (row != null) event.row = row;
 
   batch.set(changeRef, event);
-  batch.set(
-    metaRef,
-    {
-      updatedAtMs: now,
-      sourceDeviceId: webDeviceId,
-      webVersion: "WEB008"
-    },
-    { merge: true }
-  );
+  const metaPatch = {
+    updatedAtMs: now,
+    sourceDeviceId: webDeviceId,
+    webVersion: "WEB009"
+  };
+  if (metaIncrements && typeof metaIncrements === "object") {
+    for (const [field, delta] of Object.entries(metaIncrements)) {
+      const amount = Number(delta);
+      if (Number.isFinite(amount) && amount !== 0) metaPatch[field] = increment(amount);
+    }
+  }
+
+  batch.set(metaRef, metaPatch, { merge: true });
 
   await batch.commit();
   return { eventId, now };
@@ -1707,7 +1769,7 @@ async function persistActivityEdits(activity, title, description, note, generati
 
       setInteropStatus("Synchronisé automatiquement", "ok");
       setMessage(
-        "WEB008 · modification propagée automatiquement vers téléphone et tablette.",
+        "WEB009 · modification propagée automatiquement vers téléphone et tablette.",
         "success"
       );
     }
@@ -1826,7 +1888,7 @@ async function saveImmediateActivityFields(partialPatch, successLabel) {
     applyFiltersAndRender();
 
     setInteropStatus(successLabel || "Synchronisé automatiquement", "ok");
-    setMessage("WEB008 · modification propagée automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB009 · modification propagée automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec de synchronisation automatique", "error");
@@ -1898,7 +1960,7 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
     renderPersonal(activity);
     applyFiltersAndRender();
     setInteropStatus("Repère synchronisé automatiquement", "ok");
-    setMessage("WEB008 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB009 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec repère", "error");
@@ -1948,7 +2010,7 @@ function startInteropWatch() {
     (error) => {
       console.error(error);
       setInteropStatus("Temps réel interrompu", "error");
-      setMessage("WEB008 · écoute temps réel indisponible : " + (error?.message || error), "error");
+      setMessage("WEB009 · écoute temps réel indisponible : " + (error?.message || error), "error");
     }
   );
 }
@@ -1999,8 +2061,15 @@ function applyRealtimeChange(event) {
   } else if (table === "equipment") {
     equipmentRows = equipmentRows.filter((item) => String(item.id ?? item.__docId) !== rowKey);
     if (operation !== "DELETE" && row) equipmentRows.push({ __docId: rowKey, ...row });
+    renderEquipmentManager();
+
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
+
+    if (equipmentEditorMode === "edit" && equipmentEditorRowId === rowKey && !equipmentEditorDirty) {
+      const fresh = equipmentRows.find((item) => equipmentKey(item) === rowKey);
+      if (fresh) populateEquipmentEditor(fresh);
+    }
   } else if (table === "records") {
     records = records.filter((item) => String(item.record_type ?? item.__docId) !== rowKey);
     if (operation !== "DELETE" && row) records.push({ __docId: rowKey, ...row });
@@ -2011,8 +2080,746 @@ function applyRealtimeChange(event) {
 
   if (!fromWeb) {
     setInteropStatus("Modification Android reçue", "ok");
-    setMessage("WEB008 · changement reçu automatiquement depuis un appareil Android.", "success");
+    setMessage("WEB009 · changement reçu automatiquement depuis un appareil Android.", "success");
   }
+}
+
+function equipmentKey(item) {
+  return String(item?.id ?? item?.__docId ?? "").trim();
+}
+
+function equipmentCategoryLabel(value) {
+  const labels = {
+    SHOES: "Chaussures",
+    BIKE: "Vélo",
+    HOME_TRAINER: "Home trainer",
+    HEADLAMP: "Lampe frontale",
+    BACKPACK: "Sac à dos",
+    POLES: "Bâtons",
+    WATCH: "Montre",
+    HEART_RATE_SENSOR: "Capteur cardiaque",
+    OTHER: "Autre"
+  };
+  const key = String(value ?? "OTHER").toUpperCase();
+  return labels[key] || key;
+}
+
+function equipmentStatusLabel(value) {
+  const labels = {
+    ACTIVE: "Actif",
+    STORED: "En réserve",
+    RETIRED: "Archivé"
+  };
+  const key = String(value ?? "ACTIVE").toUpperCase();
+  return labels[key] || key;
+}
+
+function renderEquipmentManager() {
+  if (!ui.equipmentManagerList) return;
+
+  const needle = String(ui.equipmentManagerSearch?.value ?? "").trim().toLowerCase();
+  const status = String(ui.equipmentManagerStatusFilter?.value ?? "").trim().toUpperCase();
+
+  const rows = equipmentRows
+    .slice()
+    .filter((item) => {
+      const itemStatus = String(item.status ?? "ACTIVE").toUpperCase();
+      if (status && itemStatus !== status) return false;
+
+      if (!needle) return true;
+      const haystack = [
+        equipmentDisplayName(item),
+        item.brand,
+        item.model,
+        item.custom_name,
+        item.category,
+        item.status,
+        item.notes
+      ].map((value) => String(value ?? "").toLowerCase()).join(" ");
+      return haystack.includes(needle);
+    })
+    .sort((a, b) => {
+      const rank = (value) => {
+        const statusValue = String(value.status ?? "ACTIVE").toUpperCase();
+        if (statusValue === "ACTIVE") return 0;
+        if (statusValue === "STORED") return 1;
+        return 2;
+      };
+      const delta = rank(a) - rank(b);
+      if (delta !== 0) return delta;
+      return equipmentDisplayName(a).localeCompare(equipmentDisplayName(b), "fr", { sensitivity: "base" });
+    });
+
+  const activeCount = equipmentRows.filter((item) => String(item.status ?? "ACTIVE").toUpperCase() === "ACTIVE").length;
+  const storedCount = equipmentRows.filter((item) => String(item.status ?? "").toUpperCase() === "STORED").length;
+  const retiredCount = equipmentRows.filter((item) => String(item.status ?? "").toUpperCase() === "RETIRED").length;
+
+  ui.equipmentManagerMeta.textContent =
+    `${formatNumber(equipmentRows.length)} matériels · ${activeCount} actifs · ${storedCount} en réserve · ${retiredCount} archivés`;
+
+  ui.equipmentManagerList.innerHTML = "";
+
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Aucun matériel correspondant.";
+    ui.equipmentManagerList.appendChild(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  for (const item of rows) {
+    const card = document.createElement("article");
+    card.className = "equipment-manager-card";
+
+    const main = document.createElement("div");
+    main.className = "equipment-manager-main";
+
+    const title = document.createElement("strong");
+    title.textContent = equipmentDisplayName(item);
+
+    const meta = document.createElement("span");
+    meta.textContent =
+      `${equipmentCategoryLabel(item.category)} · ${equipmentStatusLabel(item.status)} · ` +
+      `${formatNumber(item.activity_count ?? 0)} activité(s)`;
+
+    main.append(title, meta);
+
+    const usage = document.createElement("div");
+    usage.className = "equipment-manager-usage";
+    usage.append(
+      equipmentUsageDatum("Distance", formatDistance(item.total_distance_m)),
+      equipmentUsageDatum("Temps", formatDuration(item.total_duration_ms)),
+      equipmentUsageDatum("D+", formatMeters(item.total_ascent_m))
+    );
+
+    const actions = document.createElement("div");
+    actions.className = "equipment-manager-card-actions";
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "secondary";
+    edit.textContent = "Modifier";
+    edit.addEventListener("click", () => openEquipmentEditor(item));
+    actions.appendChild(edit);
+
+    const itemStatus = String(item.status ?? "ACTIVE").toUpperCase();
+
+    if (itemStatus !== "STORED") {
+      const store = document.createElement("button");
+      store.type = "button";
+      store.className = "secondary";
+      store.textContent = "Réserve";
+      store.addEventListener("click", () => { void updateEquipmentStatus(item, "STORED"); });
+      actions.appendChild(store);
+    }
+
+    if (itemStatus !== "ACTIVE") {
+      const activate = document.createElement("button");
+      activate.type = "button";
+      activate.className = "secondary";
+      activate.textContent = "Réactiver";
+      activate.addEventListener("click", () => { void updateEquipmentStatus(item, "ACTIVE"); });
+      actions.appendChild(activate);
+    }
+
+    if (itemStatus !== "RETIRED") {
+      const retire = document.createElement("button");
+      retire.type = "button";
+      retire.className = "secondary equipment-retire-button";
+      retire.textContent = "Archiver";
+      retire.addEventListener("click", () => { void updateEquipmentStatus(item, "RETIRED"); });
+      actions.appendChild(retire);
+    }
+
+    card.append(main, usage, actions);
+    fragment.appendChild(card);
+  }
+
+  ui.equipmentManagerList.appendChild(fragment);
+}
+
+function equipmentUsageDatum(label, value) {
+  const box = document.createElement("div");
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  const span = document.createElement("span");
+  span.textContent = label;
+  box.append(strong, span);
+  return box;
+}
+
+function openNewEquipmentEditor() {
+  equipmentEditorMode = "new";
+  equipmentEditorRowId = null;
+  equipmentEditorDirty = false;
+  if (equipmentAutosaveTimer) {
+    clearTimeout(equipmentAutosaveTimer);
+    equipmentAutosaveTimer = null;
+  }
+
+  ui.equipmentEditor.classList.remove("hidden");
+  ui.equipmentEditorEyebrow.textContent = "NOUVEAU MATÉRIEL";
+  ui.equipmentEditorTitle.textContent = "Créer un matériel";
+  ui.equipmentEditorHint.textContent =
+    "Renseigne la fiche puis crée-la. Elle apparaîtra ensuite sur téléphone et tablette.";
+  ui.createEquipmentButton.classList.remove("hidden");
+  ui.equipmentEditorId.textContent = "";
+
+  ui.equipmentCategoryInput.value = "SHOES";
+  ui.equipmentCustomNameInput.value = "";
+  ui.equipmentBrandInput.value = "";
+  ui.equipmentModelInput.value = "";
+  ui.equipmentSpecimenInput.value = "1";
+  ui.equipmentStatusInput.value = "ACTIVE";
+  ui.equipmentPurchaseDateInput.value = "";
+  ui.equipmentPriceInput.value = "";
+  ui.equipmentWarningDistanceInput.value = "";
+  ui.equipmentCriticalDistanceInput.value = "";
+  ui.equipmentWarningDurationInput.value = "";
+  ui.equipmentCriticalDurationInput.value = "";
+  ui.equipmentNotesInput.value = "";
+  setEquipmentEditorStatus("Prêt à créer", "ok");
+
+  ui.equipmentEditor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function openEquipmentEditor(item) {
+  const key = equipmentKey(item);
+  if (!key) return;
+
+  equipmentEditorMode = "edit";
+  equipmentEditorRowId = key;
+  equipmentEditorDirty = false;
+  if (equipmentAutosaveTimer) {
+    clearTimeout(equipmentAutosaveTimer);
+    equipmentAutosaveTimer = null;
+  }
+
+  ui.equipmentEditor.classList.remove("hidden");
+  ui.equipmentEditorEyebrow.textContent = "WEB009 · MODIFICATION AUTOMATIQUE";
+  ui.equipmentEditorTitle.textContent = equipmentDisplayName(item);
+  ui.equipmentEditorHint.textContent =
+    "Aucun bouton Enregistrer : les changements sont envoyés automatiquement vers téléphone et tablette.";
+  ui.createEquipmentButton.classList.add("hidden");
+
+  populateEquipmentEditor(item);
+  ui.equipmentEditor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function closeEquipmentEditor() {
+  void flushEquipmentAutosave();
+  equipmentEditorMode = "closed";
+  equipmentEditorRowId = null;
+  equipmentEditorDirty = false;
+  ui.equipmentEditor.classList.add("hidden");
+}
+
+function populateEquipmentEditor(item) {
+  ui.equipmentCategoryInput.value = String(item.category ?? "OTHER");
+  ui.equipmentCustomNameInput.value = String(item.custom_name ?? "");
+  ui.equipmentBrandInput.value = String(item.brand ?? "");
+  ui.equipmentModelInput.value = String(item.model ?? "");
+  ui.equipmentSpecimenInput.value = String(Math.max(1, Number(item.specimen_number) || 1));
+  ui.equipmentStatusInput.value = String(item.status ?? "ACTIVE");
+  ui.equipmentPurchaseDateInput.value = dateInputValue(item.purchase_date_ms);
+  ui.equipmentPriceInput.value =
+    item.purchase_price == null ? "" : String(Number(item.purchase_price));
+  ui.equipmentWarningDistanceInput.value = metersToKmInput(item.warning_distance_m);
+  ui.equipmentCriticalDistanceInput.value = metersToKmInput(item.critical_distance_m);
+  ui.equipmentWarningDurationInput.value = msToHoursInput(item.warning_duration_ms);
+  ui.equipmentCriticalDurationInput.value = msToHoursInput(item.critical_duration_ms);
+  ui.equipmentNotesInput.value = String(item.notes ?? "");
+  ui.equipmentEditorId.textContent = `ID : ${equipmentKey(item)}`;
+  setEquipmentEditorStatus("Synchronisation automatique active", "ok");
+}
+
+function setEquipmentEditorStatus(text, type = "ok") {
+  ui.equipmentEditorStatus.textContent = text;
+  ui.equipmentEditorStatus.className = `pill ${type}`;
+}
+
+function equipmentEditorBaseRow() {
+  if (equipmentEditorMode !== "edit" || !equipmentEditorRowId) return null;
+  return equipmentRows.find((item) => equipmentKey(item) === equipmentEditorRowId) || null;
+}
+
+function equipmentRowFromEditor(base, idOverride = null) {
+  const now = Date.now();
+  const id = String(idOverride ?? base?.id ?? base?.__docId ?? "").trim();
+
+  return {
+    id,
+    category: String(ui.equipmentCategoryInput.value || "OTHER"),
+    brand: nullableText(ui.equipmentBrandInput.value),
+    model: nullableText(ui.equipmentModelInput.value),
+    custom_name: nullableText(ui.equipmentCustomNameInput.value),
+    specimen_number: clampInteger(ui.equipmentSpecimenInput.value, 1, 99, 1),
+    status: normalizeEquipmentStatus(ui.equipmentStatusInput.value),
+    purchase_date_ms: dateInputMs(ui.equipmentPurchaseDateInput.value),
+    first_use_date_ms: nullableFiniteNumber(base?.first_use_date_ms),
+    last_use_date_ms: nullableFiniteNumber(base?.last_use_date_ms),
+    purchase_price: nullableNonNegativeNumber(ui.equipmentPriceInput.value),
+    notes: String(ui.equipmentNotesInput.value ?? "").trim(),
+    warning_distance_m: kmInputToMeters(ui.equipmentWarningDistanceInput.value),
+    critical_distance_m: kmInputToMeters(ui.equipmentCriticalDistanceInput.value),
+    warning_duration_ms: hoursInputToMs(ui.equipmentWarningDurationInput.value),
+    critical_duration_ms: hoursInputToMs(ui.equipmentCriticalDurationInput.value),
+    total_distance_m: Math.max(0, Number(base?.total_distance_m) || 0),
+    total_duration_ms: Math.max(0, Number(base?.total_duration_ms) || 0),
+    total_ascent_m: Math.max(0, Number(base?.total_ascent_m) || 0),
+    activity_count: Math.max(0, Math.round(Number(base?.activity_count) || 0)),
+    created_at_ms: Math.max(1, Number(base?.created_at_ms) || now),
+    updated_at_ms: now
+  };
+}
+
+function validateEquipmentRow(row, ignoreId = null) {
+  if (!row.id) throw new Error("Identifiant matériel absent.");
+  if (!row.category) throw new Error("Catégorie absente.");
+
+  const display = equipmentDisplayName(row).trim();
+  if (!display || display === row.category) {
+    throw new Error("Ajoute un nom personnalisé ou une marque / un modèle pour identifier clairement ce matériel.");
+  }
+
+  const duplicate = equipmentRows.find((item) => {
+    if (ignoreId && equipmentKey(item) === ignoreId) return false;
+    return equipmentDisplayName(item).trim().toLowerCase() === display.toLowerCase();
+  });
+  if (duplicate) {
+    throw new Error(`Un autre matériel porte déjà le nom « ${display} ».`);
+  }
+
+  if (row.critical_distance_m > 0 && row.warning_distance_m > row.critical_distance_m) {
+    throw new Error("La distance d’alerte ne peut pas dépasser la distance critique.");
+  }
+  if (row.critical_duration_ms > 0 && row.warning_duration_ms > row.critical_duration_ms) {
+    throw new Error("La durée d’alerte ne peut pas dépasser la durée critique.");
+  }
+}
+
+function scheduleEquipmentAutosave() {
+  if (equipmentEditorMode !== "edit") return;
+
+  equipmentEditorDirty = true;
+  equipmentAutosaveGeneration += 1;
+  const generation = equipmentAutosaveGeneration;
+
+  if (equipmentAutosaveTimer) clearTimeout(equipmentAutosaveTimer);
+  setEquipmentEditorStatus("Modification détectée…", "pending");
+
+  equipmentAutosaveTimer = window.setTimeout(() => {
+    equipmentAutosaveTimer = null;
+    void queueEquipmentAutosave(generation);
+  }, AUTOSAVE_DELAY_MS);
+}
+
+function flushEquipmentAutosave() {
+  if (equipmentEditorMode !== "edit" || !equipmentEditorDirty) return equipmentAutosaveQueue;
+
+  if (equipmentAutosaveTimer) {
+    clearTimeout(equipmentAutosaveTimer);
+    equipmentAutosaveTimer = null;
+  }
+
+  equipmentAutosaveGeneration += 1;
+  return queueEquipmentAutosave(equipmentAutosaveGeneration);
+}
+
+function queueEquipmentAutosave(generation) {
+  const run = () => persistEquipmentEditor(generation);
+  equipmentAutosaveQueue = equipmentAutosaveQueue.then(run, run);
+  return equipmentAutosaveQueue;
+}
+
+function saveEquipmentEditorImmediate() {
+  if (equipmentEditorMode !== "edit") return Promise.resolve();
+
+  equipmentEditorDirty = true;
+  if (equipmentAutosaveTimer) {
+    clearTimeout(equipmentAutosaveTimer);
+    equipmentAutosaveTimer = null;
+  }
+  equipmentAutosaveGeneration += 1;
+  return queueEquipmentAutosave(equipmentAutosaveGeneration);
+}
+
+async function persistEquipmentEditor(generation) {
+  const base = equipmentEditorBaseRow();
+  if (!base) return;
+
+  const id = equipmentKey(base);
+  const next = equipmentRowFromEditor(base, id);
+
+  try {
+    validateEquipmentRow(next, id);
+
+    const oldDisplay = equipmentDisplayName(base);
+    const newDisplay = equipmentDisplayName(next);
+
+    if (equipmentRowsEqualForEditor(base, next)) {
+      if (generation === equipmentAutosaveGeneration) {
+        equipmentEditorDirty = false;
+        setEquipmentEditorStatus("Synchronisation automatique active", "ok");
+      }
+      return;
+    }
+
+    setEquipmentEditorStatus("Synchronisation vers les 3 plateformes…", "pending");
+
+    if (oldDisplay !== newDisplay) {
+      await commitEquipmentRenameAtomic(base, next, oldDisplay, newDisplay);
+    } else {
+      await commitWebMutation({
+        table: "equipment",
+        rowKey: id,
+        operation: "UPSERT",
+        row: next,
+        materializedCollection: "equipment",
+        materializedData: next
+      });
+    }
+
+    equipmentRows = equipmentRows.filter((item) => equipmentKey(item) !== id);
+    equipmentRows.push({ __docId: id, ...next });
+
+    if (generation === equipmentAutosaveGeneration) {
+      equipmentEditorDirty = false;
+      ui.equipmentEditorTitle.textContent = equipmentDisplayName(next);
+      setEquipmentEditorStatus("Synchronisé automatiquement", "ok");
+    }
+
+    renderEquipmentManager();
+    const current = currentDetailActivity();
+    if (current) renderPersonal(current);
+    setMessage("WEB009 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
+  } catch (error) {
+    console.error(error);
+    if (generation === equipmentAutosaveGeneration) {
+      equipmentEditorDirty = true;
+      setEquipmentEditorStatus("Synchronisation impossible", "error");
+    }
+    handleError(error, "Modification du matériel impossible");
+  }
+}
+
+async function createEquipmentFromWeb() {
+  if (equipmentEditorMode !== "new") return;
+
+  const id = makeWebEquipmentId();
+  const row = equipmentRowFromEditor(null, id);
+
+  try {
+    validateEquipmentRow(row, null);
+
+    ui.createEquipmentButton.disabled = true;
+    setEquipmentEditorStatus("Création et synchronisation…", "pending");
+
+    await commitWebMutation({
+      table: "equipment",
+      rowKey: id,
+      operation: "UPSERT",
+      row,
+      materializedCollection: "equipment",
+      materializedData: row,
+      metaIncrements: {
+        equipmentCount: 1,
+        expectedDocuments: 1
+      }
+    });
+
+    equipmentRows.push({ __docId: id, ...row });
+    adjustMetric(ui.equipmentCount, 1);
+    adjustMetric(ui.expectedDocuments, 1);
+
+    renderEquipmentManager();
+    equipmentEditorMode = "edit";
+    equipmentEditorRowId = id;
+    equipmentEditorDirty = false;
+    ui.createEquipmentButton.classList.add("hidden");
+    ui.equipmentEditorEyebrow.textContent = "WEB009 · MATÉRIEL CRÉÉ";
+    ui.equipmentEditorTitle.textContent = equipmentDisplayName(row);
+    ui.equipmentEditorHint.textContent =
+      "Le matériel est créé. Toute modification ultérieure est maintenant automatique.";
+    ui.equipmentEditorId.textContent = `ID : ${id}`;
+    setEquipmentEditorStatus("Créé sur les trois plateformes", "ok");
+
+    const current = currentDetailActivity();
+    if (current) renderPersonal(current);
+
+    setMessage("WEB009 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
+  } catch (error) {
+    console.error(error);
+    setEquipmentEditorStatus("Création impossible", "error");
+    handleError(error, "Création du matériel impossible");
+  } finally {
+    ui.createEquipmentButton.disabled = false;
+  }
+}
+
+async function updateEquipmentStatus(item, status) {
+  const id = equipmentKey(item);
+  if (!id) return;
+
+  const normalized = normalizeEquipmentStatus(status);
+  if (String(item.status ?? "ACTIVE").toUpperCase() === normalized) return;
+
+  const next = {
+    ...equipmentBusinessRow(item),
+    status: normalized,
+    updated_at_ms: Date.now()
+  };
+
+  try {
+    await commitWebMutation({
+      table: "equipment",
+      rowKey: id,
+      operation: "UPSERT",
+      row: next,
+      materializedCollection: "equipment",
+      materializedData: next
+    });
+
+    equipmentRows = equipmentRows.filter((row) => equipmentKey(row) !== id);
+    equipmentRows.push({ __docId: id, ...next });
+    renderEquipmentManager();
+
+    if (equipmentEditorMode === "edit" && equipmentEditorRowId === id && !equipmentEditorDirty) {
+      populateEquipmentEditor(next);
+    }
+
+    const current = currentDetailActivity();
+    if (current) renderPersonal(current);
+
+    setMessage(`WEB009 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
+  } catch (error) {
+    handleError(error, "Changement de statut du matériel impossible");
+  }
+}
+
+async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDisplay) {
+  const id = equipmentKey(next);
+  const activityQuery = query(userCollection("activities"), where("equipment_name", "==", oldDisplay));
+  const snapshot = await getDocs(activityQuery);
+
+  if (snapshot.size > MAX_EQUIPMENT_RENAME_CASCADE) {
+    throw new Error(
+      `Ce matériel est associé à ${snapshot.size} activités. ` +
+      `Par sécurité, WEB009 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
+    );
+  }
+
+  const now = Date.now();
+  const batch = writeBatch(db);
+  const rootBase = [ROOT, currentUser.uid];
+
+  // 1) Fiche matériel complète.
+  const equipmentSeq = nextWebFirebaseSeq();
+  const equipmentEventId = makeWebEventId(equipmentSeq);
+  batch.set(
+    doc(db, ...rootBase, "equipment", id),
+    { ...next, __sportKey: id, __updatedAtMs: now },
+    { merge: true }
+  );
+  batch.set(
+    doc(db, ...rootBase, "changes", equipmentEventId),
+    {
+      eventId: equipmentEventId,
+      deviceId: webDeviceId,
+      firebaseSeq: equipmentSeq,
+      sourceChangeSeq: 0,
+      table: "equipment",
+      rowKey: id,
+      operation: "UPSERT",
+      changedAtMs: now,
+      publishedAt: serverTimestamp(),
+      androidVersion: 0,
+      webVersion: "WEB009",
+      row: next
+    }
+  );
+
+  // 2) Associations par nom : Android stocke equipment_name dans activities.
+  const changedLoadedIds = new Set();
+
+  for (const activityDoc of snapshot.docs) {
+    const data = activityDoc.data();
+    const activityId = Number(data.id ?? activityDoc.id);
+    if (!Number.isFinite(activityId) || activityId <= 0) continue;
+
+    const rowKey = String(activityId);
+    const patch = { id: activityId, equipment_name: newDisplay };
+    const seq = nextWebFirebaseSeq();
+    const eventId = makeWebEventId(seq);
+
+    batch.set(
+      doc(db, ...rootBase, "activities", rowKey),
+      { ...patch, __sportKey: rowKey, __updatedAtMs: now },
+      { merge: true }
+    );
+    batch.set(
+      doc(db, ...rootBase, "changes", eventId),
+      {
+        eventId,
+        deviceId: webDeviceId,
+        firebaseSeq: seq,
+        sourceChangeSeq: 0,
+        table: "activities",
+        rowKey,
+        operation: "UPSERT",
+        changedAtMs: now,
+        publishedAt: serverTimestamp(),
+        androidVersion: 0,
+        webVersion: "WEB009",
+        row: patch
+      }
+    );
+    changedLoadedIds.add(rowKey);
+  }
+
+  batch.set(
+    doc(db, ...rootBase, "meta", "state"),
+    {
+      updatedAtMs: now,
+      sourceDeviceId: webDeviceId,
+      webVersion: "WEB009"
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
+
+  for (const activity of activities) {
+    if (changedLoadedIds.has(activityKey(activity))) activity.equipment_name = newDisplay;
+  }
+  rebuildDynamicFilters();
+  applyFiltersAndRender();
+
+  setMessage(
+    snapshot.size > 0
+      ? `WEB009 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
+      : "WEB009 · matériel renommé sur les trois plateformes.",
+    "success"
+  );
+}
+
+function equipmentBusinessRow(item) {
+  const id = equipmentKey(item);
+  return {
+    id,
+    category: String(item.category ?? "OTHER"),
+    brand: nullableText(item.brand),
+    model: nullableText(item.model),
+    custom_name: nullableText(item.custom_name),
+    specimen_number: clampInteger(item.specimen_number, 1, 99, 1),
+    status: normalizeEquipmentStatus(item.status),
+    purchase_date_ms: nullableFiniteNumber(item.purchase_date_ms),
+    first_use_date_ms: nullableFiniteNumber(item.first_use_date_ms),
+    last_use_date_ms: nullableFiniteNumber(item.last_use_date_ms),
+    purchase_price: nullableFiniteNumber(item.purchase_price),
+    notes: String(item.notes ?? ""),
+    warning_distance_m: Math.max(0, Number(item.warning_distance_m) || 0),
+    critical_distance_m: Math.max(0, Number(item.critical_distance_m) || 0),
+    warning_duration_ms: Math.max(0, Number(item.warning_duration_ms) || 0),
+    critical_duration_ms: Math.max(0, Number(item.critical_duration_ms) || 0),
+    total_distance_m: Math.max(0, Number(item.total_distance_m) || 0),
+    total_duration_ms: Math.max(0, Number(item.total_duration_ms) || 0),
+    total_ascent_m: Math.max(0, Number(item.total_ascent_m) || 0),
+    activity_count: Math.max(0, Math.round(Number(item.activity_count) || 0)),
+    created_at_ms: Math.max(1, Number(item.created_at_ms) || Date.now()),
+    updated_at_ms: Math.max(1, Number(item.updated_at_ms) || Date.now())
+  };
+}
+
+function equipmentRowsEqualForEditor(a, b) {
+  const left = equipmentBusinessRow(a);
+  const right = equipmentBusinessRow(b);
+  // updated_at_ms est volontairement ignoré.
+  delete left.updated_at_ms;
+  delete right.updated_at_ms;
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function makeWebEquipmentId() {
+  const random = Math.random().toString(36).slice(2, 7).toUpperCase();
+  return `WEBEQ-${Date.now().toString(36).toUpperCase()}-${random}`;
+}
+
+function normalizeEquipmentStatus(value) {
+  const normalized = String(value ?? "ACTIVE").trim().toUpperCase();
+  if (normalized === "STORED" || normalized === "RETIRED") return normalized;
+  return "ACTIVE";
+}
+
+function nullableText(value) {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+function nullableFiniteNumber(value) {
+  if (value == null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function nullableNonNegativeNumber(value) {
+  const number = nullableFiniteNumber(value);
+  return number == null ? null : Math.max(0, number);
+}
+
+function clampInteger(value, min, max, fallback) {
+  const number = Math.round(Number(value));
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
+}
+
+function dateInputValue(ms) {
+  const number = Number(ms);
+  if (!Number.isFinite(number) || number <= 0) return "";
+  const date = new Date(number);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function dateInputMs(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const date = new Date(`${text}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date.getTime();
+}
+
+function metersToKmInput(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return "";
+  return String(Math.round((number / 1000) * 100) / 100);
+}
+
+function kmInputToMeters(value) {
+  const number = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(number) && number > 0 ? Math.round(number * 1000) : 0;
+}
+
+function msToHoursInput(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return "";
+  return String(Math.round((number / 3600000) * 100) / 100);
+}
+
+function hoursInputToMs(value) {
+  const number = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(number) && number > 0 ? Math.round(number * 3600000) : 0;
+}
+
+function adjustMetric(node, delta) {
+  if (!node) return;
+  const current = Number(String(node.textContent ?? "").replace(/\s/g, "").replace(/[^\d.-]/g, ""));
+  if (!Number.isFinite(current)) return;
+  node.textContent = formatNumber(Math.max(0, current + delta));
 }
 
 function handleError(error, prefix) {

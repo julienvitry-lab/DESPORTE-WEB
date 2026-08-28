@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB008
+name: Publier SPORT Web · WEB009
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB008.md"
+      - "docs/releases/WEB009.md"
   workflow_dispatch:
 
 permissions:
@@ -29,46 +29,54 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB008
+      - name: Valider WEB009
         shell: bash
         run: |
           set -euo pipefail
+
           test -f web/index.html
           test -f web/styles.css
           test -f web/app.js
 
-          grep -Fq "WEB008 · EDITION002 · Comfortaa" web/index.html
-          grep -Fq 'editEquipmentSelect' web/index.html
-          grep -Fq 'editFeelingSelect' web/index.html
-          grep -Fq 'editDifficultySelect' web/index.html
-          grep -Fq 'editPrivacySelect' web/index.html
-          grep -Fq 'editDescriptionInput' web/index.html
+          grep -Fq "WEB009 · MATÉRIEL001 · Comfortaa" web/index.html
+          grep -Fq "WEB009 · MATÉRIEL001" web/index.html
+          grep -Fq "Nouveau matériel" web/index.html
+          grep -Fq "Retiré / archivé" web/index.html
 
+          grep -Fq 'increment' web/app.js
+          grep -Fq 'MAX_EQUIPMENT_RENAME_CASCADE = 180' web/app.js
+          grep -Fq 'function createEquipmentFromWeb' web/app.js
+          grep -Fq 'function persistEquipmentEditor' web/app.js
+          grep -Fq 'function commitEquipmentRenameAtomic' web/app.js
+          grep -Fq 'function updateEquipmentStatus' web/app.js
+          grep -Fq 'table: "equipment"' web/app.js
+          grep -Fq 'equipmentCount: 1' web/app.js
+          grep -Fq 'expectedDocuments: 1' web/app.js
+          grep -Fq 'webVersion: "WEB009"' web/app.js
+
+          # Valeurs exactes des enums Android.
+          grep -Fq 'value="SHOES"' web/index.html
+          grep -Fq 'value="BIKE"' web/index.html
+          grep -Fq 'value="ACTIVE"' web/index.html
+          grep -Fq 'value="STORED"' web/index.html
+          grep -Fq 'value="RETIRED"' web/index.html
+
+          # Interop héritée.
           grep -Fq 'writeBatch' web/app.js
           grep -Fq 'onSnapshot' web/app.js
-          grep -Fq 'function saveImmediateActivityFields' web/app.js
-          grep -Fq 'function rebuildEquipmentEditor' web/app.js
-          grep -Fq 'feeling_score' web/app.js
-          grep -Fq 'difficulty_score' web/app.js
-          grep -Fq 'equipment_manual: 1' web/app.js
-          grep -Fq 'privacy: normalizePrivacy' web/app.js
-          grep -Fq 'webVersion: "WEB008"' web/app.js
+          grep -Fq '"changes"' web/app.js
 
+          # Comfortaa / z-index CARTO+ conservés.
           grep -Fq 'family=Comfortaa' web/index.html
           grep -Fq 'z-index: 4000' web/styles.css
           grep -Fq 'isolation: isolate' web/styles.css
 
-          if grep -Fq 'Enregistrer sur les 3 appareils' web/index.html; then
-            echo "::error::WEB008 ne doit pas réintroduire de validation manuelle."
-            exit 1
-          fi
-
           if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|runTransaction)\b' web/app.js; then
-            echo "::error::WEB008 doit centraliser les écritures via commitWebMutation/writeBatch."
+            echo "::error::WEB009 centralise les écritures via writeBatch."
             exit 1
           fi
 
-          echo "WEB008 : édition activité interopérable sur les trois plateformes validée."
+          echo "WEB009 : gestion matériel interopérable + activité EDITION002 + CARTO+ validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -78,6 +86,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB008
+      - name: Publier SPORT Web · WEB009
         id: deployment
         uses: actions/deploy-pages@v4
