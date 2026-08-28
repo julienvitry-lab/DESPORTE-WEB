@@ -954,3 +954,29 @@ footer {
   flex: 1 1 260px;
   font-size: 11px;
 }
+
+
+/* WEB008 · parité d’édition activité */
+.interop-form-grid-extended {
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+
+.interop-description,
+.interop-note {
+  grid-column: 1 / -1;
+}
+
+.interop-editor select {
+  width: 100%;
+  min-height: 44px;
+}
+
+@media (max-width: 760px) {
+  .interop-form-grid-extended {
+    grid-template-columns: 1fr;
+  }
+  .interop-description,
+  .interop-note {
+    grid-column: auto;
+  }
+}

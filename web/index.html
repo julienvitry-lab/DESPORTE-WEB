@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB007 · INTEROP · Comfortaa">
-  <title>SPORT Web · WEB007</title>
+  <meta name="description" content="SPORT Web · WEB008 · EDITION002 · Comfortaa">
+  <title>SPORT Web · WEB008</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB007 · INTEROP · Comfortaa · Firestore</div>
+      <div class="version">WEB008 · EDITION002 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -27,7 +27,7 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB007 active l’interopérabilité : les modifications contrôlées du Web sont propagées vers les appareils Android, et les changements Android remontent en temps réel ici.
+      WEB008 étend l’édition interopérable : matériel, ressenti, difficulté, confidentialité, description, titre, note et repères se synchronisent automatiquement sur les trois plateformes.
     </section>
 
     <section id="dashboard" class="hidden">
@@ -56,7 +56,7 @@
         <section class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB007 · INTEROP</p>
+              <p class="eyebrow">WEB008 · EDITION002</p>
               <h2>Répertoire avancé</h2>
               <p id="loadedLabel" class="muted">Chargement…</p>
             </div>
@@ -173,7 +173,7 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB007 · CARTO+</p>
+              <p class="eyebrow">WEB008 · CARTO+</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
@@ -218,28 +218,79 @@
         <section class="detail-section panel">
           <div class="section-heading interop-heading">
             <div>
-              <p class="eyebrow">WEB007 · INTEROP</p>
+              <p class="eyebrow">WEB008 · EDITION002</p>
               <h2>Matériel, repères et notes</h2>
             </div>
             <div id="interopStatus" class="pill ok">Synchronisation active</div>
           </div>
 
           <div id="interopEditor" class="interop-editor">
-            <div class="interop-form-grid">
+            <div class="interop-form-grid interop-form-grid-extended">
               <label>
                 Titre personnalisé
-                <input id="editTitleInput" type="text" maxlength="160" placeholder="Titre facultatif">
+                <input id="editTitleInput" type="text" maxlength="120" placeholder="Titre facultatif">
               </label>
+
+              <label>
+                Matériel utilisé
+                <select id="editEquipmentSelect">
+                  <option value="">Aucun matériel</option>
+                </select>
+              </label>
+
+              <label>
+                Ressenti
+                <select id="editFeelingSelect">
+                  <option value="">Non renseigné</option>
+                  <option value="1">1 / 5</option>
+                  <option value="2">2 / 5</option>
+                  <option value="3">3 / 5</option>
+                  <option value="4">4 / 5</option>
+                  <option value="5">5 / 5</option>
+                </select>
+              </label>
+
+              <label>
+                Difficulté
+                <select id="editDifficultySelect">
+                  <option value="">Non renseignée</option>
+                  <option value="1">1 / 10</option>
+                  <option value="2">2 / 10</option>
+                  <option value="3">3 / 10</option>
+                  <option value="4">4 / 10</option>
+                  <option value="5">5 / 10</option>
+                  <option value="6">6 / 10</option>
+                  <option value="7">7 / 10</option>
+                  <option value="8">8 / 10</option>
+                  <option value="9">9 / 10</option>
+                  <option value="10">10 / 10</option>
+                </select>
+              </label>
+
+              <label>
+                Confidentialité
+                <select id="editPrivacySelect">
+                  <option value="PRIVATE">Privée</option>
+                  <option value="UNLISTED">Non répertoriée</option>
+                  <option value="PUBLIC">Publique</option>
+                </select>
+              </label>
+
+              <label class="interop-description">
+                Description
+                <textarea id="editDescriptionInput" rows="3" maxlength="4000" placeholder="Description"></textarea>
+              </label>
+
               <label class="interop-note">
                 Note personnelle
-                <textarea id="editNoteInput" rows="3" maxlength="2000" placeholder="Note personnelle"></textarea>
+                <textarea id="editNoteInput" rows="3" maxlength="4000" placeholder="Note personnelle"></textarea>
               </label>
             </div>
             <div class="interop-actions autosave-explainer">
               <span class="autosave-dot" aria-hidden="true"></span>
               <div>
                 <strong>Synchronisation automatique</strong>
-                <span class="muted">Titre et note partent automatiquement après la frappe. Les repères sont envoyés immédiatement.</span>
+                <span class="muted">Titre, description et note sont envoyés après la frappe. Matériel, ressenti, difficulté, confidentialité et repères sont envoyés immédiatement.</span>
               </div>
             </div>
 
@@ -292,7 +343,7 @@
   </main>
 
   <footer>
-    SPORT Web · WEB007 · interopérabilité contrôlée Firestore
+    SPORT Web · WEB008 · interopérabilité contrôlée Firestore
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

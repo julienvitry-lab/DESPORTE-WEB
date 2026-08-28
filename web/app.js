@@ -23,7 +23,7 @@ import {
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB007 · INTEROP : écritures limitées au titre, à la note et aux repères d'activité.
+// WEB008 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
 // Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
@@ -57,7 +57,8 @@ const ui = Object.fromEntries(
     "previousActivityBottomButton", "nextActivityBottomButton", "detailPosition",
     "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics",
     "detailSummaryGrid", "detailPerformanceGrid", "detailPersonalGrid",
-    "interopStatus", "interopEditor", "editTitleInput", "editNoteInput",
+    "interopStatus", "interopEditor", "editTitleInput", "editDescriptionInput", "editNoteInput",
+    "editEquipmentSelect", "editFeelingSelect", "editDifficultySelect", "editPrivacySelect",
     "addLandmarkSelect",
     "detailMapSection", "mapStatus", "mapStage", "activityMap", "mapLayerSelect", "mapFullscreenButton",
     "routeStats", "elevationProfile", "profileMeta", "profileLive",
@@ -157,9 +158,36 @@ function wireEvents() {
   document.addEventListener("fullscreenchange", handleFullscreenChange);
 
   ui.editTitleInput.addEventListener("input", scheduleCurrentActivityAutosave);
+  ui.editDescriptionInput.addEventListener("input", scheduleCurrentActivityAutosave);
   ui.editNoteInput.addEventListener("input", scheduleCurrentActivityAutosave);
   ui.editTitleInput.addEventListener("change", () => { void flushCurrentActivityAutosave(); });
+  ui.editDescriptionInput.addEventListener("change", () => { void flushCurrentActivityAutosave(); });
   ui.editNoteInput.addEventListener("change", () => { void flushCurrentActivityAutosave(); });
+
+  ui.editEquipmentSelect.addEventListener("change", () => {
+    void saveImmediateActivityFields({
+      equipment_name: ui.editEquipmentSelect.value || null,
+      equipment_manual: 1
+    }, "Matériel synchronisé");
+  });
+
+  ui.editFeelingSelect.addEventListener("change", () => {
+    void saveImmediateActivityFields({
+      feeling_score: nullableSelectNumber(ui.editFeelingSelect.value, 1, 5)
+    }, "Ressenti synchronisé");
+  });
+
+  ui.editDifficultySelect.addEventListener("change", () => {
+    void saveImmediateActivityFields({
+      difficulty_score: nullableSelectNumber(ui.editDifficultySelect.value, 1, 10)
+    }, "Difficulté synchronisée");
+  });
+
+  ui.editPrivacySelect.addEventListener("change", () => {
+    void saveImmediateActivityFields({
+      privacy: normalizePrivacy(ui.editPrivacySelect.value)
+    }, "Confidentialité synchronisée");
+  });
 
   ui.addLandmarkSelect.addEventListener("change", () => {
     if (ui.addLandmarkSelect.value) void addSelectedLandmark();
@@ -184,7 +212,7 @@ onAuthStateChanged(auth, async (user) => {
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB007 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB008 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -226,7 +254,7 @@ async function reloadAll() {
   try {
     await Promise.all([loadMeta(), loadReferenceCollections()]);
     await loadNextPage();
-    setMessage("WEB007 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    setMessage("WEB008 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
@@ -586,7 +614,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB007";
+  document.title = "SPORT Web · WEB008";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -1242,9 +1270,15 @@ function renderPersonal(activity) {
   const currentEditorKey = activityKey(activity);
   if (editorActivityKey !== currentEditorKey || !activityEditDirty) {
     ui.editTitleInput.value = activity.custom_title || "";
+    ui.editDescriptionInput.value = activity.description || "";
     ui.editNoteInput.value = activity.personal_note || "";
   }
   editorActivityKey = currentEditorKey;
+
+  rebuildEquipmentEditor(activity);
+  ui.editFeelingSelect.value = activity.feeling_score == null ? "" : String(activity.feeling_score);
+  ui.editDifficultySelect.value = activity.difficulty_score == null ? "" : String(activity.difficulty_score);
+  ui.editPrivacySelect.value = normalizePrivacy(activity.privacy);
 
   addDetailItem(ui.detailPersonalGrid, "Matériel", activity.equipment_name || "—", "wide");
   addDetailItem(
@@ -1554,7 +1588,7 @@ async function commitWebMutation({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB007"
+    webVersion: "WEB008"
   };
   if (row != null) event.row = row;
 
@@ -1564,7 +1598,7 @@ async function commitWebMutation({
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB007"
+      webVersion: "WEB008"
     },
     { merge: true }
   );
@@ -1585,6 +1619,7 @@ function scheduleCurrentActivityAutosave() {
   activityAutosaveGeneration += 1;
   const generation = activityAutosaveGeneration;
   const title = ui.editTitleInput.value.trim();
+  const description = ui.editDescriptionInput.value.trim();
   const note = ui.editNoteInput.value.trim();
 
   if (activityAutosaveTimer) clearTimeout(activityAutosaveTimer);
@@ -1593,7 +1628,7 @@ function scheduleCurrentActivityAutosave() {
 
   activityAutosaveTimer = window.setTimeout(() => {
     activityAutosaveTimer = null;
-    void queueActivityAutosave(activity, title, note, generation);
+    void queueActivityAutosave(activity, title, description, note, generation);
   }, AUTOSAVE_DELAY_MS);
 }
 
@@ -1611,29 +1646,32 @@ function flushCurrentActivityAutosave() {
   activityAutosaveGeneration += 1;
   const generation = activityAutosaveGeneration;
   const title = ui.editTitleInput.value.trim();
+  const description = ui.editDescriptionInput.value.trim();
   const note = ui.editNoteInput.value.trim();
 
-  return queueActivityAutosave(activity, title, note, generation);
+  return queueActivityAutosave(activity, title, description, note, generation);
 }
 
-function queueActivityAutosave(activity, title, note, generation) {
-  const run = () => persistActivityEdits(activity, title, note, generation);
+function queueActivityAutosave(activity, title, description, note, generation) {
+  const run = () => persistActivityEdits(activity, title, description, note, generation);
   activityAutosaveQueue = activityAutosaveQueue.then(run, run);
   return activityAutosaveQueue;
 }
 
-async function persistActivityEdits(activity, title, note, generation) {
+async function persistActivityEdits(activity, title, description, note, generation) {
   const key = activityKey(activity);
   if (!key) return;
 
   const patch = {
     id: Number(key),
     custom_title: title || null,
+    description: description || null,
     personal_note: note || null
   };
 
   const unchanged =
     String(activity.custom_title ?? "") === title &&
+    String(activity.description ?? "") === description &&
     String(activity.personal_note ?? "") === note;
 
   if (unchanged) {
@@ -1669,7 +1707,7 @@ async function persistActivityEdits(activity, title, note, generation) {
 
       setInteropStatus("Synchronisé automatiquement", "ok");
       setMessage(
-        "WEB007 · modification propagée automatiquement vers téléphone et tablette.",
+        "WEB008 · modification propagée automatiquement vers téléphone et tablette.",
         "success"
       );
     }
@@ -1681,6 +1719,117 @@ async function persistActivityEdits(activity, title, note, generation) {
       activityEditDirty = true;
       setInteropStatus("Échec de synchronisation automatique", "error");
     }
+    handleError(error, "Modification Web impossible");
+  }
+}
+
+
+function nullableSelectNumber(value, min, max) {
+  if (value == null || value === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(min, Math.min(max, Math.round(number)));
+}
+
+function normalizePrivacy(value) {
+  const normalized = String(value || "PRIVATE").trim().toUpperCase();
+  if (normalized === "PUBLIC" || normalized === "UNLISTED") return normalized;
+  return "PRIVATE";
+}
+
+function equipmentDisplayName(item) {
+  if (!item) return "";
+  const custom = String(item.custom_name ?? "").trim();
+  if (custom) return custom;
+
+  const brand = String(item.brand ?? "").trim();
+  const model = String(item.model ?? "").trim();
+  const specimen = Number(item.specimen_number);
+  let label = [brand, model].filter(Boolean).join(" ").trim();
+  if (!label) label = String(item.id ?? item.__docId ?? "Matériel");
+  if (Number.isFinite(specimen) && specimen > 1) label += ` #${specimen}`;
+  return label;
+}
+
+function rebuildEquipmentEditor(activity) {
+  const selected = String(activity.equipment_name ?? "");
+  ui.editEquipmentSelect.innerHTML = "";
+
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "Aucun matériel";
+  ui.editEquipmentSelect.appendChild(none);
+
+  const rows = equipmentRows
+    .slice()
+    .sort((a, b) => {
+      const activeA = String(a.status ?? "ACTIVE").toUpperCase() === "ACTIVE" ? 0 : 1;
+      const activeB = String(b.status ?? "ACTIVE").toUpperCase() === "ACTIVE" ? 0 : 1;
+      if (activeA !== activeB) return activeA - activeB;
+      return equipmentDisplayName(a).localeCompare(equipmentDisplayName(b), "fr", { sensitivity: "base" });
+    });
+
+  const values = new Set();
+  for (const item of rows) {
+    const value = equipmentDisplayName(item);
+    if (!value || values.has(value)) continue;
+    values.add(value);
+
+    const option = document.createElement("option");
+    option.value = value;
+    const category = String(item.category ?? "").trim();
+    const reserve = String(item.status ?? "ACTIVE").toUpperCase() === "ACTIVE" ? "" : " · réserve";
+    option.textContent = `${value}${category ? ` · ${category}` : ""}${reserve}`;
+    ui.editEquipmentSelect.appendChild(option);
+  }
+
+  if (selected && !values.has(selected)) {
+    const legacy = document.createElement("option");
+    legacy.value = selected;
+    legacy.textContent = `${selected} · affectation actuelle`;
+    ui.editEquipmentSelect.appendChild(legacy);
+  }
+  ui.editEquipmentSelect.value = selected;
+}
+
+async function saveImmediateActivityFields(partialPatch, successLabel) {
+  const activity = currentDetailActivity();
+  if (!activity) return;
+  const key = activityKey(activity);
+  if (!key) return;
+
+  const patch = { id: Number(key), ...(partialPatch || {}) };
+  const changed = Object.entries(partialPatch || {}).some(([field, value]) => {
+    const current = activity[field];
+    if (value == null && current == null) return false;
+    return String(current ?? "") !== String(value ?? "");
+  });
+  if (!changed) return;
+
+  setInteropStatus("Synchronisation automatique…", "pending");
+  try {
+    await commitWebMutation({
+      table: "activities",
+      rowKey: key,
+      operation: "UPSERT",
+      row: patch,
+      materializedCollection: "activities",
+      materializedData: patch
+    });
+
+    Object.assign(activity, patch);
+    renderHeroMetrics(activity);
+    renderSummary(activity);
+    renderPerformance(activity);
+    renderPersonal(activity);
+    renderRaw(activity);
+    applyFiltersAndRender();
+
+    setInteropStatus(successLabel || "Synchronisé automatiquement", "ok");
+    setMessage("WEB008 · modification propagée automatiquement sur les trois plateformes.", "success");
+  } catch (error) {
+    console.error(error);
+    setInteropStatus("Échec de synchronisation automatique", "error");
     handleError(error, "Modification Web impossible");
   }
 }
@@ -1749,7 +1898,7 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
     renderPersonal(activity);
     applyFiltersAndRender();
     setInteropStatus("Repère synchronisé automatiquement", "ok");
-    setMessage("WEB007 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB008 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec repère", "error");
@@ -1799,7 +1948,7 @@ function startInteropWatch() {
     (error) => {
       console.error(error);
       setInteropStatus("Temps réel interrompu", "error");
-      setMessage("WEB007 · écoute temps réel indisponible : " + (error?.message || error), "error");
+      setMessage("WEB008 · écoute temps réel indisponible : " + (error?.message || error), "error");
     }
   );
 }
@@ -1821,6 +1970,9 @@ function applyRealtimeChange(event) {
 
       if (currentDetailId === rowKey) {
         ui.detailTitle.textContent = activity.custom_title || sportName(activity.sport);
+        renderHeroMetrics(activity);
+        renderSummary(activity);
+        renderPerformance(activity);
         renderPersonal(activity);
         renderRaw(activity);
       }
@@ -1847,6 +1999,8 @@ function applyRealtimeChange(event) {
   } else if (table === "equipment") {
     equipmentRows = equipmentRows.filter((item) => String(item.id ?? item.__docId) !== rowKey);
     if (operation !== "DELETE" && row) equipmentRows.push({ __docId: rowKey, ...row });
+    const current = currentDetailActivity();
+    if (current) renderPersonal(current);
   } else if (table === "records") {
     records = records.filter((item) => String(item.record_type ?? item.__docId) !== rowKey);
     if (operation !== "DELETE" && row) records.push({ __docId: rowKey, ...row });
@@ -1857,7 +2011,7 @@ function applyRealtimeChange(event) {
 
   if (!fromWeb) {
     setInteropStatus("Modification Android reçue", "ok");
-    setMessage("WEB007 · changement reçu automatiquement depuis un appareil Android.", "success");
+    setMessage("WEB008 · changement reçu automatiquement depuis un appareil Android.", "success");
   }
 }
 

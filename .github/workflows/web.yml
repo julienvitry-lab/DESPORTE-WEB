@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB007
+name: Publier SPORT Web · WEB008
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB007.md"
+      - "docs/releases/WEB008.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB007
+      - name: Valider WEB008
         shell: bash
         run: |
           set -euo pipefail
@@ -37,40 +37,38 @@ jobs:
           test -f web/styles.css
           test -f web/app.js
 
-          grep -Fq "WEB007 · INTEROP · Comfortaa" web/index.html
+          grep -Fq "WEB008 · EDITION002 · Comfortaa" web/index.html
+          grep -Fq 'editEquipmentSelect' web/index.html
+          grep -Fq 'editFeelingSelect' web/index.html
+          grep -Fq 'editDifficultySelect' web/index.html
+          grep -Fq 'editPrivacySelect' web/index.html
+          grep -Fq 'editDescriptionInput' web/index.html
+
+          grep -Fq 'writeBatch' web/app.js
+          grep -Fq 'onSnapshot' web/app.js
+          grep -Fq 'function saveImmediateActivityFields' web/app.js
+          grep -Fq 'function rebuildEquipmentEditor' web/app.js
+          grep -Fq 'feeling_score' web/app.js
+          grep -Fq 'difficulty_score' web/app.js
+          grep -Fq 'equipment_manual: 1' web/app.js
+          grep -Fq 'privacy: normalizePrivacy' web/app.js
+          grep -Fq 'webVersion: "WEB008"' web/app.js
+
           grep -Fq 'family=Comfortaa' web/index.html
           grep -Fq 'z-index: 4000' web/styles.css
           grep -Fq 'isolation: isolate' web/styles.css
 
-          # Interop bidirectionnelle héritée de WEB006.
-          grep -Fq 'writeBatch' web/app.js
-          grep -Fq 'onSnapshot' web/app.js
-          grep -Fq '"changes"' web/app.js
-          grep -Fq 'function commitWebMutation' web/app.js
-          grep -Fq 'function startInteropWatch' web/app.js
-          grep -Fq 'webVersion: "WEB007"' web/app.js
-
-          # WEB007 : plus de validation manuelle, autosave sérialisé.
-          grep -Fq 'const AUTOSAVE_DELAY_MS = 800' web/app.js
-          grep -Fq 'function scheduleCurrentActivityAutosave' web/app.js
-          grep -Fq 'function flushCurrentActivityAutosave' web/app.js
-          grep -Fq 'function queueActivityAutosave' web/app.js
-          grep -Fq 'function persistActivityEdits' web/app.js
-          grep -Fq 'ui.addLandmarkSelect.addEventListener("change"' web/app.js
-          grep -Fq 'Synchronisation automatique' web/index.html
-
           if grep -Fq 'Enregistrer sur les 3 appareils' web/index.html; then
-            echo "::error::WEB007 ne doit plus demander de bouton Enregistrer."
+            echo "::error::WEB008 ne doit pas réintroduire de validation manuelle."
             exit 1
           fi
 
-          # Les écritures restent centralisées dans commitWebMutation/writeBatch.
           if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|runTransaction)\b' web/app.js; then
-            echo "::error::WEB007 doit centraliser les écritures dans commitWebMutation/writeBatch."
+            echo "::error::WEB008 doit centraliser les écritures via commitWebMutation/writeBatch."
             exit 1
           fi
 
-          echo "WEB007 : autosynchronisation Web ↔ Android + CARTO+ + Comfortaa validés."
+          echo "WEB008 : édition activité interopérable sur les trois plateformes validée."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -80,6 +78,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB007
+      - name: Publier SPORT Web · WEB008
         id: deployment
         uses: actions/deploy-pages@v4
