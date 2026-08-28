@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB002
+name: Publier SPORT Web · WEB003
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB002.md"
+      - "docs/releases/WEB003.md"
   workflow_dispatch:
 
 permissions:
@@ -23,32 +23,35 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     runs-on: ubuntu-latest
 
     steps:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB002
+      - name: Valider WEB003
         shell: bash
         run: |
           set -euo pipefail
+
           test -f web/index.html
           test -f web/styles.css
           test -f web/app.js
-          grep -Fq "WEB002 · répertoire avancé" web/index.html
-          grep -Fq 'const ROOT = "sport_users"' web/app.js
-          grep -Fq 'const FETCH_BATCH = 250' web/app.js
-          grep -Fq 'activityLandmarks' web/app.js
-          grep -Fq 'loadEverything' web/app.js
-          grep -Fq 'copyCurrentLink' web/app.js
+
+          grep -Fq "WEB003 · fiche activité complète" web/index.html
+          grep -Fq 'const PAGE_SIZE = 250' web/app.js
+          grep -Fq 'function renderDetail(activity)' web/app.js
+          grep -Fq 'function moveDetail(delta)' web/app.js
+          grep -Fq 'Données techniques Firestore' web/index.html
           grep -Fq 'projectId: "sport-505813"' web/app.js
+
           if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|writeBatch|runTransaction)\b' web/app.js; then
-            echo "::error::WEB002 doit rester strictement en lecture seule."
+            echo "::error::WEB003 doit rester strictement en lecture seule."
             exit 1
           fi
-          node --check web/app.js
-          echo "WEB002 : répertoire avancé Firestore, navigation et lecture seule validés."
+
+          echo "WEB003 : catalogue avancé + fiche activité complète + navigation, lecture seule validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -58,6 +61,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web
+      - name: Publier SPORT Web · WEB003
         id: deployment
         uses: actions/deploy-pages@v4

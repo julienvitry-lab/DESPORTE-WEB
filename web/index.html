@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#0b0d0c">
-  <meta name="description" content="SPORT Web · WEB002 · répertoire avancé Firestore">
-  <title>SPORT Web · WEB002</title>
+  <meta name="theme-color" content="#090b0a">
+  <meta name="description" content="SPORT Web · WEB003 · fiche activité complète">
+  <title>SPORT Web · WEB003</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB002 · répertoire avancé · Firestore</div>
+      <div class="version">WEB003 · fiche activité complète · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -23,170 +23,202 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB002 reste strictement en lecture seule. Connecte-toi avec le même compte Google que SPORT Android.
+      WEB003 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.
     </section>
 
     <section id="dashboard" class="hidden">
-      <div class="hero">
-        <div>
-          <p class="eyebrow">SPORT ⇄ FIRESTORE ⇄ WEB</p>
-          <h1>Mes activités</h1>
-          <p id="identityLine" class="muted"></p>
+      <div id="catalogView">
+        <div class="hero">
+          <div>
+            <p class="eyebrow">SPORT ⇄ FIRESTORE ⇄ WEB</p>
+            <h1>Mes activités</h1>
+            <p id="identityLine" class="muted"></p>
+          </div>
+          <div class="hero-actions">
+            <div class="readonly">🔒 Lecture seule</div>
+            <button id="refreshButton" class="secondary">Actualiser</button>
+          </div>
         </div>
-        <div class="hero-actions">
-          <span class="readonly">🔒 Lecture seule</span>
-          <button id="refreshButton" class="secondary">Actualiser</button>
+
+        <div class="metric-grid">
+          <article class="metric"><span>Activités</span><strong id="activityCount">—</strong></article>
+          <article class="metric"><span>Matériels</span><strong id="equipmentCount">—</strong></article>
+          <article class="metric"><span>Repères</span><strong id="landmarkCount">—</strong></article>
+          <article class="metric"><span>Liens activité ↔ repère</span><strong id="activityLandmarkCount">—</strong></article>
+          <article class="metric"><span>Records</span><strong id="recordCount">—</strong></article>
+          <article class="metric"><span>Documents bootstrap</span><strong id="expectedDocuments">—</strong></article>
         </div>
+
+        <section class="panel">
+          <div class="panel-title-row">
+            <div>
+              <p class="eyebrow">WEB003</p>
+              <h2>Répertoire avancé</h2>
+              <p id="loadedLabel" class="muted">Chargement…</p>
+            </div>
+            <div class="panel-actions">
+              <button id="loadMoreButton" class="secondary">Charger 250 de plus</button>
+              <button id="loadAllButton" class="secondary">Charger tout</button>
+            </div>
+          </div>
+
+          <div class="filters">
+            <label class="search-wide">
+              Recherche
+              <input id="searchInput" type="search" placeholder="Titre, fichier, matériel, source, repère…">
+            </label>
+
+            <label>
+              Sport
+              <select id="sportFilter">
+                <option value="">Tous</option>
+              </select>
+            </label>
+
+            <label>
+              Année
+              <select id="yearFilter">
+                <option value="">Toutes</option>
+              </select>
+            </label>
+
+            <label>
+              Matériel
+              <select id="equipmentFilter">
+                <option value="">Tous</option>
+              </select>
+            </label>
+
+            <label>
+              Repère
+              <select id="landmarkFilter">
+                <option value="">Tous</option>
+              </select>
+            </label>
+
+            <label>
+              Source
+              <select id="sourceFilter">
+                <option value="">Toutes</option>
+              </select>
+            </label>
+
+            <label>
+              Distance min. (km)
+              <input id="distanceFilter" type="number" min="0" step="1" inputmode="decimal" placeholder="0">
+            </label>
+
+            <label>
+              D+ minimum (m)
+              <input id="ascentFilter" type="number" min="0" step="100" inputmode="numeric" placeholder="0">
+            </label>
+
+            <label>
+              Tri
+              <select id="sortFilter">
+                <option value="date_desc">Date · récent → ancien</option>
+                <option value="date_asc">Date · ancien → récent</option>
+                <option value="distance_desc">Distance · décroissante</option>
+                <option value="ascent_desc">D+ · décroissant</option>
+                <option value="duration_desc">Durée · décroissante</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="activityList" class="activity-list"></div>
+        </section>
+
+        <section class="panel compact">
+          <div class="panel-title-row">
+            <div>
+              <h2>Records Firestore</h2>
+              <p class="muted">Records actuellement matérialisés dans SPORT.</p>
+            </div>
+          </div>
+          <div id="recordsList" class="record-list"></div>
+        </section>
       </div>
 
-      <div class="metric-grid">
-        <article class="metric"><span>Activités</span><strong id="activityCount">—</strong></article>
-        <article class="metric"><span>Matériels</span><strong id="equipmentCount">—</strong></article>
-        <article class="metric"><span>Repères</span><strong id="landmarkCount">—</strong></article>
-        <article class="metric"><span>Liens activité ↔ repère</span><strong id="activityLandmarkCount">—</strong></article>
-        <article class="metric"><span>Records</span><strong id="recordCount">—</strong></article>
-        <article class="metric"><span>Documents bootstrap</span><strong id="expectedDocuments">—</strong></article>
-      </div>
+      <section id="detailView" class="hidden">
+        <div class="detail-toolbar">
+          <button id="backToCatalogButton" class="secondary">← Répertoire</button>
+          <div class="detail-nav">
+            <button id="previousActivityButton" class="secondary">← Activité précédente</button>
+            <span id="detailPosition" class="pill neutral">—</span>
+            <button id="nextActivityButton" class="secondary">Activité suivante →</button>
+          </div>
+        </div>
 
-      <section class="panel catalogue-panel">
-        <div class="panel-title-row">
+        <article class="detail-hero panel">
           <div>
-            <p class="eyebrow">WEB002</p>
-            <h2>Répertoire avancé</h2>
-            <p id="loadedLabel" class="muted">Chargement…</p>
+            <p id="detailSportLine" class="eyebrow">ACTIVITÉ</p>
+            <h1 id="detailTitle">Activité</h1>
+            <p id="detailDateLine" class="detail-date"></p>
           </div>
-          <div class="catalogue-actions">
-            <button id="loadMoreButton" class="secondary">Charger 250 de plus</button>
-            <button id="loadAllButton" class="secondary">Charger tout</button>
+          <div id="detailHeroMetrics" class="detail-hero-metrics"></div>
+        </article>
+
+        <section class="detail-section panel">
+          <div class="section-heading">
+            <p class="eyebrow">SYNTHÈSE</p>
+            <h2>Activité</h2>
           </div>
-        </div>
+          <div id="detailSummaryGrid" class="detail-grid"></div>
+        </section>
 
-        <div class="filters advanced-filters">
-          <label class="search-field">
-            Recherche
-            <input id="searchInput" type="search" placeholder="Titre, fichier, matériel, source, repère…">
-          </label>
-          <label>
-            Sport
-            <select id="sportFilter"><option value="">Tous</option></select>
-          </label>
-          <label>
-            Année
-            <select id="yearFilter"><option value="">Toutes</option></select>
-          </label>
-          <label>
-            Matériel
-            <select id="equipmentFilter"><option value="">Tous</option></select>
-          </label>
-          <label>
-            Repère
-            <select id="landmarkFilter"><option value="">Tous</option></select>
-          </label>
-          <label>
-            Source
-            <select id="sourceFilter"><option value="">Toutes</option></select>
-          </label>
-          <label>
-            Distance min.
-            <select id="distanceFilter">
-              <option value="">Toutes</option>
-              <option value="5">5 km</option>
-              <option value="10">10 km</option>
-              <option value="20">20 km</option>
-              <option value="42.195">Marathon</option>
-              <option value="50">50 km</option>
-              <option value="100">100 km</option>
-            </select>
-          </label>
-          <label>
-            D+ minimum
-            <select id="ascentFilter">
-              <option value="">Tous</option>
-              <option value="250">250 m</option>
-              <option value="500">500 m</option>
-              <option value="1000">1 000 m</option>
-              <option value="2000">2 000 m</option>
-              <option value="3000">3 000 m</option>
-            </select>
-          </label>
-          <label>
-            Tri
-            <select id="sortSelect">
-              <option value="date_desc">Date ↓</option>
-              <option value="date_asc">Date ↑</option>
-              <option value="distance_desc">Distance ↓</option>
-              <option value="ascent_desc">D+ ↓</option>
-              <option value="duration_desc">Durée ↓</option>
-            </select>
-          </label>
-          <label>
-            Par page
-            <select id="pageSizeSelect">
-              <option value="25">25</option>
-              <option value="50" selected>50</option>
-              <option value="100">100</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="filter-summary">
-          <span id="filterCount" class="pill neutral">0 filtre actif</span>
-          <button id="resetFiltersButton" class="text-button">Réinitialiser les filtres</button>
-        </div>
-
-        <div id="activityList" class="activity-list"></div>
-
-        <div class="pager">
-          <button id="previousPageButton" class="secondary">← Précédent</button>
-          <div class="pager-center">
-            <strong id="pageLabel">Page 1</strong>
-            <span id="rangeLabel" class="muted"></span>
+        <section class="detail-section panel">
+          <div class="section-heading">
+            <p class="eyebrow">SPORT</p>
+            <h2>Performance</h2>
           </div>
-          <button id="nextPageButton" class="secondary">Suivant →</button>
-        </div>
-      </section>
+          <div id="detailPerformanceGrid" class="detail-grid"></div>
+        </section>
 
-      <section id="detailPanel" class="panel detail-panel hidden">
-        <div class="panel-title-row detail-heading">
-          <div>
-            <p class="eyebrow">FICHE ACTIVITÉ</p>
-            <h2 id="detailTitle">Activité</h2>
-            <p id="detailSubtitle" class="muted"></p>
+        <section class="detail-section panel">
+          <div class="section-heading">
+            <p class="eyebrow">PERSONNEL</p>
+            <h2>Matériel, repères et notes</h2>
           </div>
-          <div class="detail-actions">
-            <button id="previousActivityButton" class="secondary">←</button>
-            <button id="nextActivityButton" class="secondary">→</button>
-            <button id="copyLinkButton" class="secondary">Copier le lien</button>
-            <button id="closeDetailButton" class="secondary">Fermer</button>
+          <div id="detailPersonalGrid" class="detail-grid"></div>
+          <div id="detailLandmarks" class="landmark-strip"></div>
+        </section>
+
+        <section id="detailRecordsSection" class="detail-section panel hidden">
+          <div class="section-heading">
+            <p class="eyebrow">RECORD</p>
+            <h2>Records liés à cette activité</h2>
           </div>
-        </div>
+          <div id="detailRecordsList" class="record-list"></div>
+        </section>
 
-        <div id="detailHighlights" class="highlight-grid"></div>
-
-        <div class="detail-section">
-          <h3>Statistiques</h3>
-          <div id="detailStats" class="detail-grid"></div>
-        </div>
-
-        <div class="detail-section">
-          <h3>Contexte SPORT</h3>
-          <div id="detailContext" class="detail-grid"></div>
-        </div>
-      </section>
-
-      <section class="panel compact">
-        <div class="panel-title-row">
-          <div>
-            <h2>Records Firestore</h2>
-            <p class="muted">Lecture directe de la collection SPORT.</p>
+        <section class="detail-section panel">
+          <div class="section-heading">
+            <p class="eyebrow">IMPORT</p>
+            <h2>Source et fichier</h2>
           </div>
+          <div id="detailImportGrid" class="detail-grid"></div>
+        </section>
+
+        <section class="detail-section panel">
+          <details class="technical-details">
+            <summary>Données techniques Firestore</summary>
+            <p class="muted">Toutes les colonnes actuellement présentes dans le document activité.</p>
+            <div id="detailRawGrid" class="raw-grid"></div>
+          </details>
+        </section>
+
+        <div class="detail-bottom-nav">
+          <button id="previousActivityBottomButton" class="secondary">← Activité précédente</button>
+          <button id="backToCatalogBottomButton" class="primary">Répertoire</button>
+          <button id="nextActivityBottomButton" class="secondary">Activité suivante →</button>
         </div>
-        <div id="recordsList" class="record-list"></div>
       </section>
     </section>
   </main>
 
-  <footer>SPORT Web · WEB002 · aucune écriture Firestore</footer>
+  <footer>
+    SPORT Web · WEB003 · aucune écriture Firestore
+  </footer>
 
   <script type="module" src="./app.js"></script>
 </body>
