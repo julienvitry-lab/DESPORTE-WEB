@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b0d0c">
+  <meta name="description" content="SPORT Web · WEB001 · lecture seule Firestore">
+  <title>SPORT Web · WEB001</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="brand">SPORT <span>Web</span></div>
+      <div class="version">WEB001 · lecture seule · Firestore</div>
+    </div>
+    <div class="auth-actions">
+      <span id="authState" class="pill neutral">Non connecté</span>
+      <button id="loginButton" class="primary">Se connecter avec Google</button>
+      <button id="logoutButton" class="secondary hidden">Déconnexion</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="messageBox" class="message info">
+      WEB001 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.
+    </section>
+
+    <section id="dashboard" class="hidden">
+      <div class="hero">
+        <div>
+          <p class="eyebrow">SPORT ⇄ FIRESTORE ⇄ WEB</p>
+          <h1>Mes activités</h1>
+          <p id="identityLine" class="muted"></p>
+        </div>
+        <div class="readonly">🔒 Lecture seule</div>
+      </div>
+
+      <div id="metricGrid" class="metric-grid">
+        <article class="metric"><span>Activités</span><strong id="activityCount">—</strong></article>
+        <article class="metric"><span>Matériels</span><strong id="equipmentCount">—</strong></article>
+        <article class="metric"><span>Repères</span><strong id="landmarkCount">—</strong></article>
+        <article class="metric"><span>Liens activité ↔ repère</span><strong id="activityLandmarkCount">—</strong></article>
+        <article class="metric"><span>Records</span><strong id="recordCount">—</strong></article>
+        <article class="metric"><span>Documents bootstrap</span><strong id="expectedDocuments">—</strong></article>
+      </div>
+
+      <section class="panel">
+        <div class="panel-title-row">
+          <div>
+            <h2>Répertoire des activités</h2>
+            <p id="loadedLabel" class="muted">Chargement…</p>
+          </div>
+          <button id="refreshButton" class="secondary">Actualiser</button>
+        </div>
+
+        <div class="filters">
+          <label>
+            Recherche
+            <input id="searchInput" type="search" placeholder="Titre, fichier, matériel…">
+          </label>
+          <label>
+            Sport
+            <select id="sportFilter">
+              <option value="">Tous</option>
+              <option value="1">Course à pied</option>
+              <option value="2">Vélo</option>
+            </select>
+          </label>
+          <label>
+            Année
+            <select id="yearFilter">
+              <option value="">Toutes</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="activityList" class="activity-list"></div>
+
+        <div class="load-more-row">
+          <button id="loadMoreButton" class="primary">Charger 100 activités de plus</button>
+        </div>
+      </section>
+
+      <section id="detailPanel" class="panel hidden">
+        <div class="panel-title-row">
+          <div>
+            <p class="eyebrow">DÉTAIL</p>
+            <h2 id="detailTitle">Activité</h2>
+          </div>
+          <button id="closeDetailButton" class="secondary">Fermer</button>
+        </div>
+        <div id="detailContent" class="detail-grid"></div>
+      </section>
+
+      <section class="panel compact">
+        <div class="panel-title-row">
+          <div>
+            <h2>Records Firestore</h2>
+            <p class="muted">Lecture directe de la collection SPORT.</p>
+          </div>
+        </div>
+        <div id="recordsList" class="record-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <footer>
+    SPORT Web · WEB001 · aucune écriture Firestore
+  </footer>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

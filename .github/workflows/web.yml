@@ -1,0 +1,60 @@
+name: Publier SPORT Web · WEB001
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/web.yml"
+      - "docs/releases/WEB001.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "sport-web-pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v6
+
+      - name: Valider WEB001
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f web/index.html
+          test -f web/styles.css
+          test -f web/app.js
+          grep -Fq "WEB001 · lecture seule" web/index.html
+          grep -Fq 'const ROOT = "sport_users"' web/app.js
+          grep -Fq 'projectId: "sport-505813"' web/app.js
+          grep -Fq 'userCollection("activities")' web/app.js
+          grep -Fq 'userCollection("activity_landmarks")' web/app.js
+          if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|writeBatch|runTransaction)\b' web/app.js; then
+            echo "::error::WEB001 doit rester strictement en lecture seule."
+            exit 1
+          fi
+          echo "WEB001 : client Firestore authentifié et lecture seule validés."
+
+      - name: Configurer GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Préparer l'artefact Pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: "./web"
+
+      - name: Publier SPORT Web
+        id: deployment
+        uses: actions/deploy-pages@v4
