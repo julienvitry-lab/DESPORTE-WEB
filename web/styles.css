@@ -2086,3 +2086,23 @@ footer {
 .route-comparison-legend{display:flex;gap:18px;flex-wrap:wrap;font-size:11px;color:var(--muted)}.route-comparison-legend span{display:flex;align-items:center;gap:7px}.route-legend-line{display:inline-block;width:30px;height:0;border-top:4px solid #9cff22;border-radius:3px}.route-legend-line.compared{border-top-color:#38a7ff;border-top-style:dashed}
 .profile-comparison-line{fill:none;stroke:#38a7ff;stroke-width:4;stroke-dasharray:10 7;opacity:.9;pointer-events:none}
 @media(max-width:760px){.route-comparison-head{display:grid}.route-comparison-controls{grid-template-columns:1fr}.route-comparison-metrics{grid-template-columns:repeat(2,minmax(110px,1fr))}}
+
+
+/* WEB023 · WEBCARTO008 — carte globale de l'historique */
+.global-map-panel{overflow:hidden}
+.global-map-actions{flex-wrap:wrap}
+.global-map-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 12px}
+.global-activity-map{height:520px;min-height:360px;border-radius:16px;border:1px solid rgba(255,255,255,.10);overflow:hidden;background:#0d1210}
+.global-activity-map.route-empty{display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--muted)}
+.global-map-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:.82rem;color:var(--muted)}
+.global-map-legend span{display:inline-flex;align-items:center;gap:7px}
+.global-map-line{display:inline-block;width:25px;height:4px;border-radius:999px}
+.global-map-line.running{background:#9cff22}
+.global-map-line.cycling{background:#4fb3ff}
+.global-map-line.hiking{background:#f3c969}
+.global-map-line.other{background:#d6b3ff}
+@media(max-width:760px){
+  .global-activity-map{height:430px;min-height:330px}
+  .global-map-actions{width:100%}
+  .global-map-actions button{flex:1 1 180px}
+}
