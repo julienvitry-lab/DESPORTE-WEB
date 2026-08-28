@@ -2075,3 +2075,14 @@ footer {
 .climb-subsegment-card strong{color:var(--text)}
 .climb-subsegment-card span:not(.climb-zone-badge){color:var(--muted);font-size:11px}
 .climb-zone-badge{font-size:11px;font-weight:800;color:currentColor;text-transform:uppercase;letter-spacing:.04em}
+
+
+/* WEB022 · WEBCARTO007 — comparaison de deux activités */
+.route-comparison-panel{margin-bottom:16px;padding:16px;border:1px solid rgba(56,167,255,.24);border-radius:16px;background:rgba(56,167,255,.045);display:grid;gap:12px}
+.route-comparison-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.route-comparison-head>div{display:grid;gap:3px}.route-comparison-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+.route-comparison-controls select{min-width:0}.route-comparison-metrics{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:8px}
+.route-comparison-metric{padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:10px;display:grid;gap:3px}.route-comparison-metric span{font-size:10px;color:var(--muted)}.route-comparison-metric strong{font-size:12px}
+.route-comparison-legend{display:flex;gap:18px;flex-wrap:wrap;font-size:11px;color:var(--muted)}.route-comparison-legend span{display:flex;align-items:center;gap:7px}.route-legend-line{display:inline-block;width:30px;height:0;border-top:4px solid #9cff22;border-radius:3px}.route-legend-line.compared{border-top-color:#38a7ff;border-top-style:dashed}
+.profile-comparison-line{fill:none;stroke:#38a7ff;stroke-width:4;stroke-dasharray:10 7;opacity:.9;pointer-events:none}
+@media(max-width:760px){.route-comparison-head{display:grid}.route-comparison-controls{grid-template-columns:1fr}.route-comparison-metrics{grid-template-columns:repeat(2,minmax(110px,1fr))}}

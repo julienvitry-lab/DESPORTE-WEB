@@ -620,10 +620,30 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB020 · WEBCARTO005</p>
+              <p class="eyebrow">WEB022 · WEBCARTO007</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
+          </div>
+
+          <div id="routeComparisonPanel" class="route-comparison-panel">
+            <div class="route-comparison-head">
+              <div>
+                <p class="eyebrow">WEB022 · WEBCARTO007</p>
+                <strong>Comparer avec une autre activité</strong>
+                <span id="routeComparisonStatus" class="muted">Choisissez une activité pour superposer son tracé et son profil.</span>
+              </div>
+              <button id="routeComparisonClearButton" class="secondary compact" type="button" disabled>Retirer la comparaison</button>
+            </div>
+            <div class="route-comparison-controls">
+              <select id="routeComparisonSelect" aria-label="Activité à comparer"></select>
+              <button id="routeComparisonButton" class="secondary" type="button">Comparer</button>
+            </div>
+            <div id="routeComparisonMetrics" class="route-comparison-metrics hidden"></div>
+            <div class="route-comparison-legend hidden" id="routeComparisonLegend">
+              <span><i class="route-legend-line current"></i>Activité affichée</span>
+              <span><i class="route-legend-line compared"></i>Activité comparée</span>
+            </div>
           </div>
 
           <div id="mapStage" class="map-stage">
@@ -655,7 +675,7 @@
             </div>
           </div>
 
-          <p class="map-help">WEBCARTO006 · découpage automatique des ascensions en sous-segments : relance, soutenu, raide et très raide.</p>
+          <p class="map-help">WEBCARTO007 · comparaison de deux activités : traces, profils et écarts globaux, sans inventer de chronologie locale.</p>
           <div id="routeStats" class="route-stats"></div>
 
           <div id="routeAnalysis" class="route-analysis-card">

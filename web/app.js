@@ -103,6 +103,7 @@ const ui = Object.fromEntries(
     "addLandmarkSelect",
     "detailMapSection", "mapStatus", "mapStage", "activityMap", "mapLayerSelect", "mapRouteModeSelect",
     "mapKmMarkersToggle", "mapRecenterButton", "mapFullscreenButton", "mapSlopeLegend",
+    "routeComparisonPanel", "routeComparisonSelect", "routeComparisonButton", "routeComparisonClearButton", "routeComparisonStatus", "routeComparisonMetrics", "routeComparisonLegend",
     "routeStats", "routeAnalysis", "routeAnalysisMeta", "routeSegmentList", "routeAnalysisClearButton", "routeKmAnalysisMeta", "routeKmAnalysisList", "routeKmClearButton", "elevationProfile", "profileMeta", "profileLive",
     "detailLandmarks", "detailRecordsSection", "detailRecordsList",
     "detailImportGrid", "detailRawGrid"
@@ -202,6 +203,11 @@ let profileHoverClearer = null;
 let profileSegmentHighlighter = null;
 let activitySegmentHighlightLayer = null;
 let selectedRouteSegment = null;
+let comparedActivity = null;
+let comparedRoute = null;
+let comparisonRouteLayer = null;
+let profileComparisonRenderer = null;
+let profileComparisonClearer = null;
 
 wireEvents();
 
@@ -298,6 +304,8 @@ function wireEvents() {
   ui.mapRouteModeSelect.addEventListener("change", () => redrawRouteOverlay());
   ui.mapKmMarkersToggle.addEventListener("click", toggleKmMarkers);
   ui.mapRecenterButton.addEventListener("click", recenterActivityMap);
+  ui.routeComparisonButton?.addEventListener("click", compareSelectedActivity);
+  ui.routeComparisonClearButton?.addEventListener("click", clearRouteComparison);
   ui.routeAnalysisClearButton.addEventListener("click", clearRouteSegmentSelection);
   ui.routeKmClearButton?.addEventListener("click", clearRouteSegmentSelection);
   ui.mapFullscreenButton.addEventListener("click", toggleMapFullscreen);
@@ -1921,7 +1929,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB018";
+  document.title = "SPORT Web · WEB022";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -1976,6 +1984,7 @@ function renderDetail(activity) {
 
   renderHeroMetrics(activity);
   renderSummary(activity);
+  populateRouteComparisonSelect(activity);
   renderCartography(activity);
   renderPerformance(activity);
   renderPersonal(activity);
@@ -2029,6 +2038,7 @@ function renderSummary(activity) {
 async function renderCartography(activity) {
   const token = ++cartographyRequestToken;
   destroyActivityMap();
+  clearRouteComparison(false);
   ui.elevationProfile.innerHTML = "";
   ui.profileMeta.textContent = "";
   ui.profileLive.textContent = "Survolez la carte ou le profil pour suivre votre position.";
@@ -2782,6 +2792,108 @@ function clearRouteSegmentSelection() {
   recenterActivityMap();
 }
 
+
+function populateRouteComparisonSelect(currentActivity) {
+  if (!ui.routeComparisonSelect) return;
+  const currentKey = activityKey(currentActivity);
+  const candidates = activities
+    .filter((activity) => activity.deleted_at_ms == null && activityKey(activity) !== currentKey)
+    .sort((a,b) => numberOrZero(b.start_time_ms)-numberOrZero(a.start_time_ms));
+  ui.routeComparisonSelect.innerHTML = '<option value="">Choisir une activité…</option>';
+  for (const activity of candidates) {
+    const option = document.createElement('option');
+    option.value = activityKey(activity);
+    option.textContent = `${formatDate(activity.start_time_ms)} · ${activity.custom_title || sportName(activity.sport)} · ${formatDistance(activity.distance_m)}`;
+    ui.routeComparisonSelect.appendChild(option);
+  }
+  ui.routeComparisonButton.disabled = candidates.length === 0;
+  ui.routeComparisonClearButton.disabled = true;
+  ui.routeComparisonMetrics?.classList.add('hidden');
+  ui.routeComparisonLegend?.classList.add('hidden');
+  if (ui.routeComparisonStatus) ui.routeComparisonStatus.textContent = candidates.length
+    ? 'Choisissez une activité pour superposer son tracé et son profil.'
+    : 'Aucune autre activité disponible dans les données chargées.';
+}
+
+function signedMetric(value, formatter) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${formatter(n)}`;
+}
+
+function renderRouteComparisonMetrics(current, other) {
+  if (!ui.routeComparisonMetrics) return;
+  const durationDelta = numberOrZero(other.elapsed_time_ms) - numberOrZero(current.elapsed_time_ms);
+  const distanceDelta = numberOrZero(other.distance_m) - numberOrZero(current.distance_m);
+  const ascentDelta = numberOrZero(other.ascent_m) - numberOrZero(current.ascent_m);
+  const rows = [
+    ['Activité comparée', `${formatDate(other.start_time_ms)} · ${other.custom_title || sportName(other.sport)}`],
+    ['Écart distance', signedMetric(distanceDelta, (v) => `${(v/1000).toLocaleString('fr-FR',{maximumFractionDigits:2})} km`)],
+    ['Écart D+', signedMetric(ascentDelta, (v) => `${Math.round(v)} m`)],
+    ['Écart durée', signedMetric(durationDelta, (v) => formatDuration(Math.abs(v)))],
+  ];
+  ui.routeComparisonMetrics.innerHTML = rows.map(([label,value]) => `<div class="route-comparison-metric"><span>${label}</span><strong>${value}</strong></div>`).join('');
+  ui.routeComparisonMetrics.classList.remove('hidden');
+}
+
+async function compareSelectedActivity() {
+  const key = ui.routeComparisonSelect?.value || '';
+  if (!key || !currentUser || !activeRoute || !activityMapInstance) return;
+  const other = activities.find((activity) => activityKey(activity) === key);
+  if (!other) return;
+  ui.routeComparisonButton.disabled = true;
+  ui.routeComparisonStatus.textContent = 'Chargement du tracé de comparaison…';
+  try {
+    const snapshot = await getDoc(doc(db, ROOT, currentUser.uid, 'activity_routes', key));
+    if (!snapshot.exists()) throw new Error('Tracé Web non publié pour cette activité.');
+    const route = normalizeRoute(snapshot.data());
+    if (route.points.length < 2) throw new Error('Tracé de comparaison insuffisant.');
+    clearRouteComparison(false);
+    comparedActivity = other;
+    comparedRoute = route;
+    drawComparisonRouteLayer(route);
+    profileComparisonRenderer?.(route);
+    renderRouteComparisonMetrics(activities.find((activity) => activityKey(activity) === currentDetailId) || {}, other);
+    ui.routeComparisonLegend?.classList.remove('hidden');
+    ui.routeComparisonClearButton.disabled = false;
+    ui.routeComparisonStatus.textContent = `${formatDate(other.start_time_ms)} · ${formatDistance(other.distance_m)} · ${formatMeters(other.ascent_m)} D+`;
+  } catch (error) {
+    ui.routeComparisonStatus.textContent = error?.message || 'Comparaison impossible.';
+  } finally {
+    ui.routeComparisonButton.disabled = false;
+  }
+}
+
+function drawComparisonRouteLayer(route) {
+  if (!activityMapInstance || !window.L || !route?.points?.length) return;
+  if (comparisonRouteLayer) {
+    try { activityMapInstance.removeLayer(comparisonRouteLayer); } catch (_) {}
+  }
+  comparisonRouteLayer = window.L.polyline(route.points.map((p) => [p.latitude,p.longitude]), {
+    color:'#38a7ff', weight:4, opacity:.92, dashArray:'10 7', lineJoin:'round', lineCap:'round', interactive:false
+  }).addTo(activityMapInstance);
+  const combined = window.L.latLngBounds(activeRoute.points.map((p)=>[p.latitude,p.longitude]));
+  combined.extend(window.L.latLngBounds(route.points.map((p)=>[p.latitude,p.longitude])));
+  if (combined.isValid()) activityMapInstance.fitBounds(combined,{padding:[34,34],maxZoom:16});
+  activitySegmentHighlightLayer?.bringToFront?.();
+}
+
+function clearRouteComparison(updateStatus = true) {
+  if (activityMapInstance && comparisonRouteLayer) {
+    try { activityMapInstance.removeLayer(comparisonRouteLayer); } catch (_) {}
+  }
+  comparisonRouteLayer = null;
+  comparedActivity = null;
+  comparedRoute = null;
+  profileComparisonClearer?.();
+  if (ui.routeComparisonMetrics) ui.routeComparisonMetrics.classList.add('hidden');
+  if (ui.routeComparisonLegend) ui.routeComparisonLegend.classList.add('hidden');
+  if (ui.routeComparisonClearButton) ui.routeComparisonClearButton.disabled = true;
+  if (updateStatus && ui.routeComparisonStatus) ui.routeComparisonStatus.textContent = 'Choisissez une activité pour superposer son tracé et son profil.';
+  recenterActivityMap();
+}
+
 function renderLeafletMap(route) {
   if (!window.L) {
     throw new Error("Leaflet n'a pas pu être chargé.");
@@ -3005,6 +3117,7 @@ function switchBaseLayer(key) {
   for (const layer of activityRouteLayers) {
     if (typeof layer?.bringToFront === "function") layer.bringToFront();
   }
+  comparisonRouteLayer?.bringToFront?.();
   activitySegmentHighlightLayer?.bringToFront?.();
   if (activityKmMarkersLayer && showKmMarkers && activityMapInstance.hasLayer(activityKmMarkersLayer)) {
     activityKmMarkersLayer.eachLayer((layer) => layer.setZIndexOffset?.(600));
@@ -3036,6 +3149,8 @@ function renderElevationProfile(route) {
   profileHoverUpdater = null;
   profileHoverClearer = null;
   profileSegmentHighlighter = null;
+  profileComparisonRenderer = null;
+  profileComparisonClearer = null;
 
   const altitudePoints = route.points.filter((point) => Number.isFinite(point.altitudeMeters));
   if (altitudePoints.length < 2) {
@@ -3140,6 +3255,27 @@ function renderElevationProfile(route) {
   );
   endLabel.setAttribute("text-anchor", "end");
   svg.appendChild(endLabel);
+
+  let comparisonProfileLine = null;
+  profileComparisonClearer = () => {
+    if (comparisonProfileLine?.parentNode) comparisonProfileLine.parentNode.removeChild(comparisonProfileLine);
+    comparisonProfileLine = null;
+  };
+  profileComparisonRenderer = (routeToCompare) => {
+    profileComparisonClearer?.();
+    const comparePoints = (routeToCompare?.points || []).filter((point) => Number.isFinite(point.altitudeMeters));
+    if (comparePoints.length < 2) return;
+    const compareD = comparePoints.map((point, index) => {
+      const x = xFor(Math.min(maxDistance, numberOrZero(point.distanceMeters)));
+      const rawY = yFor(point.altitudeMeters);
+      const y = Math.max(top, Math.min(top + plotH, rawY));
+      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+    }).join(" ");
+    comparisonProfileLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    comparisonProfileLine.setAttribute("d", compareD);
+    comparisonProfileLine.setAttribute("class", "profile-comparison-line");
+    svg.appendChild(comparisonProfileLine);
+  };
 
   const hoverLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
   hoverLine.setAttribute("class", "profile-hover-line");
@@ -3659,7 +3795,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB021",
+            webVersion: "WEB022",
             row: wanted
           }
         );
@@ -3682,7 +3818,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB021"
+            webVersion: "WEB022"
           }
         );
         countDelta -= 1;
@@ -3692,7 +3828,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB021"
+      webVersion: "WEB022"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -3892,7 +4028,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB021"
+    webVersion: "WEB022"
   };
   if (row != null) event.row = row;
 
@@ -3901,7 +4037,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB021"
+    webVersion: "WEB022"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -4354,7 +4490,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB021",
+      webVersion: "WEB022",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -4420,7 +4556,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB021",
+    webVersion: "WEB022",
     androidVersion: 0,
     __synthetic: true
   };
@@ -5874,7 +6010,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB021",
+      webVersion: "WEB022",
       row: next
     }
   );
@@ -5910,7 +6046,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB021",
+        webVersion: "WEB022",
         row: patch
       }
     );
@@ -5922,7 +6058,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB021"
+      webVersion: "WEB022"
     },
     { merge: true }
   );
