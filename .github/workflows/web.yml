@@ -1,46 +1,82 @@
-name: Publier SPORT Web · WEB014
+name: Publier SPORT Web · WEB011
+
 on:
   push:
     branches: [main]
-    paths: ["web/**", ".github/workflows/web.yml", "docs/releases/WEB014.md"]
+    paths:
+      - "web/**"
+      - ".github/workflows/web.yml"
+      - "docs/releases/WEB011.md"
   workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 concurrency:
   group: "sport-web-pages"
   cancel-in-progress: false
+
 jobs:
   deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+
     steps:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
-      - name: Valider WEB014
+
+      - name: Valider WEB011
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq "WEB014 · SYNCGUARD001" web/index.html
-          grep -Fq 'CONFLICT_WINDOW_MS = 30_000' web/app.js
-          grep -Fq 'function startSyncHistoryWatch' web/app.js
-          grep -Fq 'function detectSyncConflicts' web/app.js
-          grep -Fq 'function replaySyncEvent' web/app.js
-          grep -Fq 'Réappliquer cette version' web/app.js
-          grep -Fq 'function loadPersonalSyncData' web/app.js
-          grep -Fq 'function loadWebDashboard' web/app.js
+
+          test -f web/index.html
+          test -f web/styles.css
+          test -f web/app.js
+
+          grep -Fq "WEB011 · CORBEILLE001" web/index.html
+          grep -Fq "Corbeille synchronisée" web/index.html
+          grep -Fq "Mettre à la corbeille" web/index.html
+          grep -Fq "La suppression définitive reste volontairement hors de cette version" web/index.html
+
+          grep -Fq "function loadTrashActivities" web/app.js
+          grep -Fq "function trashActivityFromWeb" web/app.js
+          grep -Fq "function restoreActivityFromWeb" web/app.js
+          grep -Fq "function topActiveActivityByField" web/app.js
+          grep -Fq "deleted_at_ms" web/app.js
+          grep -Fq 'webVersion: "WEB011"' web/app.js
+
+          grep -Fq 'operation: "UPSERT"' web/app.js
+          grep -Fq 'materializedCollection: "activities"' web/app.js
+
+          # Base interop/historique conservée.
           grep -Fq 'writeBatch' web/app.js
           grep -Fq 'onSnapshot' web/app.js
-          echo "WEB014 : historique + détection conflits + résolution manuelle validés."
+          grep -Fq 'function startSyncHistoryWatch' web/app.js
+          grep -Fq 'function detectSyncConflicts' web/app.js
+
+          # Fonctions WEB012-014 et métiers précédents conservées.
+          grep -Fq 'function loadWebDashboard' web/app.js
+          grep -Fq 'function loadPersonalSyncData' web/app.js
+          grep -Fq 'function createEquipmentFromWeb' web/app.js
+          grep -Fq 'function createLandmarkFromWeb' web/app.js
+          grep -Fq 'family=Comfortaa' web/index.html
+          grep -Fq 'z-index: 4000' web/styles.css
+
+          echo "WEB011 : corbeille réversible Web ↔ téléphone ↔ tablette + base WEB014 validées."
+
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
+
       - name: Préparer l'artefact Pages
         uses: actions/upload-pages-artifact@v4
         with:
           path: "./web"
-      - name: Publier SPORT Web · WEB014
+
+      - name: Publier SPORT Web · WEB011
         id: deployment
         uses: actions/deploy-pages@v4
