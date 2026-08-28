@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB004
+name: Publier SPORT Web · WEB005
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB004.md"
+      - "docs/releases/WEB005.md"
   workflow_dispatch:
 
 permissions:
@@ -23,39 +23,36 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     runs-on: ubuntu-latest
 
     steps:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB004
+      - name: Valider WEB005
         shell: bash
         run: |
           set -euo pipefail
-
           test -f web/index.html
           test -f web/styles.css
           test -f web/app.js
-
-          grep -Fq "WEB004 · cartographie + profil" web/index.html
-          grep -Fq 'const PAGE_SIZE = 250' web/app.js
-          grep -Fq 'function renderDetail(activity)' web/app.js
-          grep -Fq 'function moveDetail(delta)' web/app.js
-          grep -Fq 'function renderCartography(activity)' web/app.js
+          grep -Fq "WEB005 · CARTO+ · Comfortaa" web/index.html
+          grep -Fq 'family=Comfortaa' web/index.html
+          grep -Fq 'font-family: "Comfortaa"' web/styles.css
+          grep -Fq 'z-index: 4000' web/styles.css
+          grep -Fq 'isolation: isolate' web/styles.css
+          grep -Fq 'OpenTopoMap' web/index.html
+          grep -Fq 'function toggleMapFullscreen()' web/app.js
+          grep -Fq 'function switchBaseLayer(key)' web/app.js
+          grep -Fq 'function renderRouteStats(route, sourceCount)' web/app.js
+          grep -Fq 'D+ cumulé' web/app.js
+          grep -Fq 'activityMapInstance.on("mousemove"' web/app.js
           grep -Fq '"activity_routes"' web/app.js
-          grep -Fq 'leaflet@1.9.4' web/index.html
-          grep -Fq 'Carte et profil altimétrique' web/index.html
-          grep -Fq 'Données techniques Firestore' web/index.html
-          grep -Fq 'projectId: "sport-505813"' web/app.js
-
           if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|writeBatch|runTransaction)\b' web/app.js; then
-            echo "::error::WEB004 doit rester strictement en lecture seule."
+            echo "::error::WEB005 doit rester strictement en lecture seule."
             exit 1
           fi
-
-          echo "WEB004 : fiche activité + carte Leaflet + profil altimétrique + navigation, lecture seule validés."
+          echo "WEB005 : Comfortaa + z-index + CARTO+ interactif, lecture seule validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -65,6 +62,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB004
+      - name: Publier SPORT Web · WEB005
         id: deployment
         uses: actions/deploy-pages@v4

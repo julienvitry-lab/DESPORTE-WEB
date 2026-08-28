@@ -23,7 +23,7 @@ body {
     radial-gradient(circle at 15% 0%, rgba(182,255,59,.075), transparent 31rem),
     var(--bg);
   color: var(--text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Comfortaa", ui-sans-serif, system-ui, sans-serif;
 }
 
 button, input, select { font: inherit; }
@@ -33,7 +33,7 @@ button:disabled { cursor: default; opacity: .45; }
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 4000;
   display: flex;
   gap: 18px;
   align-items: center;
@@ -290,7 +290,7 @@ input:focus, select:focus {
 .detail-toolbar {
   position: sticky;
   top: 77px;
-  z-index: 12;
+  z-index: 3000;
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -501,7 +501,7 @@ footer {
 }
 
 
-/* WEB004 · CARTOWEB001 */
+/* WEB005 · CARTO+ · Comfortaa · z-index sécurisé */
 .map-heading {
   display: flex;
   align-items: center;
@@ -591,13 +591,13 @@ footer {
 
 .profile-label {
   fill: #9ca9a0;
-  font: 24px ui-sans-serif, system-ui, sans-serif;
+  font: 24px "Comfortaa", ui-sans-serif, system-ui, sans-serif;
   pointer-events: none;
 }
 
 .profile-hover-label {
   fill: #f4f7f5;
-  font: 27px ui-sans-serif, system-ui, sans-serif;
+  font: 27px "Comfortaa", ui-sans-serif, system-ui, sans-serif;
   font-weight: 800;
   pointer-events: none;
 }
@@ -624,4 +624,177 @@ footer {
   .activity-map { height: 330px; min-height: 280px; }
   .profile-title-row { align-items: flex-start; flex-direction: column; }
   .elevation-profile { height: 190px; }
+}
+
+
+/* WEB005 · la carte reste toujours sous les bandeaux sticky */
+.topbar,
+.detail-toolbar {
+  isolation: isolate;
+}
+
+.map-stage {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+  margin-top: 4px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: #0b0e0c;
+}
+
+.activity-map {
+  position: relative;
+  z-index: 1;
+  margin-top: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.activity-map.leaflet-container,
+.activity-map .leaflet-control,
+.activity-map .leaflet-tooltip,
+.activity-map .leaflet-popup-content-wrapper,
+.activity-map .leaflet-popup-tip {
+  font-family: "Comfortaa", ui-sans-serif, system-ui, sans-serif;
+}
+
+.map-stage-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 70px);
+}
+
+.map-layer-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 5px 7px 5px 10px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(9,11,10,.90);
+  box-shadow: 0 2px 10px rgba(0,0,0,.25);
+  backdrop-filter: blur(10px);
+}
+
+.map-layer-control span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.map-layer-control select {
+  width: auto;
+  min-width: 145px;
+  min-height: 30px;
+  padding: 0 28px 0 8px;
+  border-radius: 8px;
+  background: #101410;
+}
+
+.map-fullscreen-button {
+  min-height: 40px;
+  border-color: rgba(255,255,255,.18);
+  background: rgba(9,11,10,.90);
+  box-shadow: 0 2px 10px rgba(0,0,0,.25);
+  backdrop-filter: blur(10px);
+}
+
+.map-stage:fullscreen,
+.map-stage:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+  background: #090b0a;
+}
+
+.map-stage:fullscreen .activity-map,
+.map-stage:-webkit-full-screen .activity-map {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+}
+
+.route-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.route-stat {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0d100e;
+}
+
+.route-stat span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.route-stat strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--green);
+  font-size: 15px;
+}
+
+.profile-live {
+  min-height: 34px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(182,255,59,.16);
+  border-radius: 10px;
+  color: #d7e6dc;
+  background: rgba(182,255,59,.035);
+  font-size: 12px;
+}
+
+.route-end-icon {
+  display: grid;
+  place-items: center;
+  width: 27px !important;
+  height: 27px !important;
+  margin-left: -13px !important;
+  margin-top: -13px !important;
+  border: 2px solid #f4f7f5;
+  border-radius: 50%;
+  color: #0a0d09;
+  background: var(--green);
+  box-shadow: 0 2px 10px rgba(0,0,0,.45);
+  font: 700 12px "Comfortaa", sans-serif;
+}
+
+.route-end-icon.finish {
+  color: var(--green);
+  border-color: var(--green);
+  background: #0a0d09;
+}
+
+@media (max-width: 900px) {
+  .route-stats { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 620px) {
+  .map-stage-toolbar {
+    top: 8px;
+    right: 8px;
+    gap: 5px;
+    max-width: calc(100% - 58px);
+  }
+  .map-layer-control span { display: none; }
+  .map-layer-control select { min-width: 116px; max-width: 126px; }
+  .map-fullscreen-button { padding: 0 9px; font-size: 11px; }
+  .route-stats { grid-template-columns: repeat(2, 1fr); }
 }

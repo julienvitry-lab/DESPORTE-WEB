@@ -18,7 +18,7 @@ import {
   startAfter
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB004 reste strictement en lecture seule.
+// WEB005 reste strictement en lecture seule.
 // La clé API Firebase Web identifie le projet ; l'accès aux données dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
   apiKey: "AIzaSyDALtXWRoNHiD9oc4SqxH4tn7HY_08NI1A",
@@ -51,7 +51,8 @@ const ui = Object.fromEntries(
     "previousActivityBottomButton", "nextActivityBottomButton", "detailPosition",
     "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics",
     "detailSummaryGrid", "detailPerformanceGrid", "detailPersonalGrid",
-    "detailMapSection", "mapStatus", "activityMap", "elevationProfile", "profileMeta",
+    "detailMapSection", "mapStatus", "mapStage", "activityMap", "mapLayerSelect", "mapFullscreenButton",
+    "routeStats", "elevationProfile", "profileMeta", "profileLive",
     "detailLandmarks", "detailRecordsSection", "detailRecordsList",
     "detailImportGrid", "detailRawGrid"
   ].map((id) => [id, document.querySelector(`#${id}`)])
@@ -76,6 +77,11 @@ let activityMapInstance = null;
 let activityRouteLayer = null;
 let activityHoverMarker = null;
 let cartographyRequestToken = 0;
+let activityBaseLayers = {};
+let activityBaseLayer = null;
+let activeRoute = null;
+let profileHoverUpdater = null;
+let profileHoverClearer = null;
 
 wireEvents();
 
@@ -109,6 +115,10 @@ function wireEvents() {
   ui.nextActivityButton.addEventListener("click", () => moveDetail(1));
   ui.nextActivityBottomButton.addEventListener("click", () => moveDetail(1));
 
+  ui.mapLayerSelect.addEventListener("change", () => switchBaseLayer(ui.mapLayerSelect.value));
+  ui.mapFullscreenButton.addEventListener("click", toggleMapFullscreen);
+  document.addEventListener("fullscreenchange", handleFullscreenChange);
+
   window.addEventListener("keydown", (event) => {
     if (ui.detailView.classList.contains("hidden")) return;
     if (event.key === "Escape") showCatalog();
@@ -127,7 +137,7 @@ onAuthStateChanged(auth, async (user) => {
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB004 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB005 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -168,7 +178,7 @@ async function reloadAll() {
   try {
     await Promise.all([loadMeta(), loadReferenceCollections()]);
     await loadNextPage();
-    setMessage("WEB004 connecté à Firestore en lecture seule.", "success");
+    setMessage("WEB005 connecté à Firestore en lecture seule.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
@@ -528,7 +538,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB004";
+  document.title = "SPORT Web · WEB005";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -635,6 +645,8 @@ async function renderCartography(activity) {
   destroyActivityMap();
   ui.elevationProfile.innerHTML = "";
   ui.profileMeta.textContent = "";
+  ui.profileLive.textContent = "Survolez la carte ou le profil pour suivre votre position.";
+  ui.routeStats.innerHTML = "";
   ui.mapStatus.textContent = "Chargement du tracé…";
   ui.mapStatus.className = "pill neutral";
   ui.activityMap.classList.remove("route-empty");
@@ -655,7 +667,7 @@ async function renderCartography(activity) {
 
     if (!snapshot.exists()) {
       showRouteUnavailable(
-        "Tracé WEB004 non publié pour cette activité. "
+        "Tracé Web non publié pour cette activité. "
         + "Sur le téléphone principal : Firebase · SPORT Web → « Publier les tracés Web · CARTOWEB001 »."
       );
       return;
@@ -667,10 +679,12 @@ async function renderCartography(activity) {
       return;
     }
 
+    activeRoute = route;
     renderLeafletMap(route);
     renderElevationProfile(route);
 
     const sourceCount = numberOrZero(snapshot.data().source_point_count);
+    renderRouteStats(route, sourceCount);
     const previewCount = route.points.length;
     ui.mapStatus.textContent = `${formatNumber(previewCount)} points Web`;
     ui.mapStatus.className = "pill ok";
@@ -701,6 +715,7 @@ function normalizeRoute(data) {
   const count = Math.min(lat.length, lon.length);
   const points = [];
   let cumulative = 0;
+  let cumulativeAscent = 0;
   let previous = null;
 
   for (let i = 0; i < count; i++) {
@@ -714,6 +729,12 @@ function normalizeRoute(data) {
 
     if (previous) {
       cumulative += haversineMeters(previous.latitude, previous.longitude, latitude, longitude);
+      const previousAltitude = Number(previous.altitudeMeters);
+      const currentAltitude = Number(alt[i]);
+      if (Number.isFinite(previousAltitude) && Number.isFinite(currentAltitude)) {
+        const gain = currentAltitude - previousAltitude;
+        if (gain > 0) cumulativeAscent += gain;
+      }
     }
 
     const rawDistance = Number(distance[i]);
@@ -729,6 +750,7 @@ function normalizeRoute(data) {
       longitude,
       altitudeMeters,
       distanceMeters,
+      cumulativeAscentMeters: cumulativeAscent,
       sourceIndex: i
     };
     points.push(point);
@@ -761,6 +783,47 @@ function normalizeRoute(data) {
   return { points };
 }
 
+function routeStats(route) {
+  const altitudes = route.points
+    .map((point) => point.altitudeMeters)
+    .filter((value) => Number.isFinite(value));
+  const distance = route.points.length
+    ? numberOrZero(route.points[route.points.length - 1].distanceMeters)
+    : 0;
+  const ascent = route.points.length
+    ? numberOrZero(route.points[route.points.length - 1].cumulativeAscentMeters)
+    : 0;
+  return {
+    distanceMeters: distance,
+    ascentMeters: ascent,
+    minAltitude: altitudes.length ? Math.min(...altitudes) : null,
+    maxAltitude: altitudes.length ? Math.max(...altitudes) : null
+  };
+}
+
+function renderRouteStats(route, sourceCount) {
+  ui.routeStats.innerHTML = "";
+  const stats = routeStats(route);
+  const values = [
+    ["Distance tracé", formatDistance(stats.distanceMeters)],
+    ["D+ profil", formatMeters(stats.ascentMeters)],
+    ["Altitude min.", Number.isFinite(stats.minAltitude) ? formatMeters(stats.minAltitude) : "—"],
+    ["Altitude max.", Number.isFinite(stats.maxAltitude) ? formatMeters(stats.maxAltitude) : "—"],
+    ["Points", `${formatNumber(route.points.length)} / ${formatNumber(sourceCount || route.points.length)}`]
+  ];
+
+  for (const [label, value] of values) {
+    const box = document.createElement("div");
+    box.className = "route-stat";
+    const span = document.createElement("span");
+    span.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = value;
+    box.append(span, strong);
+    ui.routeStats.appendChild(box);
+  }
+}
+
 function renderLeafletMap(route) {
   if (!window.L) {
     throw new Error("Leaflet n'a pas pu être chargé.");
@@ -773,10 +836,20 @@ function renderLeafletMap(route) {
     preferCanvas: true
   });
 
-  window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "© OpenStreetMap"
-  }).addTo(activityMapInstance);
+  activityBaseLayers = {
+    osm: window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "© OpenStreetMap"
+    }),
+    topo: window.L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+      maxZoom: 17,
+      attribution: "© OpenStreetMap · SRTM · OpenTopoMap"
+    })
+  };
+
+  const preferredLayer = ui.mapLayerSelect.value || "osm";
+  activityBaseLayer = activityBaseLayers[preferredLayer] || activityBaseLayers.osm;
+  activityBaseLayer.addTo(activityMapInstance);
 
   activityRouteLayer = window.L.polyline(latLngs, {
     color: "#9cff22",
@@ -785,26 +858,18 @@ function renderLeafletMap(route) {
     lineJoin: "round"
   }).addTo(activityMapInstance);
 
-  const start = latLngs[0];
-  const finish = latLngs[latLngs.length - 1];
+  const start = route.points[0];
+  const finish = route.points[route.points.length - 1];
 
-  window.L.circleMarker(start, {
-    radius: 6,
-    color: "#f4f7f5",
-    weight: 2,
-    fillColor: "#9cff22",
-    fillOpacity: 1
+  window.L.marker([start.latitude, start.longitude], {
+    icon: routeEndIcon("D", false)
   }).addTo(activityMapInstance).bindTooltip("Départ");
 
-  window.L.circleMarker(finish, {
-    radius: 6,
-    color: "#9cff22",
-    weight: 2,
-    fillColor: "#0b0d0c",
-    fillOpacity: 1
+  window.L.marker([finish.latitude, finish.longitude], {
+    icon: routeEndIcon("A", true)
   }).addTo(activityMapInstance).bindTooltip("Arrivée");
 
-  activityHoverMarker = window.L.circleMarker(start, {
+  activityHoverMarker = window.L.circleMarker([start.latitude, start.longitude], {
     radius: 6,
     color: "#ffffff",
     weight: 2,
@@ -812,16 +877,79 @@ function renderLeafletMap(route) {
     fillOpacity: 1,
     interactive: false
   }).addTo(activityMapInstance);
+  activityHoverMarker.bindTooltip("", { direction: "top", offset: [0, -6], opacity: 0.95 });
 
   const bounds = activityRouteLayer.getBounds();
   if (bounds.isValid()) {
     activityMapInstance.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
   }
+
+  activityMapInstance.on("mousemove", (event) => {
+    if (!profileHoverUpdater) return;
+    let bestPoint = null;
+    let bestDistance = Infinity;
+    for (const point of route.points) {
+      if (!Number.isFinite(point.altitudeMeters)) continue;
+      const distance = haversineMeters(
+        event.latlng.lat,
+        event.latlng.lng,
+        point.latitude,
+        point.longitude
+      );
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestPoint = point;
+      }
+    }
+    if (bestPoint) profileHoverUpdater(bestPoint);
+  });
+
+  ui.activityMap.onmouseleave = () => {
+    if (profileHoverClearer) profileHoverClearer();
+  };
+}
+
+function routeEndIcon(letter, finish) {
+  return window.L.divIcon({
+    className: `route-end-icon${finish ? " finish" : ""}`,
+    html: letter,
+    iconSize: [27, 27],
+    iconAnchor: [13, 13]
+  });
+}
+
+function switchBaseLayer(key) {
+  if (!activityMapInstance || !activityBaseLayers[key]) return;
+  if (activityBaseLayer) activityMapInstance.removeLayer(activityBaseLayer);
+  activityBaseLayer = activityBaseLayers[key];
+  activityBaseLayer.addTo(activityMapInstance);
+  if (activityRouteLayer) activityRouteLayer.bringToFront();
+}
+
+async function toggleMapFullscreen() {
+  if (!ui.mapStage) return;
+  try {
+    if (document.fullscreenElement === ui.mapStage) {
+      await document.exitFullscreen();
+    } else if (ui.mapStage.requestFullscreen) {
+      await ui.mapStage.requestFullscreen();
+    }
+  } catch (error) {
+    console.warn("Plein écran indisponible", error);
+  }
+}
+
+function handleFullscreenChange() {
+  const active = document.fullscreenElement === ui.mapStage;
+  ui.mapFullscreenButton.textContent = active ? "✕ Quitter plein écran" : "⛶ Plein écran";
+  window.setTimeout(() => activityMapInstance?.invalidateSize(false), 80);
 }
 
 function renderElevationProfile(route) {
   const svg = ui.elevationProfile;
   svg.innerHTML = "";
+  profileHoverUpdater = null;
+  profileHoverClearer = null;
 
   const altitudePoints = route.points.filter((point) => Number.isFinite(point.altitudeMeters));
   if (altitudePoints.length < 2) {
@@ -895,9 +1023,7 @@ function renderElevationProfile(route) {
   line.setAttribute("class", "profile-line");
   svg.appendChild(line);
 
-  const startLabel = svgText(left, H - 11, "0 km", "profile-label");
-  svg.appendChild(startLabel);
-
+  svg.appendChild(svgText(left, H - 11, "0 km", "profile-label"));
   const endLabel = svgText(
     W - right,
     H - 11,
@@ -924,28 +1050,55 @@ function renderElevationProfile(route) {
   hoverText.setAttribute("visibility", "hidden");
   svg.appendChild(hoverText);
 
-  const updateHover = (index) => {
-    const [x, y, point] = plotPoints[Math.max(0, Math.min(plotPoints.length - 1, index))];
+  const updateHoverForPoint = (requestedPoint) => {
+    let bestIndex = 0;
+    let bestDelta = Infinity;
+    for (let i = 0; i < plotPoints.length; i++) {
+      const point = plotPoints[i][2];
+      const delta = Math.abs(point.distanceMeters - requestedPoint.distanceMeters);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestIndex = i;
+      }
+    }
 
+    const [x, y, point] = plotPoints[bestIndex];
     hoverLine.setAttribute("x1", x);
     hoverLine.setAttribute("x2", x);
     hoverLine.setAttribute("visibility", "visible");
-
     hoverDot.setAttribute("cx", x);
     hoverDot.setAttribute("cy", y);
     hoverDot.setAttribute("visibility", "visible");
 
     const km = point.distanceMeters / 1000;
-    hoverText.textContent =
-      `${km.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km · `
-      + `${Math.round(point.altitudeMeters)} m`;
+    const gain = numberOrZero(point.cumulativeAscentMeters);
+    const compact = `${km.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km · ${Math.round(point.altitudeMeters)} m`;
+    hoverText.textContent = compact;
     hoverText.setAttribute("x", Math.min(W - 260, Math.max(left + 10, x + 12)));
     hoverText.setAttribute("visibility", "visible");
 
+    ui.profileLive.textContent =
+      `${compact} · D+ cumulé ${Math.round(gain).toLocaleString("fr-FR")} m`;
+
     if (activityHoverMarker) {
       activityHoverMarker.setLatLng([point.latitude, point.longitude]);
+      activityHoverMarker.setTooltipContent(
+        `${km.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km · ${Math.round(point.altitudeMeters)} m · D+ ${Math.round(gain)} m`
+      );
+      activityHoverMarker.openTooltip();
     }
   };
+
+  const clearHover = () => {
+    hoverLine.setAttribute("visibility", "hidden");
+    hoverDot.setAttribute("visibility", "hidden");
+    hoverText.setAttribute("visibility", "hidden");
+    ui.profileLive.textContent = "Survolez la carte ou le profil pour suivre votre position.";
+    activityHoverMarker?.closeTooltip();
+  };
+
+  profileHoverUpdater = updateHoverForPoint;
+  profileHoverClearer = clearHover;
 
   svg.addEventListener("pointermove", (event) => {
     const box = svg.getBoundingClientRect();
@@ -956,23 +1109,19 @@ function renderElevationProfile(route) {
     const ratio = (clamped - left) / plotW;
     const targetDistance = ratio * maxDistance;
 
-    let bestIndex = 0;
+    let bestPoint = altitudePoints[0];
     let bestDelta = Infinity;
-    for (let i = 0; i < plotPoints.length; i++) {
-      const delta = Math.abs(plotPoints[i][2].distanceMeters - targetDistance);
+    for (const point of altitudePoints) {
+      const delta = Math.abs(point.distanceMeters - targetDistance);
       if (delta < bestDelta) {
         bestDelta = delta;
-        bestIndex = i;
+        bestPoint = point;
       }
     }
-    updateHover(bestIndex);
+    updateHoverForPoint(bestPoint);
   });
 
-  svg.addEventListener("pointerleave", () => {
-    hoverLine.setAttribute("visibility", "hidden");
-    hoverDot.setAttribute("visibility", "hidden");
-    hoverText.setAttribute("visibility", "hidden");
-  });
+  svg.addEventListener("pointerleave", clearHover);
 }
 
 function svgText(x, y, content, className) {
@@ -989,6 +1138,8 @@ function showRouteUnavailable(message) {
   ui.mapStatus.textContent = "Tracé indisponible";
   ui.mapStatus.className = "pill neutral";
   ui.profileMeta.textContent = "";
+  ui.profileLive.textContent = "Aucun profil disponible.";
+  ui.routeStats.innerHTML = "";
   ui.elevationProfile.innerHTML = "";
 
   ui.activityMap.className = "activity-map route-empty";
@@ -1002,6 +1153,11 @@ function destroyActivityMap() {
   }
   activityRouteLayer = null;
   activityHoverMarker = null;
+  activityBaseLayers = {};
+  activityBaseLayer = null;
+  activeRoute = null;
+  profileHoverUpdater = null;
+  profileHoverClearer = null;
 
   if (ui.activityMap) {
     ui.activityMap.className = "activity-map";

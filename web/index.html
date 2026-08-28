@@ -4,8 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB004 · cartographie + profil">
-  <title>SPORT Web · WEB004</title>
+  <meta name="description" content="SPORT Web · WEB005 · CARTO+ · Comfortaa">
+  <title>SPORT Web · WEB005</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -13,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB004 · cartographie + profil · Firestore</div>
+      <div class="version">WEB005 · CARTO+ · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -24,7 +27,7 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB004 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.
+      WEB005 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.
     </section>
 
     <section id="dashboard" class="hidden">
@@ -53,7 +56,7 @@
         <section class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB004</p>
+              <p class="eyebrow">WEB005</p>
               <h2>Répertoire avancé</h2>
               <p id="loadedLabel" class="muted">Chargement…</p>
             </div>
@@ -170,19 +173,34 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB004 · CARTO</p>
+              <p class="eyebrow">WEB005 · CARTO+</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
           </div>
 
-          <div id="activityMap" class="activity-map"></div>
+          <div id="mapStage" class="map-stage">
+            <div class="map-stage-toolbar">
+              <label class="map-layer-control">
+                <span>Fond</span>
+                <select id="mapLayerSelect" aria-label="Fond de carte">
+                  <option value="osm">OpenStreetMap</option>
+                  <option value="topo">OpenTopoMap</option>
+                </select>
+              </label>
+              <button id="mapFullscreenButton" class="secondary map-fullscreen-button" type="button">⛶ Plein écran</button>
+            </div>
+            <div id="activityMap" class="activity-map"></div>
+          </div>
+
+          <div id="routeStats" class="route-stats"></div>
 
           <div class="profile-card">
             <div class="profile-title-row">
               <strong>Profil altimétrique</strong>
               <span id="profileMeta" class="muted"></span>
             </div>
+            <div id="profileLive" class="profile-live">Survolez la carte ou le profil pour suivre votre position.</div>
             <svg id="elevationProfile" class="elevation-profile"
                  viewBox="0 0 1000 240" preserveAspectRatio="none"
                  aria-label="Profil altimétrique de l'activité"></svg>
@@ -240,7 +258,7 @@
   </main>
 
   <footer>
-    SPORT Web · WEB004 · aucune écriture Firestore
+    SPORT Web · WEB005 · aucune écriture Firestore
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
