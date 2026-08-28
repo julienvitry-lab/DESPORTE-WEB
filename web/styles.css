@@ -2139,3 +2139,28 @@ footer {
   .performance-analysis-columns{grid-template-columns:1fr}
   .performance-grade-row{grid-template-columns:105px 1fr 52px}
 }
+
+
+/* WEB025 · WEBREPERES001 */
+.recurring-landmarks-analysis{margin-top:18px;padding:18px;border:1px solid rgba(79,179,255,.18);border-radius:18px;background:linear-gradient(180deg,rgba(79,179,255,.035),rgba(255,255,255,.018));display:grid;gap:16px}
+.recurring-analysis-columns{display:grid;grid-template-columns:1fr 1.2fr;gap:12px}
+.recurring-analysis-block{padding:14px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(5,10,12,.32)}
+.recurring-analysis-block h4{margin:0 0 12px}
+.recurring-landmarks-list,.recurring-climbs-list{display:grid;gap:9px}
+.recurring-landmark-card,.recurring-climb-card{padding:11px 12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.025)}
+.recurring-landmark-card{display:grid;grid-template-columns:auto 1fr;gap:10px 12px;align-items:start}
+.recurring-landmark-code{min-width:38px;padding:6px 8px;border-radius:9px;background:rgba(156,255,34,.10);color:#9cff22;font-weight:800;text-align:center}
+.recurring-landmark-main{display:grid;gap:3px}
+.recurring-landmark-main span,.recurring-climb-meta{font-size:.75rem;color:var(--muted)}
+.recurring-landmark-stats{grid-column:1/-1;display:flex;gap:12px;flex-wrap:wrap;font-size:.74rem;color:var(--muted)}
+.recurring-landmark-stats b{color:var(--text)}
+.recurring-climb-card{cursor:pointer;transition:.15s ease}
+.recurring-climb-card:hover,.recurring-climb-card.recurrent{border-color:rgba(79,179,255,.45);background:rgba(79,179,255,.045)}
+.recurring-climb-head{display:flex;justify-content:space-between;gap:12px;align-items:start}
+.recurring-climb-head>div{display:grid;gap:4px}
+.recurring-climb-history{display:grid;gap:5px;margin-top:9px;padding-top:9px;border-top:1px solid rgba(255,255,255,.06);font-size:.74rem;color:var(--muted);line-height:1.5}
+.recurring-empty{padding:12px;border:1px dashed rgba(255,255,255,.12);border-radius:10px;color:var(--muted);font-size:.78rem}
+@media(max-width:760px){
+  .recurring-analysis-columns{grid-template-columns:1fr}
+  .recurring-climb-head{align-items:flex-start}
+}

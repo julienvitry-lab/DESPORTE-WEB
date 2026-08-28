@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB024 · WEBANALYSE001 · Comfortaa">
-  <title>SPORT Web · WEB024</title>
+  <meta name="description" content="SPORT Web · WEB025 · WEBREPERES001 · Comfortaa">
+  <title>SPORT Web · WEB025</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB024 · WEBANALYSE001 · Comfortaa · Firestore</div>
+      <div class="version">WEB025 · WEBREPERES001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -800,6 +800,31 @@
 
             <div id="performanceInsight" class="performance-insight"></div>
             <p class="map-help">WEBANALYSE001 n’invente pas de données locales : l’allure/vitesse et la fréquence cardiaque sont celles de l’activité entière ; altitude et pente proviennent du tracé GPS. Une future publication des timestamps/FC point par point permettra l’analyse locale.</p>
+          </section>
+
+          <section id="recurringLandmarksAnalysis" class="recurring-landmarks-analysis">
+            <div class="route-analysis-heading">
+              <div>
+                <p class="eyebrow">WEB025 · WEBREPERES001</p>
+                <strong>Repères et ascensions récurrentes</strong>
+                <span id="recurringLandmarksMeta" class="muted">Historique des repères liés à cette activité.</span>
+              </div>
+              <button id="scanRecurringClimbsButton" class="primary compact" type="button">Analyser les ascensions récurrentes</button>
+            </div>
+
+            <div class="recurring-analysis-columns">
+              <div class="recurring-analysis-block">
+                <h4>Repères personnels</h4>
+                <div id="recurringLandmarksList" class="recurring-landmarks-list"></div>
+              </div>
+              <div class="recurring-analysis-block">
+                <h4>Reconnaissance géographique</h4>
+                <p id="recurringClimbsStatus" class="muted">Lancez l’analyse pour comparer les montées de cette activité aux tracés GPS du catalogue chargé.</p>
+                <div id="recurringClimbsList" class="recurring-climbs-list"></div>
+              </div>
+            </div>
+
+            <p class="map-help">WEBREPERES001 compare les ascensions par proximité du départ et de l’arrivée, distance et D+. La reconnaissance reste informative : aucune association n’est écrite automatiquement dans Firebase.</p>
           </section>
         </section>
 

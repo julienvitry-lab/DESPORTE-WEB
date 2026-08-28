@@ -92,6 +92,7 @@ const ui = Object.fromEntries(
     "loadedLabel", "loadMoreButton", "loadAllButton", "refreshButton",
     "globalMapSection", "globalMapStatus", "globalMapCount", "globalActivityMap", "globalMapFilteredButton", "globalMapAllButton", "globalMapClearButton",
     "performanceTerrainAnalysis", "performanceTerrainMeta", "performanceBenchmarkBadge", "performanceTerrainMetrics", "performanceGradeDistribution", "performanceBenchmark", "performanceInsight",
+    "recurringLandmarksAnalysis", "recurringLandmarksMeta", "recurringLandmarksList", "scanRecurringClimbsButton", "recurringClimbsStatus", "recurringClimbsList",
     "searchInput", "sportFilter", "yearFilter", "equipmentFilter",
     "landmarkFilter", "sourceFilter", "distanceFilter", "ascentFilter", "sortFilter",
     "activityList", "recordsList",
@@ -208,6 +209,8 @@ let cartographyRequestToken = 0;
 let activityBaseLayers = {};
 let activityBaseLayer = null;
 let activeRoute = null;
+let recurringClimbScanToken = 0;
+let recurringClimbScanBusy = false;
 let profileHoverUpdater = null;
 let profileHoverClearer = null;
 let profileSegmentHighlighter = null;
@@ -310,6 +313,7 @@ function wireEvents() {
     moveDetail(1);
   });
 
+  ui.scanRecurringClimbsButton?.addEventListener("click", () => { void analyzeRecurringClimbsForCurrentActivity(); });
   ui.globalMapFilteredButton?.addEventListener("click", () => { void renderGlobalActivityMap(false); });
   ui.globalMapAllButton?.addEventListener("click", () => { void renderGlobalActivityMap(true); });
   ui.globalMapClearButton?.addEventListener("click", clearGlobalActivityMap);
@@ -2163,7 +2167,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB024";
+  document.title = "SPORT Web · WEB025";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -2225,6 +2229,8 @@ function renderDetail(activity) {
   renderCartography(activity);
   renderPerformance(activity);
   renderPersonal(activity);
+  renderRecurringLandmarkHistory(activity);
+  resetRecurringClimbAnalysis();
   renderLinkedRecords(activity);
   renderImport(activity);
   renderRaw(activity);
@@ -2318,6 +2324,7 @@ async function renderCartography(activity) {
     renderElevationProfile(route);
     renderRouteAnalysis(route);
     renderKilometerAnalysis(route);
+    if (ui.scanRecurringClimbsButton) ui.scanRecurringClimbsButton.disabled = false;
 
     const sourceCount = numberOrZero(snapshot.data().source_point_count);
     renderRouteStats(route, sourceCount);
@@ -3698,6 +3705,208 @@ function resetPerformanceTerrainAnalysis(activity) {
   }
 }
 
+
+function renderRecurringLandmarkHistory(activity) {
+  if (!ui.recurringLandmarksList || !ui.recurringLandmarksMeta) return;
+  const links = linksForActivity(activity);
+  ui.recurringLandmarksList.innerHTML = "";
+
+  if (!links.length) {
+    ui.recurringLandmarksMeta.textContent = "Aucun repère personnel lié à cette activité.";
+    ui.recurringLandmarksList.innerHTML =
+      '<div class="recurring-empty">Aucun repère associé. La reconnaissance géographique des ascensions reste disponible.</div>';
+    return;
+  }
+
+  let totalOccurrences = 0;
+  for (const link of links) {
+    const code = String(link.landmark_code ?? "?");
+    const currentOccurrences = Math.max(1, numberOrZero(link.occurrences));
+    totalOccurrences += currentOccurrences;
+    const meta = landmarks.get(code) || {};
+    const usage = landmarkUsage(code);
+
+    const card = document.createElement("article");
+    card.className = "recurring-landmark-card";
+    card.innerHTML = `
+      <div class="recurring-landmark-code">${escapeHtml(code)}</div>
+      <div class="recurring-landmark-main">
+        <strong>${escapeHtml(meta.name || `Repère ${code}`)}</strong>
+        <span>${escapeHtml(meta.landmark_type || "Repère")} · ${usage.hasReference ? "référence GPS" : "sans référence GPS"}</span>
+      </div>
+      <div class="recurring-landmark-stats">
+        <span><b>${formatNumber(currentOccurrences)}</b> sur cette activité</span>
+        <span><b>${formatNumber(usage.activityLinks)}</b> activité(s)</span>
+        <span><b>${formatNumber(usage.occurrences)}</b> passage(s) total</span>
+      </div>`;
+    ui.recurringLandmarksList.appendChild(card);
+  }
+
+  ui.recurringLandmarksMeta.textContent =
+    `${links.length} repère(s) lié(s) · ${formatNumber(totalOccurrences)} occurrence(s) sur cette activité`;
+}
+
+function resetRecurringClimbAnalysis() {
+  recurringClimbScanToken++;
+  recurringClimbScanBusy = false;
+  if (ui.recurringClimbsList) ui.recurringClimbsList.innerHTML = "";
+  if (ui.recurringClimbsStatus) {
+    ui.recurringClimbsStatus.textContent =
+      "Lancez l’analyse pour comparer les montées de cette activité aux tracés GPS du catalogue chargé.";
+  }
+  if (ui.scanRecurringClimbsButton) {
+    ui.scanRecurringClimbsButton.disabled = !activeRoute;
+    ui.scanRecurringClimbsButton.textContent = "Analyser les ascensions récurrentes";
+  }
+}
+
+function climbGeometry(segment) {
+  if (!segment?.points?.length) return null;
+  const first = segment.points[0];
+  const last = segment.points[segment.points.length - 1];
+  return {
+    startLat: Number(first.latitude),
+    startLon: Number(first.longitude),
+    endLat: Number(last.latitude),
+    endLon: Number(last.longitude),
+    distanceMeters: numberOrZero(segment.distanceMeters),
+    gainMeters: numberOrZero(segment.gainMeters),
+    averageGrade: Number(segment.averageGrade)
+  };
+}
+
+function recurringClimbsMatch(reference, candidate) {
+  const a = climbGeometry(reference);
+  const b = climbGeometry(candidate);
+  if (!a || !b) return false;
+
+  const startGap = haversineMeters(a.startLat, a.startLon, b.startLat, b.startLon);
+  const endGap = haversineMeters(a.endLat, a.endLon, b.endLat, b.endLon);
+  if (startGap > 300 || endGap > 300) return false;
+
+  const distanceRatio = Math.max(a.distanceMeters, b.distanceMeters) /
+    Math.max(1, Math.min(a.distanceMeters, b.distanceMeters));
+  const gainRatio = Math.max(a.gainMeters, b.gainMeters) /
+    Math.max(1, Math.min(a.gainMeters, b.gainMeters));
+
+  if (distanceRatio > 1.35 || gainRatio > 1.45) return false;
+
+  if (Number.isFinite(a.averageGrade) && Number.isFinite(b.averageGrade)
+      && Math.abs(a.averageGrade - b.averageGrade) > 4.5) return false;
+
+  return true;
+}
+
+function recurringClimbMatchScore(reference, candidate) {
+  const a = climbGeometry(reference), b = climbGeometry(candidate);
+  if (!a || !b) return Infinity;
+  const startGap = haversineMeters(a.startLat, a.startLon, b.startLat, b.startLon);
+  const endGap = haversineMeters(a.endLat, a.endLon, b.endLat, b.endLon);
+  const distanceDelta = Math.abs(a.distanceMeters - b.distanceMeters) / Math.max(1, a.distanceMeters);
+  const gainDelta = Math.abs(a.gainMeters - b.gainMeters) / Math.max(1, a.gainMeters);
+  return startGap + endGap + distanceDelta * 250 + gainDelta * 250;
+}
+
+async function analyzeRecurringClimbsForCurrentActivity() {
+  const activity = currentDetailActivity();
+  if (!activity || !activeRoute || recurringClimbScanBusy) return;
+
+  const currentClimbs = (activeRoute.segments || detectRouteSegments(activeRoute))
+    .filter((segment) => segment.type === "climb");
+
+  if (!currentClimbs.length) {
+    ui.recurringClimbsStatus.textContent = "Aucune ascension significative détectée sur l’activité courante.";
+    ui.recurringClimbsList.innerHTML = "";
+    return;
+  }
+
+  recurringClimbScanBusy = true;
+  const token = ++recurringClimbScanToken;
+  ui.scanRecurringClimbsButton.disabled = true;
+  ui.scanRecurringClimbsButton.textContent = "Analyse…";
+  ui.recurringClimbsList.innerHTML = "";
+
+  const currentKey = activityKey(activity);
+  const candidates = activities.filter((row) =>
+    row.deleted_at_ms == null &&
+    activityKey(row) !== currentKey &&
+    numberOrZero(row.gps_point_count) > 1
+  );
+
+  ui.recurringClimbsStatus.textContent =
+    `Comparaison de ${currentClimbs.length} montée(s) avec ${formatNumber(candidates.length)} activité(s) GPS chargée(s)…`;
+
+  try {
+    let completed = 0;
+    const routes = await mapWithConcurrency(candidates, async (row) => {
+      const route = await loadGlobalRoute(row);
+      completed++;
+      if (token === recurringClimbScanToken && (completed % 10 === 0 || completed === candidates.length)) {
+        ui.recurringClimbsStatus.textContent =
+          `Lecture des tracés : ${formatNumber(completed)} / ${formatNumber(candidates.length)}…`;
+      }
+      return route ? { activity: row, route } : null;
+    }, 8);
+
+    if (token !== recurringClimbScanToken) return;
+
+    const routeRows = routes.filter(Boolean).map((item) => ({
+      ...item,
+      climbs: detectRouteSegments(item.route).filter((segment) => segment.type === "climb")
+    }));
+
+    let recurrentCount = 0;
+    for (const reference of currentClimbs) {
+      const matches = [];
+      for (const item of routeRows) {
+        const same = item.climbs
+          .filter((climb) => recurringClimbsMatch(reference, climb))
+          .sort((a,b) => recurringClimbMatchScore(reference,a) - recurringClimbMatchScore(reference,b))[0];
+        if (same) matches.push({ activity: item.activity, climb: same });
+      }
+
+      matches.sort((a,b) => numberOrZero(b.activity.start_time_ms)-numberOrZero(a.activity.start_time_ms));
+      if (matches.length) recurrentCount++;
+
+      const card = document.createElement("article");
+      card.className = `recurring-climb-card${matches.length ? " recurrent" : ""}`;
+      const latest = matches.slice(0,5).map((match) =>
+        `${formatDate(match.activity.start_time_ms)} · ${escapeHtml(match.activity.custom_title || sportName(match.activity.sport))}`
+      ).join("<br>");
+      card.innerHTML = `
+        <div class="recurring-climb-head">
+          <div>
+            <span class="route-segment-title">Montée #${reference.rank}</span>
+            <strong>${(reference.distanceMeters/1000).toLocaleString("fr-FR",{maximumFractionDigits:2})} km · +${Math.round(reference.gainMeters)} m</strong>
+          </div>
+          <span class="pill ${matches.length ? "ok" : "neutral"}">${matches.length + 1} passage${matches.length ? "s" : ""}</span>
+        </div>
+        <div class="recurring-climb-meta">
+          ${reference.averageGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} % moy. ·
+          départ/arrivée comparés à ±300 m · distance/D+ tolérés
+        </div>
+        <div class="recurring-climb-history">
+          ${matches.length ? `<strong>Autres passages reconnus</strong><span>${latest}</span>` : '<span>Aucun autre passage reconnu dans le catalogue chargé.</span>'}
+        </div>`;
+      card.addEventListener("click", () => selectRouteSegment(reference));
+      ui.recurringClimbsList.appendChild(card);
+    }
+
+    ui.recurringClimbsStatus.textContent =
+      `${recurrentCount} ascension(s) récurrente(s) reconnue(s) sur ${currentClimbs.length} · ` +
+      `${formatNumber(routeRows.length)} tracé(s) comparés.`;
+  } catch (error) {
+    console.error(error);
+    ui.recurringClimbsStatus.textContent = `Analyse impossible : ${error?.message || String(error)}`;
+  } finally {
+    if (token === recurringClimbScanToken) {
+      recurringClimbScanBusy = false;
+      ui.scanRecurringClimbsButton.disabled = false;
+      ui.scanRecurringClimbsButton.textContent = "Analyser les ascensions récurrentes";
+    }
+  }
+}
+
 function routeTerrainAnalysis(route) {
   const points=route?.points || [];
   if (points.length < 2) return null;
@@ -4232,7 +4441,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB024",
+            webVersion: "WEB025",
             row: wanted
           }
         );
@@ -4255,7 +4464,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB024"
+            webVersion: "WEB025"
           }
         );
         countDelta -= 1;
@@ -4265,7 +4474,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB024"
+      webVersion: "WEB025"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -4465,7 +4674,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB024"
+    webVersion: "WEB025"
   };
   if (row != null) event.row = row;
 
@@ -4474,7 +4683,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB024"
+    webVersion: "WEB025"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -4927,7 +5136,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB024",
+      webVersion: "WEB025",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -4993,7 +5202,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB024",
+    webVersion: "WEB025",
     androidVersion: 0,
     __synthetic: true
   };
@@ -6447,7 +6656,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB024",
+      webVersion: "WEB025",
       row: next
     }
   );
@@ -6483,7 +6692,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB024",
+        webVersion: "WEB025",
         row: patch
       }
     );
@@ -6495,7 +6704,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB024"
+      webVersion: "WEB025"
     },
     { merge: true }
   );
