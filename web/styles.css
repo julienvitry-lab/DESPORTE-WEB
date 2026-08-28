@@ -798,3 +798,124 @@ footer {
   .map-fullscreen-button { padding: 0 9px; font-size: 11px; }
   .route-stats { grid-template-columns: repeat(2, 1fr); }
 }
+
+
+/* WEB006 · INTEROP · édition contrôlée synchronisée */
+.interop-badge {
+  color: #eaffc5;
+  border-color: rgba(182,255,59,.38);
+  background: rgba(182,255,59,.06);
+}
+
+.interop-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.interop-editor {
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid rgba(182,255,59,.24);
+  border-radius: 14px;
+  background: rgba(182,255,59,.035);
+}
+
+.interop-form-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, .9fr) minmax(320px, 1.6fr);
+  gap: 10px;
+}
+
+.interop-editor textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  padding: 10px 12px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0d100e;
+  outline: none;
+  font: inherit;
+}
+
+.interop-editor textarea:focus {
+  border-color: var(--green2);
+  box-shadow: 0 0 0 3px rgba(182,255,59,.08);
+}
+
+.interop-actions,
+.landmark-editor {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.interop-actions {
+  margin-top: 10px;
+}
+
+.landmark-editor {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(182,255,59,.14);
+}
+
+.landmark-editor label {
+  min-width: min(360px, 100%);
+  flex: 1;
+}
+
+.landmark-chip {
+  gap: 8px;
+}
+
+.landmark-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 3px;
+}
+
+.landmark-control {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: 1px solid rgba(182,255,59,.24);
+  border-radius: 50%;
+  color: var(--text);
+  background: rgba(0,0,0,.22);
+  font: 800 15px "Comfortaa", sans-serif;
+}
+
+.landmark-control:hover {
+  border-color: rgba(182,255,59,.65);
+}
+
+#interopStatus {
+  transition: border-color .2s ease, color .2s ease, background .2s ease;
+}
+
+#interopStatus.pending {
+  color: #fff0b3;
+  border-color: rgba(255,200,87,.45);
+  background: rgba(255,200,87,.06);
+}
+
+#interopStatus.error {
+  color: #ffd2d2;
+  border-color: rgba(255,100,100,.45);
+  background: rgba(255,100,100,.06);
+}
+
+@media (max-width: 760px) {
+  .interop-form-grid { grid-template-columns: 1fr; }
+  .interop-heading { align-items: flex-start; flex-direction: column; }
+  .interop-actions { align-items: stretch; flex-direction: column; }
+  .interop-actions button { width: 100%; }
+}

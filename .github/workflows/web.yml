@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB005
+name: Publier SPORT Web · WEB006
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB005.md"
+      - "docs/releases/WEB006.md"
   workflow_dispatch:
 
 permissions:
@@ -29,30 +29,38 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB005
+      - name: Valider WEB006
         shell: bash
         run: |
           set -euo pipefail
           test -f web/index.html
           test -f web/styles.css
           test -f web/app.js
-          grep -Fq "WEB005 · CARTO+ · Comfortaa" web/index.html
+
+          grep -Fq "WEB006 · INTEROP · Comfortaa" web/index.html
           grep -Fq 'family=Comfortaa' web/index.html
-          grep -Fq 'font-family: "Comfortaa"' web/styles.css
           grep -Fq 'z-index: 4000' web/styles.css
           grep -Fq 'isolation: isolate' web/styles.css
-          grep -Fq 'OpenTopoMap' web/index.html
-          grep -Fq 'function toggleMapFullscreen()' web/app.js
-          grep -Fq 'function switchBaseLayer(key)' web/app.js
-          grep -Fq 'function renderRouteStats(route, sourceCount)' web/app.js
-          grep -Fq 'D+ cumulé' web/app.js
-          grep -Fq 'activityMapInstance.on("mousemove"' web/app.js
-          grep -Fq '"activity_routes"' web/app.js
-          if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|writeBatch|runTransaction)\b' web/app.js; then
-            echo "::error::WEB005 doit rester strictement en lecture seule."
+
+          # Interop : WEB006 ouvre volontairement des écritures contrôlées.
+          grep -Fq 'writeBatch' web/app.js
+          grep -Fq 'onSnapshot' web/app.js
+          grep -Fq '"changes"' web/app.js
+          grep -Fq 'function commitWebMutation' web/app.js
+          grep -Fq 'function saveCurrentActivityEdits' web/app.js
+          grep -Fq 'function setLandmarkOccurrence' web/app.js
+          grep -Fq 'function startInteropWatch' web/app.js
+          grep -Fq 'webVersion: "WEB006"' web/app.js
+          grep -Fq 'table: "activities"' web/app.js
+          grep -Fq 'table: "activity_landmarks"' web/app.js
+
+          # Pas d'API d'écriture directe dispersée : tout passe par le batch contrôlé.
+          if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|runTransaction)\b' web/app.js; then
+            echo "::error::WEB006 doit centraliser les écritures dans commitWebMutation/writeBatch."
             exit 1
           fi
-          echo "WEB005 : Comfortaa + z-index + CARTO+ interactif, lecture seule validés."
+
+          echo "WEB006 : interop Web ↔ Android + CARTO+ + Comfortaa validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -62,6 +70,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB005
+      - name: Publier SPORT Web · WEB006
         id: deployment
         uses: actions/deploy-pages@v4

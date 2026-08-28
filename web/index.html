@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB005 · CARTO+ · Comfortaa">
-  <title>SPORT Web · WEB005</title>
+  <meta name="description" content="SPORT Web · WEB006 · INTEROP · Comfortaa">
+  <title>SPORT Web · WEB006</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB005 · CARTO+ · Comfortaa · Firestore</div>
+      <div class="version">WEB006 · INTEROP · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -27,7 +27,7 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB005 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.
+      WEB006 active l’interopérabilité : les modifications contrôlées du Web sont propagées vers les appareils Android, et les changements Android remontent en temps réel ici.
     </section>
 
     <section id="dashboard" class="hidden">
@@ -39,7 +39,7 @@
             <p id="identityLine" class="muted"></p>
           </div>
           <div class="hero-actions">
-            <div class="readonly">🔒 Lecture seule</div>
+            <div class="readonly interop-badge">🔄 Interop active</div>
             <button id="refreshButton" class="secondary">Actualiser</button>
           </div>
         </div>
@@ -56,7 +56,7 @@
         <section class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB005</p>
+              <p class="eyebrow">WEB006 · INTEROP</p>
               <h2>Répertoire avancé</h2>
               <p id="loadedLabel" class="muted">Chargement…</p>
             </div>
@@ -173,7 +173,7 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB005 · CARTO+</p>
+              <p class="eyebrow">WEB006 · CARTO+</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
@@ -216,10 +216,41 @@
         </section>
 
         <section class="detail-section panel">
-          <div class="section-heading">
-            <p class="eyebrow">PERSONNEL</p>
-            <h2>Matériel, repères et notes</h2>
+          <div class="section-heading interop-heading">
+            <div>
+              <p class="eyebrow">WEB006 · INTEROP</p>
+              <h2>Matériel, repères et notes</h2>
+            </div>
+            <div id="interopStatus" class="pill ok">Synchronisation active</div>
           </div>
+
+          <div id="interopEditor" class="interop-editor">
+            <div class="interop-form-grid">
+              <label>
+                Titre personnalisé
+                <input id="editTitleInput" type="text" maxlength="160" placeholder="Titre facultatif">
+              </label>
+              <label class="interop-note">
+                Note personnelle
+                <textarea id="editNoteInput" rows="3" maxlength="2000" placeholder="Note personnelle"></textarea>
+              </label>
+            </div>
+            <div class="interop-actions">
+              <button id="saveActivityEditsButton" class="primary">Enregistrer sur les 3 appareils</button>
+              <span class="muted">WEB → Firestore → téléphone + tablette</span>
+            </div>
+
+            <div class="landmark-editor">
+              <label>
+                Ajouter un repère
+                <select id="addLandmarkSelect">
+                  <option value="">Choisir…</option>
+                </select>
+              </label>
+              <button id="addLandmarkButton" class="secondary">Ajouter le repère</button>
+            </div>
+          </div>
+
           <div id="detailPersonalGrid" class="detail-grid"></div>
           <div id="detailLandmarks" class="landmark-strip"></div>
         </section>
@@ -258,7 +289,7 @@
   </main>
 
   <footer>
-    SPORT Web · WEB005 · aucune écriture Firestore
+    SPORT Web · WEB006 · interopérabilité contrôlée Firestore
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

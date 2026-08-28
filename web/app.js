@@ -13,13 +13,19 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
-  startAfter
+  serverTimestamp,
+  startAfter,
+  Timestamp,
+  where,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB005 reste strictement en lecture seule.
-// La clé API Firebase Web identifie le projet ; l'accès aux données dépend de Firebase Auth + règles Firestore.
+// WEB006 · INTEROP : écritures limitées au titre, à la note et aux repères d'activité.
+// Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
+// La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
   apiKey: "AIzaSyDALtXWRoNHiD9oc4SqxH4tn7HY_08NI1A",
   authDomain: "sport-505813.firebaseapp.com",
@@ -51,6 +57,8 @@ const ui = Object.fromEntries(
     "previousActivityBottomButton", "nextActivityBottomButton", "detailPosition",
     "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics",
     "detailSummaryGrid", "detailPerformanceGrid", "detailPersonalGrid",
+    "interopStatus", "interopEditor", "editTitleInput", "editNoteInput",
+    "saveActivityEditsButton", "addLandmarkSelect", "addLandmarkButton",
     "detailMapSection", "mapStatus", "mapStage", "activityMap", "mapLayerSelect", "mapFullscreenButton",
     "routeStats", "elevationProfile", "profileMeta", "profileLive",
     "detailLandmarks", "detailRecordsSection", "detailRecordsList",
@@ -72,6 +80,10 @@ let equipmentRows = [];
 let landmarks = new Map();
 let activityLandmarks = new Map();
 let records = [];
+
+let interopUnsubscribe = null;
+let interopWatchStartedAtMs = 0;
+const webDeviceId = loadWebDeviceId();
 
 let activityMapInstance = null;
 let activityRouteLayer = null;
@@ -119,6 +131,9 @@ function wireEvents() {
   ui.mapFullscreenButton.addEventListener("click", toggleMapFullscreen);
   document.addEventListener("fullscreenchange", handleFullscreenChange);
 
+  ui.saveActivityEditsButton.addEventListener("click", saveCurrentActivityEdits);
+  ui.addLandmarkButton.addEventListener("click", addSelectedLandmark);
+
   window.addEventListener("keydown", (event) => {
     if (ui.detailView.classList.contains("hidden")) return;
     if (event.key === "Escape") showCatalog();
@@ -131,13 +146,14 @@ onAuthStateChanged(auth, async (user) => {
   currentUser = user || null;
 
   if (!user) {
+    stopInteropWatch();
     ui.authState.textContent = "Non connecté";
     ui.authState.className = "pill neutral auth-pill";
     ui.loginButton.classList.remove("hidden");
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB005 n'écrit rien dans Firestore. Connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB006 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -150,6 +166,7 @@ onAuthStateChanged(auth, async (user) => {
   ui.dashboard.classList.remove("hidden");
   ui.identityLine.textContent = `${user.email || "Compte Google"} · projet sport-505813`;
   await reloadAll();
+  startInteropWatch();
 });
 
 function userCollection(name) {
@@ -178,7 +195,7 @@ async function reloadAll() {
   try {
     await Promise.all([loadMeta(), loadReferenceCollections()]);
     await loadNextPage();
-    setMessage("WEB005 connecté à Firestore en lecture seule.", "success");
+    setMessage("WEB006 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
@@ -538,7 +555,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB005";
+  document.title = "SPORT Web · WEB006";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -1191,6 +1208,9 @@ function renderPersonal(activity) {
   ui.detailPersonalGrid.innerHTML = "";
   ui.detailLandmarks.innerHTML = "";
 
+  ui.editTitleInput.value = activity.custom_title || "";
+  ui.editNoteInput.value = activity.personal_note || "";
+
   addDetailItem(ui.detailPersonalGrid, "Matériel", activity.equipment_name || "—", "wide");
   addDetailItem(
     ui.detailPersonalGrid,
@@ -1203,6 +1223,7 @@ function renderPersonal(activity) {
   addDetailItem(ui.detailPersonalGrid, "Note personnelle", activity.personal_note || "—", "full");
 
   const links = linksForActivity(activity);
+  rebuildAddLandmarkSelect(links);
 
   if (!links.length) {
     const empty = document.createElement("span");
@@ -1231,9 +1252,47 @@ function renderPersonal(activity) {
       label.textContent =
         `${meta?.name || meta?.label || "Repère"}${count > 1 ? ` ×${count}` : ""}${source}`;
 
-      chip.append(codeNode, label);
+      const controls = document.createElement("span");
+      controls.className = "landmark-controls";
+
+      const minus = document.createElement("button");
+      minus.type = "button";
+      minus.className = "landmark-control";
+      minus.textContent = "−";
+      minus.title = count > 1 ? "Réduire le compteur" : "Retirer le repère";
+      minus.addEventListener("click", () => changeLandmarkOccurrence(activity, code, -1));
+
+      const plus = document.createElement("button");
+      plus.type = "button";
+      plus.className = "landmark-control";
+      plus.textContent = "+";
+      plus.title = "Augmenter le compteur";
+      plus.addEventListener("click", () => changeLandmarkOccurrence(activity, code, 1));
+
+      controls.append(minus, plus);
+      chip.append(codeNode, label, controls);
       ui.detailLandmarks.appendChild(chip);
     });
+}
+
+function rebuildAddLandmarkSelect(links) {
+  const used = new Set((links || []).map((link) => String(link.landmark_code ?? "")));
+  const selected = ui.addLandmarkSelect.value;
+  ui.addLandmarkSelect.innerHTML = '<option value="">Choisir…</option>';
+
+  [...landmarks.entries()]
+    .sort((a, b) => Number(a[1]?.sort_order ?? 999) - Number(b[1]?.sort_order ?? 999))
+    .forEach(([code, row]) => {
+      if (used.has(code)) return;
+      const option = document.createElement("option");
+      option.value = code;
+      option.textContent = `${code} · ${row.name || row.label || "Repère"}`;
+      ui.addLandmarkSelect.appendChild(option);
+    });
+
+  if ([...ui.addLandmarkSelect.options].some((option) => option.value === selected)) {
+    ui.addLandmarkSelect.value = selected;
+  }
 }
 
 function renderLinkedRecords(activity) {
@@ -1369,6 +1428,348 @@ function activityKey(activity) {
   return String(activity.id ?? activity.__docId ?? "");
 }
 
+
+function currentDetailActivity() {
+  if (!currentDetailId) return null;
+  return activities.find((activity) => activityKey(activity) === currentDetailId) || null;
+}
+
+function loadWebDeviceId() {
+  try {
+    const key = "sport_web006_device_id";
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const random = globalThis.crypto?.randomUUID
+      ? globalThis.crypto.randomUUID().replaceAll("-", "")
+      : `${Date.now()}${Math.random().toString(36).slice(2)}`;
+    const value = `web_${random.slice(0, 32)}`;
+    localStorage.setItem(key, value);
+    return value;
+  } catch {
+    return `web_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+  }
+}
+
+function nextWebFirebaseSeq() {
+  try {
+    const key = "sport_web006_firebase_seq";
+    const next = Math.max(1, Number(localStorage.getItem(key) || 0) + 1);
+    localStorage.setItem(key, String(next));
+    return next;
+  } catch {
+    return Date.now();
+  }
+}
+
+function makeWebEventId(seq) {
+  const random = Math.random().toString(36).slice(2, 9);
+  return `${webDeviceId}_${seq}_${Date.now()}_${random}`;
+}
+
+function setInteropStatus(text, state = "ok") {
+  ui.interopStatus.textContent = text;
+  ui.interopStatus.className =
+    state === "pending" ? "pill pending" :
+    state === "error" ? "pill error" :
+    "pill ok";
+}
+
+async function commitWebMutation({
+  table,
+  rowKey,
+  operation,
+  row,
+  materializedCollection,
+  materializedData,
+  deleteMaterialized = false
+}) {
+  if (!currentUser) throw new Error("Connexion Firebase absente.");
+
+  const seq = nextWebFirebaseSeq();
+  const eventId = makeWebEventId(seq);
+  const now = Date.now();
+
+  const batch = writeBatch(db);
+  const businessRef = doc(db, ROOT, currentUser.uid, materializedCollection, rowKey);
+  const changeRef = doc(db, ROOT, currentUser.uid, "changes", eventId);
+  const metaRef = doc(db, ROOT, currentUser.uid, "meta", "state");
+
+  if (deleteMaterialized) {
+    batch.delete(businessRef);
+  } else {
+    batch.set(
+      businessRef,
+      {
+        ...(materializedData || row || {}),
+        __sportKey: rowKey,
+        __updatedAtMs: now
+      },
+      { merge: true }
+    );
+  }
+
+  const event = {
+    eventId,
+    deviceId: webDeviceId,
+    firebaseSeq: seq,
+    sourceChangeSeq: 0,
+    table,
+    rowKey,
+    operation,
+    changedAtMs: now,
+    publishedAt: serverTimestamp(),
+    androidVersion: 0,
+    webVersion: "WEB006"
+  };
+  if (row != null) event.row = row;
+
+  batch.set(changeRef, event);
+  batch.set(
+    metaRef,
+    {
+      updatedAtMs: now,
+      sourceDeviceId: webDeviceId,
+      webVersion: "WEB006"
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
+  return { eventId, now };
+}
+
+async function saveCurrentActivityEdits() {
+  const activity = currentDetailActivity();
+  if (!activity) return;
+
+  const key = activityKey(activity);
+  if (!key) return;
+
+  const title = ui.editTitleInput.value.trim();
+  const note = ui.editNoteInput.value.trim();
+  const patch = {
+    id: Number(key),
+    custom_title: title || null,
+    personal_note: note || null
+  };
+
+  const unchanged =
+    String(activity.custom_title ?? "") === title &&
+    String(activity.personal_note ?? "") === note;
+
+  if (unchanged) {
+    setInteropStatus("Aucune modification", "ok");
+    return;
+  }
+
+  setInteropStatus("Envoi vers téléphone + tablette…", "pending");
+  ui.saveActivityEditsButton.disabled = true;
+
+  try {
+    await commitWebMutation({
+      table: "activities",
+      rowKey: key,
+      operation: "UPSERT",
+      row: patch,
+      materializedCollection: "activities",
+      materializedData: patch
+    });
+
+    Object.assign(activity, patch);
+    ui.detailTitle.textContent = title || sportName(activity.sport);
+    document.title = `${title || sportName(activity.sport)} · SPORT Web`;
+    renderPersonal(activity);
+    applyFiltersAndRender();
+    setInteropStatus("Envoyé aux 2 appareils", "ok");
+    setMessage("WEB006 · modification publiée. Téléphone et tablette vont la recevoir automatiquement.", "success");
+  } catch (error) {
+    console.error(error);
+    setInteropStatus("Échec de synchronisation", "error");
+    handleError(error, "Modification Web impossible");
+  } finally {
+    ui.saveActivityEditsButton.disabled = false;
+  }
+}
+
+async function addSelectedLandmark() {
+  const activity = currentDetailActivity();
+  if (!activity) return;
+
+  const code = ui.addLandmarkSelect.value;
+  if (!code) {
+    setInteropStatus("Choisis un repère", "pending");
+    return;
+  }
+
+  await setLandmarkOccurrence(activity, code, 1);
+}
+
+async function changeLandmarkOccurrence(activity, code, delta) {
+  const current = linksForActivity(activity)
+    .find((link) => String(link.landmark_code ?? "") === String(code));
+  const currentCount = current ? Math.max(1, numberOrZero(current.occurrences)) : 0;
+  const next = Math.max(0, Math.min(99, currentCount + delta));
+  await setLandmarkOccurrence(activity, code, next);
+}
+
+async function setLandmarkOccurrence(activity, code, occurrences) {
+  const activityId = Number(activity.id ?? activity.__docId);
+  if (!Number.isFinite(activityId) || activityId <= 0 || !code) return;
+
+  const rowKey = `${activityId}:${code}`;
+  const now = Date.now();
+  const next = Math.max(0, Math.min(99, Number(occurrences) || 0));
+
+  setInteropStatus(next > 0 ? "Repère en cours d’envoi…" : "Suppression en cours…", "pending");
+  ui.addLandmarkButton.disabled = true;
+
+  try {
+    if (next <= 0) {
+      await commitWebMutation({
+        table: "activity_landmarks",
+        rowKey,
+        operation: "DELETE",
+        row: null,
+        materializedCollection: "activity_landmarks",
+        deleteMaterialized: true
+      });
+      applyActivityLandmarkLocally(activityId, code, null, "DELETE");
+    } else {
+      const row = {
+        activity_id: activityId,
+        landmark_code: code,
+        occurrences: next,
+        source: "WEB",
+        updated_at_ms: now
+      };
+      await commitWebMutation({
+        table: "activity_landmarks",
+        rowKey,
+        operation: "UPSERT",
+        row,
+        materializedCollection: "activity_landmarks",
+        materializedData: row
+      });
+      applyActivityLandmarkLocally(activityId, code, row, "UPSERT");
+    }
+
+    renderPersonal(activity);
+    applyFiltersAndRender();
+    setInteropStatus("Repère synchronisé", "ok");
+    setMessage("WEB006 · repère publié vers Firestore, téléphone et tablette.", "success");
+  } catch (error) {
+    console.error(error);
+    setInteropStatus("Échec repère", "error");
+    handleError(error, "Modification du repère impossible");
+  } finally {
+    ui.addLandmarkButton.disabled = false;
+  }
+}
+
+function applyActivityLandmarkLocally(activityId, code, row, operation) {
+  const key = String(activityId);
+  const list = (activityLandmarks.get(key) || [])
+    .filter((item) => String(item.landmark_code ?? "") !== String(code));
+
+  if (operation !== "DELETE" && row) list.push(row);
+
+  if (list.length) activityLandmarks.set(key, list);
+  else activityLandmarks.delete(key);
+}
+
+function stopInteropWatch() {
+  if (interopUnsubscribe) {
+    try { interopUnsubscribe(); } catch {}
+  }
+  interopUnsubscribe = null;
+}
+
+function startInteropWatch() {
+  stopInteropWatch();
+  if (!currentUser) return;
+
+  interopWatchStartedAtMs = Date.now() - 4000;
+  const watchQuery = query(
+    userCollection("changes"),
+    where("publishedAt", ">", Timestamp.fromMillis(interopWatchStartedAtMs)),
+    orderBy("publishedAt", "asc"),
+    limit(100)
+  );
+
+  interopUnsubscribe = onSnapshot(
+    watchQuery,
+    (snapshot) => {
+      for (const change of snapshot.docChanges()) {
+        if (change.type !== "added" && change.type !== "modified") continue;
+        const data = change.doc.data();
+        applyRealtimeChange(data);
+      }
+    },
+    (error) => {
+      console.error(error);
+      setInteropStatus("Temps réel interrompu", "error");
+      setMessage("WEB006 · écoute temps réel indisponible : " + (error?.message || error), "error");
+    }
+  );
+}
+
+function applyRealtimeChange(event) {
+  if (!event || !event.table || !event.rowKey || !event.operation) return;
+
+  const table = String(event.table);
+  const operation = String(event.operation);
+  const rowKey = String(event.rowKey);
+  const row = event.row && typeof event.row === "object" ? event.row : null;
+  const fromWeb = String(event.deviceId || "") === webDeviceId;
+
+  if (table === "activities" && row) {
+    const activity = activities.find((item) => activityKey(item) === rowKey);
+    if (activity) {
+      Object.assign(activity, row);
+      applyFiltersAndRender();
+
+      if (currentDetailId === rowKey) {
+        ui.detailTitle.textContent = activity.custom_title || sportName(activity.sport);
+        renderPersonal(activity);
+        renderRaw(activity);
+      }
+    }
+  } else if (table === "activity_landmarks") {
+    const split = rowKey.indexOf(":");
+    const activityId = split > 0 ? rowKey.substring(0, split) : String(row?.activity_id ?? "");
+    const code = split > 0 ? rowKey.substring(split + 1) : String(row?.landmark_code ?? "");
+
+    if (activityId && code) {
+      applyActivityLandmarkLocally(activityId, code, row, operation);
+      applyFiltersAndRender();
+
+      const current = currentDetailActivity();
+      if (current && activityKey(current) === activityId) renderPersonal(current);
+    }
+  } else if (table === "personal_landmarks") {
+    const code = String(row?.code ?? rowKey);
+    if (operation === "DELETE") landmarks.delete(code);
+    else if (row) landmarks.set(code, row);
+    rebuildLandmarkFilter();
+    const current = currentDetailActivity();
+    if (current) renderPersonal(current);
+  } else if (table === "equipment") {
+    equipmentRows = equipmentRows.filter((item) => String(item.id ?? item.__docId) !== rowKey);
+    if (operation !== "DELETE" && row) equipmentRows.push({ __docId: rowKey, ...row });
+  } else if (table === "records") {
+    records = records.filter((item) => String(item.record_type ?? item.__docId) !== rowKey);
+    if (operation !== "DELETE" && row) records.push({ __docId: rowKey, ...row });
+    renderRecords();
+    const current = currentDetailActivity();
+    if (current) renderLinkedRecords(current);
+  }
+
+  if (!fromWeb) {
+    setInteropStatus("Modification Android reçue", "ok");
+    setMessage("WEB006 · changement reçu automatiquement depuis un appareil Android.", "success");
+  }
+}
+
 function handleError(error, prefix) {
   console.error(error);
 
@@ -1380,7 +1781,7 @@ function handleError(error, prefix) {
       "Le domaine GitHub Pages n'est pas autorisé dans Firebase Authentication.";
   } else if (code === "permission-denied") {
     detail =
-      "Firestore a refusé la lecture. Vérifie le compte Google et les règles Firestore.";
+      "Firestore a refusé l’opération. Vérifie le compte Google et les règles Firestore.";
   }
 
   setMessage(`${prefix} : ${detail}`, "error");
