@@ -919,3 +919,38 @@ footer {
   .interop-actions { align-items: stretch; flex-direction: column; }
   .interop-actions button { width: 100%; }
 }
+
+
+/* WEB007 · autosynchronisation */
+.autosave-explainer {
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid rgba(182,255,59,.18);
+  border-radius: 13px;
+  background: rgba(182,255,59,.035);
+}
+
+.autosave-explainer > div {
+  display: grid;
+  gap: 3px;
+}
+
+.autosave-explainer strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.autosave-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 4px rgba(182,255,59,.08);
+}
+
+.landmark-editor > .muted {
+  align-self: center;
+  flex: 1 1 260px;
+  font-size: 11px;
+}

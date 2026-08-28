@@ -23,7 +23,7 @@ import {
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB006 · INTEROP : écritures limitées au titre, à la note et aux repères d'activité.
+// WEB007 · INTEROP : écritures limitées au titre, à la note et aux repères d'activité.
 // Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
@@ -58,7 +58,7 @@ const ui = Object.fromEntries(
     "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics",
     "detailSummaryGrid", "detailPerformanceGrid", "detailPersonalGrid",
     "interopStatus", "interopEditor", "editTitleInput", "editNoteInput",
-    "saveActivityEditsButton", "addLandmarkSelect", "addLandmarkButton",
+    "addLandmarkSelect",
     "detailMapSection", "mapStatus", "mapStage", "activityMap", "mapLayerSelect", "mapFullscreenButton",
     "routeStats", "elevationProfile", "profileMeta", "profileLive",
     "detailLandmarks", "detailRecordsSection", "detailRecordsList",
@@ -84,6 +84,13 @@ let records = [];
 let interopUnsubscribe = null;
 let interopWatchStartedAtMs = 0;
 const webDeviceId = loadWebDeviceId();
+
+const AUTOSAVE_DELAY_MS = 800;
+let activityAutosaveTimer = null;
+let activityAutosaveGeneration = 0;
+let activityAutosaveQueue = Promise.resolve();
+let activityEditDirty = false;
+let editorActivityKey = null;
 
 let activityMapInstance = null;
 let activityRouteLayer = null;
@@ -120,19 +127,43 @@ function wireEvents() {
     element.addEventListener(element.tagName === "INPUT" ? "input" : "change", applyFiltersAndRender);
   });
 
-  ui.backToCatalogButton.addEventListener("click", showCatalog);
-  ui.backToCatalogBottomButton.addEventListener("click", showCatalog);
-  ui.previousActivityButton.addEventListener("click", () => moveDetail(-1));
-  ui.previousActivityBottomButton.addEventListener("click", () => moveDetail(-1));
-  ui.nextActivityButton.addEventListener("click", () => moveDetail(1));
-  ui.nextActivityBottomButton.addEventListener("click", () => moveDetail(1));
+  ui.backToCatalogButton.addEventListener("click", () => {
+    void flushCurrentActivityAutosave();
+    showCatalog();
+  });
+  ui.backToCatalogBottomButton.addEventListener("click", () => {
+    void flushCurrentActivityAutosave();
+    showCatalog();
+  });
+  ui.previousActivityButton.addEventListener("click", () => {
+    void flushCurrentActivityAutosave();
+    moveDetail(-1);
+  });
+  ui.previousActivityBottomButton.addEventListener("click", () => {
+    void flushCurrentActivityAutosave();
+    moveDetail(-1);
+  });
+  ui.nextActivityButton.addEventListener("click", () => {
+    void flushCurrentActivityAutosave();
+    moveDetail(1);
+  });
+  ui.nextActivityBottomButton.addEventListener("click", () => {
+    void flushCurrentActivityAutosave();
+    moveDetail(1);
+  });
 
   ui.mapLayerSelect.addEventListener("change", () => switchBaseLayer(ui.mapLayerSelect.value));
   ui.mapFullscreenButton.addEventListener("click", toggleMapFullscreen);
   document.addEventListener("fullscreenchange", handleFullscreenChange);
 
-  ui.saveActivityEditsButton.addEventListener("click", saveCurrentActivityEdits);
-  ui.addLandmarkButton.addEventListener("click", addSelectedLandmark);
+  ui.editTitleInput.addEventListener("input", scheduleCurrentActivityAutosave);
+  ui.editNoteInput.addEventListener("input", scheduleCurrentActivityAutosave);
+  ui.editTitleInput.addEventListener("change", () => { void flushCurrentActivityAutosave(); });
+  ui.editNoteInput.addEventListener("change", () => { void flushCurrentActivityAutosave(); });
+
+  ui.addLandmarkSelect.addEventListener("change", () => {
+    if (ui.addLandmarkSelect.value) void addSelectedLandmark();
+  });
 
   window.addEventListener("keydown", (event) => {
     if (ui.detailView.classList.contains("hidden")) return;
@@ -153,7 +184,7 @@ onAuthStateChanged(auth, async (user) => {
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB006 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB007 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -195,7 +226,7 @@ async function reloadAll() {
   try {
     await Promise.all([loadMeta(), loadReferenceCollections()]);
     await loadNextPage();
-    setMessage("WEB006 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    setMessage("WEB007 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
@@ -555,7 +586,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB006";
+  document.title = "SPORT Web · WEB007";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -1208,8 +1239,12 @@ function renderPersonal(activity) {
   ui.detailPersonalGrid.innerHTML = "";
   ui.detailLandmarks.innerHTML = "";
 
-  ui.editTitleInput.value = activity.custom_title || "";
-  ui.editNoteInput.value = activity.personal_note || "";
+  const currentEditorKey = activityKey(activity);
+  if (editorActivityKey !== currentEditorKey || !activityEditDirty) {
+    ui.editTitleInput.value = activity.custom_title || "";
+    ui.editNoteInput.value = activity.personal_note || "";
+  }
+  editorActivityKey = currentEditorKey;
 
   addDetailItem(ui.detailPersonalGrid, "Matériel", activity.equipment_name || "—", "wide");
   addDetailItem(
@@ -1452,7 +1487,7 @@ function loadWebDeviceId() {
 
 function nextWebFirebaseSeq() {
   try {
-    const key = "sport_web006_firebase_seq";
+    const key = "sport_web_interop_firebase_seq";
     const next = Math.max(1, Number(localStorage.getItem(key) || 0) + 1);
     localStorage.setItem(key, String(next));
     return next;
@@ -1519,7 +1554,7 @@ async function commitWebMutation({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB006"
+    webVersion: "WEB007"
   };
   if (row != null) event.row = row;
 
@@ -1529,7 +1564,7 @@ async function commitWebMutation({
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB006"
+      webVersion: "WEB007"
     },
     { merge: true }
   );
@@ -1538,15 +1573,59 @@ async function commitWebMutation({
   return { eventId, now };
 }
 
-async function saveCurrentActivityEdits() {
+function scheduleCurrentActivityAutosave() {
   const activity = currentDetailActivity();
   if (!activity) return;
 
   const key = activityKey(activity);
   if (!key) return;
 
+  editorActivityKey = key;
+  activityEditDirty = true;
+  activityAutosaveGeneration += 1;
+  const generation = activityAutosaveGeneration;
   const title = ui.editTitleInput.value.trim();
   const note = ui.editNoteInput.value.trim();
+
+  if (activityAutosaveTimer) clearTimeout(activityAutosaveTimer);
+
+  setInteropStatus("Modification détectée · envoi automatique…", "pending");
+
+  activityAutosaveTimer = window.setTimeout(() => {
+    activityAutosaveTimer = null;
+    void queueActivityAutosave(activity, title, note, generation);
+  }, AUTOSAVE_DELAY_MS);
+}
+
+function flushCurrentActivityAutosave() {
+  if (!activityEditDirty || !editorActivityKey) return activityAutosaveQueue;
+
+  const activity = activities.find((item) => activityKey(item) === editorActivityKey);
+  if (!activity) return activityAutosaveQueue;
+
+  if (activityAutosaveTimer) {
+    clearTimeout(activityAutosaveTimer);
+    activityAutosaveTimer = null;
+  }
+
+  activityAutosaveGeneration += 1;
+  const generation = activityAutosaveGeneration;
+  const title = ui.editTitleInput.value.trim();
+  const note = ui.editNoteInput.value.trim();
+
+  return queueActivityAutosave(activity, title, note, generation);
+}
+
+function queueActivityAutosave(activity, title, note, generation) {
+  const run = () => persistActivityEdits(activity, title, note, generation);
+  activityAutosaveQueue = activityAutosaveQueue.then(run, run);
+  return activityAutosaveQueue;
+}
+
+async function persistActivityEdits(activity, title, note, generation) {
+  const key = activityKey(activity);
+  if (!key) return;
+
   const patch = {
     id: Number(key),
     custom_title: title || null,
@@ -1558,12 +1637,14 @@ async function saveCurrentActivityEdits() {
     String(activity.personal_note ?? "") === note;
 
   if (unchanged) {
-    setInteropStatus("Aucune modification", "ok");
+    if (generation === activityAutosaveGeneration && editorActivityKey === key) {
+      activityEditDirty = false;
+      setInteropStatus("Synchronisation automatique active", "ok");
+    }
     return;
   }
 
-  setInteropStatus("Envoi vers téléphone + tablette…", "pending");
-  ui.saveActivityEditsButton.disabled = true;
+  setInteropStatus("Synchronisation automatique…", "pending");
 
   try {
     await commitWebMutation({
@@ -1576,18 +1657,31 @@ async function saveCurrentActivityEdits() {
     });
 
     Object.assign(activity, patch);
-    ui.detailTitle.textContent = title || sportName(activity.sport);
-    document.title = `${title || sportName(activity.sport)} · SPORT Web`;
-    renderPersonal(activity);
+
+    if (generation === activityAutosaveGeneration && editorActivityKey === key) {
+      activityEditDirty = false;
+
+      if (currentDetailId === key) {
+        ui.detailTitle.textContent = title || sportName(activity.sport);
+        document.title = `${title || sportName(activity.sport)} · SPORT Web`;
+        renderPersonal(activity);
+      }
+
+      setInteropStatus("Synchronisé automatiquement", "ok");
+      setMessage(
+        "WEB007 · modification propagée automatiquement vers téléphone et tablette.",
+        "success"
+      );
+    }
+
     applyFiltersAndRender();
-    setInteropStatus("Envoyé aux 2 appareils", "ok");
-    setMessage("WEB006 · modification publiée. Téléphone et tablette vont la recevoir automatiquement.", "success");
   } catch (error) {
     console.error(error);
-    setInteropStatus("Échec de synchronisation", "error");
+    if (generation === activityAutosaveGeneration && editorActivityKey === key) {
+      activityEditDirty = true;
+      setInteropStatus("Échec de synchronisation automatique", "error");
+    }
     handleError(error, "Modification Web impossible");
-  } finally {
-    ui.saveActivityEditsButton.disabled = false;
   }
 }
 
@@ -1621,7 +1715,6 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
   const next = Math.max(0, Math.min(99, Number(occurrences) || 0));
 
   setInteropStatus(next > 0 ? "Repère en cours d’envoi…" : "Suppression en cours…", "pending");
-  ui.addLandmarkButton.disabled = true;
 
   try {
     if (next <= 0) {
@@ -1655,14 +1748,12 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
 
     renderPersonal(activity);
     applyFiltersAndRender();
-    setInteropStatus("Repère synchronisé", "ok");
-    setMessage("WEB006 · repère publié vers Firestore, téléphone et tablette.", "success");
+    setInteropStatus("Repère synchronisé automatiquement", "ok");
+    setMessage("WEB007 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec repère", "error");
     handleError(error, "Modification du repère impossible");
-  } finally {
-    ui.addLandmarkButton.disabled = false;
   }
 }
 
@@ -1708,7 +1799,7 @@ function startInteropWatch() {
     (error) => {
       console.error(error);
       setInteropStatus("Temps réel interrompu", "error");
-      setMessage("WEB006 · écoute temps réel indisponible : " + (error?.message || error), "error");
+      setMessage("WEB007 · écoute temps réel indisponible : " + (error?.message || error), "error");
     }
   );
 }
@@ -1766,7 +1857,7 @@ function applyRealtimeChange(event) {
 
   if (!fromWeb) {
     setInteropStatus("Modification Android reçue", "ok");
-    setMessage("WEB006 · changement reçu automatiquement depuis un appareil Android.", "success");
+    setMessage("WEB007 · changement reçu automatiquement depuis un appareil Android.", "success");
   }
 }
 

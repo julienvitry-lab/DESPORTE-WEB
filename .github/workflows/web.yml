@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB006
+name: Publier SPORT Web · WEB007
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB006.md"
+      - "docs/releases/WEB007.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB006
+      - name: Valider WEB007
         shell: bash
         run: |
           set -euo pipefail
@@ -37,30 +37,40 @@ jobs:
           test -f web/styles.css
           test -f web/app.js
 
-          grep -Fq "WEB006 · INTEROP · Comfortaa" web/index.html
+          grep -Fq "WEB007 · INTEROP · Comfortaa" web/index.html
           grep -Fq 'family=Comfortaa' web/index.html
           grep -Fq 'z-index: 4000' web/styles.css
           grep -Fq 'isolation: isolate' web/styles.css
 
-          # Interop : WEB006 ouvre volontairement des écritures contrôlées.
+          # Interop bidirectionnelle héritée de WEB006.
           grep -Fq 'writeBatch' web/app.js
           grep -Fq 'onSnapshot' web/app.js
           grep -Fq '"changes"' web/app.js
           grep -Fq 'function commitWebMutation' web/app.js
-          grep -Fq 'function saveCurrentActivityEdits' web/app.js
-          grep -Fq 'function setLandmarkOccurrence' web/app.js
           grep -Fq 'function startInteropWatch' web/app.js
-          grep -Fq 'webVersion: "WEB006"' web/app.js
-          grep -Fq 'table: "activities"' web/app.js
-          grep -Fq 'table: "activity_landmarks"' web/app.js
+          grep -Fq 'webVersion: "WEB007"' web/app.js
 
-          # Pas d'API d'écriture directe dispersée : tout passe par le batch contrôlé.
-          if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|runTransaction)\b' web/app.js; then
-            echo "::error::WEB006 doit centraliser les écritures dans commitWebMutation/writeBatch."
+          # WEB007 : plus de validation manuelle, autosave sérialisé.
+          grep -Fq 'const AUTOSAVE_DELAY_MS = 800' web/app.js
+          grep -Fq 'function scheduleCurrentActivityAutosave' web/app.js
+          grep -Fq 'function flushCurrentActivityAutosave' web/app.js
+          grep -Fq 'function queueActivityAutosave' web/app.js
+          grep -Fq 'function persistActivityEdits' web/app.js
+          grep -Fq 'ui.addLandmarkSelect.addEventListener("change"' web/app.js
+          grep -Fq 'Synchronisation automatique' web/index.html
+
+          if grep -Fq 'Enregistrer sur les 3 appareils' web/index.html; then
+            echo "::error::WEB007 ne doit plus demander de bouton Enregistrer."
             exit 1
           fi
 
-          echo "WEB006 : interop Web ↔ Android + CARTO+ + Comfortaa validés."
+          # Les écritures restent centralisées dans commitWebMutation/writeBatch.
+          if grep -Eq '\b(setDoc|addDoc|updateDoc|deleteDoc|runTransaction)\b' web/app.js; then
+            echo "::error::WEB007 doit centraliser les écritures dans commitWebMutation/writeBatch."
+            exit 1
+          fi
+
+          echo "WEB007 : autosynchronisation Web ↔ Android + CARTO+ + Comfortaa validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -70,6 +80,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB006
+      - name: Publier SPORT Web · WEB007
         id: deployment
         uses: actions/deploy-pages@v4
