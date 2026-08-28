@@ -2291,54 +2291,73 @@ function renderSummary(activity) {
 async function renderCartography(activity) {
   const token = ++cartographyRequestToken;
   destroyActivityMap();
-  clearRouteComparison(false);
+
+  // Les modules avancés ne doivent jamais pouvoir empêcher la carte/profil de base.
+  try { clearRouteComparison(false); } catch (error) { console.warn("WEB025-FIX2 comparison reset", error); }
   ui.elevationProfile.innerHTML = "";
   ui.profileMeta.textContent = "";
   ui.profileLive.textContent = "Survolez la carte ou le profil pour suivre votre position.";
   ui.routeStats.innerHTML = "";
-  resetPerformanceTerrainAnalysis(activity);
+  try { resetPerformanceTerrainAnalysis(activity); } catch (error) { console.warn("WEB025-FIX2 performance reset", error); }
+
   ui.mapStatus.textContent = "Chargement du tracé…";
   ui.mapStatus.className = "pill neutral";
   ui.activityMap.classList.remove("route-empty");
   ui.activityMap.textContent = "";
 
-  const gpsCount = numberOrZero(activity.gps_point_count);
-  if (gpsCount <= 1) {
-    showRouteUnavailable("Cette activité ne contient pas de tracé GPS exploitable.");
-    return;
-  }
-
   try {
-    const key = activityKey(activity);
-    const routeRef = doc(db, ROOT, currentUser.uid, "activity_routes", key);
-    const snapshot = await getDoc(routeRef);
+    // Certaines générations d'activités possèdent à la fois id et __docId.
+    // Les anciens activity_routes peuvent avoir été publiés sous l'un ou l'autre.
+    const keys = [...new Set([
+      activity?.id,
+      activity?.__docId,
+      activityKey(activity)
+    ].filter((value) => value !== null && value !== undefined && String(value).trim() !== "")
+      .map((value) => String(value)))];
 
-    if (token !== cartographyRequestToken || activityKey(activity) !== currentDetailId) return;
+    if (!keys.length) {
+      throw new Error("identifiant d’activité introuvable");
+    }
 
-    if (!snapshot.exists()) {
+    let snapshot = null;
+    let routeKey = null;
+    for (const key of keys) {
+      const candidate = await getDoc(doc(db, ROOT, currentUser.uid, "activity_routes", key));
+      if (token !== cartographyRequestToken) return;
+      if (candidate.exists()) {
+        snapshot = candidate;
+        routeKey = key;
+        break;
+      }
+    }
+
+    if (token !== cartographyRequestToken) return;
+
+    if (!snapshot) {
+      const gpsCount = numberOrZero(activity.gps_point_count);
       showRouteUnavailable(
-        "Tracé Web non publié pour cette activité. "
-        + "Sur le téléphone principal : Firebase · SPORT Web → « Publier les tracés Web · CARTOWEB001 »."
+        `Tracé Web non publié pour cette activité${gpsCount > 1 ? ` (${formatNumber(gpsCount)} points GPS dans l’activité)` : ""}. ` +
+        "Sur le téléphone principal : Firebase · SPORT Web → « Publier les tracés Web · CARTOWEB001 »."
       );
       return;
     }
 
     const route = normalizeRoute(snapshot.data());
     if (route.points.length < 2) {
-      showRouteUnavailable("Le document activity_routes existe mais ne contient pas assez de points exploitables.");
+      showRouteUnavailable(
+        `Le document activity_routes « ${routeKey} » existe mais ne contient pas assez de points exploitables.`
+      );
       return;
     }
 
+    // ----- Socle cartographique : identique au chemin validé WEB019 -----
     activeRoute = route;
     renderLeafletMap(route);
     renderElevationProfile(route);
-    renderRouteAnalysis(route);
-    renderKilometerAnalysis(route);
-    if (ui.scanRecurringClimbsButton) ui.scanRecurringClimbsButton.disabled = false;
 
     const sourceCount = numberOrZero(snapshot.data().source_point_count);
     renderRouteStats(route, sourceCount);
-    renderPerformanceTerrainAnalysis(activity, route);
+
     const previewCount = route.points.length;
     ui.mapStatus.textContent = `${formatNumber(previewCount)} points Web`;
     ui.mapStatus.className = "pill ok";
@@ -2347,14 +2366,37 @@ async function renderCartography(activity) {
         ? `${formatNumber(previewCount)} points affichés sur ${formatNumber(sourceCount)} points GPS`
         : `${formatNumber(previewCount)} points GPS`;
 
-    // Leaflet calcule mal sa taille si le conteneur vient juste de sortir de display:none.
+    // ----- Extensions WEB020–025 : chacune isolée -----
+    try { renderRouteAnalysis(route); }
+    catch (error) { console.warn("WEB025-FIX2 route analysis", error); }
+
+    try { renderKilometerAnalysis(route); }
+    catch (error) { console.warn("WEB025-FIX2 kilometer analysis", error); }
+
+    try {
+      if (ui.scanRecurringClimbsButton) ui.scanRecurringClimbsButton.disabled = false;
+    } catch (error) {
+      console.warn("WEB025-FIX2 recurring climbs activation", error);
+    }
+
+    try { renderPerformanceTerrainAnalysis(activity, route); }
+    catch (error) {
+      console.warn("WEB025-FIX2 performance terrain", error);
+      try { resetPerformanceTerrainAnalysis(activity); } catch (_) {}
+      if (ui.performanceTerrainMeta) {
+        ui.performanceTerrainMeta.textContent =
+          "Carte/profil disponibles ; analyse avancée momentanément indisponible.";
+      }
+    }
+
     window.setTimeout(() => {
       if (token === cartographyRequestToken && activityMapInstance) {
         activityMapInstance.invalidateSize(false);
+        recenterActivityMap();
       }
-    }, 80);
+    }, 100);
   } catch (error) {
-    console.error(error);
+    console.error("WEB025-FIX2 cartography", error);
     if (token !== cartographyRequestToken) return;
     showRouteUnavailable(`Carte indisponible : ${error?.message || String(error)}`);
   }
