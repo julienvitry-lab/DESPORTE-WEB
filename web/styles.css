@@ -2212,3 +2212,12 @@ footer {
   .performance-progression-window>span{grid-column:1/-1;text-align:left}
   .performance-progression-window small{grid-column:1/-1}
 }
+
+
+/* WEB028 · WEBREPERES002 — validation manuelle des ascensions reconnues */
+.recurring-climb-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06)}
+.recurring-climb-actions button{font-size:.72rem}
+.recurring-climb-promote{box-shadow:0 0 0 1px rgba(156,255,34,.12) inset}
+@media(max-width:560px){
+  .recurring-climb-actions button{flex:1 1 170px}
+}

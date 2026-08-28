@@ -2178,7 +2178,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB027";
+  document.title = "SPORT Web · WEB028";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -3861,6 +3861,139 @@ function recurringClimbMatchScore(reference, candidate) {
   return startGap + endGap + distanceDelta * 250 + gainDelta * 250;
 }
 
+
+function nextAscensionLandmarkCode() {
+  for (let index = 1; index <= 999; index++) {
+    const code = `A${String(index).padStart(2, "0")}`;
+    if (!landmarks.has(code)) return code;
+  }
+  return `A${Date.now().toString().slice(-5)}`.slice(0, 8);
+}
+
+function validActivityForLandmarkLink(activity) {
+  const activityId = Number(activity?.id ?? activity?.__docId);
+  return Number.isFinite(activityId) && activityId > 0;
+}
+
+async function createOfficialLandmarkFromRecurringClimb(reference, matches = []) {
+  const activity = currentDetailActivity();
+  if (!activity || !reference) return;
+
+  const suggestedCode = nextAscensionLandmarkCode();
+  const suggestedName =
+    `Ascension ${(reference.distanceMeters / 1000).toLocaleString("fr-FR", {maximumFractionDigits: 2})} km +${Math.round(reference.gainMeters)} m`;
+
+  const nameRaw = window.prompt(
+    "Nom du nouveau repère d’ascension :",
+    suggestedName
+  );
+  if (nameRaw === null) return;
+
+  const name = String(nameRaw).trim();
+  if (!name) {
+    setMessage("WEB028 · création annulée : le nom du repère est obligatoire.", "error");
+    return;
+  }
+
+  const codeRaw = window.prompt(
+    "Code du repère (1 à 8 caractères, lettres/chiffres/_/-) :",
+    suggestedCode
+  );
+  if (codeRaw === null) return;
+
+  const code = normalizeLandmarkCode(codeRaw);
+  const row = {
+    code,
+    name,
+    landmark_type: "Ascension",
+    sort_order: nextLandmarkSortOrder()
+  };
+
+  try {
+    validateLandmarkRow(row, true);
+  } catch (error) {
+    handleError(error, "Création du repère refusée");
+    return;
+  }
+
+  const recognizedActivities = matches
+    .map((match) => match.activity)
+    .filter(validActivityForLandmarkLink);
+
+  const linkHistory = recognizedActivities.length > 0 &&
+    window.confirm(
+      `${recognizedActivities.length} autre(s) passage(s) de cette ascension ont été reconnus.\n\n` +
+      "OK : associer aussi ces passages historiques au nouveau repère.\n" +
+      "Annuler : associer uniquement l’activité courante."
+    );
+
+  const totalLinks = 1 + (linkHistory ? recognizedActivities.length : 0);
+  const confirmed = window.confirm(
+    `Créer le repère « ${name} » (${code}) de type Ascension et l’associer à ${totalLinks} activité(s) ?`
+  );
+  if (!confirmed) return;
+
+  setMessage("WEB028 · création du repère et synchronisation en cours…", "info");
+
+  try {
+    await commitWebMutation({
+      table: "personal_landmarks",
+      rowKey: row.code,
+      operation: "UPSERT",
+      row,
+      materializedCollection: "landmarks",
+      materializedData: row,
+      metaIncrements: {
+        landmarkCount: 1,
+        expectedDocuments: 1
+      }
+    });
+
+    landmarks.set(row.code, row);
+    adjustMetric(ui.landmarkCount, 1);
+    adjustMetric(ui.expectedDocuments, 1);
+    rebuildLandmarkFilter();
+    renderLandmarkManager();
+
+    const targets = [activity, ...(linkHistory ? recognizedActivities : [])];
+    let linked = 0;
+    let skipped = 0;
+
+    for (const target of targets) {
+      if (!validActivityForLandmarkLink(target)) {
+        skipped++;
+        continue;
+      }
+      try {
+        await setLandmarkOccurrence(target, row.code, 1);
+        linked++;
+      } catch (error) {
+        console.error("WEB028 landmark link", error);
+        skipped++;
+      }
+    }
+
+    renderPersonal(activity);
+    renderRecurringLandmarkHistory(activity);
+    setMessage(
+      `WEB028 · repère « ${name} » créé et associé à ${linked} activité(s)` +
+      (skipped ? ` · ${skipped} association(s) ignorée(s)` : "") +
+      ".",
+      skipped ? "info" : "success"
+    );
+
+    // Rejoue l'analyse afin que le nouveau repère et son historique soient visibles immédiatement.
+    window.setTimeout(() => {
+      if (currentDetailActivity() && activityKey(currentDetailActivity()) === activityKey(activity)) {
+        void analyzeRecurringClimbsForCurrentActivity();
+      }
+    }, 250);
+  } catch (error) {
+    console.error(error);
+    handleError(error, "Création du repère d’ascension impossible");
+  }
+}
+
 async function analyzeRecurringClimbsForCurrentActivity() {
   const activity = currentDetailActivity();
   if (!activity || !activeRoute || recurringClimbScanBusy) return;
@@ -3941,14 +4074,27 @@ async function analyzeRecurringClimbsForCurrentActivity() {
         </div>
         <div class="recurring-climb-history">
           ${matches.length ? `<strong>Autres passages reconnus</strong><span>${latest}</span>` : '<span>Aucun autre passage reconnu dans le catalogue chargé.</span>'}
+        </div>
+        <div class="recurring-climb-actions">
+          <button type="button" class="secondary recurring-climb-select">Voir sur carte / profil</button>
+          <button type="button" class="primary recurring-climb-promote">Valider comme repère</button>
         </div>`;
+
+      card.querySelector(".recurring-climb-select")?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectRouteSegment(reference);
+      });
+      card.querySelector(".recurring-climb-promote")?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void createOfficialLandmarkFromRecurringClimb(reference, matches);
+      });
       card.addEventListener("click", () => selectRouteSegment(reference));
       ui.recurringClimbsList.appendChild(card);
     }
 
     ui.recurringClimbsStatus.textContent =
       `${recurrentCount} ascension(s) récurrente(s) reconnue(s) sur ${currentClimbs.length} · ` +
-      `${formatNumber(routeRows.length)} tracé(s) comparés.`;
+      `${formatNumber(routeRows.length)} tracé(s) comparés · validation manuelle disponible.`;
   } catch (error) {
     console.error(error);
     ui.recurringClimbsStatus.textContent = `Analyse impossible : ${error?.message || String(error)}`;
@@ -4715,7 +4861,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB027",
+            webVersion: "WEB028",
             row: wanted
           }
         );
@@ -4738,7 +4884,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB027"
+            webVersion: "WEB028"
           }
         );
         countDelta -= 1;
@@ -4748,7 +4894,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB027"
+      webVersion: "WEB028"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -4948,7 +5094,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB027"
+    webVersion: "WEB028"
   };
   if (row != null) event.row = row;
 
@@ -4957,7 +5103,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB027"
+    webVersion: "WEB028"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -5410,7 +5556,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB027",
+      webVersion: "WEB028",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -5476,7 +5622,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB027",
+    webVersion: "WEB028",
     androidVersion: 0,
     __synthetic: true
   };
@@ -6930,7 +7076,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB027",
+      webVersion: "WEB028",
       row: next
     }
   );
@@ -6966,7 +7112,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB027",
+        webVersion: "WEB028",
         row: patch
       }
     );
@@ -6978,7 +7124,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB027"
+      webVersion: "WEB028"
     },
     { merge: true }
   );
