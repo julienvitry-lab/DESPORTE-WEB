@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB009 · MATÉRIEL001 · Comfortaa">
-  <title>SPORT Web · WEB009</title>
+  <meta name="description" content="SPORT Web · WEB010 · MATÉRIEL001 · Comfortaa">
+  <title>SPORT Web · WEB010</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB009 · MATÉRIEL001 · Comfortaa · Firestore</div>
+      <div class="version">WEB010 · MATÉRIEL001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -27,7 +27,7 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB009 ajoute la gestion interopérable du matériel : créer, modifier, mettre en réserve, archiver ou réactiver un matériel depuis le Web propage le changement vers téléphone et tablette.
+      WEB010 rend les repères personnels administrables depuis le Web et sécurise les records dérivés. Les changements continuent de se propager automatiquement vers téléphone et tablette.
     </section>
 
     <section id="dashboard" class="hidden">
@@ -56,7 +56,7 @@
         <section id="equipmentManagerSection" class="panel equipment-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB009 · MATÉRIEL001</p>
+              <p class="eyebrow">WEB010 · MATÉRIEL001</p>
               <h2>Matériel synchronisé</h2>
               <p id="equipmentManagerMeta" class="muted">Chargement du matériel…</p>
             </div>
@@ -179,10 +179,80 @@
           <div id="equipmentManagerList" class="equipment-manager-list"></div>
         </section>
 
+        <section id="landmarkManagerSection" class="panel landmark-manager-panel">
+          <div class="panel-title-row">
+            <div>
+              <p class="eyebrow">WEB010 · REPÈRE013</p>
+              <h2>Repères personnels synchronisés</h2>
+              <p id="landmarkManagerMeta" class="muted">Chargement des repères…</p>
+            </div>
+            <div class="panel-actions landmark-manager-actions">
+              <input id="landmarkManagerSearch" class="landmark-manager-search" type="search"
+                     placeholder="Rechercher un repère…">
+              <button id="newLandmarkButton" class="primary" type="button">+ Nouveau repère</button>
+            </div>
+          </div>
+
+          <div id="landmarkEditor" class="landmark-editor hidden">
+            <div class="landmark-editor-heading">
+              <div>
+                <p id="landmarkEditorEyebrow" class="eyebrow">NOUVEAU REPÈRE</p>
+                <h3 id="landmarkEditorTitle">Créer un repère</h3>
+                <p id="landmarkEditorHint" class="muted">
+                  Le code est la clé métier SPORT. Une fois créé, il reste fixe afin de protéger les activités déjà associées.
+                </p>
+              </div>
+              <button id="closeLandmarkEditorButton" class="secondary" type="button">Fermer</button>
+            </div>
+
+            <div class="landmark-form-grid">
+              <label>
+                Code
+                <input id="landmarkCodeInput" type="text" maxlength="8"
+                       placeholder="Ex. P" autocapitalize="characters">
+              </label>
+
+              <label>
+                Libellé
+                <input id="landmarkNameInput" type="text" maxlength="120"
+                       placeholder="Ex. Piste cyclable">
+              </label>
+
+              <label>
+                Type
+                <select id="landmarkTypeInput">
+                  <option value="Trajet">Trajet</option>
+                  <option value="Ascension">Ascension</option>
+                </select>
+              </label>
+
+              <label>
+                Ordre d’affichage
+                <input id="landmarkSortOrderInput" type="number" min="1" max="9999" step="1">
+              </label>
+            </div>
+
+            <div class="landmark-editor-footer">
+              <div>
+                <span id="landmarkEditorStatus" class="pill ok">Prêt</span>
+                <span id="landmarkEditorInfo" class="muted"></span>
+              </div>
+              <div class="landmark-editor-actions">
+                <button id="deleteLandmarkButton" class="secondary danger-button hidden" type="button">
+                  Supprimer ce repère inutilisé
+                </button>
+                <button id="createLandmarkButton" class="primary" type="button">Créer et synchroniser</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="landmarkManagerList" class="landmark-manager-list"></div>
+        </section>
+
         <section class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB009 · EDITION002 + MATÉRIEL001</p>
+              <p class="eyebrow">WEB010 · MÉTIER001</p>
               <h2>Répertoire avancé</h2>
               <p id="loadedLabel" class="muted">Chargement…</p>
             </div>
@@ -258,11 +328,21 @@
           <div id="activityList" class="activity-list"></div>
         </section>
 
-        <section class="panel compact">
+        <section id="recordsManagerSection" class="panel compact records-manager-panel">
           <div class="panel-title-row">
             <div>
-              <h2>Records Firestore</h2>
-              <p class="muted">Records actuellement matérialisés dans SPORT.</p>
+              <p class="eyebrow">WEB010 · RECORDS001</p>
+              <h2>Records SPORT</h2>
+              <p class="muted">
+                Distance, durée et D+ sont des données dérivées des activités. WEB010 les recalcule
+                depuis Firestore plutôt que de permettre une valeur manuelle incohérente.
+              </p>
+            </div>
+            <div class="panel-actions records-manager-actions">
+              <span id="recordsManagerStatus" class="pill ok">3 clients synchronisés</span>
+              <button id="rebuildRecordsButton" class="secondary" type="button">
+                Recalculer les records
+              </button>
             </div>
           </div>
           <div id="recordsList" class="record-list"></div>
@@ -299,7 +379,7 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB009 · CARTO+</p>
+              <p class="eyebrow">WEB010 · CARTO+</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
@@ -344,7 +424,7 @@
         <section class="detail-section panel">
           <div class="section-heading interop-heading">
             <div>
-              <p class="eyebrow">WEB009 · EDITION002 + MATÉRIEL001</p>
+              <p class="eyebrow">WEB010 · MÉTIER001</p>
               <h2>Matériel, repères et notes</h2>
             </div>
             <div id="interopStatus" class="pill ok">Synchronisation active</div>
@@ -469,7 +549,7 @@
   </main>
 
   <footer>
-    SPORT Web · WEB009 · interopérabilité contrôlée Firestore
+    SPORT Web · WEB010 · interopérabilité contrôlée Firestore
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

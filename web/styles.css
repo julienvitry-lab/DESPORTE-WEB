@@ -1174,3 +1174,232 @@ footer {
     flex-direction: column;
   }
 }
+
+
+/* WEB010 · REPÈRE013 + RECORDS001 */
+.landmark-manager-panel,
+.records-manager-panel {
+  scroll-margin-top: 94px;
+}
+
+.landmark-manager-actions,
+.records-manager-actions {
+  justify-content: flex-end;
+}
+
+.landmark-manager-search {
+  min-width: 220px;
+}
+
+.landmark-manager-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.landmark-manager-card {
+  display: grid;
+  grid-template-columns: 58px minmax(220px, 1.25fr) minmax(210px, .75fr) auto;
+  gap: 13px;
+  align-items: center;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #0e110f;
+}
+
+.landmark-manager-code {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+  border: 1px solid rgba(182,255,59,.32);
+  border-radius: 13px;
+  color: var(--green);
+  background: rgba(182,255,59,.05);
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.landmark-manager-main {
+  min-width: 0;
+}
+
+.landmark-manager-main strong,
+.landmark-manager-main span {
+  display: block;
+}
+
+.landmark-manager-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landmark-manager-main span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.landmark-manager-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(80px, 1fr));
+  gap: 7px;
+}
+
+.landmark-manager-stats > div {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0b0e0c;
+}
+
+.landmark-manager-stats strong,
+.landmark-manager-stats span {
+  display: block;
+}
+
+.landmark-manager-stats strong {
+  color: var(--green);
+  font-size: 13px;
+}
+
+.landmark-manager-stats span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.landmark-manager-card-actions,
+.landmark-editor-actions,
+.record-managed-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.landmark-editor {
+  margin-top: 17px;
+  padding: 16px;
+  border: 1px solid rgba(182,255,59,.28);
+  border-radius: 15px;
+  background: rgba(182,255,59,.035);
+}
+
+.landmark-editor-heading,
+.landmark-editor-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+}
+
+.landmark-editor-heading h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.landmark-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.landmark-editor-footer {
+  margin-top: 13px;
+}
+
+.landmark-editor-footer > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.danger-button {
+  border-color: rgba(255,100,100,.35);
+  color: #ffd1d1;
+}
+
+.record-managed-row {
+  align-items: center;
+}
+
+.record-managed-main {
+  min-width: 0;
+}
+
+.record-managed-main strong,
+.record-managed-main span {
+  display: block;
+}
+
+.record-managed-main span {
+  margin-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .landmark-manager-card {
+    grid-template-columns: 58px 1fr;
+  }
+
+  .landmark-manager-stats,
+  .landmark-manager-card-actions {
+    grid-column: 1 / -1;
+  }
+
+  .landmark-manager-card-actions {
+    justify-content: flex-start;
+  }
+
+  .landmark-form-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .landmark-manager-actions,
+  .landmark-manager-actions input,
+  .landmark-manager-actions button,
+  .records-manager-actions,
+  .records-manager-actions button {
+    width: 100%;
+  }
+
+  .landmark-manager-search {
+    min-width: 0;
+  }
+
+  .landmark-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .landmark-editor-heading,
+  .landmark-editor-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .landmark-editor-actions {
+    justify-content: stretch;
+  }
+
+  .landmark-editor-actions button {
+    flex: 1;
+  }
+
+  .record-managed-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .record-managed-actions {
+    justify-content: stretch;
+  }
+
+  .record-managed-actions button {
+    width: 100%;
+  }
+}

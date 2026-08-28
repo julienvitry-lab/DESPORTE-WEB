@@ -24,7 +24,7 @@ import {
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// WEB009 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
+// WEB010 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
 // Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
@@ -60,6 +60,13 @@ const ui = Object.fromEntries(
     "equipmentWarningDurationInput", "equipmentCriticalDurationInput",
     "equipmentNotesInput", "equipmentEditorStatus", "equipmentEditorId",
     "createEquipmentButton", "equipmentManagerList",
+    "landmarkManagerSection", "landmarkManagerMeta", "landmarkManagerSearch",
+    "newLandmarkButton", "landmarkEditor", "landmarkEditorEyebrow", "landmarkEditorTitle",
+    "landmarkEditorHint", "closeLandmarkEditorButton", "landmarkCodeInput",
+    "landmarkNameInput", "landmarkTypeInput", "landmarkSortOrderInput",
+    "landmarkEditorStatus", "landmarkEditorInfo", "deleteLandmarkButton",
+    "createLandmarkButton", "landmarkManagerList",
+    "recordsManagerSection", "recordsManagerStatus", "rebuildRecordsButton",
     "loadedLabel", "loadMoreButton", "loadAllButton", "refreshButton",
     "searchInput", "sportFilter", "yearFilter", "equipmentFilter",
     "landmarkFilter", "sourceFilter", "distanceFilter", "ascentFilter", "sortFilter",
@@ -98,8 +105,17 @@ let equipmentAutosaveQueue = Promise.resolve();
 let equipmentAutosaveGeneration = 0;
 
 let landmarks = new Map();
+let landmarkReferences = new Map();
+let landmarkEditorMode = "closed";
+let landmarkEditorCode = null;
+let landmarkEditorDirty = false;
+let landmarkAutosaveTimer = null;
+let landmarkAutosaveQueue = Promise.resolve();
+let landmarkAutosaveGeneration = 0;
+
 let activityLandmarks = new Map();
 let records = [];
+let recordsRebuildRunning = false;
 
 let interopUnsubscribe = null;
 let interopWatchStartedAtMs = 0;
@@ -249,6 +265,20 @@ function wireEvents() {
     element.addEventListener("change", () => { void saveEquipmentEditorImmediate(); });
   });
 
+  ui.newLandmarkButton.addEventListener("click", openNewLandmarkEditor);
+  ui.closeLandmarkEditorButton.addEventListener("click", () => { void closeLandmarkEditor(); });
+  ui.createLandmarkButton.addEventListener("click", () => { void createLandmarkFromWeb(); });
+  ui.deleteLandmarkButton.addEventListener("click", () => { void deleteCurrentLandmarkIfUnused(); });
+  ui.landmarkManagerSearch.addEventListener("input", renderLandmarkManager);
+
+  ui.landmarkNameInput.addEventListener("input", scheduleLandmarkAutosave);
+  ui.landmarkNameInput.addEventListener("change", () => { void flushLandmarkAutosave(); });
+  ui.landmarkSortOrderInput.addEventListener("input", scheduleLandmarkAutosave);
+  ui.landmarkSortOrderInput.addEventListener("change", () => { void flushLandmarkAutosave(); });
+  ui.landmarkTypeInput.addEventListener("change", () => { void saveLandmarkEditorImmediate(); });
+
+  ui.rebuildRecordsButton.addEventListener("click", () => { void rebuildRecordsFromFirestore(); });
+
   window.addEventListener("keydown", (event) => {
     if (ui.detailView.classList.contains("hidden")) return;
     if (event.key === "Escape") showCatalog();
@@ -268,7 +298,7 @@ onAuthStateChanged(auth, async (user) => {
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
     setMessage(
-      "WEB009 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
+      "WEB010 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
     );
     return;
@@ -297,6 +327,7 @@ async function reloadAll() {
   moreActivities = true;
   equipmentRows = [];
   landmarks = new Map();
+  landmarkReferences = new Map();
   activityLandmarks = new Map();
   records = [];
   currentDetailId = null;
@@ -310,7 +341,7 @@ async function reloadAll() {
   try {
     await Promise.all([loadMeta(), loadReferenceCollections()]);
     await loadNextPage();
-    setMessage("WEB009 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    setMessage("WEB010 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
@@ -334,9 +365,16 @@ async function loadMeta() {
 }
 
 async function loadReferenceCollections() {
-  const [equipmentSnap, landmarkSnap, activityLandmarkSnap, recordSnap] = await Promise.all([
+  const [
+    equipmentSnap,
+    landmarkSnap,
+    landmarkReferenceSnap,
+    activityLandmarkSnap,
+    recordSnap
+  ] = await Promise.all([
     getDocs(userCollection("equipment")),
     getDocs(userCollection("landmarks")),
+    getDocs(userCollection("landmark_references")),
     getDocs(userCollection("activity_landmarks")),
     getDocs(userCollection("records"))
   ]);
@@ -349,6 +387,13 @@ async function loadReferenceCollections() {
     const row = item.data();
     const code = String(row.code ?? row.__sportKey ?? item.id).trim();
     if (code) landmarks.set(code, row);
+  });
+
+  landmarkReferences.clear();
+  landmarkReferenceSnap.forEach((item) => {
+    const row = item.data();
+    const code = String(row.landmark_code ?? row.__sportKey ?? item.id).trim();
+    if (code) landmarkReferences.set(code, row);
   });
 
   activityLandmarks.clear();
@@ -366,6 +411,7 @@ async function loadReferenceCollections() {
 
   renderRecords();
   renderEquipmentManager();
+  renderLandmarkManager();
   rebuildLandmarkFilter();
 }
 
@@ -671,7 +717,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB009";
+  document.title = "SPORT Web · WEB010";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -1510,26 +1556,245 @@ function renderRecords() {
 
   if (!records.length) {
     ui.recordsList.innerHTML = '<div class="empty">Aucun record Firestore.</div>';
+    if (ui.recordsManagerStatus) setRecordsManagerStatus("Aucun record matérialisé", "pending");
     return;
   }
 
+  const order = new Map([["distance", 0], ["duration", 1], ["ascent", 2]]);
   records
     .slice()
-    .sort((a, b) => String(a.record_type ?? "").localeCompare(String(b.record_type ?? ""), "fr"))
+    .sort((a, b) => {
+      const aType = String(a.record_type ?? "").toLowerCase();
+      const bType = String(b.record_type ?? "").toLowerCase();
+      const rank = (value) => order.has(value) ? order.get(value) : 99;
+      return rank(aType) - rank(bType) || aType.localeCompare(bType, "fr");
+    })
     .forEach((record) => {
       const row = document.createElement("div");
-      row.className = "record-row";
+      row.className = "record-row record-managed-row";
 
-      const left = document.createElement("strong");
-      left.textContent = recordLabel(record.record_type);
+      const left = document.createElement("div");
+      left.className = "record-managed-main";
 
-      const right = document.createElement("span");
-      right.className = "muted";
-      right.textContent = formatRecordValue(record);
+      const title = document.createElement("strong");
+      title.textContent = recordLabel(record.record_type);
 
-      row.append(left, right);
+      const detail = document.createElement("span");
+      detail.className = "muted";
+      const activityId = Number(record.activity_id);
+      const linked = activities.find((activity) => Number(activity.id ?? activity.__docId) === activityId);
+      detail.textContent = linked
+        ? `${formatRecordValue(record)} · ${formatDate(linked.start_time_ms)} · ${linked.custom_title || sportName(linked.sport)}`
+        : `${formatRecordValue(record)} · activité #${Number.isFinite(activityId) ? activityId : "?"}`;
+
+      left.append(title, detail);
+
+      const actions = document.createElement("div");
+      actions.className = "record-managed-actions";
+
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "secondary";
+      open.textContent = "Ouvrir l’activité";
+      open.disabled = !Number.isFinite(activityId) || activityId <= 0;
+      open.addEventListener("click", () => { void openRecordActivity(record); });
+      actions.appendChild(open);
+
+      row.append(left, actions);
       ui.recordsList.appendChild(row);
     });
+
+  if (ui.recordsManagerStatus && !recordsRebuildRunning) {
+    setRecordsManagerStatus(`${records.length} record(s) matérialisé(s)`, "ok");
+  }
+}
+
+async function openRecordActivity(record) {
+  const activityId = Number(record?.activity_id);
+  if (!Number.isFinite(activityId) || activityId <= 0 || !currentUser) return;
+
+  let activity = activities.find((item) => Number(item.id ?? item.__docId) === activityId);
+
+  if (!activity) {
+    try {
+      const snapshot = await getDoc(doc(db, ROOT, currentUser.uid, "activities", String(activityId)));
+      if (!snapshot.exists()) throw new Error(`Activité #${activityId} absente de Firestore.`);
+      activity = { __docId: snapshot.id, ...snapshot.data() };
+      activities.push(activity);
+      rebuildDynamicFilters();
+      applyFiltersAndRender();
+    } catch (error) {
+      handleError(error, "Ouverture de l’activité du record impossible");
+      return;
+    }
+  }
+
+  showActivity(activity);
+}
+
+function setRecordsManagerStatus(text, state = "ok") {
+  if (!ui.recordsManagerStatus) return;
+  ui.recordsManagerStatus.textContent = text;
+  ui.recordsManagerStatus.className =
+    state === "pending" ? "pill pending" :
+    state === "error" ? "pill error" :
+    "pill ok";
+}
+
+async function rebuildRecordsFromFirestore() {
+  if (!currentUser || recordsRebuildRunning) return;
+
+  recordsRebuildRunning = true;
+  ui.rebuildRecordsButton.disabled = true;
+  setRecordsManagerStatus("Recalcul des 3 records…", "pending");
+
+  try {
+    const specs = [
+      { type: "distance", field: "distance_m" },
+      { type: "duration", field: "timer_time_ms" },
+      { type: "ascent", field: "ascent_m" }
+    ];
+
+    const desired = new Map();
+
+    for (const spec of specs) {
+      const q = query(
+        userCollection("activities"),
+        where(spec.field, ">", 0),
+        orderBy(spec.field, "desc"),
+        limit(1)
+      );
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) continue;
+
+      const activityDoc = snapshot.docs[0];
+      const activity = activityDoc.data();
+      const activityId = Number(activity.id ?? activityDoc.id);
+      const value = Number(activity[spec.field]);
+
+      if (!Number.isFinite(activityId) || activityId <= 0 || !Number.isFinite(value) || value <= 0) {
+        continue;
+      }
+
+      desired.set(spec.type, {
+        record_type: spec.type,
+        activity_id: activityId,
+        record_value: value,
+        updated_at_ms: Date.now()
+      });
+    }
+
+    const existingStandard = new Map(
+      records
+        .filter((record) => ["distance", "duration", "ascent"].includes(String(record.record_type ?? "").toLowerCase()))
+        .map((record) => [String(record.record_type).toLowerCase(), record])
+    );
+
+    const batch = writeBatch(db);
+    const rootBase = [ROOT, currentUser.uid];
+    const now = Date.now();
+    let countDelta = 0;
+
+    for (const spec of specs) {
+      const type = spec.type;
+      const wanted = desired.get(type);
+      const exists = existingStandard.has(type);
+
+      if (wanted) {
+        const seq = nextWebFirebaseSeq();
+        const eventId = makeWebEventId(seq);
+
+        batch.set(
+          doc(db, ...rootBase, "records", type),
+          { ...wanted, __sportKey: type, __updatedAtMs: now },
+          { merge: true }
+        );
+        batch.set(
+          doc(db, ...rootBase, "changes", eventId),
+          {
+            eventId,
+            deviceId: webDeviceId,
+            firebaseSeq: seq,
+            sourceChangeSeq: 0,
+            table: "records",
+            rowKey: type,
+            operation: "UPSERT",
+            changedAtMs: now,
+            publishedAt: serverTimestamp(),
+            androidVersion: 0,
+            webVersion: "WEB010",
+            row: wanted
+          }
+        );
+        if (!exists) countDelta += 1;
+      } else if (exists) {
+        const seq = nextWebFirebaseSeq();
+        const eventId = makeWebEventId(seq);
+
+        batch.delete(doc(db, ...rootBase, "records", type));
+        batch.set(
+          doc(db, ...rootBase, "changes", eventId),
+          {
+            eventId,
+            deviceId: webDeviceId,
+            firebaseSeq: seq,
+            sourceChangeSeq: 0,
+            table: "records",
+            rowKey: type,
+            operation: "DELETE",
+            changedAtMs: now,
+            publishedAt: serverTimestamp(),
+            androidVersion: 0,
+            webVersion: "WEB010"
+          }
+        );
+        countDelta -= 1;
+      }
+    }
+
+    const metaPatch = {
+      updatedAtMs: now,
+      sourceDeviceId: webDeviceId,
+      webVersion: "WEB010"
+    };
+    if (countDelta !== 0) {
+      metaPatch.recordCount = increment(countDelta);
+      metaPatch.expectedDocuments = increment(countDelta);
+    }
+    batch.set(doc(db, ...rootBase, "meta", "state"), metaPatch, { merge: true });
+
+    await batch.commit();
+
+    const nonStandard = records.filter(
+      (record) => !["distance", "duration", "ascent"].includes(String(record.record_type ?? "").toLowerCase())
+    );
+    records = [
+      ...nonStandard,
+      ...[...desired.values()].map((row) => ({ __docId: row.record_type, ...row }))
+    ];
+
+    if (countDelta !== 0) {
+      adjustMetric(ui.recordCount, countDelta);
+      adjustMetric(ui.expectedDocuments, countDelta);
+    }
+
+    renderRecords();
+    const current = currentDetailActivity();
+    if (current) renderLinkedRecords(current);
+
+    setRecordsManagerStatus("Records recalculés et synchronisés", "ok");
+    setMessage(
+      "WEB010 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
+      "success"
+    );
+  } catch (error) {
+    console.error(error);
+    setRecordsManagerStatus("Recalcul impossible", "error");
+    handleError(error, "Recalcul des records impossible");
+  } finally {
+    recordsRebuildRunning = false;
+    ui.rebuildRecordsButton.disabled = false;
+  }
 }
 
 function linksForActivity(activity) {
@@ -1646,7 +1911,7 @@ async function commitWebMutation({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB009"
+    webVersion: "WEB010"
   };
   if (row != null) event.row = row;
 
@@ -1654,7 +1919,7 @@ async function commitWebMutation({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB009"
+    webVersion: "WEB010"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -1769,7 +2034,7 @@ async function persistActivityEdits(activity, title, description, note, generati
 
       setInteropStatus("Synchronisé automatiquement", "ok");
       setMessage(
-        "WEB009 · modification propagée automatiquement vers téléphone et tablette.",
+        "WEB010 · modification propagée automatiquement vers téléphone et tablette.",
         "success"
       );
     }
@@ -1888,7 +2153,7 @@ async function saveImmediateActivityFields(partialPatch, successLabel) {
     applyFiltersAndRender();
 
     setInteropStatus(successLabel || "Synchronisé automatiquement", "ok");
-    setMessage("WEB009 · modification propagée automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB010 · modification propagée automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec de synchronisation automatique", "error");
@@ -1960,7 +2225,7 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
     renderPersonal(activity);
     applyFiltersAndRender();
     setInteropStatus("Repère synchronisé automatiquement", "ok");
-    setMessage("WEB009 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB010 · repère synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec repère", "error");
@@ -2010,7 +2275,7 @@ function startInteropWatch() {
     (error) => {
       console.error(error);
       setInteropStatus("Temps réel interrompu", "error");
-      setMessage("WEB009 · écoute temps réel indisponible : " + (error?.message || error), "error");
+      setMessage("WEB010 · écoute temps réel indisponible : " + (error?.message || error), "error");
     }
   );
 }
@@ -2056,8 +2321,24 @@ function applyRealtimeChange(event) {
     if (operation === "DELETE") landmarks.delete(code);
     else if (row) landmarks.set(code, row);
     rebuildLandmarkFilter();
+    renderLandmarkManager();
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
+
+    if (landmarkEditorMode === "edit" && landmarkEditorCode === code && !landmarkEditorDirty) {
+      const fresh = landmarks.get(code);
+      if (fresh) populateLandmarkEditor(code, fresh);
+    }
+  } else if (table === "personal_landmark_references") {
+    const code = String(row?.landmark_code ?? rowKey);
+    if (operation === "DELETE") landmarkReferences.delete(code);
+    else if (row) landmarkReferences.set(code, row);
+    renderLandmarkManager();
+
+    if (landmarkEditorMode === "edit" && landmarkEditorCode === code && !landmarkEditorDirty) {
+      const fresh = landmarks.get(code);
+      if (fresh) populateLandmarkEditor(code, fresh);
+    }
   } else if (table === "equipment") {
     equipmentRows = equipmentRows.filter((item) => String(item.id ?? item.__docId) !== rowKey);
     if (operation !== "DELETE" && row) equipmentRows.push({ __docId: rowKey, ...row });
@@ -2074,13 +2355,502 @@ function applyRealtimeChange(event) {
     records = records.filter((item) => String(item.record_type ?? item.__docId) !== rowKey);
     if (operation !== "DELETE" && row) records.push({ __docId: rowKey, ...row });
     renderRecords();
+    setRecordsManagerStatus(fromWeb ? "Records synchronisés" : "Records Android reçus", "ok");
     const current = currentDetailActivity();
     if (current) renderLinkedRecords(current);
   }
 
   if (!fromWeb) {
     setInteropStatus("Modification Android reçue", "ok");
-    setMessage("WEB009 · changement reçu automatiquement depuis un appareil Android.", "success");
+    setMessage("WEB010 · changement reçu automatiquement depuis un appareil Android.", "success");
+  }
+}
+
+const SEEDED_LANDMARK_CODES = new Set(["B", "Q", "C", "M", "R", "Y", "V", "A", "X", "F"]);
+
+function normalizeLandmarkCode(value) {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9_-]/g, "")
+    .slice(0, 8);
+}
+
+function landmarkUsage(code) {
+  let activityLinks = 0;
+  let occurrences = 0;
+
+  for (const links of activityLandmarks.values()) {
+    for (const link of links) {
+      if (String(link.landmark_code ?? "") !== code) continue;
+      activityLinks += 1;
+      occurrences += Math.max(1, Number(link.occurrences) || 1);
+    }
+  }
+
+  return {
+    activityLinks,
+    occurrences,
+    hasReference: landmarkReferences.has(code)
+  };
+}
+
+function renderLandmarkManager() {
+  if (!ui.landmarkManagerList) return;
+
+  const needle = String(ui.landmarkManagerSearch?.value ?? "").trim().toLowerCase();
+
+  const rows = [...landmarks.entries()]
+    .map(([code, row]) => ({ code, ...row }))
+    .filter((row) => {
+      if (!needle) return true;
+      const haystack = [
+        row.code,
+        row.name,
+        row.landmark_type,
+        row.sort_order
+      ].map((value) => String(value ?? "").toLowerCase()).join(" ");
+      return haystack.includes(needle);
+    })
+    .sort((a, b) =>
+      (Number(a.sort_order) || 9999) - (Number(b.sort_order) || 9999) ||
+      String(a.code).localeCompare(String(b.code), "fr")
+    );
+
+  let totalLinks = 0;
+  let totalOccurrences = 0;
+  for (const code of landmarks.keys()) {
+    const usage = landmarkUsage(code);
+    totalLinks += usage.activityLinks;
+    totalOccurrences += usage.occurrences;
+  }
+
+  ui.landmarkManagerMeta.textContent =
+    `${landmarks.size} repères · ${totalLinks} activité(s) liées · ${totalOccurrences} occurrence(s)`;
+
+  ui.landmarkManagerList.innerHTML = "";
+
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Aucun repère correspondant.";
+    ui.landmarkManagerList.appendChild(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  for (const row of rows) {
+    const code = String(row.code ?? "");
+    const usage = landmarkUsage(code);
+
+    const card = document.createElement("article");
+    card.className = "landmark-manager-card";
+
+    const codeNode = document.createElement("div");
+    codeNode.className = "landmark-manager-code";
+    codeNode.textContent = code;
+
+    const main = document.createElement("div");
+    main.className = "landmark-manager-main";
+
+    const title = document.createElement("strong");
+    title.textContent = row.name || `Repère ${code}`;
+
+    const meta = document.createElement("span");
+    meta.textContent =
+      `${row.landmark_type || "—"} · ordre ${Number(row.sort_order) || "—"}` +
+      (usage.hasReference ? " · référence GPS" : "");
+
+    main.append(title, meta);
+
+    const stats = document.createElement("div");
+    stats.className = "landmark-manager-stats";
+    stats.append(
+      landmarkStatDatum("Activités", formatNumber(usage.activityLinks)),
+      landmarkStatDatum("Occurrences", formatNumber(usage.occurrences))
+    );
+
+    const actions = document.createElement("div");
+    actions.className = "landmark-manager-card-actions";
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "secondary";
+    edit.textContent = "Modifier";
+    edit.addEventListener("click", () => openLandmarkEditor(code, row));
+    actions.appendChild(edit);
+
+    card.append(codeNode, main, stats, actions);
+    fragment.appendChild(card);
+  }
+
+  ui.landmarkManagerList.appendChild(fragment);
+}
+
+function landmarkStatDatum(label, value) {
+  const box = document.createElement("div");
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  const span = document.createElement("span");
+  span.textContent = label;
+  box.append(strong, span);
+  return box;
+}
+
+function nextLandmarkSortOrder() {
+  let max = 0;
+  for (const row of landmarks.values()) {
+    max = Math.max(max, Number(row.sort_order) || 0);
+  }
+  return max + 1;
+}
+
+function openNewLandmarkEditor() {
+  landmarkEditorMode = "new";
+  landmarkEditorCode = null;
+  landmarkEditorDirty = false;
+
+  if (landmarkAutosaveTimer) {
+    clearTimeout(landmarkAutosaveTimer);
+    landmarkAutosaveTimer = null;
+  }
+
+  ui.landmarkEditor.classList.remove("hidden");
+  ui.landmarkEditorEyebrow.textContent = "NOUVEAU REPÈRE";
+  ui.landmarkEditorTitle.textContent = "Créer un repère personnel";
+  ui.landmarkEditorHint.textContent =
+    "Le code devient la clé métier SPORT. Après création il restera fixe ; le libellé et l’ordre resteront modifiables.";
+  ui.landmarkCodeInput.disabled = false;
+  ui.landmarkTypeInput.disabled = false;
+  ui.createLandmarkButton.classList.remove("hidden");
+  ui.deleteLandmarkButton.classList.add("hidden");
+
+  ui.landmarkCodeInput.value = "";
+  ui.landmarkNameInput.value = "";
+  ui.landmarkTypeInput.value = "Trajet";
+  ui.landmarkSortOrderInput.value = String(nextLandmarkSortOrder());
+  ui.landmarkEditorInfo.textContent = "";
+  setLandmarkEditorStatus("Prêt à créer", "ok");
+
+  ui.landmarkEditor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function openLandmarkEditor(code, row) {
+  const safeCode = normalizeLandmarkCode(code);
+  if (!safeCode) return;
+
+  landmarkEditorMode = "edit";
+  landmarkEditorCode = safeCode;
+  landmarkEditorDirty = false;
+
+  if (landmarkAutosaveTimer) {
+    clearTimeout(landmarkAutosaveTimer);
+    landmarkAutosaveTimer = null;
+  }
+
+  ui.landmarkEditor.classList.remove("hidden");
+  ui.landmarkEditorEyebrow.textContent = "WEB010 · MODIFICATION AUTOMATIQUE";
+  ui.landmarkEditorTitle.textContent = row.name || `Repère ${safeCode}`;
+  ui.landmarkEditorHint.textContent =
+    "Aucun bouton Enregistrer. Le code reste fixe ; un changement de type est refusé lorsqu’une référence GPS existe.";
+  ui.landmarkCodeInput.disabled = true;
+  ui.createLandmarkButton.classList.add("hidden");
+
+  populateLandmarkEditor(safeCode, row);
+  ui.landmarkEditor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function populateLandmarkEditor(code, row) {
+  const usage = landmarkUsage(code);
+
+  ui.landmarkCodeInput.value = code;
+  ui.landmarkNameInput.value = String(row.name ?? "");
+  ui.landmarkTypeInput.value =
+    String(row.landmark_type ?? "Trajet").toLowerCase() === "ascension" ? "Ascension" : "Trajet";
+  ui.landmarkSortOrderInput.value = String(Math.max(1, Number(row.sort_order) || 1));
+  ui.landmarkTypeInput.disabled = usage.hasReference;
+
+  const seeded = SEEDED_LANDMARK_CODES.has(code);
+  const deletable = !seeded && usage.activityLinks === 0 && !usage.hasReference;
+  ui.deleteLandmarkButton.classList.toggle("hidden", !deletable);
+
+  const parts = [
+    `${usage.activityLinks} activité(s)`,
+    `${usage.occurrences} occurrence(s)`
+  ];
+  if (usage.hasReference) parts.push("référence GPS protégée");
+  if (seeded) parts.push("repère SPORT d’origine protégé contre la suppression");
+  ui.landmarkEditorInfo.textContent = parts.join(" · ");
+
+  setLandmarkEditorStatus("Synchronisation automatique active", "ok");
+}
+
+async function closeLandmarkEditor() {
+  await flushLandmarkAutosave();
+  landmarkEditorMode = "closed";
+  landmarkEditorCode = null;
+  landmarkEditorDirty = false;
+  ui.landmarkEditor.classList.add("hidden");
+}
+
+function landmarkRowFromEditor(codeOverride = null) {
+  const code = normalizeLandmarkCode(codeOverride ?? ui.landmarkCodeInput.value);
+  return {
+    code,
+    name: String(ui.landmarkNameInput.value ?? "").trim(),
+    landmark_type: ui.landmarkTypeInput.value === "Ascension" ? "Ascension" : "Trajet",
+    sort_order: Math.max(1, Math.min(9999, Math.round(Number(ui.landmarkSortOrderInput.value) || 1)))
+  };
+}
+
+function validateLandmarkRow(row, creating = false) {
+  if (!row.code) throw new Error("Le code du repère est obligatoire.");
+  if (!/^[A-Z0-9_-]{1,8}$/.test(row.code)) {
+    throw new Error("Le code doit contenir 1 à 8 caractères : lettres, chiffres, _ ou -.");
+  }
+  if (!row.name) throw new Error("Le libellé du repère est obligatoire.");
+
+  if (creating && landmarks.has(row.code)) {
+    throw new Error(`Le code « ${row.code} » existe déjà.`);
+  }
+
+  const duplicateName = [...landmarks.entries()].find(([code, item]) =>
+    code !== row.code &&
+    String(item.name ?? "").trim().toLowerCase() === row.name.toLowerCase()
+  );
+  if (duplicateName) {
+    throw new Error(`Un autre repère porte déjà le libellé « ${row.name} ».`);
+  }
+}
+
+function scheduleLandmarkAutosave() {
+  if (landmarkEditorMode !== "edit" || !landmarkEditorCode) return;
+
+  landmarkEditorDirty = true;
+  landmarkAutosaveGeneration += 1;
+  const generation = landmarkAutosaveGeneration;
+
+  if (landmarkAutosaveTimer) clearTimeout(landmarkAutosaveTimer);
+  setLandmarkEditorStatus("Modification détectée…", "pending");
+
+  landmarkAutosaveTimer = window.setTimeout(() => {
+    landmarkAutosaveTimer = null;
+    void queueLandmarkAutosave(generation);
+  }, AUTOSAVE_DELAY_MS);
+}
+
+function flushLandmarkAutosave() {
+  if (landmarkEditorMode !== "edit" || !landmarkEditorDirty) return landmarkAutosaveQueue;
+
+  if (landmarkAutosaveTimer) {
+    clearTimeout(landmarkAutosaveTimer);
+    landmarkAutosaveTimer = null;
+  }
+
+  landmarkAutosaveGeneration += 1;
+  return queueLandmarkAutosave(landmarkAutosaveGeneration);
+}
+
+function queueLandmarkAutosave(generation) {
+  const run = () => persistLandmarkEditor(generation);
+  landmarkAutosaveQueue = landmarkAutosaveQueue.then(run, run);
+  return landmarkAutosaveQueue;
+}
+
+function saveLandmarkEditorImmediate() {
+  if (landmarkEditorMode !== "edit") return Promise.resolve();
+
+  landmarkEditorDirty = true;
+  if (landmarkAutosaveTimer) {
+    clearTimeout(landmarkAutosaveTimer);
+    landmarkAutosaveTimer = null;
+  }
+  landmarkAutosaveGeneration += 1;
+  return queueLandmarkAutosave(landmarkAutosaveGeneration);
+}
+
+async function persistLandmarkEditor(generation) {
+  const code = landmarkEditorCode;
+  const previous = landmarks.get(code);
+  if (!previous) return;
+
+  const next = landmarkRowFromEditor(code);
+
+  try {
+    validateLandmarkRow(next, false);
+
+    if (landmarkReferences.has(code) &&
+        String(previous.landmark_type ?? "Trajet") !== next.landmark_type) {
+      throw new Error(
+        "Ce repère possède une référence GPS. Son type Trajet/Ascension doit rester inchangé tant que cette référence existe."
+      );
+    }
+
+    const unchanged =
+      String(previous.name ?? "") === next.name &&
+      String(previous.landmark_type ?? "") === next.landmark_type &&
+      Number(previous.sort_order) === Number(next.sort_order);
+
+    if (unchanged) {
+      if (generation === landmarkAutosaveGeneration) {
+        landmarkEditorDirty = false;
+        setLandmarkEditorStatus("Synchronisation automatique active", "ok");
+      }
+      return;
+    }
+
+    setLandmarkEditorStatus("Synchronisation vers les 3 plateformes…", "pending");
+
+    await commitWebMutation({
+      table: "personal_landmarks",
+      rowKey: code,
+      operation: "UPSERT",
+      row: next,
+      materializedCollection: "landmarks",
+      materializedData: next
+    });
+
+    landmarks.set(code, next);
+
+    if (generation === landmarkAutosaveGeneration) {
+      landmarkEditorDirty = false;
+      ui.landmarkEditorTitle.textContent = next.name;
+      setLandmarkEditorStatus("Synchronisé automatiquement", "ok");
+    }
+
+    rebuildLandmarkFilter();
+    renderLandmarkManager();
+    const current = currentDetailActivity();
+    if (current) renderPersonal(current);
+
+    setMessage("WEB010 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+  } catch (error) {
+    console.error(error);
+    if (generation === landmarkAutosaveGeneration) {
+      landmarkEditorDirty = true;
+      setLandmarkEditorStatus("Synchronisation impossible", "error");
+      const fresh = landmarks.get(code);
+      if (fresh && landmarkReferences.has(code)) {
+        ui.landmarkTypeInput.value =
+          String(fresh.landmark_type ?? "Trajet").toLowerCase() === "ascension" ? "Ascension" : "Trajet";
+      }
+    }
+    handleError(error, "Modification du repère impossible");
+  }
+}
+
+async function createLandmarkFromWeb() {
+  if (landmarkEditorMode !== "new") return;
+
+  const row = landmarkRowFromEditor();
+
+  try {
+    validateLandmarkRow(row, true);
+
+    ui.createLandmarkButton.disabled = true;
+    setLandmarkEditorStatus("Création et synchronisation…", "pending");
+
+    await commitWebMutation({
+      table: "personal_landmarks",
+      rowKey: row.code,
+      operation: "UPSERT",
+      row,
+      materializedCollection: "landmarks",
+      materializedData: row,
+      metaIncrements: {
+        landmarkCount: 1,
+        expectedDocuments: 1
+      }
+    });
+
+    landmarks.set(row.code, row);
+    adjustMetric(ui.landmarkCount, 1);
+    adjustMetric(ui.expectedDocuments, 1);
+
+    landmarkEditorMode = "edit";
+    landmarkEditorCode = row.code;
+    landmarkEditorDirty = false;
+    ui.landmarkCodeInput.disabled = true;
+    ui.createLandmarkButton.classList.add("hidden");
+    ui.landmarkEditorEyebrow.textContent = "WEB010 · REPÈRE CRÉÉ";
+    ui.landmarkEditorTitle.textContent = row.name;
+    populateLandmarkEditor(row.code, row);
+
+    rebuildLandmarkFilter();
+    renderLandmarkManager();
+
+    setMessage("WEB010 · nouveau repère créé sur Web, téléphone et tablette.", "success");
+  } catch (error) {
+    console.error(error);
+    setLandmarkEditorStatus("Création impossible", "error");
+    handleError(error, "Création du repère impossible");
+  } finally {
+    ui.createLandmarkButton.disabled = false;
+  }
+}
+
+async function deleteCurrentLandmarkIfUnused() {
+  if (landmarkEditorMode !== "edit" || !landmarkEditorCode) return;
+
+  const code = landmarkEditorCode;
+  const row = landmarks.get(code);
+  if (!row) return;
+
+  const usage = landmarkUsage(code);
+
+  if (SEEDED_LANDMARK_CODES.has(code)) {
+    handleError(new Error("Les 10 repères SPORT d’origine ne sont pas supprimables."), "Suppression refusée");
+    return;
+  }
+  if (usage.activityLinks > 0 || usage.hasReference) {
+    handleError(
+      new Error("Ce repère est encore lié à une activité ou possède une référence GPS."),
+      "Suppression refusée"
+    );
+    return;
+  }
+
+  try {
+    ui.deleteLandmarkButton.disabled = true;
+    if (landmarkAutosaveTimer) {
+      clearTimeout(landmarkAutosaveTimer);
+      landmarkAutosaveTimer = null;
+    }
+    // La suppression doit gagner sur un éventuel brouillon non encore envoyé.
+    landmarkEditorDirty = false;
+    landmarkAutosaveGeneration += 1;
+    setLandmarkEditorStatus("Suppression synchronisée…", "pending");
+
+    await commitWebMutation({
+      table: "personal_landmarks",
+      rowKey: code,
+      operation: "DELETE",
+      row: null,
+      materializedCollection: "landmarks",
+      materializedData: null,
+      deleteMaterialized: true,
+      metaIncrements: {
+        landmarkCount: -1,
+        expectedDocuments: -1
+      }
+    });
+
+    landmarks.delete(code);
+    adjustMetric(ui.landmarkCount, -1);
+    adjustMetric(ui.expectedDocuments, -1);
+
+    await closeLandmarkEditor();
+    rebuildLandmarkFilter();
+    renderLandmarkManager();
+
+    setMessage("WEB010 · repère inutilisé supprimé sur les trois plateformes.", "success");
+  } catch (error) {
+    console.error(error);
+    setLandmarkEditorStatus("Suppression impossible", "error");
+    handleError(error, "Suppression du repère impossible");
+  } finally {
+    ui.deleteLandmarkButton.disabled = false;
   }
 }
 
@@ -2298,7 +3068,7 @@ function openEquipmentEditor(item) {
   }
 
   ui.equipmentEditor.classList.remove("hidden");
-  ui.equipmentEditorEyebrow.textContent = "WEB009 · MODIFICATION AUTOMATIQUE";
+  ui.equipmentEditorEyebrow.textContent = "WEB010 · MODIFICATION AUTOMATIQUE";
   ui.equipmentEditorTitle.textContent = equipmentDisplayName(item);
   ui.equipmentEditorHint.textContent =
     "Aucun bouton Enregistrer : les changements sont envoyés automatiquement vers téléphone et tablette.";
@@ -2494,7 +3264,7 @@ async function persistEquipmentEditor(generation) {
     renderEquipmentManager();
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
-    setMessage("WEB009 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
+    setMessage("WEB010 · matériel synchronisé automatiquement sur les trois plateformes.", "success");
   } catch (error) {
     console.error(error);
     if (generation === equipmentAutosaveGeneration) {
@@ -2539,7 +3309,7 @@ async function createEquipmentFromWeb() {
     equipmentEditorRowId = id;
     equipmentEditorDirty = false;
     ui.createEquipmentButton.classList.add("hidden");
-    ui.equipmentEditorEyebrow.textContent = "WEB009 · MATÉRIEL CRÉÉ";
+    ui.equipmentEditorEyebrow.textContent = "WEB010 · MATÉRIEL CRÉÉ";
     ui.equipmentEditorTitle.textContent = equipmentDisplayName(row);
     ui.equipmentEditorHint.textContent =
       "Le matériel est créé. Toute modification ultérieure est maintenant automatique.";
@@ -2549,7 +3319,7 @@ async function createEquipmentFromWeb() {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage("WEB009 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
+    setMessage("WEB010 · nouveau matériel créé sur Web, téléphone et tablette.", "success");
   } catch (error) {
     console.error(error);
     setEquipmentEditorStatus("Création impossible", "error");
@@ -2593,7 +3363,7 @@ async function updateEquipmentStatus(item, status) {
     const current = currentDetailActivity();
     if (current) renderPersonal(current);
 
-    setMessage(`WEB009 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
+    setMessage(`WEB010 · ${equipmentStatusLabel(normalized).toLowerCase()} sur les trois plateformes.`, "success");
   } catch (error) {
     handleError(error, "Changement de statut du matériel impossible");
   }
@@ -2607,7 +3377,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
   if (snapshot.size > MAX_EQUIPMENT_RENAME_CASCADE) {
     throw new Error(
       `Ce matériel est associé à ${snapshot.size} activités. ` +
-      `Par sécurité, WEB009 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
+      `Par sécurité, WEB010 bloque un renommage Web au-delà de ${MAX_EQUIPMENT_RENAME_CASCADE} activités.`
     );
   }
 
@@ -2636,7 +3406,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB009",
+      webVersion: "WEB010",
       row: next
     }
   );
@@ -2672,7 +3442,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB009",
+        webVersion: "WEB010",
         row: patch
       }
     );
@@ -2684,7 +3454,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB009"
+      webVersion: "WEB010"
     },
     { merge: true }
   );
@@ -2699,8 +3469,8 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
 
   setMessage(
     snapshot.size > 0
-      ? `WEB009 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
-      : "WEB009 · matériel renommé sur les trois plateformes.",
+      ? `WEB010 · matériel renommé et ${snapshot.size} activité(s) associée(s) mises à jour sur les trois plateformes.`
+      : "WEB010 · matériel renommé sur les trois plateformes.",
     "success"
   );
 }
@@ -3054,12 +3824,16 @@ function subSportName(value) {
 
 function recordLabel(type) {
   const value = String(type ?? "Record");
+  const normalized = value.toLowerCase();
   const labels = {
+    distance: "Plus longue distance",
+    ascent: "Plus grand D+",
+    duration: "Plus longue durée",
     LONGEST_DISTANCE: "Plus longue distance",
     MAX_ASCENT: "Plus grand D+",
     LONGEST_DURATION: "Plus longue durée"
   };
-  return labels[value] || value.replaceAll("_", " ");
+  return labels[value] || labels[normalized] || value.replaceAll("_", " ");
 }
 
 function formatRecordValue(record) {
