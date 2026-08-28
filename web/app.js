@@ -92,6 +92,7 @@ const ui = Object.fromEntries(
     "loadedLabel", "loadMoreButton", "loadAllButton", "refreshButton",
     "globalMapSection", "globalMapStatus", "globalMapCount", "globalActivityMap", "globalMapFilteredButton", "globalMapAllButton", "globalMapClearButton",
     "performanceTerrainAnalysis", "performanceTerrainMeta", "performanceBenchmarkBadge", "performanceTerrainMetrics", "performanceGradeDistribution", "performanceBenchmark", "performanceInsight",
+    "performanceProgression", "performanceProgressionMeta", "performanceProgressionTrend", "performanceProgressionSummary", "performanceProgressionWindows", "performanceProgressionChart", "performanceProgressionHistory",
     "recurringLandmarksAnalysis", "recurringLandmarksMeta", "recurringLandmarksList", "scanRecurringClimbsButton", "recurringClimbsStatus", "recurringClimbsList",
     "searchInput", "sportFilter", "yearFilter", "equipmentFilter",
     "landmarkFilter", "sourceFilter", "distanceFilter", "ascentFilter", "sortFilter",
@@ -2177,7 +2178,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB026";
+  document.title = "SPORT Web · WEB027";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -3742,6 +3743,7 @@ function resetPerformanceTerrainAnalysis(activity) {
   ui.performanceGradeDistribution.innerHTML = "";
   ui.performanceBenchmark.innerHTML = "";
   ui.performanceInsight.innerHTML = "";
+  resetPerformanceProgression();
 
   const basic = [
     ["Allure / vitesse", primarySpeedMetric(activity)],
@@ -4074,6 +4076,225 @@ function performanceInsightText(activity,terrain,benchmark){
   return parts.join(" · ");
 }
 
+
+function resetPerformanceProgression() {
+  if (!ui.performanceProgressionSummary) return;
+  ui.performanceProgressionMeta.textContent = "Historique du groupe comparable actuellement chargé.";
+  ui.performanceProgressionTrend.textContent = "Tendance";
+  ui.performanceProgressionTrend.className = "pill neutral";
+  ui.performanceProgressionSummary.innerHTML = "";
+  ui.performanceProgressionWindows.innerHTML = "";
+  ui.performanceProgressionChart.innerHTML = "";
+  ui.performanceProgressionHistory.innerHTML = "";
+}
+
+function progressionCohort(activity) {
+  const rows = [activity, ...comparableActivities(activity)]
+    .filter((row) => {
+      const speed = averageSpeedKmh(row);
+      return Number.isFinite(speed) && speed > 0 && numberOrZero(row.start_time_ms) > 0;
+    });
+
+  const unique = [];
+  const seen = new Set();
+  for (const row of rows) {
+    const key = activityKey(row) || `${row.start_time_ms}-${row.distance_m}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+  }
+
+  unique.sort((a,b) => numberOrZero(a.start_time_ms) - numberOrZero(b.start_time_ms));
+  return unique;
+}
+
+function averageNumbers(values) {
+  const valid = values.filter((value) => Number.isFinite(value));
+  return valid.length ? valid.reduce((sum,value) => sum + value, 0) / valid.length : null;
+}
+
+function progressionWindow(rows, size) {
+  if (!rows.length) return null;
+  const current = rows.slice(-size);
+  const previous = rows.slice(Math.max(0, rows.length - size * 2), Math.max(0, rows.length - size));
+  const currentSpeed = averageNumbers(current.map(averageSpeedKmh));
+  const previousSpeed = averageNumbers(previous.map(averageSpeedKmh));
+  const currentHr = averageNumbers(current.map((row) => Number(row.avg_hr)));
+  const previousHr = averageNumbers(previous.map((row) => Number(row.avg_hr)));
+
+  const speedDeltaPct = Number.isFinite(currentSpeed) && Number.isFinite(previousSpeed) && previousSpeed > 0
+    ? ((currentSpeed - previousSpeed) / previousSpeed) * 100
+    : null;
+  const hrDelta = Number.isFinite(currentHr) && Number.isFinite(previousHr)
+    ? currentHr - previousHr
+    : null;
+
+  return {
+    size,
+    count: current.length,
+    previousCount: previous.length,
+    currentSpeed,
+    previousSpeed,
+    currentHr,
+    previousHr,
+    speedDeltaPct,
+    hrDelta
+  };
+}
+
+function progressionTrendInfo(rows) {
+  const five = progressionWindow(rows, 5);
+  const delta = five?.speedDeltaPct;
+  if (!Number.isFinite(delta) || five.previousCount < 2) {
+    return { label: "Historique insuffisant", cls: "neutral", delta: null };
+  }
+  if (delta >= 2) return { label: `En hausse · +${delta.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`, cls: "ok", delta };
+  if (delta <= -2) return { label: `En baisse · ${delta.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`, cls: "warn", delta };
+  return { label: `Stable · ${delta >= 0 ? "+" : ""}${delta.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`, cls: "neutral", delta };
+}
+
+function progressionRank(activity, rows) {
+  const currentSpeed = averageSpeedKmh(activity);
+  if (!Number.isFinite(currentSpeed)) return null;
+  return 1 + rows.filter((row) => averageSpeedKmh(row) > currentSpeed).length;
+}
+
+function progressionBest(rows) {
+  return rows.reduce((best,row) => {
+    const speed = averageSpeedKmh(row);
+    return !best || speed > best.speed ? { row, speed } : best;
+  }, null);
+}
+
+function progressionAsOfCurrent(activity, rows) {
+  const currentTime = numberOrZero(activity.start_time_ms);
+  if (!currentTime) return rows;
+  const prior = rows.filter((row) => numberOrZero(row.start_time_ms) <= currentTime);
+  return prior.length ? prior : rows;
+}
+
+function progressionSparkline(rows, activity) {
+  if (!ui.performanceProgressionChart) return;
+  const recent = rows.slice(-10);
+  if (recent.length < 2) {
+    ui.performanceProgressionChart.innerHTML = '<p class="muted">Au moins deux séances comparables sont nécessaires.</p>';
+    return;
+  }
+
+  const speeds = recent.map(averageSpeedKmh);
+  const min = Math.min(...speeds);
+  const max = Math.max(...speeds);
+  const width = 520, height = 160, padX = 18, padY = 18;
+  const span = Math.max(0.001, max - min);
+  const points = recent.map((row,index) => {
+    const x = padX + (recent.length === 1 ? 0 : index * (width - padX*2) / (recent.length-1));
+    const y = height - padY - ((averageSpeedKmh(row)-min)/span)*(height-padY*2);
+    return {row,x,y};
+  });
+  const poly = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const currentKey = activityKey(activity);
+
+  ui.performanceProgressionChart.innerHTML = `
+    <svg class="progression-sparkline" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="Évolution de l'allure ou de la vitesse">
+      <polyline points="${poly}" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+      ${points.map((point) => {
+        const selected = activityKey(point.row) === currentKey;
+        return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${selected ? 7 : 5}" class="${selected ? "current" : ""}"></circle>`;
+      }).join("")}
+    </svg>
+    <div class="progression-sparkline-labels">
+      <span>${escapeHtml(formatDate(recent[0].start_time_ms))}</span>
+      <strong>${escapeHtml(formatBenchmarkSpeed(activity,max))} meilleur</strong>
+      <span>${escapeHtml(formatDate(recent[recent.length-1].start_time_ms))}</span>
+    </div>`;
+}
+
+function renderPerformanceProgression(activity) {
+  if (!ui.performanceProgressionSummary) return;
+
+  const cohort = progressionCohort(activity);
+  const asOfCurrent = progressionAsOfCurrent(activity, cohort);
+  if (cohort.length < 2) {
+    resetPerformanceProgression();
+    ui.performanceProgressionMeta.textContent =
+      "Pas assez d’activités comparables chargées pour calculer une progression.";
+    ui.performanceProgressionHistory.innerHTML =
+      '<div class="recurring-empty">Il faut au moins deux activités comparables avec une durée et une distance exploitables.</div>';
+    return;
+  }
+
+  const currentSpeed = averageSpeedKmh(activity);
+  const best = progressionBest(cohort);
+  const avgAll = averageNumbers(cohort.map(averageSpeedKmh));
+  const rank = progressionRank(activity, cohort);
+  const trend = progressionTrendInfo(asOfCurrent);
+
+  ui.performanceProgressionTrend.textContent = trend.label;
+  ui.performanceProgressionTrend.className = `pill ${trend.cls}`;
+  ui.performanceProgressionMeta.textContent =
+    `${cohort.length} séances comparables chargées · progression calculée jusqu’au ${formatDate(activity.start_time_ms)}`;
+
+  const summary = [
+    ["Rang de cette séance", rank ? `${rank} / ${cohort.length}` : "—"],
+    ["Meilleure allure / vitesse", best ? formatBenchmarkSpeed(activity,best.speed) : "—"],
+    ["Moyenne du groupe", Number.isFinite(avgAll) ? formatBenchmarkSpeed(activity,avgAll) : "—"],
+    ["Écart au meilleur", best && Number.isFinite(currentSpeed) ? `${((currentSpeed-best.speed)/best.speed*100).toLocaleString("fr-FR",{maximumFractionDigits:1})} %` : "—"]
+  ];
+
+  ui.performanceProgressionSummary.innerHTML = summary.map(([label,value]) =>
+    `<div class="performance-progression-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`
+  ).join("");
+
+  ui.performanceProgressionWindows.innerHTML = [3,5,10].map((size) => {
+    const item = progressionWindow(asOfCurrent,size);
+    if (!item || !Number.isFinite(item.currentSpeed)) return "";
+    const delta = item.speedDeltaPct;
+    const deltaClass = Number.isFinite(delta) ? (delta >= 2 ? "positive" : delta <= -2 ? "negative" : "stable") : "stable";
+    const deltaText = Number.isFinite(delta) && item.previousCount
+      ? `${delta >= 0 ? "+" : ""}${delta.toLocaleString("fr-FR",{maximumFractionDigits:1})} % vs ${item.previousCount} précédentes`
+      : "pas assez d’historique précédent";
+    const hrText = Number.isFinite(item.currentHr)
+      ? `${Math.round(item.currentHr)} bpm moy.${Number.isFinite(item.hrDelta) && item.previousCount ? ` · ${item.hrDelta>=0?"+":""}${Math.round(item.hrDelta)} bpm` : ""}`
+      : "FC indisponible";
+
+    return `<div class="performance-progression-window">
+      <div><strong>${item.count} dernière${item.count>1?"s":""}</strong><span>fenêtre ${size}</span></div>
+      <b>${escapeHtml(formatBenchmarkSpeed(activity,item.currentSpeed))}</b>
+      <span class="${deltaClass}">${escapeHtml(deltaText)}</span>
+      <small>${escapeHtml(hrText)}</small>
+    </div>`;
+  }).join("");
+
+  progressionSparkline(asOfCurrent, activity);
+
+  const currentKey = activityKey(activity);
+  const lastTen = asOfCurrent.slice(-10).reverse();
+  ui.performanceProgressionHistory.innerHTML = `
+    <div class="performance-progression-history-head">
+      <strong>Historique récent</strong>
+      <span>${Math.min(10,asOfCurrent.length)} séance(s) affichée(s)</span>
+    </div>
+    <div class="performance-progression-history-list">
+      ${lastTen.map((row) => {
+        const selected = activityKey(row) === currentKey;
+        const speed = averageSpeedKmh(row);
+        return `<button type="button" class="performance-progression-history-row${selected ? " current" : ""}" data-activity-key="${escapeHtml(activityKey(row))}">
+          <span>${escapeHtml(formatDate(row.start_time_ms))}</span>
+          <strong>${escapeHtml(formatBenchmarkSpeed(activity,speed))}</strong>
+          <span>${escapeHtml(formatHeartRate(row.avg_hr))}</span>
+          <span>${escapeHtml(formatDistance(row.distance_m))} · ${escapeHtml(formatMeters(row.ascent_m))}</span>
+        </button>`;
+      }).join("")}
+    </div>`;
+
+  ui.performanceProgressionHistory.querySelectorAll("[data-activity-key]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = activities.find((row) => activityKey(row) === button.dataset.activityKey);
+      if (target) showActivity(target);
+    });
+  });
+}
+
 function renderPerformanceTerrainAnalysis(activity, route) {
   if(!ui.performanceTerrainMetrics) return;
   const terrain=routeTerrainAnalysis(route);
@@ -4130,6 +4351,7 @@ function renderPerformanceTerrainAnalysis(activity, route) {
   ui.performanceInsight.innerHTML=`<strong>Lecture de la séance</strong><p>${escapeHtml(performanceInsightText(activity,terrain,benchmark))}</p>`;
   ui.performanceTerrainMeta.textContent =
     "Allure/FC globales croisées avec altitude et pente du tracé GPS ; benchmark limité au catalogue actuellement chargé.";
+  renderPerformanceProgression(activity);
 }
 
 function renderPerformance(activity) {
@@ -4493,7 +4715,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB026",
+            webVersion: "WEB027",
             row: wanted
           }
         );
@@ -4516,7 +4738,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB026"
+            webVersion: "WEB027"
           }
         );
         countDelta -= 1;
@@ -4526,7 +4748,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB026"
+      webVersion: "WEB027"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -4726,7 +4948,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB026"
+    webVersion: "WEB027"
   };
   if (row != null) event.row = row;
 
@@ -4735,7 +4957,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB026"
+    webVersion: "WEB027"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -5188,7 +5410,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB026",
+      webVersion: "WEB027",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -5254,7 +5476,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB026",
+    webVersion: "WEB027",
     androidVersion: 0,
     __synthetic: true
   };
@@ -6708,7 +6930,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB026",
+      webVersion: "WEB027",
       row: next
     }
   );
@@ -6744,7 +6966,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB026",
+        webVersion: "WEB027",
         row: patch
       }
     );
@@ -6756,7 +6978,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB026"
+      webVersion: "WEB027"
     },
     { merge: true }
   );

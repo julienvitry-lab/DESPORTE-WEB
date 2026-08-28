@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB026
+name: Publier SPORT Web · WEB027
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB026.md"
+      - "docs/releases/WEB027.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB026
+      - name: Valider WEB027
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +47,7 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB026"' web/app.js
+          grep -Fq 'webVersion: "WEB027"' web/app.js
 
           # WEB022 · WEBCARTO007.
           grep -Fq "WEB020 · WEBCARTO005" web/index.html
@@ -123,7 +123,13 @@ jobs:
           grep -Fq 'const preferredLayer = ui.mapLayerSelect.value || "topo";' web/app.js
           grep -Fq 'activityBaseLayers[preferredLayer] || activityBaseLayers.topo' web/app.js
           grep -Fq 'font: 13px "Comfortaa"' web/styles.css
-          echo "WEB026 : WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          grep -Fq 'WEB027 · WEBANALYSE002' web/index.html
+          grep -Fq 'performanceProgressionSummary' web/index.html
+          grep -Fq 'function progressionCohort' web/app.js
+          grep -Fq 'function progressionWindow' web/app.js
+          grep -Fq 'function renderPerformanceProgression' web/app.js
+          grep -Fq '.performance-progression' web/styles.css
+          echo "WEB027 : WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -133,6 +139,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB026
+      - name: Publier SPORT Web · WEB027
         id: deployment
         uses: actions/deploy-pages@v4

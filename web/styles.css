@@ -2169,3 +2169,46 @@ footer {
 /* WEB026 · WEBCARTO009
    OpenTopoMap est le fond initial ; les graduations du profil utilisent
    la même échelle typographique que les petits textes associés au profil. */
+
+
+/* WEB027 · WEBANALYSE002 — progression sur activités comparables */
+.performance-progression{margin-top:16px;padding:16px;border:1px solid rgba(156,255,34,.13);border-radius:16px;background:rgba(3,8,10,.28);display:grid;gap:14px}
+.performance-progression-summary{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:9px}
+.performance-progression-stat{display:grid;gap:4px;padding:11px 12px;border:1px solid rgba(255,255,255,.08);border-radius:11px;background:rgba(255,255,255,.024)}
+.performance-progression-stat span{font-size:.7rem;color:var(--muted)}
+.performance-progression-stat strong{font-size:.94rem}
+.performance-progression-columns{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.performance-progression-windows{display:grid;gap:8px}
+.performance-progression-window{display:grid;grid-template-columns:110px 110px 1fr;gap:8px 12px;align-items:center;padding:10px;border:1px solid rgba(255,255,255,.07);border-radius:10px}
+.performance-progression-window>div{display:grid}
+.performance-progression-window>div span,.performance-progression-window small{font-size:.67rem;color:var(--muted)}
+.performance-progression-window>b{font-size:.82rem}
+.performance-progression-window>span{font-size:.72rem;text-align:right}
+.performance-progression-window small{grid-column:2/-1}
+.performance-progression-window .positive{color:#9cff22}
+.performance-progression-window .negative{color:#ff7a7a}
+.performance-progression-window .stable{color:#c7d1cb}
+.performance-progression-chart{min-height:170px;display:grid;align-content:center}
+.progression-sparkline{width:100%;height:150px;color:#9cff22;overflow:visible}
+.progression-sparkline circle{fill:#111b16;stroke:#9cff22;stroke-width:3}
+.progression-sparkline circle.current{fill:#9cff22;stroke:#fff}
+.progression-sparkline-labels{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:.66rem;color:var(--muted)}
+.progression-sparkline-labels strong{color:var(--text);font-size:.7rem}
+.performance-progression-history{display:grid;gap:8px}
+.performance-progression-history-head{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.performance-progression-history-head span{font-size:.7rem;color:var(--muted)}
+.performance-progression-history-list{display:grid;gap:5px}
+.performance-progression-history-row{display:grid;grid-template-columns:150px 120px 90px 1fr;gap:10px;align-items:center;width:100%;padding:9px 11px;border:1px solid rgba(255,255,255,.06);border-radius:9px;background:rgba(255,255,255,.018);color:inherit;text-align:left;cursor:pointer}
+.performance-progression-history-row:hover,.performance-progression-history-row.current{border-color:rgba(156,255,34,.36);background:rgba(156,255,34,.045)}
+.performance-progression-history-row span{font-size:.7rem;color:var(--muted)}
+.performance-progression-history-row strong{font-size:.76rem;color:var(--text)}
+@media(max-width:850px){
+  .performance-progression-summary{grid-template-columns:repeat(2,minmax(120px,1fr))}
+  .performance-progression-columns{grid-template-columns:1fr}
+  .performance-progression-history-row{grid-template-columns:1fr 1fr}
+}
+@media(max-width:560px){
+  .performance-progression-window{grid-template-columns:1fr 1fr}
+  .performance-progression-window>span{grid-column:1/-1;text-align:left}
+  .performance-progression-window small{grid-column:1/-1}
+}

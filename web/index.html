@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB026 · WEBCARTO009 · Comfortaa">
-  <title>SPORT Web · WEB026</title>
+  <meta name="description" content="SPORT Web · WEB027 · WEBANALYSE002 · Comfortaa">
+  <title>SPORT Web · WEB027</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB026 · WEBCARTO009 · Comfortaa · Firestore</div>
+      <div class="version">WEB027 · WEBANALYSE002 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -799,6 +799,34 @@
             </div>
 
             <div id="performanceInsight" class="performance-insight"></div>
+
+            <section id="performanceProgression" class="performance-progression">
+              <div class="route-analysis-heading">
+                <div>
+                  <p class="eyebrow">WEB027 · WEBANALYSE002</p>
+                  <strong>Progression sur activités comparables</strong>
+                  <span id="performanceProgressionMeta" class="muted">Historique du groupe comparable actuellement chargé.</span>
+                </div>
+                <span id="performanceProgressionTrend" class="pill neutral">Tendance</span>
+              </div>
+
+              <div id="performanceProgressionSummary" class="performance-progression-summary"></div>
+
+              <div class="performance-progression-columns">
+                <div class="performance-analysis-block">
+                  <h4>Tendances 3 / 5 / 10 séances</h4>
+                  <div id="performanceProgressionWindows" class="performance-progression-windows"></div>
+                </div>
+                <div class="performance-analysis-block">
+                  <h4>10 dernières séances comparables</h4>
+                  <div id="performanceProgressionChart" class="performance-progression-chart"></div>
+                </div>
+              </div>
+
+              <div id="performanceProgressionHistory" class="performance-progression-history"></div>
+              <p class="map-help">WEBANALYSE002 compare uniquement des activités du même sport, à distance proche et densité de D+ cohérente. La tendance porte sur l’allure/vitesse globale réelle de chaque séance ; aucune donnée locale n’est extrapolée.</p>
+            </section>
+
             <p class="map-help">WEBANALYSE001 n’invente pas de données locales : l’allure/vitesse et la fréquence cardiaque sont celles de l’activité entière ; altitude et pente proviennent du tracé GPS. Une future publication des timestamps/FC point par point permettra l’analyse locale.</p>
           </section>
 
