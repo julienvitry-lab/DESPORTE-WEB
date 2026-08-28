@@ -1,8 +1,8 @@
-name: Publier SPORT Web · WEB013
+name: Publier SPORT Web · WEB014
 on:
   push:
     branches: [main]
-    paths: ["web/**", ".github/workflows/web.yml", "docs/releases/WEB013.md"]
+    paths: ["web/**", ".github/workflows/web.yml", "docs/releases/WEB014.md"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,27 +20,27 @@ jobs:
     steps:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
-      - name: Valider WEB013
+      - name: Valider WEB014
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq "WEB013 · PERSONAL001" web/index.html
-          grep -Fq 'table: "sport_goals"' web/app.js
-          grep -Fq 'table:"journal_entries"' web/app.js
+          grep -Fq "WEB014 · SYNCGUARD001" web/index.html
+          grep -Fq 'CONFLICT_WINDOW_MS = 30_000' web/app.js
+          grep -Fq 'function startSyncHistoryWatch' web/app.js
+          grep -Fq 'function detectSyncConflicts' web/app.js
+          grep -Fq 'function replaySyncEvent' web/app.js
+          grep -Fq 'Réappliquer cette version' web/app.js
           grep -Fq 'function loadPersonalSyncData' web/app.js
-          grep -Fq 'function persistGoalRow' web/app.js
-          grep -Fq 'function persistWeight' web/app.js
           grep -Fq 'function loadWebDashboard' web/app.js
           grep -Fq 'writeBatch' web/app.js
           grep -Fq 'onSnapshot' web/app.js
-          grep -Fq 'family=Comfortaa' web/index.html
-          echo "WEB013 : objectifs + poids interopérables + dashboard validés."
+          echo "WEB014 : historique + détection conflits + résolution manuelle validés."
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
       - name: Préparer l'artefact Pages
         uses: actions/upload-pages-artifact@v4
         with:
           path: "./web"
-      - name: Publier SPORT Web · WEB013
+      - name: Publier SPORT Web · WEB014
         id: deployment
         uses: actions/deploy-pages@v4

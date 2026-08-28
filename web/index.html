@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB013 · PERSONAL001 · Comfortaa">
-  <title>SPORT Web · WEB013</title>
+  <meta name="description" content="SPORT Web · WEB014 · SYNCGUARD001 · Comfortaa">
+  <title>SPORT Web · WEB014</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB013 · PERSONAL001 · Comfortaa · Firestore</div>
+      <div class="version">WEB014 · SYNCGUARD001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <span id="authState" class="pill neutral">Non connecté</span>
@@ -27,7 +27,7 @@
 
   <main>
     <section id="messageBox" class="message info">
-      WEB013 synchronise désormais les objectifs annuels et le suivi du poids entre Web, téléphone et tablette, avec le tableau de bord WEB012 conservé.
+      WEB014 ajoute un centre de synchronisation : historique temps réel, détection des modifications concurrentes et résolution manuelle sûre.
     </section>
 
     <section id="dashboard" class="hidden">
@@ -47,7 +47,7 @@
         <section id="webDashboardSection" class="panel web-dashboard-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB013 · DASHBOARD001</p>
+              <p class="eyebrow">WEB014 · DASHBOARD001</p>
               <h2>Tableau de bord</h2>
               <p id="webDashboardMeta" class="muted">Calcul des indicateurs Firestore…</p>
             </div>
@@ -93,7 +93,7 @@
         <section id="personalSyncSection" class="panel personal-sync-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB013 · PERSONAL001</p>
+              <p class="eyebrow">WEB014 · PERSONAL001</p>
               <h2>Objectifs et suivi du poids</h2>
               <p id="personalSyncMeta" class="muted">Chargement des données personnelles synchronisées…</p>
             </div>
@@ -148,6 +148,43 @@
           </div>
         </section>
 
+        <section id="syncCenterSection" class="panel sync-center-panel">
+          <div class="panel-title-row">
+            <div>
+              <p class="eyebrow">WEB014 · SYNCGUARD001</p>
+              <h2>Centre de synchronisation</h2>
+              <p id="syncCenterMeta" class="muted">Lecture des derniers événements Firestore…</p>
+            </div>
+            <div class="sync-center-actions">
+              <select id="syncHistoryTableFilter" aria-label="Filtrer l'historique par type">
+                <option value="">Toutes les données</option>
+                <option value="activities">Activités</option>
+                <option value="equipment">Matériel</option>
+                <option value="personal_landmarks">Repères</option>
+                <option value="activity_landmarks">Affectations repères</option>
+                <option value="records">Records</option>
+                <option value="sport_goals">Objectifs</option>
+                <option value="journal_entries">Poids</option>
+              </select>
+              <select id="syncHistorySourceFilter" aria-label="Filtrer l'historique par source">
+                <option value="">Toutes les sources</option>
+                <option value="WEB">Web</option>
+                <option value="ANDROID">Android</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="sync-metric-grid">
+            <article class="sync-metric"><span>Événements suivis</span><strong id="syncEventCount">—</strong></article>
+            <article class="sync-metric"><span>Conflits potentiels</span><strong id="syncConflictCount">—</strong></article>
+            <article class="sync-metric"><span>Dernière source</span><strong id="syncLastSource">—</strong></article>
+            <article class="sync-metric"><span>Fenêtre conflit</span><strong>30 s</strong></article>
+          </div>
+
+          <div id="syncConflictBanner" class="sync-conflict-banner hidden"></div>
+          <div id="syncHistoryList" class="sync-history-list"></div>
+        </section>
+
         <div class="metric-grid">
           <article class="metric"><span>Activités</span><strong id="activityCount">—</strong></article>
           <article class="metric"><span>Matériels</span><strong id="equipmentCount">—</strong></article>
@@ -160,7 +197,7 @@
         <section id="equipmentManagerSection" class="panel equipment-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB013 · MATÉRIEL001</p>
+              <p class="eyebrow">WEB014 · MATÉRIEL001</p>
               <h2>Matériel synchronisé</h2>
               <p id="equipmentManagerMeta" class="muted">Chargement du matériel…</p>
             </div>
@@ -286,7 +323,7 @@
         <section id="landmarkManagerSection" class="panel landmark-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB013 · REPÈRE013</p>
+              <p class="eyebrow">WEB014 · REPÈRE013</p>
               <h2>Repères personnels synchronisés</h2>
               <p id="landmarkManagerMeta" class="muted">Chargement des repères…</p>
             </div>
@@ -356,7 +393,7 @@
         <section class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB013 · MÉTIER001</p>
+              <p class="eyebrow">WEB014 · MÉTIER001</p>
               <h2>Répertoire avancé</h2>
               <p id="loadedLabel" class="muted">Chargement…</p>
             </div>
@@ -435,10 +472,10 @@
         <section id="recordsManagerSection" class="panel compact records-manager-panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB013 · RECORDS001</p>
+              <p class="eyebrow">WEB014 · RECORDS001</p>
               <h2>Records SPORT</h2>
               <p class="muted">
-                Distance, durée et D+ sont des données dérivées des activités. WEB013 les recalcule
+                Distance, durée et D+ sont des données dérivées des activités. WEB014 les recalcule
                 depuis Firestore plutôt que de permettre une valeur manuelle incohérente.
               </p>
             </div>
@@ -483,7 +520,7 @@
         <section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
-              <p class="eyebrow">WEB013 · CARTO+</p>
+              <p class="eyebrow">WEB014 · CARTO+</p>
               <h2>Carte et profil altimétrique</h2>
             </div>
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
@@ -528,7 +565,7 @@
         <section class="detail-section panel">
           <div class="section-heading interop-heading">
             <div>
-              <p class="eyebrow">WEB013 · MÉTIER001</p>
+              <p class="eyebrow">WEB014 · MÉTIER001</p>
               <h2>Matériel, repères et notes</h2>
             </div>
             <div id="interopStatus" class="pill ok">Synchronisation active</div>
@@ -653,7 +690,7 @@
   </main>
 
   <footer>
-    SPORT Web · WEB013 · interopérabilité contrôlée Firestore
+    SPORT Web · WEB014 · interopérabilité contrôlée Firestore
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
