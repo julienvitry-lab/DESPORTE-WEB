@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB037 · WEBSPLIT001 · Comfortaa">
-  <title>SPORT Web · WEB037</title>
+  <meta name="description" content="SPORT Web · WEB038 · WEBFILES001 · Comfortaa">
+  <title>SPORT Web · WEB038</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB037 · WEBSPLIT001 · Comfortaa · Firestore</div>
+      <div class="version">WEB038 · WEBFILES001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <label class="appearance-picker" title="Changer l’apparence">
@@ -204,6 +204,63 @@
               <div class="autosave-row"><span class="autosave-dot"></span><span id="weightSaveStatus" class="muted">Synchronisation automatique</span></div>
               <div id="weightHistory" class="weight-history"></div>
             </div>
+          </div>
+        </section>
+
+        <section id="webFilesSection" class="panel web-files-panel hidden">
+          <div class="panel-title-row">
+            <div>
+              <p class="eyebrow">WEB038 · WEBFILES001</p>
+              <h2>Coffre de fichiers</h2>
+              <p class="muted">Originaux FIT conservés localement, liens avec les activités et état des fichiers dérivés.</p>
+            </div>
+            <div class="web-files-top-actions">
+              <span id="webFilesSummaryBadge" class="pill neutral">0 fichier</span>
+              <button id="webFilesRefreshButton" class="secondary compact" type="button">Actualiser</button>
+            </div>
+          </div>
+
+          <div class="web-files-overview">
+            <article>
+              <span>Originaux archivés</span>
+              <strong id="webFilesOriginalCount">0</strong>
+            </article>
+            <article>
+              <span>Taille locale</span>
+              <strong id="webFilesLocalSize">0 o</strong>
+            </article>
+            <article>
+              <span>Activités liées</span>
+              <strong id="webFilesLinkedCount">0</strong>
+            </article>
+            <article>
+              <span>Dérivés sans FIT</span>
+              <strong id="webFilesDerivedCount">0</strong>
+            </article>
+          </div>
+
+          <div class="web-files-controls">
+            <label>
+              <span>Afficher</span>
+              <select id="webFilesFilter">
+                <option value="all">Tous</option>
+                <option value="originals">Originaux FIT</option>
+                <option value="derived">Dérivés / découpes</option>
+                <option value="unlinked">Non liés</option>
+              </select>
+            </label>
+            <label class="web-files-search">
+              <span>Rechercher</span>
+              <input id="webFilesSearch" type="search" placeholder="Nom, date, SHA…">
+            </label>
+          </div>
+
+          <div id="webFilesStatus" class="muted">Chargement du coffre…</div>
+          <div id="webFilesList" class="web-files-list"></div>
+
+          <div class="web-files-cloud-note">
+            <span class="pill neutral">Cloud</span>
+            <span>WEBFILES001 gère le coffre local. L’archivage Google Drive sera ajouté séparément pour ne pas mélanger stockage local et authentification cloud.</span>
           </div>
         </section>
 

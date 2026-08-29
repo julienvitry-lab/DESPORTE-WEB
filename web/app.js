@@ -56,7 +56,7 @@ const ui = Object.fromEntries(
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
     "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
     "personalSyncSection", "personalSyncMeta", "personalSyncStatus", "goalSportSelect",
-    "webManualSection", "webManualForm", "webManualSport", "webManualDate", "webManualTime", "webManualDistanceKm", "webManualDuration", "webManualAscent", "webManualDescent", "webManualAvgHr", "webManualMaxHr", "webManualCalories", "webManualEquipment", "webManualTitle", "webManualLandmarkButtons", "webManualNotes", "webManualPreview", "webManualResetButton", "webManualCommitButton", "webImportSection", "webImportDropZone", "webImportFileInput", "webImportArchiveOriginals", "webImportArchiveBadge", "webImportArchiveMeta", "webImportStatus", "webImportPreviewList", "webImportClearButton", "webImportCommitButton", "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
+    "webFilesSection", "webFilesSummaryBadge", "webFilesOriginalCount", "webFilesLocalSize", "webFilesLinkedCount", "webFilesDerivedCount", "webFilesRefreshButton", "webFilesFilter", "webFilesSearch", "webFilesStatus", "webFilesList", "webManualSection", "webManualForm", "webManualSport", "webManualDate", "webManualTime", "webManualDistanceKm", "webManualDuration", "webManualAscent", "webManualDescent", "webManualAvgHr", "webManualMaxHr", "webManualCalories", "webManualEquipment", "webManualTitle", "webManualLandmarkButtons", "webManualNotes", "webManualPreview", "webManualResetButton", "webManualCommitButton", "webImportSection", "webImportDropZone", "webImportFileInput", "webImportArchiveOriginals", "webImportArchiveBadge", "webImportArchiveMeta", "webImportStatus", "webImportPreviewList", "webImportClearButton", "webImportCommitButton", "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
     "syncEventCount", "syncConflictCount", "syncLastSource", "syncConflictBanner", "syncHistoryList",
     "syncHealthSection", "syncHealthMeta", "syncHealthClientCount", "syncHealthHealthyCount",
     "syncHealthPendingCount", "syncHealthErrorCount", "syncHealthNetwork", "syncHealthList",
@@ -214,6 +214,9 @@ let webManualSaving = false;
 let splitActivityRoute = null;
 let splitActivitySource = null;
 let splitActivitySaving = false;
+let webFileVaultEntries = [];
+let webFileVaultLoading = false;
+
 
 
 
@@ -252,7 +255,7 @@ function uxPageConfig() {
     analysis: { title: "Analyse", eyebrow: "PROGRESSION & REPÈRES", subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]] },
     maps: { title: "Cartes", eyebrow: "EXPLORATION", subs: [["routes","Carte globale"],["density","Densité"]] },
     equipment: { title: "Matériel", eyebrow: "ÉQUIPEMENT", subs: [["used","Utilisé"],["all","Tout le matériel"]] },
-    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["manual","Ajout manuel"],["import","Import"],["sync","Synchronisation"],["health","Santé sync"],["data","Données"],["landmarks-advanced","Repères avancés"]] }
+    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["files","Fichiers"],["manual","Ajout manuel"],["import","Import"],["sync","Synchronisation"],["health","Santé sync"],["data","Données"],["landmarks-advanced","Repères avancés"]] }
   };
 }
 
@@ -280,7 +283,7 @@ function managedUxSections() {
     ui.webDashboardSection, ui.activityDirectorySection, ui.trashSection,
     ui.personalSyncSection, ui.landmarkManagerSection, ui.recordsManagerSection,
     ui.globalMapSection, ui.equipmentManagerSection,
-    ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
+    ui.webFilesSection, ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
   ].filter(Boolean);
 }
 
@@ -351,7 +354,10 @@ function navigateUx(page, subpage = null, options = {}) {
       renderEquipmentManager();
     }
   } else if (page === "more") {
-    if (sub === "manual") setUxSectionVisibility([ui.webManualSection]);
+    if (sub === "files") {
+      setUxSectionVisibility([ui.webFilesSection]);
+      void renderWebFileVault();
+    } else if (sub === "manual") setUxSectionVisibility([ui.webManualSection]);
     else if (sub === "import") setUxSectionVisibility([ui.webImportSection]);
     else if (sub === "health") setUxSectionVisibility([ui.syncHealthSection]);
     else if (sub === "data") setUxSectionVisibility([ui.bootstrapMetrics]);
@@ -407,6 +413,10 @@ function wireEvents() {
       ui.webImportFileInput?.click();
     }
   });
+  ui.webFilesRefreshButton?.addEventListener("click", () => { void renderWebFileVault(true); });
+  ui.webFilesFilter?.addEventListener("change", renderWebFileVaultList);
+  ui.webFilesSearch?.addEventListener("input", renderWebFileVaultList);
+
   ui.splitActivityButton?.addEventListener("click", () => { void openSplitActivityPanel(); });
   ui.splitActivityCloseButton?.addEventListener("click", closeSplitActivityPanel);
   ui.splitActivityRange?.addEventListener("input", renderSplitActivityPreview);
@@ -2647,7 +2657,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB037";
+  document.title = "SPORT Web · WEB038";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -5707,7 +5717,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB037",
+            webVersion: "WEB038",
             row: wanted
           }
         );
@@ -5730,7 +5740,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB037"
+            webVersion: "WEB038"
           }
         );
         countDelta -= 1;
@@ -5740,7 +5750,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB037"
+      webVersion: "WEB038"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5802,6 +5812,312 @@ function markerSummary(activity) {
 
 
 
+
+
+// -----------------------------------------------------------------------------
+// WEB038 · WEBFILES001 — coffre de fichiers local + relations activité/fichier
+// -----------------------------------------------------------------------------
+async function listWebImportArchiveEntries() {
+  const db=await openWebImportArchive();
+  try {
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(WEB_IMPORT_ARCHIVE_STORE,"readonly");
+      const request=tx.objectStore(WEB_IMPORT_ARCHIVE_STORE).getAll();
+      request.onsuccess=()=>resolve(Array.isArray(request.result)?request.result:[]);
+      request.onerror=()=>reject(request.error || new Error("Lecture du coffre impossible."));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function readWebImportArchiveEntry(sha256) {
+  const db=await openWebImportArchive();
+  try {
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(WEB_IMPORT_ARCHIVE_STORE,"readonly");
+      const request=tx.objectStore(WEB_IMPORT_ARCHIVE_STORE).get(String(sha256));
+      request.onsuccess=()=>resolve(request.result || null);
+      request.onerror=()=>reject(request.error || new Error("Lecture du fichier impossible."));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function deleteWebImportArchiveEntry(sha256) {
+  const db=await openWebImportArchive();
+  try {
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(WEB_IMPORT_ARCHIVE_STORE,"readwrite");
+      tx.objectStore(WEB_IMPORT_ARCHIVE_STORE).delete(String(sha256));
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error || new Error("Suppression locale impossible."));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+function webFileActivityLinksForSha(sha256) {
+  const key=String(sha256||"");
+  return activities.filter((activity)=>String(activity.source_sha256||"")===key);
+}
+
+function sourceActivityForSplit(child) {
+  const parent=String(child?.split_parent_activity_id||"");
+  if (!parent) return null;
+  return activities.find((activity)=>String(activityKey(activity))===parent) || null;
+}
+
+function webDerivedFileEntries() {
+  return activities
+    .filter((activity)=>String(activity.import_profile||"")==="WEBSPLIT001" || String(activity.import_source||"")==="WEB_SPLIT")
+    .map((activity)=>{
+      const parent=sourceActivityForSplit(activity);
+      return {
+        kind:"derived",
+        key:`derived:${activityKey(activity)}`,
+        activity,
+        parent,
+        file_name:`${activity.custom_title || sportName(activity.sport)}.fit`,
+        file_size_bytes:null,
+        sha256:null,
+        imported_at_ms:numberOrZero(activity.split_created_at_ms),
+        blob:null,
+        linkedActivities:[activity],
+        originalAvailable:Boolean(parent?.source_sha256),
+        originalSha:parent?.source_sha256 || null
+      };
+    });
+}
+
+async function buildWebFileVaultEntries() {
+  const originals=await listWebImportArchiveEntries();
+  const mappedOriginals=originals.map((entry)=>({
+    kind:"original",
+    key:`original:${entry.sha256}`,
+    ...entry,
+    linkedActivities:webFileActivityLinksForSha(entry.sha256)
+  }));
+  return [...mappedOriginals,...webDerivedFileEntries()];
+}
+
+function webFileEntryDate(entry) {
+  const linked=entry.linkedActivities?.[0];
+  return numberOrZero(linked?.start_time_ms) || numberOrZero(entry.imported_at_ms);
+}
+
+function webFileEntrySearchText(entry) {
+  const linked=(entry.linkedActivities||[])
+    .map((activity)=>`${activity.custom_title||""} ${sportName(activity.sport)} ${formatDateLong(activity.start_time_ms)}`)
+    .join(" ");
+  return `${entry.file_name||""} ${entry.sha256||""} ${linked}`.toLowerCase();
+}
+
+function webFileEntryMatchesFilter(entry) {
+  const filter=ui.webFilesFilter?.value || "all";
+  if (filter==="originals" && entry.kind!=="original") return false;
+  if (filter==="derived" && entry.kind!=="derived") return false;
+  if (filter==="unlinked" && (entry.linkedActivities?.length || 0)>0) return false;
+  const search=String(ui.webFilesSearch?.value||"").trim().toLowerCase();
+  return !search || webFileEntrySearchText(entry).includes(search);
+}
+
+function updateWebFileVaultSummary() {
+  if (!ui.webFilesSummaryBadge) return;
+  const originals=webFileVaultEntries.filter((entry)=>entry.kind==="original");
+  const derived=webFileVaultEntries.filter((entry)=>entry.kind==="derived");
+  const bytes=originals.reduce((sum,entry)=>sum+numberOrZero(entry.file_size_bytes),0);
+  const linked=new Set(
+    originals.flatMap((entry)=>(entry.linkedActivities||[]).map((activity)=>activityKey(activity)))
+  );
+
+  ui.webFilesSummaryBadge.textContent=`${formatNumber(originals.length)} FIT`;
+  ui.webFilesSummaryBadge.className=originals.length?"pill ok":"pill neutral";
+  ui.webFilesOriginalCount.textContent=formatNumber(originals.length);
+  ui.webFilesLocalSize.textContent=formatBytes(bytes);
+  ui.webFilesLinkedCount.textContent=formatNumber(linked.size);
+  ui.webFilesDerivedCount.textContent=formatNumber(derived.length);
+}
+
+function triggerBlobDownload(blob,fileName) {
+  if (!blob) return;
+  const url=URL.createObjectURL(blob);
+  const anchor=document.createElement("a");
+  anchor.href=url;
+  anchor.download=fileName || "activity.fit";
+  anchor.style.display="none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+
+async function verifyWebFileIntegrity(entry,button) {
+  if (entry.kind!=="original" || !entry.sha256) return;
+  button.disabled=true;
+  const old=button.textContent;
+  button.textContent="Vérification…";
+  try {
+    const stored=await readWebImportArchiveEntry(entry.sha256);
+    if (!stored?.blob) throw new Error("Binaire local introuvable.");
+    const buffer=await stored.blob.arrayBuffer();
+    const digest=await sha256Hex(buffer);
+    if (digest!==entry.sha256) {
+      throw new Error(`SHA différent : ${digest.slice(0,12)}…`);
+    }
+    button.textContent="✓ Intègre";
+    button.classList.add("verified");
+    setMessage(`WEBFILES001 · intégrité confirmée pour ${entry.file_name}.`,"success");
+  } catch (error) {
+    button.textContent="⚠ Erreur";
+    setMessage(`Intégrité non confirmée : ${error?.message||error}`,"error");
+  } finally {
+    window.setTimeout(()=>{
+      button.disabled=false;
+      if (!button.classList.contains("verified")) button.textContent=old;
+    },1200);
+  }
+}
+
+async function removeLocalWebFile(entry) {
+  if (entry.kind!=="original") return;
+  const linked=entry.linkedActivities?.length || 0;
+  const ok=window.confirm(
+    `Supprimer uniquement la copie locale « ${entry.file_name} » ?\n\n`+
+    `${linked} activité(s) Firestore restent intactes. Cette action ne supprime aucune activité.`
+  );
+  if (!ok) return;
+
+  try {
+    await deleteWebImportArchiveEntry(entry.sha256);
+    webFileVaultEntries=[];
+    await renderWebFileVault(true);
+    setMessage("WEBFILES001 · copie locale supprimée. Les activités sont conservées.","success");
+  } catch (error) {
+    handleError(error,"Suppression du fichier local impossible");
+  }
+}
+
+function openLinkedWebFileActivity(entry) {
+  const activity=entry.linkedActivities?.[0];
+  if (activity) showActivity(activity);
+}
+
+function webFileOriginalCard(entry) {
+  const linked=entry.linkedActivities || [];
+  const date=webFileEntryDate(entry);
+  const names=linked.slice(0,3).map((activity)=>
+    `${formatDate(activity.start_time_ms)} · ${activity.custom_title || sportName(activity.sport)}`
+  ).join("<br>");
+
+  const card=document.createElement("article");
+  card.className="web-file-card original";
+  card.innerHTML=`
+    <div class="web-file-card-head">
+      <div>
+        <span class="pill ok">FIT original</span>
+        <strong>${escapeHtml(entry.file_name || "activity.fit")}</strong>
+        <small>${escapeHtml(formatBytes(entry.file_size_bytes))} · ${date?escapeHtml(formatDateLong(date)):"date inconnue"}</small>
+      </div>
+      <span class="web-file-sha" title="${escapeHtml(entry.sha256)}">${escapeHtml(String(entry.sha256||"").slice(0,16))}…</span>
+    </div>
+    <div class="web-file-link-summary">
+      <span><b>${linked.length}</b> activité(s) liée(s)</span>
+      ${names?`<span>${names}</span>`:'<span class="warning-text">Aucune activité liée à ce SHA</span>'}
+    </div>
+    <div class="web-file-actions">
+      <button class="secondary web-file-download" type="button">Télécharger</button>
+      <button class="secondary web-file-verify" type="button">Vérifier SHA</button>
+      ${linked.length?'<button class="secondary web-file-open" type="button">Ouvrir activité</button>':""}
+      <button class="secondary danger-soft web-file-delete" type="button">Supprimer copie locale</button>
+    </div>`;
+
+  card.querySelector(".web-file-download")?.addEventListener("click",async()=>{
+    const stored=await readWebImportArchiveEntry(entry.sha256);
+    if (stored?.blob) triggerBlobDownload(stored.blob,entry.file_name);
+  });
+  card.querySelector(".web-file-verify")?.addEventListener("click",(event)=>{
+    void verifyWebFileIntegrity(entry,event.currentTarget);
+  });
+  card.querySelector(".web-file-open")?.addEventListener("click",()=>openLinkedWebFileActivity(entry));
+  card.querySelector(".web-file-delete")?.addEventListener("click",()=>{ void removeLocalWebFile(entry); });
+  return card;
+}
+
+function webFileDerivedCard(entry) {
+  const activity=entry.activity;
+  const parent=entry.parent;
+  const card=document.createElement("article");
+  card.className="web-file-card derived";
+  card.innerHTML=`
+    <div class="web-file-card-head">
+      <div>
+        <span class="pill pending">Dérivé</span>
+        <strong>${escapeHtml(entry.file_name)}</strong>
+        <small>${escapeHtml(formatDateLong(activity.start_time_ms))} · ${escapeHtml(formatDistance(activity.distance_m))}</small>
+      </div>
+      <span class="pill neutral">FIT non généré</span>
+    </div>
+    <div class="web-file-link-summary">
+      <span>Activité dérivée #${escapeHtml(String(activityKey(activity)))}</span>
+      <span>${parent?`Source #${escapeHtml(String(activityKey(parent)))}${parent.source_sha256?" · original localisable par SHA":""}`:"Source non chargée"}</span>
+    </div>
+    <div class="web-file-actions">
+      <button class="secondary web-file-open" type="button">Ouvrir activité</button>
+      ${parent?'<button class="secondary web-file-open-source" type="button">Ouvrir source</button>':""}
+    </div>`;
+  card.querySelector(".web-file-open")?.addEventListener("click",()=>showActivity(activity));
+  card.querySelector(".web-file-open-source")?.addEventListener("click",()=>{ if (parent) showActivity(parent); });
+  return card;
+}
+
+function renderWebFileVaultList() {
+  if (!ui.webFilesList) return;
+  ui.webFilesList.innerHTML="";
+  const rows=webFileVaultEntries
+    .filter(webFileEntryMatchesFilter)
+    .sort((a,b)=>webFileEntryDate(b)-webFileEntryDate(a));
+
+  if (!rows.length) {
+    ui.webFilesList.innerHTML='<div class="web-files-empty">Aucun fichier correspondant.</div>';
+    return;
+  }
+
+  rows.forEach((entry)=>{
+    ui.webFilesList.appendChild(entry.kind==="original"
+      ? webFileOriginalCard(entry)
+      : webFileDerivedCard(entry));
+  });
+}
+
+async function renderWebFileVault(force=false) {
+  if (!ui.webFilesSection || webFileVaultLoading) return;
+  if (webFileVaultEntries.length && !force) {
+    updateWebFileVaultSummary();
+    renderWebFileVaultList();
+    return;
+  }
+
+  webFileVaultLoading=true;
+  ui.webFilesStatus.textContent="Lecture du coffre local…";
+  try {
+    webFileVaultEntries=await buildWebFileVaultEntries();
+    updateWebFileVaultSummary();
+    renderWebFileVaultList();
+
+    const originals=webFileVaultEntries.filter((entry)=>entry.kind==="original").length;
+    const derived=webFileVaultEntries.filter((entry)=>entry.kind==="derived").length;
+    ui.webFilesStatus.textContent=
+      `${originals} original(aux) FIT dans ce navigateur · ${derived} activité(s) dérivée(s) sans nouveau FIT binaire.`;
+  } catch (error) {
+    console.error(error);
+    ui.webFilesStatus.textContent=`Coffre indisponible : ${error?.message||error}`;
+  } finally {
+    webFileVaultLoading=false;
+  }
+}
 
 // -----------------------------------------------------------------------------
 // WEB037 · WEBSPLIT001 — découpe non destructive d'une activité
@@ -6107,6 +6423,7 @@ async function commitSplitActivity() {
     ui.splitActivityStatus.textContent=
       `Découpe terminée · ${formatDistance(childA.distance_m)} + ${formatDistance(childB.distance_m)} · source conservée.`;
     ui.splitActivityStatus.className="split-activity-status success";
+    webFileVaultEntries = [];
     setMessage("WEBSPLIT001 · 2 activités dérivées créées. L’activité source reste intacte.","success");
   } catch (error) {
     console.error(error);
@@ -6997,6 +7314,7 @@ async function commitSelectedWebImports() {
       `${success} activité(s) importée(s)` + (failed?` · ${failed} échec(s)`:"") +
       (ui.webImportArchiveOriginals?.checked?" · originaux conservés dans le coffre local.":".");
     ui.webImportStatus.className=`web-import-status ${failed?"warning":"success"}`;
+    webFileVaultEntries = [];
     setMessage(`WEBIMPORT001 · ${success} activité(s) créée(s) depuis le Web.`,failed?"info":"success");
   } finally {
     webImportRunning=false;
@@ -7144,7 +7462,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB037"
+    webVersion: "WEB038"
   };
   if (row != null) event.row = row;
 
@@ -7153,7 +7471,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB037"
+    webVersion: "WEB038"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -7611,7 +7929,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB037",
+      webVersion: "WEB038",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -7677,7 +7995,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB037",
+    webVersion: "WEB038",
     androidVersion: 0,
     __synthetic: true
   };
@@ -9134,7 +9452,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB037",
+      webVersion: "WEB038",
       row: next
     }
   );
@@ -9170,7 +9488,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB037",
+        webVersion: "WEB038",
         row: patch
       }
     );
@@ -9182,7 +9500,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB037"
+      webVersion: "WEB038"
     },
     { merge: true }
   );
