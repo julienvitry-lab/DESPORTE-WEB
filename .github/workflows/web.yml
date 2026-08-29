@@ -1,12 +1,15 @@
-name: Publier SPORT Web · WEB039
+name: Publier SPORT Web · WEB040
 
 on:
   push:
     branches: [main]
     paths:
       - "web/**"
+      - "functions/**"
+      - "firebase.functions.json"
+      - "scripts/deploy_strava_backend.sh"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB039.md"
+      - "docs/releases/WEB040.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +32,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB039
+      - name: Valider WEB040
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +50,7 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB039"' web/app.js
+          grep -Fq 'webVersion: "WEB040"' web/app.js
 
           # WEB022 · WEBCARTO007.
           grep -Fq "WEB020 · WEBCARTO005" web/index.html
@@ -580,7 +583,168 @@ jobs:
 
 
 
-          echo "WEB039 : WEBDRIVE001 + WEBFILES001 + WEBSPLIT001 + WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          grep -Fq 'WEB040 · WEBSTRAVA001' web/index.html
+
+
+
+
+
+
+
+
+
+          grep -Fq 'webStravaSection' web/index.html
+
+
+
+
+
+
+
+
+
+          grep -Fq 'webStravaConnectButton' web/index.html
+
+
+
+
+
+
+
+
+
+          grep -Fq 'function connectWebStrava' web/app.js
+
+
+
+
+
+
+
+
+
+          grep -Fq 'function loadWebStravaActivities' web/app.js
+
+
+
+
+
+
+
+
+
+          grep -Fq 'function normalizeStravaDetail' web/app.js
+
+
+
+
+
+
+
+
+
+          grep -Fq 'function importSelectedWebStravaActivities' web/app.js
+
+
+
+
+
+
+
+
+
+          grep -Fq 'strava_activity_id' web/app.js
+
+
+
+
+
+
+
+
+
+          grep -Fq '.web-strava-panel' web/styles.css
+
+
+
+
+
+
+
+
+
+          test -f functions/index.js
+
+
+
+
+
+
+
+
+
+          test -f functions/package.json
+          test -f functions/.gitignore
+
+
+
+
+
+
+
+
+
+          grep -Fq 'STRAVA_CLIENT_SECRET' functions/index.js
+
+
+
+
+
+
+
+
+
+          grep -Fq 'activity:read_all' functions/index.js
+
+
+
+
+
+
+
+
+
+          grep -Fq '/athlete/activities' functions/index.js
+
+
+
+
+
+
+
+
+
+          grep -Fq '/streams?keys=time,distance,latlng,altitude,heartrate,velocity_smooth,cadence' functions/index.js
+
+
+
+
+
+
+
+
+
+          ! grep -Fqi 'client_secret:' web/app.js
+
+
+
+
+
+
+
+
+
+          echo "WEB040 : WEBSTRAVA001 + WEBDRIVE001 + WEBFILES001 + WEBSPLIT001 + WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -590,6 +754,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB039
+      - name: Publier SPORT Web · WEB040
         id: deployment
         uses: actions/deploy-pages@v4

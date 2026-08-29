@@ -2591,3 +2591,35 @@ footer {
   .web-drive-head{flex-direction:column}
   .web-drive-actions{justify-content:flex-start}
 }
+
+
+/* WEB040 · WEBSTRAVA001 */
+.web-strava-panel{display:grid;gap:14px}
+.web-strava-panel.hidden{display:none!important}
+.web-strava-head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.web-strava-controls{display:grid;grid-template-columns:minmax(180px,.35fr) auto auto;gap:9px;align-items:end}
+.web-strava-controls label{display:grid;gap:5px}
+.web-strava-controls label>span{font-size:.66rem;color:var(--muted)}
+.web-strava-status{padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:10px}
+.web-strava-athlete{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;background:rgba(252,76,2,.055);border:1px solid rgba(252,76,2,.18)}
+.web-strava-athlete.hidden{display:none!important}
+.web-strava-athlete strong{color:#fc4c02}
+.web-strava-athlete span{font-size:.68rem;color:var(--muted)}
+.web-strava-preview-list{display:grid;gap:9px}
+.web-strava-preview{padding:12px;border:1px solid rgba(255,255,255,.085);border-radius:12px;background:rgba(255,255,255,.018);display:grid;gap:10px}
+.web-strava-preview.duplicate{border-color:rgba(255,211,106,.3)}
+.web-strava-preview.error{border-color:rgba(255,100,100,.3)}
+.web-strava-preview-check{display:flex;gap:9px;align-items:center}
+.web-strava-preview-check input{width:18px;height:18px}
+.web-strava-preview-check>span{display:grid;gap:3px}
+.web-strava-preview-check small{font-size:.64rem;color:var(--muted)}
+.web-strava-preview-metrics{display:grid;grid-template-columns:repeat(6,minmax(100px,1fr));gap:7px}
+.web-strava-preview-metrics>span{display:grid;gap:3px;padding:8px 9px;border:1px solid rgba(255,255,255,.06);border-radius:9px}
+.web-strava-preview-metrics small{font-size:.58rem;color:var(--muted)}
+.web-strava-preview-metrics strong{font-size:.72rem}
+.web-strava-technical label{display:grid;gap:5px}
+.web-strava-technical label>span{font-size:.66rem;color:var(--muted)}
+.web-strava-technical input{width:100%;font:600 .67rem ui-monospace,SFMono-Regular,Menlo,monospace}
+.web-strava-tech-actions{display:flex;gap:8px;margin-top:9px}
+@media(max-width:900px){.web-strava-preview-metrics{grid-template-columns:repeat(3,minmax(100px,1fr))}.web-strava-controls{grid-template-columns:1fr}}
+@media(max-width:600px){.web-strava-preview-metrics{grid-template-columns:repeat(2,minmax(100px,1fr))}}

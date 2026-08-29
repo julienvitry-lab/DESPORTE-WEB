@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB039 · WEBDRIVE001 · Comfortaa">
-  <title>SPORT Web · WEB039</title>
+  <meta name="description" content="SPORT Web · WEB040 · WEBSTRAVA001 · Comfortaa">
+  <title>SPORT Web · WEB040</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB039 · WEBDRIVE001 · Comfortaa · Firestore</div>
+      <div class="version">WEB040 · WEBSTRAVA001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <label class="appearance-picker" title="Changer l’apparence">
@@ -205,6 +205,56 @@
               <div id="weightHistory" class="weight-history"></div>
             </div>
           </div>
+        </section>
+
+        <section id="webStravaSection" class="panel web-strava-panel hidden">
+          <div class="panel-title-row">
+            <div>
+              <p class="eyebrow">WEB040 · WEBSTRAVA001</p>
+              <h2>Strava → SPORT Web</h2>
+              <p class="muted">Connexion OAuth sécurisée, aperçu des activités récentes, détection des doublons et import avec streams GPS/FC.</p>
+            </div>
+            <div class="web-strava-head-actions">
+              <span id="webStravaBadge" class="pill neutral">Non connecté</span>
+              <button id="webStravaConnectButton" class="secondary" type="button">Connecter Strava</button>
+            </div>
+          </div>
+
+          <div class="web-strava-controls">
+            <label>
+              <span>Période</span>
+              <select id="webStravaDays">
+                <option value="7">7 derniers jours</option>
+                <option value="30" selected>30 derniers jours</option>
+                <option value="90">90 derniers jours</option>
+                <option value="365">1 an</option>
+              </select>
+            </label>
+            <button id="webStravaRefreshButton" class="secondary" type="button" disabled>Charger les activités</button>
+            <button id="webStravaImportButton" class="primary" type="button" disabled>Importer la sélection</button>
+          </div>
+
+          <div id="webStravaStatus" class="web-strava-status muted">
+            Le backend sécurisé Strava doit être déployé avant la première connexion.
+          </div>
+
+          <div id="webStravaAthlete" class="web-strava-athlete hidden"></div>
+          <div id="webStravaPreviewList" class="web-strava-preview-list"></div>
+
+          <details class="compact-disclosure web-strava-technical">
+            <summary>Configuration technique</summary>
+            <div class="compact-disclosure-body">
+              <p class="muted">Le client secret Strava n'est jamais présent dans GitHub Pages. SPORT Web appelle une Firebase Function authentifiée.</p>
+              <label>
+                <span>Backend</span>
+                <input id="webStravaBackendUrl" type="url" spellcheck="false">
+              </label>
+              <div class="web-strava-tech-actions">
+                <button id="webStravaTestBackendButton" class="secondary compact" type="button">Tester le backend</button>
+                <button id="webStravaDisconnectButton" class="secondary compact" type="button" disabled>Déconnecter Strava</button>
+              </div>
+            </div>
+          </details>
         </section>
 
         <section id="webFilesSection" class="panel web-files-panel hidden">

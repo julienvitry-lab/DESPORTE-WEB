@@ -56,7 +56,7 @@ const ui = Object.fromEntries(
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
     "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
     "personalSyncSection", "personalSyncMeta", "personalSyncStatus", "goalSportSelect",
-    "webFilesSection", "webFilesSummaryBadge", "webFilesOriginalCount", "webFilesLocalSize", "webFilesLinkedCount", "webFilesDerivedCount", "webFilesRefreshButton", "webFilesFilter", "webFilesSearch", "webFilesStatus", "webFilesList", "webDriveStatus", "webDriveBadge", "webDriveConnectButton", "webDriveUploadMissingButton", "webDriveFolderMeta", "webManualSection", "webManualForm", "webManualSport", "webManualDate", "webManualTime", "webManualDistanceKm", "webManualDuration", "webManualAscent", "webManualDescent", "webManualAvgHr", "webManualMaxHr", "webManualCalories", "webManualEquipment", "webManualTitle", "webManualLandmarkButtons", "webManualNotes", "webManualPreview", "webManualResetButton", "webManualCommitButton", "webImportSection", "webImportDropZone", "webImportFileInput", "webImportArchiveOriginals", "webImportArchiveBadge", "webImportArchiveMeta", "webImportStatus", "webImportPreviewList", "webImportClearButton", "webImportCommitButton", "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
+    "webStravaSection", "webStravaBadge", "webStravaConnectButton", "webStravaDays", "webStravaRefreshButton", "webStravaImportButton", "webStravaStatus", "webStravaAthlete", "webStravaPreviewList", "webStravaBackendUrl", "webStravaTestBackendButton", "webStravaDisconnectButton", "webFilesSection", "webFilesSummaryBadge", "webFilesOriginalCount", "webFilesLocalSize", "webFilesLinkedCount", "webFilesDerivedCount", "webFilesRefreshButton", "webFilesFilter", "webFilesSearch", "webFilesStatus", "webFilesList", "webDriveStatus", "webDriveBadge", "webDriveConnectButton", "webDriveUploadMissingButton", "webDriveFolderMeta", "webManualSection", "webManualForm", "webManualSport", "webManualDate", "webManualTime", "webManualDistanceKm", "webManualDuration", "webManualAscent", "webManualDescent", "webManualAvgHr", "webManualMaxHr", "webManualCalories", "webManualEquipment", "webManualTitle", "webManualLandmarkButtons", "webManualNotes", "webManualPreview", "webManualResetButton", "webManualCommitButton", "webImportSection", "webImportDropZone", "webImportFileInput", "webImportArchiveOriginals", "webImportArchiveBadge", "webImportArchiveMeta", "webImportStatus", "webImportPreviewList", "webImportClearButton", "webImportCommitButton", "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
     "syncEventCount", "syncConflictCount", "syncLastSource", "syncConflictBanner", "syncHistoryList",
     "syncHealthSection", "syncHealthMeta", "syncHealthClientCount", "syncHealthHealthyCount",
     "syncHealthPendingCount", "syncHealthErrorCount", "syncHealthNetwork", "syncHealthList",
@@ -221,6 +221,12 @@ let webDriveFolderId = null;
 let webDriveBusy = false;
 const WEB_DRIVE_FOLDER_NAME = "SPORT";
 const WEB_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const DEFAULT_STRAVA_BRIDGE_URL = "https://europe-west1-sport-505813.cloudfunctions.net/stravaBridge";
+let webStravaCandidates = [];
+let webStravaConnected = false;
+let webStravaBusy = false;
+let webStravaAthleteProfile = null;
+
 
 
 
@@ -261,7 +267,7 @@ function uxPageConfig() {
     analysis: { title: "Analyse", eyebrow: "PROGRESSION & REPÈRES", subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]] },
     maps: { title: "Cartes", eyebrow: "EXPLORATION", subs: [["routes","Carte globale"],["density","Densité"]] },
     equipment: { title: "Matériel", eyebrow: "ÉQUIPEMENT", subs: [["used","Utilisé"],["all","Tout le matériel"]] },
-    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["files","Fichiers"],["manual","Ajout manuel"],["import","Import"],["sync","Synchronisation"],["health","Santé sync"],["data","Données"],["landmarks-advanced","Repères avancés"]] }
+    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["strava","Strava"],["files","Fichiers"],["manual","Ajout manuel"],["import","Import"],["sync","Synchronisation"],["health","Santé sync"],["data","Données"],["landmarks-advanced","Repères avancés"]] }
   };
 }
 
@@ -289,7 +295,7 @@ function managedUxSections() {
     ui.webDashboardSection, ui.activityDirectorySection, ui.trashSection,
     ui.personalSyncSection, ui.landmarkManagerSection, ui.recordsManagerSection,
     ui.globalMapSection, ui.equipmentManagerSection,
-    ui.webFilesSection, ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
+    ui.webStravaSection, ui.webFilesSection, ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
   ].filter(Boolean);
 }
 
@@ -360,7 +366,10 @@ function navigateUx(page, subpage = null, options = {}) {
       renderEquipmentManager();
     }
   } else if (page === "more") {
-    if (sub === "files") {
+    if (sub === "strava") {
+      setUxSectionVisibility([ui.webStravaSection]);
+      void refreshWebStravaStatus();
+    } else if (sub === "files") {
       setUxSectionVisibility([ui.webFilesSection]);
       void renderWebFileVault();
     } else if (sub === "manual") setUxSectionVisibility([ui.webManualSection]);
@@ -419,6 +428,17 @@ function wireEvents() {
       ui.webImportFileInput?.click();
     }
   });
+  ui.webStravaConnectButton?.addEventListener("click", () => { void connectWebStrava(); });
+  ui.webStravaRefreshButton?.addEventListener("click", () => { void loadWebStravaActivities(); });
+  ui.webStravaImportButton?.addEventListener("click", () => { void importSelectedWebStravaActivities(); });
+  ui.webStravaTestBackendButton?.addEventListener("click", () => { void testWebStravaBackend(); });
+  ui.webStravaDisconnectButton?.addEventListener("click", () => { void disconnectWebStrava(); });
+  ui.webStravaBackendUrl?.addEventListener("change", () => {
+    localStorage.setItem("sport_web_strava_bridge_url", ui.webStravaBackendUrl.value.trim());
+    webStravaConnected=false;
+    renderWebStravaState();
+  });
+
   ui.webDriveConnectButton?.addEventListener("click", () => { void connectWebDrive(); });
   ui.webDriveUploadMissingButton?.addEventListener("click", () => { void uploadMissingOriginalsToDrive(); });
 
@@ -1353,6 +1373,8 @@ async function openDashboardBucket(bucket) {
     activities = [...merged.values()];
     rebuildDynamicFilters();
   initializeWebManualForm();
+  initializeWebStravaModule();
+
 
     dashboardDrilldownStartMs = bucket.start;
     dashboardDrilldownEndMs = bucket.end;
@@ -2666,7 +2688,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB039";
+  document.title = "SPORT Web · WEB040";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -5726,7 +5748,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB039",
+            webVersion: "WEB040",
             row: wanted
           }
         );
@@ -5749,7 +5771,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB039"
+            webVersion: "WEB040"
           }
         );
         countDelta -= 1;
@@ -5759,7 +5781,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB039"
+      webVersion: "WEB040"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5823,6 +5845,436 @@ function markerSummary(activity) {
 
 
 
+
+
+// -----------------------------------------------------------------------------
+// WEB040 · WEBSTRAVA001 — Strava devient une source d'entrée SPORT Web
+// -----------------------------------------------------------------------------
+function webStravaBridgeUrl() {
+  const custom=String(ui.webStravaBackendUrl?.value || localStorage.getItem("sport_web_strava_bridge_url") || "").trim();
+  return custom || DEFAULT_STRAVA_BRIDGE_URL;
+}
+
+function initializeWebStravaModule() {
+  if (!ui.webStravaBackendUrl) return;
+  ui.webStravaBackendUrl.value=
+    localStorage.getItem("sport_web_strava_bridge_url") || DEFAULT_STRAVA_BRIDGE_URL;
+  renderWebStravaState();
+}
+
+async function webStravaFetch(action,options={}) {
+  if (!currentUser) throw new Error("Connexion SPORT requise.");
+  const token=await currentUser.getIdToken();
+  const url=new URL(webStravaBridgeUrl());
+  url.searchParams.set("action",action);
+  for (const [key,value] of Object.entries(options.query || {})) {
+    if (value!==undefined && value!==null && value!=="") url.searchParams.set(key,String(value));
+  }
+
+  const response=await fetch(url.toString(),{
+    method:options.method || "GET",
+    headers:{
+      "Authorization":`Bearer ${token}`,
+      ...(options.body ? {"Content-Type":"application/json"} : {})
+    },
+    body:options.body ? JSON.stringify(options.body) : undefined
+  });
+
+  let payload=null;
+  const text=await response.text();
+  try { payload=text ? JSON.parse(text) : null; }
+  catch { payload={error:text}; }
+
+  if (!response.ok) {
+    const message=payload?.error || payload?.message || `Backend Strava ${response.status}`;
+    const error=new Error(message);
+    error.status=response.status;
+    throw error;
+  }
+  return payload;
+}
+
+function renderWebStravaState() {
+  if (!ui.webStravaBadge) return;
+  ui.webStravaBadge.textContent=webStravaConnected ? "Connecté" : "Non connecté";
+  ui.webStravaBadge.className=webStravaConnected ? "pill ok" : "pill neutral";
+  ui.webStravaRefreshButton.disabled=!webStravaConnected || webStravaBusy;
+  ui.webStravaDisconnectButton.disabled=!webStravaConnected || webStravaBusy;
+  ui.webStravaConnectButton.disabled=webStravaBusy;
+  renderWebStravaCandidates();
+}
+
+async function testWebStravaBackend() {
+  ui.webStravaStatus.textContent="Test du backend sécurisé…";
+  try {
+    const status=await webStravaFetch("health");
+    ui.webStravaStatus.textContent=
+      `Backend Strava opérationnel · ${status?.region || "Firebase Functions"} · configuration ${status?.configured ? "prête" : "incomplète"}.`;
+    setMessage("WEBSTRAVA001 · backend joignable.","success");
+  } catch (error) {
+    ui.webStravaStatus.textContent=
+      `Backend Strava indisponible : ${error?.message || error}`;
+    setMessage("Le backend Strava doit être déployé/configuré avant OAuth.","error");
+  }
+}
+
+async function refreshWebStravaStatus() {
+  if (!ui.webStravaSection || webStravaBusy) return;
+  ui.webStravaStatus.textContent="Vérification Strava…";
+  try {
+    const status=await webStravaFetch("status");
+    webStravaConnected=Boolean(status?.connected);
+    webStravaAthleteProfile=status?.athlete || null;
+    renderWebStravaAthlete();
+    if (webStravaConnected) {
+      ui.webStravaStatus.textContent=
+        `Strava connecté${status?.scope ? ` · ${status.scope}` : ""}.`;
+    } else {
+      ui.webStravaStatus.textContent=
+        status?.configured===false
+          ? "Backend présent mais STRAVA_CLIENT_ID / STRAVA_CLIENT_SECRET ne sont pas encore configurés."
+          : "Strava n’est pas encore autorisé.";
+    }
+  } catch (error) {
+    webStravaConnected=false;
+    webStravaAthleteProfile=null;
+    ui.webStravaStatus.textContent=
+      `Backend Strava indisponible : ${error?.message || error}`;
+  }
+  renderWebStravaState();
+}
+
+function renderWebStravaAthlete() {
+  if (!ui.webStravaAthlete) return;
+  const athlete=webStravaAthleteProfile;
+  if (!athlete) {
+    ui.webStravaAthlete.classList.add("hidden");
+    ui.webStravaAthlete.innerHTML="";
+    return;
+  }
+  ui.webStravaAthlete.classList.remove("hidden");
+  const name=[athlete.firstname,athlete.lastname].filter(Boolean).join(" ") || `Athlète ${athlete.id || ""}`;
+  ui.webStravaAthlete.innerHTML=`
+    <strong>${escapeHtml(name)}</strong>
+    <span>${athlete.id ? `Strava #${escapeHtml(String(athlete.id))}` : "Compte Strava"}</span>`;
+}
+
+async function connectWebStrava() {
+  if (webStravaBusy) return;
+  webStravaBusy=true;
+  renderWebStravaState();
+  ui.webStravaStatus.textContent="Préparation de l’autorisation Strava…";
+
+  try {
+    const start=await webStravaFetch("oauth_start");
+    if (!start?.authorize_url) throw new Error("URL OAuth Strava absente.");
+
+    const popup=window.open(
+      start.authorize_url,
+      "sport_strava_oauth",
+      "popup=yes,width=620,height=760,resizable=yes,scrollbars=yes"
+    );
+    if (!popup) throw new Error("La fenêtre OAuth a été bloquée par le navigateur.");
+
+    ui.webStravaStatus.textContent="Autorisez SPORT dans la fenêtre Strava…";
+
+    const started=Date.now();
+    while (Date.now()-started < 120000) {
+      await new Promise((resolve)=>setTimeout(resolve,1500));
+      if (popup.closed) {
+        const status=await webStravaFetch("status");
+        if (status?.connected) {
+          webStravaConnected=true;
+          webStravaAthleteProfile=status.athlete || null;
+          renderWebStravaAthlete();
+          ui.webStravaStatus.textContent="Strava connecté. Vous pouvez charger les activités.";
+          setMessage("WEBSTRAVA001 · connexion Strava réussie.","success");
+          return;
+        }
+      }
+    }
+    throw new Error("Autorisation Strava non confirmée dans le délai prévu.");
+  } catch (error) {
+    console.error(error);
+    ui.webStravaStatus.textContent=`Connexion Strava impossible : ${error?.message || error}`;
+  } finally {
+    webStravaBusy=false;
+    renderWebStravaState();
+  }
+}
+
+async function disconnectWebStrava() {
+  if (!webStravaConnected || webStravaBusy) return;
+  const ok=window.confirm(
+    "Déconnecter Strava de SPORT ?\n\nLes activités déjà importées resteront intactes."
+  );
+  if (!ok) return;
+
+  webStravaBusy=true;
+  renderWebStravaState();
+  try {
+    await webStravaFetch("disconnect",{method:"POST"});
+    webStravaConnected=false;
+    webStravaAthleteProfile=null;
+    webStravaCandidates=[];
+    renderWebStravaAthlete();
+    ui.webStravaStatus.textContent="Strava déconnecté.";
+    setMessage("WEBSTRAVA001 · Strava déconnecté. Les activités SPORT sont conservées.","success");
+  } catch (error) {
+    ui.webStravaStatus.textContent=`Déconnexion impossible : ${error?.message || error}`;
+  } finally {
+    webStravaBusy=false;
+    renderWebStravaState();
+  }
+}
+
+function stravaSportToFitSport(type,sportType) {
+  const value=String(sportType || type || "").toLowerCase();
+  if (value.includes("run")) return 1;
+  if (value.includes("ride") || value.includes("cycle")) return 2;
+  if (value.includes("walk")) return 11;
+  if (value.includes("hike")) return 17;
+  if (value.includes("swim")) return 5;
+  return 0;
+}
+
+function probableExistingActivityForStrava(summary) {
+  const stravaId=String(summary.id);
+  const startMs=Date.parse(summary.start_date || summary.start_date_local || "");
+  const distance=numberOrZero(summary.distance);
+
+  const exact=activities.find((activity)=>String(activity.strava_activity_id || "")===stravaId);
+  if (exact) return {kind:"exact",activity:exact,label:"Déjà importée depuis Strava"};
+
+  if (!Number.isFinite(startMs)) return null;
+  const probable=activities.find((activity)=>{
+    const timeDelta=Math.abs(numberOrZero(activity.start_time_ms)-startMs);
+    const distanceDelta=Math.abs(numberOrZero(activity.distance_m)-distance);
+    return timeDelta<=120000 && distanceDelta<=Math.max(100,distance*0.02);
+  });
+  return probable ? {kind:"probable",activity:probable,label:"Activité SPORT probablement identique"} : null;
+}
+
+async function loadWebStravaActivities() {
+  if (!webStravaConnected || webStravaBusy) return;
+  webStravaBusy=true;
+  renderWebStravaState();
+  const days=Math.max(1,Number(ui.webStravaDays.value || 30));
+  const after=Math.floor((Date.now()-days*86400000)/1000);
+  ui.webStravaStatus.textContent=`Lecture de Strava · ${days} jours…`;
+
+  try {
+    const payload=await webStravaFetch("activities",{query:{after}});
+    const rows=Array.isArray(payload?.activities)?payload.activities:[];
+    webStravaCandidates=rows.map((summary)=>{
+      const duplicate=probableExistingActivityForStrava(summary);
+      return {
+        summary,
+        duplicate,
+        selected:!duplicate,
+        imported:false,
+        error:null
+      };
+    });
+    ui.webStravaStatus.textContent=
+      `${rows.length} activité(s) Strava reçue(s) · ${webStravaCandidates.filter(c=>c.duplicate).length} doublon(s) probable(s).`;
+  } catch (error) {
+    ui.webStravaStatus.textContent=`Lecture Strava impossible : ${error?.message || error}`;
+  } finally {
+    webStravaBusy=false;
+    renderWebStravaState();
+  }
+}
+
+function renderWebStravaCandidates() {
+  if (!ui.webStravaPreviewList) return;
+  ui.webStravaPreviewList.innerHTML="";
+  let selected=0;
+
+  for (const candidate of webStravaCandidates) {
+    const a=candidate.summary;
+    if (candidate.selected) selected++;
+    const card=document.createElement("article");
+    card.className=`web-strava-preview${candidate.duplicate?" duplicate":""}${candidate.error?" error":""}`;
+    const startMs=Date.parse(a.start_date || a.start_date_local || "");
+    card.innerHTML=`
+      <label class="web-strava-preview-check">
+        <input type="checkbox" ${candidate.selected?"checked":""} ${candidate.imported?"disabled":""}>
+        <span>
+          <strong>${escapeHtml(a.name || sportName(stravaSportToFitSport(a.type,a.sport_type)))}</strong>
+          <small>Strava #${escapeHtml(String(a.id))}${candidate.duplicate?` · ${escapeHtml(candidate.duplicate.label)}`:""}</small>
+        </span>
+      </label>
+      <div class="web-strava-preview-metrics">
+        <span><small>Sport</small><strong>${escapeHtml(sportName(stravaSportToFitSport(a.type,a.sport_type)))}</strong></span>
+        <span><small>Date</small><strong>${Number.isFinite(startMs)?escapeHtml(formatDateLong(startMs)):"—"}</strong></span>
+        <span><small>Distance</small><strong>${escapeHtml(formatDistance(a.distance))}</strong></span>
+        <span><small>Durée</small><strong>${escapeHtml(formatDuration(numberOrZero(a.elapsed_time)*1000))}</strong></span>
+        <span><small>D+</small><strong>${escapeHtml(formatMeters(a.total_elevation_gain))}</strong></span>
+        <span><small>FC moy.</small><strong>${escapeHtml(formatHeartRate(a.average_heartrate))}</strong></span>
+      </div>
+      ${candidate.error?`<p class="warning-text">${escapeHtml(candidate.error)}</p>`:""}`;
+
+    const checkbox=card.querySelector('input[type="checkbox"]');
+    checkbox?.addEventListener("change",()=>{
+      candidate.selected=checkbox.checked;
+      renderWebStravaCandidates();
+    });
+    ui.webStravaPreviewList.appendChild(card);
+  }
+
+  ui.webStravaImportButton.disabled=!webStravaConnected || webStravaBusy || selected===0;
+  ui.webStravaImportButton.textContent=selected
+    ? `Importer ${selected} activité${selected>1?"s":""}`
+    : "Importer la sélection";
+}
+
+function normalizeStravaDetail(payload) {
+  const a=payload.activity || {};
+  const streams=payload.streams || {};
+  const latlng=Array.isArray(streams.latlng?.data)?streams.latlng.data:[];
+  const time=Array.isArray(streams.time?.data)?streams.time.data:[];
+  const distance=Array.isArray(streams.distance?.data)?streams.distance.data:[];
+  const altitude=Array.isArray(streams.altitude?.data)?streams.altitude.data:[];
+  const hr=Array.isArray(streams.heartrate?.data)?streams.heartrate.data:[];
+  const speed=Array.isArray(streams.velocity_smooth?.data)?streams.velocity_smooth.data:[];
+  const cadence=Array.isArray(streams.cadence?.data)?streams.cadence.data:[];
+
+  const startMs=Date.parse(a.start_date || a.start_date_local || "");
+  const count=Math.max(latlng.length,time.length,distance.length,altitude.length,hr.length,speed.length);
+  const route={
+    lat:[],lon:[],alt_m:[],distance_m:[],time_ms:[],hr_bpm:[],speed_mps:[],cadence:[],
+    source_point_count:count,
+    web_preview_point_count:count,
+    route_format:"WEBSTRAVA001"
+  };
+
+  for (let i=0;i<count;i++) {
+    const ll=latlng[i];
+    route.lat.push(Array.isArray(ll)&&Number.isFinite(Number(ll[0]))?Number(ll[0]):null);
+    route.lon.push(Array.isArray(ll)&&Number.isFinite(Number(ll[1]))?Number(ll[1]):null);
+    route.alt_m.push(Number.isFinite(Number(altitude[i]))?Number(altitude[i]):null);
+    route.distance_m.push(Number.isFinite(Number(distance[i]))?Number(distance[i]):null);
+    route.time_ms.push(Number.isFinite(Number(time[i]))&&Number.isFinite(startMs)?startMs+Number(time[i])*1000:null);
+    route.hr_bpm.push(Number.isFinite(Number(hr[i]))?Number(hr[i]):null);
+    route.speed_mps.push(Number.isFinite(Number(speed[i]))?Number(speed[i]):null);
+    route.cadence.push(Number.isFinite(Number(cadence[i]))?Number(cadence[i]):null);
+  }
+
+  const activity={
+    id:makeWebImportedActivityId(startMs),
+    sport:stravaSportToFitSport(a.type,a.sport_type),
+    sub_sport:0,
+    start_time_ms:startMs,
+    elapsed_time_ms:numberOrZero(a.elapsed_time)*1000,
+    timer_time_ms:numberOrZero(a.moving_time)*1000 || numberOrZero(a.elapsed_time)*1000,
+    distance_m:numberOrZero(a.distance),
+    ascent_m:numberOrZero(a.total_elevation_gain),
+    descent_m:0,
+    calories:Number.isFinite(Number(a.calories))&&Number(a.calories)>0?Math.round(Number(a.calories)):null,
+    avg_hr:Number.isFinite(Number(a.average_heartrate))?Math.round(Number(a.average_heartrate)):null,
+    max_hr:Number.isFinite(Number(a.max_heartrate))?Math.round(Number(a.max_heartrate)):null,
+    avg_speed_mps:Number.isFinite(Number(a.average_speed))?Number(a.average_speed):null,
+    max_speed_mps:Number.isFinite(Number(a.max_speed))?Number(a.max_speed):null,
+    custom_title:String(a.name || "").trim(),
+    equipment_name:"",
+    strava_activity_id:String(a.id),
+    strava_type:a.type || null,
+    strava_sport_type:a.sport_type || null,
+    strava_device_name:a.device_name || null,
+    import_source:"STRAVA_WEB",
+    import_profile:"WEBSTRAVA001",
+    imported_at_ms:Date.now(),
+    gps_point_count:route.lat.filter((v,i)=>Number.isFinite(v)&&Number.isFinite(route.lon[i])).length,
+    record_count:count,
+    deleted_at_ms:null
+  };
+
+  return {activity,route};
+}
+
+async function commitOneWebStravaActivity(candidate) {
+  const payload=await webStravaFetch("activity",{query:{id:candidate.summary.id}});
+  const normalized=normalizeStravaDetail(payload);
+  const activity=normalized.activity;
+  const route=normalized.route;
+  const key=String(activity.id);
+
+  await commitWebMutation({
+    table:"activities",
+    rowKey:key,
+    operation:"UPSERT",
+    row:activity,
+    materializedCollection:"activities",
+    materializedData:activity,
+    metaIncrements:{activityCount:1,expectedDocuments:1}
+  });
+
+  if (route.lat.length>=2 && activity.gps_point_count>=2) {
+    await commitWebMutation({
+      table:"activity_routes",
+      rowKey:key,
+      operation:"UPSERT",
+      row:{id:activity.id,source_point_count:route.source_point_count,strava_activity_id:activity.strava_activity_id},
+      materializedCollection:"activity_routes",
+      materializedData:route
+    });
+  }
+
+  activities.push({...activity,__docId:key});
+  return activity;
+}
+
+async function importSelectedWebStravaActivities() {
+  if (webStravaBusy) return;
+  const selected=webStravaCandidates.filter((candidate)=>candidate.selected&&!candidate.imported);
+  if (!selected.length) return;
+
+  const forced=selected.filter((candidate)=>candidate.duplicate).length;
+  if (forced) {
+    const ok=window.confirm(
+      `${forced} activité(s) présentent une alerte de doublon.\n\nLes importer quand même ?`
+    );
+    if (!ok) return;
+  }
+
+  webStravaBusy=true;
+  renderWebStravaState();
+  let success=0,failed=0;
+
+  try {
+    for (let i=0;i<selected.length;i++) {
+      const candidate=selected[i];
+      ui.webStravaStatus.textContent=
+        `Import Strava ${i+1}/${selected.length} · ${candidate.summary.name || candidate.summary.id}`;
+      try {
+        await commitOneWebStravaActivity(candidate);
+        candidate.imported=true;
+        candidate.selected=false;
+        success++;
+      } catch (error) {
+        console.error(error);
+        candidate.error=error?.message || String(error);
+        candidate.selected=false;
+        failed++;
+      }
+      renderWebStravaCandidates();
+    }
+
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+    await loadWebDashboard();
+    ui.webStravaStatus.textContent=
+      `${success} activité(s) Strava importée(s)`+(failed?` · ${failed} échec(s)`:"")+".";
+    setMessage(
+      `WEBSTRAVA001 · ${success} activité(s) importée(s) depuis Strava.`,
+      failed?"info":"success"
+    );
+  } finally {
+    webStravaBusy=false;
+    renderWebStravaState();
+  }
+}
 
 // -----------------------------------------------------------------------------
 // WEB039 · WEBDRIVE001 — archive Google Drive des FIT originaux
@@ -7839,7 +8291,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB039"
+    webVersion: "WEB040"
   };
   if (row != null) event.row = row;
 
@@ -7848,7 +8300,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB039"
+    webVersion: "WEB040"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -8306,7 +8758,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB039",
+      webVersion: "WEB040",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -8372,7 +8824,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB039",
+    webVersion: "WEB040",
     androidVersion: 0,
     __synthetic: true
   };
@@ -9829,7 +10281,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB039",
+      webVersion: "WEB040",
       row: next
     }
   );
@@ -9865,7 +10317,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB039",
+        webVersion: "WEB040",
         row: patch
       }
     );
@@ -9877,7 +10329,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB039"
+      webVersion: "WEB040"
     },
     { merge: true }
   );
