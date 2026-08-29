@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB034 · WEBUX004 · Comfortaa">
-  <title>SPORT Web · WEB034</title>
+  <meta name="description" content="SPORT Web · WEB035 · WEBIMPORT001 · Comfortaa">
+  <title>SPORT Web · WEB035</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB034 · WEBUX004 · Comfortaa · Firestore</div>
+      <div class="version">WEB035 · WEBIMPORT001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <label class="appearance-picker" title="Changer l’apparence">
@@ -204,6 +204,43 @@
               <div class="autosave-row"><span class="autosave-dot"></span><span id="weightSaveStatus" class="muted">Synchronisation automatique</span></div>
               <div id="weightHistory" class="weight-history"></div>
             </div>
+          </div>
+        </section>
+
+        <section id="webImportSection" class="panel web-import-panel hidden">
+          <div class="panel-title-row">
+            <div>
+              <p class="eyebrow">WEB035 · WEBIMPORT001</p>
+              <h2>Importer des activités</h2>
+              <p class="muted">Déposez un ou plusieurs fichiers FIT. SPORT Web les décode localement avant toute écriture.</p>
+            </div>
+            <span id="webImportArchiveBadge" class="pill neutral">Coffre local</span>
+          </div>
+
+          <div id="webImportDropZone" class="web-import-dropzone" tabindex="0">
+            <strong>Déposer des fichiers FIT ici</strong>
+            <span>ou</span>
+            <label class="primary web-import-file-label">
+              Choisir des fichiers
+              <input id="webImportFileInput" type="file" accept=".fit,application/octet-stream" multiple hidden>
+            </label>
+            <small>Décodage dans le navigateur · aucun fichier n’est envoyé avant validation.</small>
+          </div>
+
+          <div class="web-import-options">
+            <label class="web-import-check">
+              <input id="webImportArchiveOriginals" type="checkbox" checked>
+              <span>Conserver le FIT original dans le coffre local du navigateur</span>
+            </label>
+            <span id="webImportArchiveMeta" class="muted">Archive IndexedDB locale. Sauvegarde cloud prévue dans WEBFILES001.</span>
+          </div>
+
+          <div id="webImportStatus" class="web-import-status muted">Aucun fichier sélectionné.</div>
+          <div id="webImportPreviewList" class="web-import-preview-list"></div>
+
+          <div class="web-import-actions">
+            <button id="webImportClearButton" class="secondary" type="button" disabled>Effacer la sélection</button>
+            <button id="webImportCommitButton" class="primary" type="button" disabled>Importer les activités sélectionnées</button>
           </div>
         </section>
 

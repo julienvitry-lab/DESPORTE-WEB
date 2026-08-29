@@ -56,7 +56,7 @@ const ui = Object.fromEntries(
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
     "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
     "personalSyncSection", "personalSyncMeta", "personalSyncStatus", "goalSportSelect",
-    "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
+    "webImportSection", "webImportDropZone", "webImportFileInput", "webImportArchiveOriginals", "webImportArchiveBadge", "webImportArchiveMeta", "webImportStatus", "webImportPreviewList", "webImportClearButton", "webImportCommitButton", "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
     "syncEventCount", "syncConflictCount", "syncLastSource", "syncConflictBanner", "syncHistoryList",
     "syncHealthSection", "syncHealthMeta", "syncHealthClientCount", "syncHealthHealthyCount",
     "syncHealthPendingCount", "syncHealthErrorCount", "syncHealthNetwork", "syncHealthList",
@@ -204,6 +204,12 @@ let globalMapIsBusy = false;
 let globalMapIsStale = true;
 let globalMapLastLoadEverything = false;
 let globalMapDensityCells = [];
+let webImportCandidates = [];
+let webImportRunning = false;
+const WEB_IMPORT_ARCHIVE_DB = "sport_web_import_archive_v1";
+const WEB_IMPORT_ARCHIVE_STORE = "original_fit";
+const FIT_UNIX_EPOCH_MS = 631065600000;
+
 
 let activityMapInstance = null;
 let activityRouteLayer = null;
@@ -239,7 +245,7 @@ function uxPageConfig() {
     analysis: { title: "Analyse", eyebrow: "PROGRESSION & REPÈRES", subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]] },
     maps: { title: "Cartes", eyebrow: "EXPLORATION", subs: [["routes","Carte globale"],["density","Densité"]] },
     equipment: { title: "Matériel", eyebrow: "ÉQUIPEMENT", subs: [["used","Utilisé"],["all","Tout le matériel"]] },
-    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["sync","Synchronisation"],["health","Santé sync"],["data","Données"],["landmarks-advanced","Repères avancés"]] }
+    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["import","Import"],["sync","Synchronisation"],["health","Santé sync"],["data","Données"],["landmarks-advanced","Repères avancés"]] }
   };
 }
 
@@ -267,7 +273,7 @@ function managedUxSections() {
     ui.webDashboardSection, ui.activityDirectorySection, ui.trashSection,
     ui.personalSyncSection, ui.landmarkManagerSection, ui.recordsManagerSection,
     ui.globalMapSection, ui.equipmentManagerSection,
-    ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
+    ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
   ].filter(Boolean);
 }
 
@@ -338,7 +344,8 @@ function navigateUx(page, subpage = null, options = {}) {
       renderEquipmentManager();
     }
   } else if (page === "more") {
-    if (sub === "health") setUxSectionVisibility([ui.syncHealthSection]);
+    if (sub === "import") setUxSectionVisibility([ui.webImportSection]);
+    else if (sub === "health") setUxSectionVisibility([ui.syncHealthSection]);
     else if (sub === "data") setUxSectionVisibility([ui.bootstrapMetrics]);
     else if (sub === "landmarks-advanced") setUxSectionVisibility([ui.advancedLandmarksSection]);
     else setUxSectionVisibility([ui.syncCenterSection]);
@@ -372,6 +379,29 @@ function wireEvents() {
 
   ui.logoutButton.addEventListener("click", () => signOut(auth));
   ui.metricChartCloseButton?.addEventListener("click", () => closeMetricChart());
+  ui.webImportFileInput?.addEventListener("change", (event) => {
+    void handleWebImportFiles([...event.target.files]);
+    event.target.value = "";
+  });
+  ui.webImportDropZone?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    ui.webImportDropZone.classList.add("dragging");
+  });
+  ui.webImportDropZone?.addEventListener("dragleave", () => ui.webImportDropZone.classList.remove("dragging"));
+  ui.webImportDropZone?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    ui.webImportDropZone.classList.remove("dragging");
+    void handleWebImportFiles([...event.dataTransfer.files]);
+  });
+  ui.webImportDropZone?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      ui.webImportFileInput?.click();
+    }
+  });
+  ui.webImportClearButton?.addEventListener("click", clearWebImportCandidates);
+  ui.webImportCommitButton?.addEventListener("click", () => { void commitSelectedWebImports(); });
+
 
   ui.refreshButton.addEventListener("click", () => reloadAll());
 
@@ -2586,7 +2616,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB034";
+  document.title = "SPORT Web · WEB035";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -5646,7 +5676,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB034",
+            webVersion: "WEB035",
             row: wanted
           }
         );
@@ -5669,7 +5699,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB034"
+            webVersion: "WEB035"
           }
         );
         countDelta -= 1;
@@ -5679,7 +5709,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB034"
+      webVersion: "WEB035"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5737,6 +5767,583 @@ function markerSummary(activity) {
       return count > 1 ? `${code}×${count}` : code;
     })
     .join(" · ");
+}
+
+
+// -----------------------------------------------------------------------------
+// WEB035 · WEBIMPORT001 — import FIT natif dans le navigateur
+// -----------------------------------------------------------------------------
+function fitBaseTypeInfo(baseType) {
+  const type = baseType & 0x1f;
+  const map = {
+    0:{size:1,kind:"uint",invalid:0xff}, 1:{size:1,kind:"sint",invalid:0x7f},
+    2:{size:1,kind:"uint",invalid:0xff}, 3:{size:2,kind:"sint",invalid:0x7fff},
+    4:{size:2,kind:"uint",invalid:0xffff}, 5:{size:4,kind:"sint",invalid:0x7fffffff},
+    6:{size:4,kind:"uint",invalid:0xffffffff}, 7:{size:1,kind:"string",invalid:null},
+    8:{size:4,kind:"float",invalid:null}, 9:{size:8,kind:"float",invalid:null},
+    10:{size:1,kind:"uint",invalid:0}, 11:{size:2,kind:"uint",invalid:0},
+    12:{size:4,kind:"uint",invalid:0}, 13:{size:1,kind:"byte",invalid:0xff},
+    14:{size:8,kind:"sint64",invalid:null}, 15:{size:8,kind:"uint64",invalid:null},
+    16:{size:8,kind:"uint64",invalid:0}
+  };
+  return map[type] || {size:1,kind:"byte",invalid:null};
+}
+
+function readFitScalar(view, offset, fieldSize, baseType, littleEndian) {
+  const info = fitBaseTypeInfo(baseType);
+  if (fieldSize < info.size) return null;
+  try {
+    let value;
+    if (info.kind === "string") {
+      let text="";
+      for (let i=0;i<fieldSize;i++) {
+        const c=view.getUint8(offset+i);
+        if (!c) break;
+        text += String.fromCharCode(c);
+      }
+      return text;
+    }
+    if (info.kind === "float") {
+      value = info.size === 4 ? view.getFloat32(offset,littleEndian) : view.getFloat64(offset,littleEndian);
+    } else if (info.kind === "sint") {
+      value = info.size===1 ? view.getInt8(offset)
+        : info.size===2 ? view.getInt16(offset,littleEndian)
+        : view.getInt32(offset,littleEndian);
+    } else if (info.kind === "uint" || info.kind === "byte") {
+      value = info.size===1 ? view.getUint8(offset)
+        : info.size===2 ? view.getUint16(offset,littleEndian)
+        : view.getUint32(offset,littleEndian);
+    } else if (info.kind === "sint64") {
+      value = Number(view.getBigInt64(offset,littleEndian));
+    } else if (info.kind === "uint64") {
+      value = Number(view.getBigUint64(offset,littleEndian));
+    } else return null;
+    if (info.invalid != null && value === info.invalid) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function fitDateTimeMs(value) {
+  const n=Number(value);
+  return Number.isFinite(n) && n>0 ? FIT_UNIX_EPOCH_MS + n*1000 : null;
+}
+
+function fitSemicircles(value) {
+  const n=Number(value);
+  return Number.isFinite(n) ? n * (180 / 2147483648) : null;
+}
+
+function decodeFitActivity(arrayBuffer, fileName="activity.fit") {
+  const view=new DataView(arrayBuffer);
+  if (view.byteLength < 14) throw new Error("Fichier FIT trop court.");
+  const headerSize=view.getUint8(0);
+  if (headerSize < 12 || headerSize > view.byteLength) throw new Error("En-tête FIT invalide.");
+  const signature=String.fromCharCode(...new Uint8Array(arrayBuffer,8,4));
+  if (signature !== ".FIT") throw new Error("Signature FIT absente.");
+  const protocolVersion=view.getUint8(1);
+  const profileVersion=view.getUint16(2,true);
+  const dataSize=view.getUint32(4,true);
+  const dataEnd=Math.min(view.byteLength, headerSize + dataSize);
+
+  const definitions=new Map();
+  const session={};
+  const fileId={};
+  const records=[];
+  let offset=headerSize;
+  let lastTimestampSec=null;
+
+  const assignSession=(field,value)=>{
+    if (value==null) return;
+    if (field===2) session.start_time_ms=fitDateTimeMs(value);
+    else if (field===5) session.sport=Number(value);
+    else if (field===6) session.sub_sport=Number(value);
+    else if (field===7) session.elapsed_time_ms=Number(value); // ms after scale /1000 seconds => raw ms
+    else if (field===8) session.timer_time_ms=Number(value);
+    else if (field===9) session.distance_m=Number(value)/100;
+    else if (field===11) session.calories=Number(value);
+    else if (field===14) session.avg_speed_mps=Number(value)/1000;
+    else if (field===15) session.max_speed_mps=Number(value)/1000;
+    else if (field===16) session.avg_hr=Number(value);
+    else if (field===17) session.max_hr=Number(value);
+    else if (field===22) session.ascent_m=Number(value);
+    else if (field===23) session.descent_m=Number(value);
+    else if (field===253) session.end_time_ms=fitDateTimeMs(value);
+  };
+
+  const assignFileId=(field,value)=>{
+    if (value==null) return;
+    if (field===1) fileId.manufacturer=Number(value);
+    else if (field===2) fileId.product_id=Number(value);
+    else if (field===3) fileId.serial_number=String(value);
+    else if (field===4) fileId.created_at_ms=fitDateTimeMs(value);
+  };
+
+  while (offset < dataEnd) {
+    const header=view.getUint8(offset++);
+    let localType, compressedTime=null;
+
+    if (header & 0x80) {
+      localType=(header>>5)&0x03;
+      const timeOffset=header&0x1f;
+      if (lastTimestampSec!=null) {
+        let candidate=(lastTimestampSec & ~0x1f) + timeOffset;
+        if (candidate < lastTimestampSec) candidate += 0x20;
+        compressedTime=candidate;
+      }
+    } else {
+      localType=header&0x0f;
+    }
+
+    const isDefinition=!(header&0x80) && Boolean(header&0x40);
+    const hasDeveloper=!(header&0x80) && Boolean(header&0x20);
+
+    if (isDefinition) {
+      if (offset+5>dataEnd) break;
+      offset++; // reserved
+      const architecture=view.getUint8(offset++);
+      const little=architecture===0;
+      const globalMessage=view.getUint16(offset,little); offset+=2;
+      const fieldCount=view.getUint8(offset++);
+      const fields=[];
+      for (let i=0;i<fieldCount;i++) {
+        if (offset+3>dataEnd) break;
+        fields.push({
+          field:view.getUint8(offset++),
+          size:view.getUint8(offset++),
+          baseType:view.getUint8(offset++)
+        });
+      }
+      const developerFields=[];
+      if (hasDeveloper && offset<dataEnd) {
+        const count=view.getUint8(offset++);
+        for (let i=0;i<count;i++) {
+          if (offset+3>dataEnd) break;
+          developerFields.push({
+            field:view.getUint8(offset++),
+            size:view.getUint8(offset++),
+            developerIndex:view.getUint8(offset++)
+          });
+        }
+      }
+      definitions.set(localType,{globalMessage,little,fields,developerFields});
+      continue;
+    }
+
+    const def=definitions.get(localType);
+    if (!def) throw new Error(`Définition FIT locale ${localType} manquante.`);
+
+    const values=new Map();
+    for (const f of def.fields) {
+      if (offset+f.size>dataEnd) { offset=dataEnd; break; }
+      const value=readFitScalar(view,offset,f.size,f.baseType,def.little);
+      values.set(f.field,value);
+      offset+=f.size;
+    }
+    for (const f of def.developerFields || []) {
+      offset=Math.min(dataEnd,offset+f.size);
+    }
+
+    let timestamp=values.get(253);
+    if (timestamp!=null) lastTimestampSec=Number(timestamp);
+    else if (compressedTime!=null) {
+      timestamp=compressedTime;
+      lastTimestampSec=compressedTime;
+    }
+
+    if (def.globalMessage===0) {
+      values.forEach((value,field)=>assignFileId(field,value));
+    } else if (def.globalMessage===18) {
+      values.forEach((value,field)=>assignSession(field,value));
+      if (timestamp!=null) assignSession(253,timestamp);
+    } else if (def.globalMessage===20) {
+      const lat=fitSemicircles(values.get(0));
+      const lon=fitSemicircles(values.get(1));
+      const enhancedAlt=values.get(78);
+      const standardAlt=values.get(2);
+      const altitude=enhancedAlt!=null ? Number(enhancedAlt)/5-500
+        : standardAlt!=null ? Number(standardAlt)/5-500 : null;
+      const enhancedSpeed=values.get(73);
+      const standardSpeed=values.get(6);
+      const speed=enhancedSpeed!=null ? Number(enhancedSpeed)/1000
+        : standardSpeed!=null ? Number(standardSpeed)/1000 : null;
+      records.push({
+        time_ms: fitDateTimeMs(timestamp),
+        lat, lon, alt_m: altitude,
+        hr_bpm: values.get(3)!=null ? Number(values.get(3)) : null,
+        cadence: values.get(4)!=null ? Number(values.get(4)) : null,
+        distance_m: values.get(5)!=null ? Number(values.get(5))/100 : null,
+        speed_mps: speed
+      });
+    }
+  }
+
+  const gps=records.filter(r=>Number.isFinite(r.lat)&&Number.isFinite(r.lon)&&Math.abs(r.lat)<=90&&Math.abs(r.lon)<=180);
+  const timed=records.filter(r=>Number.isFinite(r.time_ms));
+  const distances=records.map(r=>r.distance_m).filter(Number.isFinite);
+  const hrs=records.map(r=>r.hr_bpm).filter(v=>Number.isFinite(v)&&v>=20&&v<=260);
+  const alts=records.map(r=>r.alt_m).filter(Number.isFinite);
+
+  if (!session.start_time_ms) session.start_time_ms=timed[0]?.time_ms || fileId.created_at_ms || null;
+  if (!session.elapsed_time_ms && timed.length>1) session.elapsed_time_ms=Math.max(0,timed[timed.length-1].time_ms-timed[0].time_ms);
+  if (!session.distance_m && distances.length) session.distance_m=Math.max(...distances);
+  if (!session.avg_hr && hrs.length) session.avg_hr=Math.round(hrs.reduce((a,b)=>a+b,0)/hrs.length);
+  if (!session.max_hr && hrs.length) session.max_hr=Math.max(...hrs);
+
+  if ((!session.ascent_m || !session.descent_m) && alts.length>1) {
+    let ascent=0, descent=0, prev=null;
+    for (const r of records) {
+      if (!Number.isFinite(r.alt_m)) continue;
+      if (prev!=null) {
+        const delta=r.alt_m-prev;
+        if (delta>0) ascent+=delta; else descent-=delta;
+      }
+      prev=r.alt_m;
+    }
+    if (!session.ascent_m) session.ascent_m=Math.round(ascent);
+    if (!session.descent_m) session.descent_m=Math.round(descent);
+  }
+
+  if (!Number.isFinite(session.start_time_ms)) throw new Error("Date de début FIT introuvable.");
+  if (!Number.isFinite(session.distance_m)) session.distance_m=0;
+  if (!Number.isFinite(session.elapsed_time_ms)) session.elapsed_time_ms=0;
+
+  return {
+    protocolVersion,
+    profileVersion,
+    fileId,
+    session,
+    records,
+    gps,
+    fileName
+  };
+}
+
+async function sha256Hex(buffer) {
+  const digest=await crypto.subtle.digest("SHA-256",buffer);
+  return [...new Uint8Array(digest)].map(v=>v.toString(16).padStart(2,"0")).join("");
+}
+
+function openWebImportArchive() {
+  return new Promise((resolve,reject)=>{
+    const request=indexedDB.open(WEB_IMPORT_ARCHIVE_DB,1);
+    request.onupgradeneeded=()=>{
+      const db=request.result;
+      if (!db.objectStoreNames.contains(WEB_IMPORT_ARCHIVE_STORE)) {
+        const store=db.createObjectStore(WEB_IMPORT_ARCHIVE_STORE,{keyPath:"sha256"});
+        store.createIndex("imported_at_ms","imported_at_ms");
+      }
+    };
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error || new Error("IndexedDB indisponible."));
+  });
+}
+
+async function archiveOriginalFit(candidate) {
+  const db=await openWebImportArchive();
+  try {
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(WEB_IMPORT_ARCHIVE_STORE,"readwrite");
+      tx.objectStore(WEB_IMPORT_ARCHIVE_STORE).put({
+        sha256:candidate.sha256,
+        file_name:candidate.file.name,
+        file_size_bytes:candidate.file.size,
+        file_last_modified:candidate.file.lastModified,
+        imported_at_ms:Date.now(),
+        blob:candidate.file
+      });
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error || new Error("Échec archivage local."));
+    });
+  } finally { db.close(); }
+}
+
+function makeWebImportedActivityId(startMs) {
+  const base=Math.max(1,Math.floor(Number(startMs)||Date.now()));
+  return base*1000 + Math.floor(Math.random()*1000);
+}
+
+function decimateFitRecords(records,maxPoints=800) {
+  if (records.length<=maxPoints) return records.slice();
+  const result=[];
+  const step=(records.length-1)/(maxPoints-1);
+  for (let i=0;i<maxPoints;i++) result.push(records[Math.round(i*step)]);
+  return result;
+}
+
+function buildWebImportRoute(parsed) {
+  const source=parsed.records.filter(r=>Number.isFinite(r.lat)&&Number.isFinite(r.lon));
+  const rows=decimateFitRecords(source,800);
+  return {
+    lat:rows.map(r=>r.lat),
+    lon:rows.map(r=>r.lon),
+    alt_m:rows.map(r=>Number.isFinite(r.alt_m)?r.alt_m:null),
+    distance_m:rows.map(r=>Number.isFinite(r.distance_m)?r.distance_m:null),
+    time_ms:rows.map(r=>Number.isFinite(r.time_ms)?r.time_ms:null),
+    hr_bpm:rows.map(r=>Number.isFinite(r.hr_bpm)?r.hr_bpm:null),
+    speed_mps:rows.map(r=>Number.isFinite(r.speed_mps)?r.speed_mps:null),
+    source_point_count:source.length,
+    web_preview_point_count:rows.length,
+    route_format:"WEBIMPORT001"
+  };
+}
+
+function buildWebImportActivity(candidate,id) {
+  const p=candidate.parsed, s=p.session;
+  return {
+    id,
+    sport:Number.isFinite(s.sport)?s.sport:1,
+    sub_sport:Number.isFinite(s.sub_sport)?s.sub_sport:0,
+    start_time_ms:Math.round(s.start_time_ms),
+    elapsed_time_ms:Math.round(numberOrZero(s.elapsed_time_ms)),
+    timer_time_ms:Math.round(numberOrZero(s.timer_time_ms)||numberOrZero(s.elapsed_time_ms)),
+    distance_m:numberOrZero(s.distance_m),
+    ascent_m:numberOrZero(s.ascent_m),
+    descent_m:numberOrZero(s.descent_m),
+    calories:Number.isFinite(s.calories)?Math.round(s.calories):null,
+    avg_hr:Number.isFinite(s.avg_hr)?Math.round(s.avg_hr):null,
+    max_hr:Number.isFinite(s.max_hr)?Math.round(s.max_hr):null,
+    avg_speed_mps:Number.isFinite(s.avg_speed_mps)?s.avg_speed_mps:null,
+    max_speed_mps:Number.isFinite(s.max_speed_mps)?s.max_speed_mps:null,
+    gps_point_count:p.gps.length,
+    record_count:p.records.length,
+    file_name:candidate.file.name,
+    file_size_bytes:candidate.file.size,
+    import_source:"WEB_MANUAL_FIT",
+    import_profile:"WEBIMPORT001",
+    imported_at_ms:Date.now(),
+    protocol_version:p.protocolVersion,
+    profile_version:p.profileVersion,
+    manufacturer:p.fileId.manufacturer ?? null,
+    product_id:p.fileId.product_id ?? null,
+    source_sha256:candidate.sha256,
+    original_archive:ui.webImportArchiveOriginals?.checked ? "INDEXEDDB_LOCAL" : "NONE",
+    deleted_at_ms:null
+  };
+}
+
+async function findProbableWebImportDuplicate(parsed,sha256) {
+  const start=parsed.session.start_time_ms;
+  const distance=numberOrZero(parsed.session.distance_m);
+
+  if (activities.some(a=>String(a.source_sha256||"")===sha256)) {
+    return {kind:"exact",label:"Même fichier déjà importé"};
+  }
+
+  const min=start-120000, max=start+120000;
+  try {
+    const snap=await getDocs(query(
+      userCollection("activities"),
+      where("start_time_ms",">=",min),
+      where("start_time_ms","<=",max),
+      limit(30)
+    ));
+    for (const docSnap of snap.docs) {
+      const a=docSnap.data();
+      if (String(a.source_sha256||"")===sha256) return {kind:"exact",label:"Même fichier déjà importé"};
+      const delta=Math.abs(numberOrZero(a.distance_m)-distance);
+      const tolerance=Math.max(100,distance*0.02);
+      if (delta<=tolerance) return {
+        kind:"probable",
+        label:`Doublon probable · ${formatDateLong(a.start_time_ms)} · ${formatDistance(a.distance_m)}`
+      };
+    }
+  } catch (error) {
+    console.warn("WEBIMPORT001 duplicate query",error);
+    for (const a of activities) {
+      if (Math.abs(numberOrZero(a.start_time_ms)-start)<=120000 &&
+          Math.abs(numberOrZero(a.distance_m)-distance)<=Math.max(100,distance*0.02)) {
+        return {kind:"probable",label:"Doublon probable dans le catalogue chargé"};
+      }
+    }
+  }
+  return null;
+}
+
+async function prepareWebImportCandidate(file) {
+  if (!file?.name?.toLowerCase().endsWith(".fit")) {
+    throw new Error(`${file?.name||"Fichier"} : WEBIMPORT001 accepte actuellement les fichiers FIT.`);
+  }
+  const buffer=await file.arrayBuffer();
+  const parsed=decodeFitActivity(buffer,file.name);
+  const sha256=await sha256Hex(buffer);
+  const duplicate=await findProbableWebImportDuplicate(parsed,sha256);
+  return {
+    id:`candidate_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    file, parsed, sha256, duplicate,
+    selected:!duplicate,
+    force:false,
+    error:null
+  };
+}
+
+async function handleWebImportFiles(files) {
+  if (!files?.length || webImportRunning) return;
+  ui.webImportStatus.textContent=`Analyse de ${files.length} fichier(s)…`;
+  ui.webImportStatus.className="web-import-status pending";
+  for (const file of files) {
+    try {
+      const candidate=await prepareWebImportCandidate(file);
+      webImportCandidates.push(candidate);
+    } catch (error) {
+      webImportCandidates.push({
+        id:`error_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        file, error:String(error?.message||error), selected:false
+      });
+    }
+    renderWebImportCandidates();
+  }
+  ui.webImportStatus.textContent=`${webImportCandidates.length} fichier(s) préparé(s). Vérifiez avant validation.`;
+  ui.webImportStatus.className="web-import-status";
+}
+
+function clearWebImportCandidates() {
+  if (webImportRunning) return;
+  webImportCandidates=[];
+  renderWebImportCandidates();
+  ui.webImportStatus.textContent="Aucun fichier sélectionné.";
+}
+
+function renderWebImportCandidates() {
+  if (!ui.webImportPreviewList) return;
+  ui.webImportPreviewList.innerHTML="";
+  let selectedCount=0;
+
+  for (const c of webImportCandidates) {
+    const card=document.createElement("article");
+    card.className=`web-import-preview${c.error?" error":c.duplicate?" duplicate":""}`;
+
+    if (c.error) {
+      card.innerHTML=`<div><strong>${escapeHtml(c.file?.name||"Fichier")}</strong><span class="pill error">Erreur</span></div>
+        <p>${escapeHtml(c.error)}</p>`;
+      ui.webImportPreviewList.appendChild(card);
+      continue;
+    }
+
+    const a=c.parsed.session;
+    if (c.selected) selectedCount++;
+    const calories=Number.isFinite(a.calories)?`${formatNumber(a.calories)} kcal`:"Calories absentes";
+    card.innerHTML=`
+      <label class="web-import-preview-check">
+        <input type="checkbox" ${c.selected?"checked":""}>
+        <span>
+          <strong>${escapeHtml(c.file.name)}</strong>
+          <small>${escapeHtml(formatBytes(c.file.size))} · SHA ${escapeHtml(c.sha256.slice(0,10))}…</small>
+        </span>
+      </label>
+      <div class="web-import-preview-metrics">
+        <span><small>Sport</small><strong>${escapeHtml(sportName(a.sport))}</strong></span>
+        <span><small>Date</small><strong>${escapeHtml(formatDateLong(a.start_time_ms))}</strong></span>
+        <span><small>Distance</small><strong>${escapeHtml(formatDistance(a.distance_m))}</strong></span>
+        <span><small>Durée</small><strong>${escapeHtml(formatDuration(a.elapsed_time_ms))}</strong></span>
+        <span><small>D+</small><strong>${escapeHtml(formatMeters(a.ascent_m))}</strong></span>
+        <span><small>FC</small><strong>${escapeHtml(formatHeartRate(a.avg_hr))}</strong></span>
+        <span><small>Calories</small><strong>${escapeHtml(calories)}</strong></span>
+        <span><small>GPS</small><strong>${formatNumber(c.parsed.gps.length)}</strong></span>
+      </div>
+      ${c.duplicate?`<div class="web-import-duplicate-warning"><span class="pill warning">${c.duplicate.kind==="exact"?"Doublon":"À vérifier"}</span><strong>${escapeHtml(c.duplicate.label)}</strong><small>Cochez la ligne uniquement si vous souhaitez réellement importer ce fichier malgré l’alerte.</small></div>`:""}`;
+
+    const checkbox=card.querySelector('input[type="checkbox"]');
+    checkbox.addEventListener("change",()=>{
+      c.selected=checkbox.checked;
+      c.force=Boolean(c.duplicate && checkbox.checked);
+      renderWebImportCandidates();
+    });
+    ui.webImportPreviewList.appendChild(card);
+  }
+
+  ui.webImportClearButton.disabled=!webImportCandidates.length || webImportRunning;
+  ui.webImportCommitButton.disabled=!selectedCount || webImportRunning;
+  ui.webImportCommitButton.textContent=selectedCount
+    ? `Importer ${selectedCount} activité${selectedCount>1?"s":""}`
+    : "Importer les activités sélectionnées";
+}
+
+async function commitOneWebImport(candidate) {
+  const id=makeWebImportedActivityId(candidate.parsed.session.start_time_ms);
+  const key=String(id);
+  const activity=buildWebImportActivity(candidate,id);
+  const route=buildWebImportRoute(candidate.parsed);
+
+  if (ui.webImportArchiveOriginals?.checked) {
+    await archiveOriginalFit(candidate);
+  }
+
+  await commitWebMutation({
+    table:"activities",
+    rowKey:key,
+    operation:"UPSERT",
+    row:activity,
+    materializedCollection:"activities",
+    materializedData:activity,
+    metaIncrements:{activityCount:1, expectedDocuments:1}
+  });
+
+  if (route.lat.length>=2) {
+    await commitWebMutation({
+      table:"activity_routes",
+      rowKey:key,
+      operation:"UPSERT",
+      row:{id,source_point_count:route.source_point_count},
+      materializedCollection:"activity_routes",
+      materializedData:route
+    });
+  }
+
+  activities.push({...activity,__docId:key});
+  return activity;
+}
+
+async function commitSelectedWebImports() {
+  if (webImportRunning) return;
+  const selected=webImportCandidates.filter(c=>c.selected&&!c.error);
+  if (!selected.length) return;
+
+  const forced=selected.filter(c=>c.duplicate).length;
+  if (forced) {
+    const ok=window.confirm(
+      `${forced} fichier(s) présentent une alerte de doublon.\n\nContinuer malgré tout ?`
+    );
+    if (!ok) return;
+  }
+
+  webImportRunning=true;
+  renderWebImportCandidates();
+  let success=0, failed=0;
+
+  try {
+    for (let i=0;i<selected.length;i++) {
+      const c=selected[i];
+      ui.webImportStatus.textContent=`Import ${i+1}/${selected.length} · ${c.file.name}`;
+      ui.webImportStatus.className="web-import-status pending";
+      try {
+        await commitOneWebImport(c);
+        c.imported=true;
+        c.selected=false;
+        success++;
+      } catch (error) {
+        c.error=`Import impossible : ${error?.message||error}`;
+        c.selected=false;
+        failed++;
+      }
+      renderWebImportCandidates();
+    }
+
+    webImportCandidates=webImportCandidates.filter(c=>!c.imported);
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+    await loadWebDashboard();
+
+    ui.webImportStatus.textContent=
+      `${success} activité(s) importée(s)` + (failed?` · ${failed} échec(s)`:"") +
+      (ui.webImportArchiveOriginals?.checked?" · originaux conservés dans le coffre local.":".");
+    ui.webImportStatus.className=`web-import-status ${failed?"warning":"success"}`;
+    setMessage(`WEBIMPORT001 · ${success} activité(s) créée(s) depuis le Web.`,failed?"info":"success");
+  } finally {
+    webImportRunning=false;
+    renderWebImportCandidates();
+  }
 }
 
 function activityKey(activity) {
@@ -5879,7 +6486,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB034"
+    webVersion: "WEB035"
   };
   if (row != null) event.row = row;
 
@@ -5888,7 +6495,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB034"
+    webVersion: "WEB035"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -6346,7 +6953,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB034",
+      webVersion: "WEB035",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -6412,7 +7019,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB034",
+    webVersion: "WEB035",
     androidVersion: 0,
     __synthetic: true
   };
@@ -7869,7 +8476,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB034",
+      webVersion: "WEB035",
       row: next
     }
   );
@@ -7905,7 +8512,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB034",
+        webVersion: "WEB035",
         row: patch
       }
     );
@@ -7917,7 +8524,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB034"
+      webVersion: "WEB035"
     },
     { merge: true }
   );
