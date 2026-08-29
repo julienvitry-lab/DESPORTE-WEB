@@ -2577,3 +2577,17 @@ footer {
   .web-file-card-head{flex-direction:column}
   .web-file-link-summary{grid-template-columns:1fr}
 }
+
+
+/* WEB039 · WEBDRIVE001 */
+.web-drive-panel{padding:14px;border:1px solid rgba(79,179,255,.15);border-radius:13px;background:rgba(79,179,255,.025);display:grid;gap:10px}
+.web-drive-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}
+.web-drive-head>div:first-child{display:grid;gap:4px}
+.web-drive-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.web-drive-folder{padding:8px 10px;border-radius:9px;background:rgba(255,255,255,.018);font:600 .66rem ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+.web-file-badges{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.web-file-drive.verified{border-color:rgba(156,255,34,.4)!important}
+@media(max-width:800px){
+  .web-drive-head{flex-direction:column}
+  .web-drive-actions{justify-content:flex-start}
+}

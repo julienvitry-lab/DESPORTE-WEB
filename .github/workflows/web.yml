@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB038
+name: Publier SPORT Web · WEB039
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB038.md"
+      - "docs/releases/WEB039.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB038
+      - name: Valider WEB039
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +47,7 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB038"' web/app.js
+          grep -Fq 'webVersion: "WEB039"' web/app.js
 
           # WEB022 · WEBCARTO007.
           grep -Fq "WEB020 · WEBCARTO005" web/index.html
@@ -490,7 +490,97 @@ jobs:
 
 
 
-          echo "WEB038 : WEBFILES001 + WEBSPLIT001 + WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          grep -Fq 'WEB039 · WEBDRIVE001' web/index.html
+
+
+
+
+
+
+
+
+          grep -Fq 'webDriveConnectButton' web/index.html
+
+
+
+
+
+
+
+
+          grep -Fq 'webDriveUploadMissingButton' web/index.html
+
+
+
+
+
+
+
+
+          grep -Fq 'WEB_DRIVE_SCOPE' web/app.js
+
+
+
+
+
+
+
+
+          grep -Fq 'function connectWebDrive' web/app.js
+
+
+
+
+
+
+
+
+          grep -Fq 'function ensureWebDriveFolder' web/app.js
+
+
+
+
+
+
+
+
+          grep -Fq 'function uploadBlobToDrive' web/app.js
+
+
+
+
+
+
+
+
+          grep -Fq 'sport_sha256' web/app.js
+
+
+
+
+
+
+
+
+          grep -Fq 'drive_file_id' web/app.js
+
+
+
+
+
+
+
+
+          grep -Fq '.web-drive-panel' web/styles.css
+
+
+
+
+
+
+
+
+          echo "WEB039 : WEBDRIVE001 + WEBFILES001 + WEBSPLIT001 + WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -500,6 +590,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB038
+      - name: Publier SPORT Web · WEB039
         id: deployment
         uses: actions/deploy-pages@v4

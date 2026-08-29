@@ -56,7 +56,7 @@ const ui = Object.fromEntries(
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
     "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
     "personalSyncSection", "personalSyncMeta", "personalSyncStatus", "goalSportSelect",
-    "webFilesSection", "webFilesSummaryBadge", "webFilesOriginalCount", "webFilesLocalSize", "webFilesLinkedCount", "webFilesDerivedCount", "webFilesRefreshButton", "webFilesFilter", "webFilesSearch", "webFilesStatus", "webFilesList", "webManualSection", "webManualForm", "webManualSport", "webManualDate", "webManualTime", "webManualDistanceKm", "webManualDuration", "webManualAscent", "webManualDescent", "webManualAvgHr", "webManualMaxHr", "webManualCalories", "webManualEquipment", "webManualTitle", "webManualLandmarkButtons", "webManualNotes", "webManualPreview", "webManualResetButton", "webManualCommitButton", "webImportSection", "webImportDropZone", "webImportFileInput", "webImportArchiveOriginals", "webImportArchiveBadge", "webImportArchiveMeta", "webImportStatus", "webImportPreviewList", "webImportClearButton", "webImportCommitButton", "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
+    "webFilesSection", "webFilesSummaryBadge", "webFilesOriginalCount", "webFilesLocalSize", "webFilesLinkedCount", "webFilesDerivedCount", "webFilesRefreshButton", "webFilesFilter", "webFilesSearch", "webFilesStatus", "webFilesList", "webDriveStatus", "webDriveBadge", "webDriveConnectButton", "webDriveUploadMissingButton", "webDriveFolderMeta", "webManualSection", "webManualForm", "webManualSport", "webManualDate", "webManualTime", "webManualDistanceKm", "webManualDuration", "webManualAscent", "webManualDescent", "webManualAvgHr", "webManualMaxHr", "webManualCalories", "webManualEquipment", "webManualTitle", "webManualLandmarkButtons", "webManualNotes", "webManualPreview", "webManualResetButton", "webManualCommitButton", "webImportSection", "webImportDropZone", "webImportFileInput", "webImportArchiveOriginals", "webImportArchiveBadge", "webImportArchiveMeta", "webImportStatus", "webImportPreviewList", "webImportClearButton", "webImportCommitButton", "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
     "syncEventCount", "syncConflictCount", "syncLastSource", "syncConflictBanner", "syncHistoryList",
     "syncHealthSection", "syncHealthMeta", "syncHealthClientCount", "syncHealthHealthyCount",
     "syncHealthPendingCount", "syncHealthErrorCount", "syncHealthNetwork", "syncHealthList",
@@ -216,6 +216,12 @@ let splitActivitySource = null;
 let splitActivitySaving = false;
 let webFileVaultEntries = [];
 let webFileVaultLoading = false;
+let webDriveAccessToken = null;
+let webDriveFolderId = null;
+let webDriveBusy = false;
+const WEB_DRIVE_FOLDER_NAME = "SPORT";
+const WEB_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+
 
 
 
@@ -413,6 +419,9 @@ function wireEvents() {
       ui.webImportFileInput?.click();
     }
   });
+  ui.webDriveConnectButton?.addEventListener("click", () => { void connectWebDrive(); });
+  ui.webDriveUploadMissingButton?.addEventListener("click", () => { void uploadMissingOriginalsToDrive(); });
+
   ui.webFilesRefreshButton?.addEventListener("click", () => { void renderWebFileVault(true); });
   ui.webFilesFilter?.addEventListener("change", renderWebFileVaultList);
   ui.webFilesSearch?.addEventListener("input", renderWebFileVaultList);
@@ -2657,7 +2666,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB038";
+  document.title = "SPORT Web · WEB039";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -5717,7 +5726,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB038",
+            webVersion: "WEB039",
             row: wanted
           }
         );
@@ -5740,7 +5749,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB038"
+            webVersion: "WEB039"
           }
         );
         countDelta -= 1;
@@ -5750,7 +5759,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB038"
+      webVersion: "WEB039"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5813,6 +5822,361 @@ function markerSummary(activity) {
 
 
 
+
+
+// -----------------------------------------------------------------------------
+// WEB039 · WEBDRIVE001 — archive Google Drive des FIT originaux
+// -----------------------------------------------------------------------------
+function driveStorageKey(name) {
+  return `sport_web_drive_${currentUser?.uid || "anonymous"}_${name}`;
+}
+
+function restoreWebDriveState() {
+  webDriveFolderId = localStorage.getItem(driveStorageKey("folder_id")) || null;
+  renderWebDriveState();
+}
+
+function renderWebDriveState() {
+  if (!ui.webDriveBadge) return;
+  const connected=Boolean(webDriveAccessToken);
+  ui.webDriveBadge.textContent=connected ? "Connecté" : "Déconnecté";
+  ui.webDriveBadge.className=connected ? "pill ok" : "pill neutral";
+  ui.webDriveConnectButton.textContent=connected ? "Reconnecter Drive" : "Connecter Drive";
+  ui.webDriveUploadMissingButton.disabled=!connected || webDriveBusy;
+
+  const originals=webFileVaultEntries.filter((entry)=>entry.kind==="original");
+  const missing=originals.filter((entry)=>!entry.drive_file_id).length;
+
+  if (connected) {
+    ui.webDriveStatus.textContent=
+      `${missing} original(aux) local(aux) sans sauvegarde Drive connue.`;
+  } else {
+    ui.webDriveStatus.textContent="Drive non connecté pour cette session.";
+  }
+
+  ui.webDriveFolderMeta.textContent=webDriveFolderId
+    ? `Dossier SPORT Drive : ${webDriveFolderId}`
+    : "Le dossier SPORT sera créé dans Mon Drive lors de la première sauvegarde.";
+}
+
+async function connectWebDrive() {
+  if (webDriveBusy) return;
+  webDriveBusy=true;
+  ui.webDriveConnectButton.disabled=true;
+  ui.webDriveStatus.textContent="Autorisation Google Drive…";
+
+  try {
+    const driveProvider=new GoogleAuthProvider();
+    driveProvider.addScope(WEB_DRIVE_SCOPE);
+    driveProvider.setCustomParameters({
+      prompt:"consent select_account",
+      access_type:"online"
+    });
+
+    const result=await signInWithPopup(auth,driveProvider);
+    const credential=GoogleAuthProvider.credentialFromResult(result);
+    const token=credential?.accessToken;
+    if (!token) throw new Error("Jeton d’accès Google Drive absent.");
+
+    webDriveAccessToken=token;
+    await ensureWebDriveFolder();
+    renderWebDriveState();
+    setMessage("WEBDRIVE001 · Google Drive connecté.","success");
+  } catch (error) {
+    console.error(error);
+    webDriveAccessToken=null;
+    ui.webDriveStatus.textContent=
+      `Connexion Drive impossible : ${error?.message || error}`;
+    renderWebDriveState();
+  } finally {
+    webDriveBusy=false;
+    ui.webDriveConnectButton.disabled=false;
+    renderWebDriveState();
+  }
+}
+
+async function driveApiFetch(url,options={}) {
+  if (!webDriveAccessToken) throw new Error("Google Drive n’est pas connecté.");
+  const headers=new Headers(options.headers || {});
+  headers.set("Authorization",`Bearer ${webDriveAccessToken}`);
+  const response=await fetch(url,{...options,headers});
+  if (response.status===401 || response.status===403) {
+    const text=await response.text();
+    throw new Error(`Google Drive refuse l’accès (${response.status}) : ${text.slice(0,180)}`);
+  }
+  if (!response.ok) {
+    const text=await response.text();
+    throw new Error(`Erreur Google Drive ${response.status} : ${text.slice(0,220)}`);
+  }
+  if (response.status===204) return null;
+  return response.json();
+}
+
+async function validateStoredWebDriveFolder() {
+  if (!webDriveFolderId || !webDriveAccessToken) return false;
+  try {
+    const result=await driveApiFetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(webDriveFolderId)}?fields=id,name,mimeType,trashed`
+    );
+    return Boolean(result?.id && !result.trashed && result.mimeType==="application/vnd.google-apps.folder");
+  } catch (error) {
+    console.warn("WEBDRIVE001 stored folder invalid",error);
+    return false;
+  }
+}
+
+async function findWebDriveFolder() {
+  const q=[
+    "mimeType = 'application/vnd.google-apps.folder'",
+    "trashed = false",
+    `name = '${WEB_DRIVE_FOLDER_NAME.replace(/'/g,"\\'")}'`,
+    "appProperties has { key='sport_app' and value='DESPORTE' }"
+  ].join(" and ");
+  const result=await driveApiFetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,createdTime)&pageSize=10`
+  );
+  return result?.files?.[0] || null;
+}
+
+async function createWebDriveFolder() {
+  return driveApiFetch(
+    "https://www.googleapis.com/drive/v3/files?fields=id,name,createdTime,webViewLink",
+    {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        name:WEB_DRIVE_FOLDER_NAME,
+        mimeType:"application/vnd.google-apps.folder",
+        appProperties:{
+          sport_app:"DESPORTE",
+          sport_role:"archive_root"
+        }
+      })
+    }
+  );
+}
+
+async function ensureWebDriveFolder() {
+  if (await validateStoredWebDriveFolder()) {
+    renderWebDriveState();
+    return webDriveFolderId;
+  }
+
+  let folder=await findWebDriveFolder();
+  if (!folder) folder=await createWebDriveFolder();
+  if (!folder?.id) throw new Error("Impossible de créer ou retrouver le dossier SPORT.");
+
+  webDriveFolderId=folder.id;
+  localStorage.setItem(driveStorageKey("folder_id"),webDriveFolderId);
+  renderWebDriveState();
+  return webDriveFolderId;
+}
+
+async function updateWebImportArchiveMetadata(sha256,patch) {
+  const db=await openWebImportArchive();
+  try {
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(WEB_IMPORT_ARCHIVE_STORE,"readwrite");
+      const store=tx.objectStore(WEB_IMPORT_ARCHIVE_STORE);
+      const request=store.get(String(sha256));
+      request.onsuccess=()=>{
+        const current=request.result;
+        if (!current) {
+          reject(new Error("FIT original introuvable dans le coffre local."));
+          return;
+        }
+        store.put({...current,...patch});
+      };
+      request.onerror=()=>reject(request.error || new Error("Lecture IndexedDB impossible."));
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error || new Error("Mise à jour IndexedDB impossible."));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+function driveSafeFileName(name) {
+  const cleaned=String(name || "activity.fit")
+    .replace(/[\/\\:*?"<>|]/g,"_")
+    .trim();
+  return cleaned.toLowerCase().endsWith(".fit") ? cleaned : `${cleaned}.fit`;
+}
+
+async function findDriveFileBySha(sha256) {
+  const folderId=await ensureWebDriveFolder();
+  const q=[
+    `'${folderId}' in parents`,
+    "trashed = false",
+    `appProperties has { key='sport_sha256' and value='${String(sha256).replace(/'/g,"\\'")}' }`
+  ].join(" and ");
+  const result=await driveApiFetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,size,createdTime,webViewLink,appProperties)&pageSize=10`
+  );
+  return result?.files?.[0] || null;
+}
+
+async function uploadBlobToDrive(blob,fileName,sha256) {
+  const folderId=await ensureWebDriveFolder();
+
+  const existing=await findDriveFileBySha(sha256);
+  if (existing) return {...existing,reused:true};
+
+  const boundary=`sport_web_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const metadata={
+    name:driveSafeFileName(fileName),
+    parents:[folderId],
+    mimeType:"application/octet-stream",
+    appProperties:{
+      sport_app:"DESPORTE",
+      sport_kind:"original_fit",
+      sport_sha256:String(sha256)
+    }
+  };
+
+  const prefix=
+    `--${boundary}\r\n`+
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n`+
+    `${JSON.stringify(metadata)}\r\n`+
+    `--${boundary}\r\n`+
+    `Content-Type: application/octet-stream\r\n\r\n`;
+  const suffix=`\r\n--${boundary}--`;
+
+  const body=new Blob([prefix,blob,suffix],{
+    type:`multipart/related; boundary=${boundary}`
+  });
+
+  return driveApiFetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,createdTime,webViewLink,appProperties",
+    {
+      method:"POST",
+      headers:{"Content-Type":`multipart/related; boundary=${boundary}`},
+      body
+    }
+  );
+}
+
+async function uploadOriginalEntryToDrive(entry,button=null) {
+  if (entry.kind!=="original") return;
+  if (!webDriveAccessToken) {
+    await connectWebDrive();
+    if (!webDriveAccessToken) return;
+  }
+
+  button && (button.disabled=true);
+  if (button) button.textContent="Envoi Drive…";
+
+  try {
+    const stored=await readWebImportArchiveEntry(entry.sha256);
+    if (!stored?.blob) throw new Error("Copie locale FIT introuvable.");
+
+    // Integrity is checked before cloud upload.
+    const digest=await sha256Hex(await stored.blob.arrayBuffer());
+    if (digest!==entry.sha256) {
+      throw new Error("Le SHA-256 local ne correspond plus à l’empreinte enregistrée.");
+    }
+
+    const remote=await uploadBlobToDrive(stored.blob,entry.file_name,entry.sha256);
+    const patch={
+      drive_file_id:remote.id,
+      drive_file_name:remote.name,
+      drive_folder_id:webDriveFolderId,
+      drive_uploaded_at_ms:Date.now(),
+      drive_web_view_link:remote.webViewLink || null,
+      drive_sha256:entry.sha256
+    };
+    await updateWebImportArchiveMetadata(entry.sha256,patch);
+    Object.assign(entry,patch);
+    renderWebDriveState();
+
+    if (button) {
+      button.textContent=remote.reused ? "✓ Déjà sur Drive" : "✓ Sauvegardé";
+      button.classList.add("verified");
+    }
+    setMessage(
+      `WEBDRIVE001 · ${entry.file_name} ${remote.reused?"déjà présent":"sauvegardé"} dans Google Drive.`,
+      "success"
+    );
+  } catch (error) {
+    console.error(error);
+    if (button) button.textContent="⚠ Échec Drive";
+    setMessage(`Sauvegarde Drive impossible : ${error?.message || error}`,"error");
+  } finally {
+    if (button) {
+      window.setTimeout(()=>{
+        button.disabled=false;
+        renderWebFileVaultList();
+      },1200);
+    }
+  }
+}
+
+async function uploadMissingOriginalsToDrive() {
+  if (webDriveBusy) return;
+  if (!webDriveAccessToken) {
+    await connectWebDrive();
+    if (!webDriveAccessToken) return;
+  }
+
+  const missing=webFileVaultEntries.filter((entry)=>entry.kind==="original" && !entry.drive_file_id);
+  if (!missing.length) {
+    setMessage("WEBDRIVE001 · tous les FIT originaux connus sont déjà sauvegardés.","success");
+    return;
+  }
+
+  const ok=window.confirm(
+    `Sauvegarder ${missing.length} FIT original(aux) dans Google Drive ?\n\n`+
+    `Dossier : ${WEB_DRIVE_FOLDER_NAME}\n`+
+    `Les copies locales resteront intactes.`
+  );
+  if (!ok) return;
+
+  webDriveBusy=true;
+  ui.webDriveUploadMissingButton.disabled=true;
+  let success=0,failed=0;
+
+  try {
+    for (let i=0;i<missing.length;i++) {
+      const entry=missing[i];
+      ui.webDriveStatus.textContent=
+        `Sauvegarde Drive ${i+1}/${missing.length} · ${entry.file_name}`;
+      try {
+        const stored=await readWebImportArchiveEntry(entry.sha256);
+        if (!stored?.blob) throw new Error("FIT local introuvable.");
+        const digest=await sha256Hex(await stored.blob.arrayBuffer());
+        if (digest!==entry.sha256) throw new Error("SHA local invalide.");
+
+        const remote=await uploadBlobToDrive(stored.blob,entry.file_name,entry.sha256);
+        const patch={
+          drive_file_id:remote.id,
+          drive_file_name:remote.name,
+          drive_folder_id:webDriveFolderId,
+          drive_uploaded_at_ms:Date.now(),
+          drive_web_view_link:remote.webViewLink || null,
+          drive_sha256:entry.sha256
+        };
+        await updateWebImportArchiveMetadata(entry.sha256,patch);
+        Object.assign(entry,patch);
+        success++;
+      } catch (error) {
+        console.error("WEBDRIVE001 batch",entry.file_name,error);
+        failed++;
+      }
+      renderWebDriveState();
+    }
+
+    renderWebFileVaultList();
+    ui.webDriveStatus.textContent=
+      `${success} sauvegarde(s) Drive réussie(s)`+(failed?` · ${failed} échec(s)`:"")+".";
+    setMessage(
+      `WEBDRIVE001 · ${success} FIT sauvegardé(s) sur Drive${failed?` · ${failed} échec(s)`:""}.`,
+      failed?"info":"success"
+    );
+  } finally {
+    webDriveBusy=false;
+    renderWebDriveState();
+  }
+}
 
 // -----------------------------------------------------------------------------
 // WEB038 · WEBFILES001 — coffre de fichiers local + relations activité/fichier
@@ -6017,7 +6381,10 @@ function webFileOriginalCard(entry) {
   card.innerHTML=`
     <div class="web-file-card-head">
       <div>
-        <span class="pill ok">FIT original</span>
+        <div class="web-file-badges">
+          <span class="pill ok">FIT original</span>
+          ${entry.drive_file_id?'<span class="pill ok">Drive ✓</span>':'<span class="pill neutral">Drive —</span>'}
+        </div>
         <strong>${escapeHtml(entry.file_name || "activity.fit")}</strong>
         <small>${escapeHtml(formatBytes(entry.file_size_bytes))} · ${date?escapeHtml(formatDateLong(date)):"date inconnue"}</small>
       </div>
@@ -6028,12 +6395,20 @@ function webFileOriginalCard(entry) {
       ${names?`<span>${names}</span>`:'<span class="warning-text">Aucune activité liée à ce SHA</span>'}
     </div>
     <div class="web-file-actions">
+      <button class="primary web-file-drive" type="button">${entry.drive_file_id?"Drive ✓":"Sauvegarder Drive"}</button>
       <button class="secondary web-file-download" type="button">Télécharger</button>
       <button class="secondary web-file-verify" type="button">Vérifier SHA</button>
+      ${entry.drive_web_view_link?'<button class="secondary web-file-drive-open" type="button">Ouvrir Drive</button>':""}
       ${linked.length?'<button class="secondary web-file-open" type="button">Ouvrir activité</button>':""}
       <button class="secondary danger-soft web-file-delete" type="button">Supprimer copie locale</button>
     </div>`;
 
+  card.querySelector(".web-file-drive")?.addEventListener("click",(event)=>{
+    void uploadOriginalEntryToDrive(entry,event.currentTarget);
+  });
+  card.querySelector(".web-file-drive-open")?.addEventListener("click",()=>{
+    if (entry.drive_web_view_link) window.open(entry.drive_web_view_link,"_blank","noopener,noreferrer");
+  });
   card.querySelector(".web-file-download")?.addEventListener("click",async()=>{
     const stored=await readWebImportArchiveEntry(entry.sha256);
     if (stored?.blob) triggerBlobDownload(stored.blob,entry.file_name);
@@ -6097,6 +6472,7 @@ async function renderWebFileVault(force=false) {
   if (webFileVaultEntries.length && !force) {
     updateWebFileVaultSummary();
     renderWebFileVaultList();
+    restoreWebDriveState();
     return;
   }
 
@@ -6106,6 +6482,7 @@ async function renderWebFileVault(force=false) {
     webFileVaultEntries=await buildWebFileVaultEntries();
     updateWebFileVaultSummary();
     renderWebFileVaultList();
+    restoreWebDriveState();
 
     const originals=webFileVaultEntries.filter((entry)=>entry.kind==="original").length;
     const derived=webFileVaultEntries.filter((entry)=>entry.kind==="derived").length;
@@ -7462,7 +7839,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB038"
+    webVersion: "WEB039"
   };
   if (row != null) event.row = row;
 
@@ -7471,7 +7848,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB038"
+    webVersion: "WEB039"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -7929,7 +8306,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB038",
+      webVersion: "WEB039",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -7995,7 +8372,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB038",
+    webVersion: "WEB039",
     androidVersion: 0,
     __synthetic: true
   };
@@ -9452,7 +9829,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB038",
+      webVersion: "WEB039",
       row: next
     }
   );
@@ -9488,7 +9865,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB038",
+        webVersion: "WEB039",
         row: patch
       }
     );
@@ -9500,7 +9877,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB038"
+      webVersion: "WEB039"
     },
     { merge: true }
   );

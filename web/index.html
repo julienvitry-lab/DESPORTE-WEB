@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB038 · WEBFILES001 · Comfortaa">
-  <title>SPORT Web · WEB038</title>
+  <meta name="description" content="SPORT Web · WEB039 · WEBDRIVE001 · Comfortaa">
+  <title>SPORT Web · WEB039</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB038 · WEBFILES001 · Comfortaa · Firestore</div>
+      <div class="version">WEB039 · WEBDRIVE001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <label class="appearance-picker" title="Changer l’apparence">
@@ -258,10 +258,24 @@
           <div id="webFilesStatus" class="muted">Chargement du coffre…</div>
           <div id="webFilesList" class="web-files-list"></div>
 
-          <div class="web-files-cloud-note">
-            <span class="pill neutral">Cloud</span>
-            <span>WEBFILES001 gère le coffre local. L’archivage Google Drive sera ajouté séparément pour ne pas mélanger stockage local et authentification cloud.</span>
-          </div>
+          <section class="web-drive-panel">
+            <div class="web-drive-head">
+              <div>
+                <p class="eyebrow">WEB039 · WEBDRIVE001</p>
+                <strong>Sauvegarde Google Drive</strong>
+                <span id="webDriveStatus" class="muted">Drive non connecté.</span>
+              </div>
+              <div class="web-drive-actions">
+                <span id="webDriveBadge" class="pill neutral">Déconnecté</span>
+                <button id="webDriveConnectButton" class="secondary" type="button">Connecter Drive</button>
+                <button id="webDriveUploadMissingButton" class="primary" type="button" disabled>Sauvegarder les originaux manquants</button>
+              </div>
+            </div>
+            <div id="webDriveFolderMeta" class="web-drive-folder muted">
+              Un dossier SPORT sera créé dans Mon Drive lors de la première sauvegarde.
+            </div>
+            <p class="map-help">Accès limité aux fichiers créés par SPORT via le scope Google <code>drive.file</code>. Le FIT local reste conservé ; Drive constitue une seconde copie.</p>
+          </section>
         </section>
 
         <section id="webManualSection" class="panel web-manual-panel hidden">
