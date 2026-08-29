@@ -101,7 +101,7 @@ const ui = Object.fromEntries(
     "detailView", "backToCatalogButton", "backToCatalogBottomButton",
     "previousActivityButton", "nextActivityButton",
     "previousActivityBottomButton", "nextActivityBottomButton", "detailPosition",
-    "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics", "trashCurrentActivityButton",
+    "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics", "quickLandmarkButtons", "trashCurrentActivityButton",
     "detailSummaryGrid", "detailPerformanceGrid", "detailPersonalGrid",
     "interopStatus", "interopEditor", "editTitleInput", "editDescriptionInput", "editNoteInput",
     "editEquipmentSelect", "editFeelingSelect", "editDifficultySelect", "editPrivacySelect",
@@ -111,7 +111,7 @@ const ui = Object.fromEntries(
     "routeComparisonPanel", "routeComparisonSelect", "routeComparisonButton", "routeComparisonClearButton", "routeComparisonStatus", "routeComparisonMetrics", "routeComparisonLegend",
     "routeStats", "routeAnalysis", "routeAnalysisMeta", "routeSegmentList", "routeAnalysisClearButton", "routeKmAnalysisMeta", "routeKmAnalysisList", "routeKmClearButton", "elevationProfile", "profileMeta", "profileLive",
     "detailLandmarks", "detailRecordsSection", "detailRecordsList",
-    "detailImportGrid", "detailRawGrid"
+    "detailImportGrid", "detailTechnicalSummary", "detailRawGrid"
   ].map((id) => [id, document.querySelector(`#${id}`)])
 );
 
@@ -2583,7 +2583,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB031";
+  document.title = "SPORT Web · WEB032";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -2633,12 +2633,18 @@ function renderDetail(activity) {
   });
 
   const title = activity.custom_title || sportName(activity.sport);
-  ui.detailTitle.textContent = title;
+  const hasCustomTitle = Boolean(String(activity.custom_title || "").trim());
+  ui.detailTitle.textContent = hasCustomTitle ? activity.custom_title : "";
+  ui.detailTitle.classList.toggle("hidden", !hasCustomTitle);
   ui.trashCurrentActivityButton.disabled = trashMutationRunning;
   ui.trashCurrentActivityButton.textContent =
     activity.deleted_at_ms == null ? "🗑 Mettre à la corbeille" : "↩ Restaurer";
+  const sportLabel = sportName(activity.sport);
+  const subLabel = subSportName(activity.sub_sport);
   ui.detailSportLine.textContent =
-    `${sportName(activity.sport).toUpperCase()} · ${subSportName(activity.sub_sport)}`;
+    subLabel && subLabel !== "—" && subLabel.toLowerCase() !== sportLabel.toLowerCase()
+      ? `${sportLabel} · ${subLabel}`
+      : sportLabel;
   ui.detailDateLine.textContent = formatDateLong(activity.start_time_ms);
 
   renderHeroMetrics(activity);
@@ -2651,20 +2657,81 @@ function renderDetail(activity) {
   resetRecurringClimbAnalysis();
   renderLinkedRecords(activity);
   renderImport(activity);
+  renderTechnicalSummary(activity);
   renderRaw(activity);
 
   document.title = `${title} · SPORT Web`;
 }
 
+
+function nearestRecordedWeightKg(timestampMs) {
+  const target = numberOrZero(timestampMs);
+  const rows = [...journalEntries.values()]
+    .map((entry) => ({
+      time: numberOrZero(entry.day_start_ms ?? entry.__docId),
+      weight: Number(entry.weight_kg)
+    }))
+    .filter((entry) => entry.time > 0 && Number.isFinite(entry.weight) && entry.weight >= 20 && entry.weight <= 300);
+  if (!rows.length) return null;
+  rows.sort((a,b) => Math.abs(a.time-target)-Math.abs(b.time-target));
+  return rows[0].weight;
+}
+
+function originalCalories(activity) {
+  const candidates = [
+    activity?.calories,
+    activity?.total_calories,
+    activity?.active_calories,
+    activity?.kcal
+  ].map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  return candidates.length ? Math.round(candidates[0]) : null;
+}
+
+function estimateActivityCalories(activity) {
+  const weight = nearestRecordedWeightKg(activity?.start_time_ms);
+  if (!Number.isFinite(weight)) return null;
+
+  const distanceKm = numberOrZero(activity?.distance_m) / 1000;
+  const ascent = numberOrZero(activity?.ascent_m);
+  const durationMin = numberOrZero(activity?.elapsed_time_ms) / 60000;
+  const sport = Number(activity?.sport);
+
+  let kcal = null;
+  if ([1,6].includes(sport) && distanceKm > 0) {
+    kcal = weight * distanceKm + weight * ascent * 0.006;
+  } else if ([11,17].includes(sport) && distanceKm > 0) {
+    kcal = weight * distanceKm * 0.58 + weight * ascent * 0.006;
+  } else if ([2,3,4].includes(sport) && durationMin > 0) {
+    const speed = averageSpeedKmh(activity);
+    const met = speed >= 28 ? 12 : speed >= 22 ? 10 : speed >= 16 ? 8 : 6;
+    kcal = met * 3.5 * weight / 200 * durationMin;
+  } else if (durationMin > 0) {
+    kcal = 5 * 3.5 * weight / 200 * durationMin;
+  }
+
+  return Number.isFinite(kcal) && kcal > 0
+    ? { value: Math.round(kcal), weight }
+    : null;
+}
+
+function activityCaloriesPresentation(activity) {
+  const original = originalCalories(activity);
+  if (Number.isFinite(original)) return { value: `${formatNumber(original)} kcal`, label: "Calories · fichier", estimated: false };
+  const estimate = estimateActivityCalories(activity);
+  if (estimate) return { value: `≈ ${formatNumber(estimate.value)} kcal`, label: "Calories · estim.", estimated: true };
+  return { value: "—", label: "Calories", estimated: false };
+}
+
 function renderHeroMetrics(activity) {
   ui.detailHeroMetrics.innerHTML = "";
+  const calories = activityCaloriesPresentation(activity);
   const metrics = [
     ["Distance", formatDistance(activity.distance_m)],
     ["Durée", formatDuration(activity.elapsed_time_ms)],
     ["D+", formatMeters(activity.ascent_m)],
     ["Allure / vitesse", primarySpeedMetric(activity)],
     ["FC moy.", formatHeartRate(activity.avg_hr)],
-    ["Matériel", activity.equipment_name || "—"]
+    [calories.label, calories.value]
   ];
 
   for (const [label, value] of metrics) {
@@ -2690,9 +2757,8 @@ function renderSummary(activity) {
   addDetailItem(ui.detailSummaryGrid, "Temps actif", formatDuration(activity.timer_time_ms));
   addDetailItem(ui.detailSummaryGrid, "Dénivelé +", formatMeters(activity.ascent_m));
   addDetailItem(ui.detailSummaryGrid, "Dénivelé −", formatMeters(activity.descent_m));
-  addDetailItem(ui.detailSummaryGrid, "Calories", formatInteger(activity.calories));
-  addDetailItem(ui.detailSummaryGrid, "Points GPS", formatInteger(activity.gps_point_count));
-  addDetailItem(ui.detailSummaryGrid, "Enregistrements FIT", formatInteger(activity.record_count));
+  const calories = activityCaloriesPresentation(activity);
+  addDetailItem(ui.detailSummaryGrid, calories.label, calories.value);
 }
 
 
@@ -2952,8 +3018,7 @@ function renderRouteStats(route, sourceCount) {
     ["Altitude min.", Number.isFinite(stats.minAltitude) ? formatMeters(stats.minAltitude) : "—"],
     ["Altitude max.", Number.isFinite(stats.maxAltitude) ? formatMeters(stats.maxAltitude) : "—"],
     ["Pente max. +", Number.isFinite(stats.maxClimbGrade) ? `${stats.maxClimbGrade.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %` : "—"],
-    ["Pente max. −", Number.isFinite(stats.maxDescentGrade) ? `${stats.maxDescentGrade.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %` : "—"],
-    ["Points", `${formatNumber(route.points.length)} / ${formatNumber(sourceCount || route.points.length)}`]
+    ["Pente max. −", Number.isFinite(stats.maxDescentGrade) ? `${stats.maxDescentGrade.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %` : "—"]
   ];
 
   for (const [label, value] of values) {
@@ -3213,41 +3278,73 @@ function renderKilometerAnalysis(route) {
   const segments = buildKilometerSegments(route);
   route.kilometerSegments = segments;
   ui.routeKmAnalysisList.innerHTML = "";
-  ui.routeKmAnalysisMeta.textContent = `${segments.length} tronçon(s) · dernier tronçon adapté à la distance réelle`;
+  ui.routeKmAnalysisMeta.textContent = `${segments.length} tronçon(s)`;
   if (ui.routeKmClearButton) ui.routeKmClearButton.disabled = true;
 
+  if (!segments.length) {
+    ui.routeKmAnalysisList.innerHTML = '<div class="muted">Aucun tronçon kilométrique exploitable.</div>';
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.className = "route-km-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Km</th>
+        <th>D+</th>
+        <th>D−</th>
+        <th>Altitude</th>
+        <th>Pente moy.</th>
+        <th>Pente max.</th>
+      </tr>
+    </thead>
+    <tbody></tbody>`;
+  const tbody = table.querySelector("tbody");
+
   for (const segment of segments) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "route-km-card";
-    button.dataset.segmentId = segment.id;
-    const distanceLabel = segment.distanceMeters >= 995
-      ? `km ${segment.rank}`
-      : `${(segment.distanceMeters/1000).toLocaleString("fr-FR",{maximumFractionDigits:2})} km`;
+    const row = document.createElement("tr");
+    row.className = "route-km-row";
+    row.dataset.segmentId = segment.id;
+    row.tabIndex = 0;
+    const kmLabel = segment.distanceMeters >= 995
+      ? String(segment.rank)
+      : `${segment.rank}*`;
     const avg = Number.isFinite(segment.averageGrade)
       ? `${segment.averageGrade >= 0 ? "+" : ""}${segment.averageGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`
       : "—";
     const max = Number.isFinite(segment.maxGrade)
       ? `${segment.maxGrade >= 0 ? "+" : ""}${segment.maxGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`
       : "—";
-    button.innerHTML = `
-      <span class="route-km-number">${distanceLabel}</span>
-      <span><b>D+</b> ${Math.round(segment.gainMeters)} m · <b>D−</b> ${Math.round(segment.lossMeters)} m</span>
-      <span><b>Altitude</b> ${Number.isFinite(segment.minAltitude)?Math.round(segment.minAltitude):"—"}–${Number.isFinite(segment.maxAltitude)?Math.round(segment.maxAltitude):"—"} m</span>
-      <span><b>Pente</b> ${avg} moy. · ${max} max.</span>`;
-    button.addEventListener("click", () => selectKilometerSegment(segment));
-    ui.routeKmAnalysisList.appendChild(button);
+    const alt = `${Number.isFinite(segment.minAltitude)?Math.round(segment.minAltitude):"—"}–${Number.isFinite(segment.maxAltitude)?Math.round(segment.maxAltitude):"—"} m`;
+    row.innerHTML = `
+      <th scope="row">${kmLabel}</th>
+      <td>+${Math.round(segment.gainMeters)} m</td>
+      <td>−${Math.round(segment.lossMeters)} m</td>
+      <td>${alt}</td>
+      <td>${avg}</td>
+      <td>${max}</td>`;
+    row.addEventListener("click", () => selectKilometerSegment(segment));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectKilometerSegment(segment);
+      }
+    });
+    tbody.appendChild(row);
   }
+
+  ui.routeKmAnalysisList.appendChild(table);
 }
 
 function selectKilometerSegment(segment) {
   selectRouteSegment(segment);
-  document.querySelectorAll(".route-km-card").forEach((node) => {
+  document.querySelectorAll(".route-km-card, .route-km-row").forEach((node) => {
     node.classList.toggle("selected", node.dataset.segmentId === segment.id);
   });
   document.querySelectorAll(".route-segment-card.selected").forEach((node) => node.classList.remove("selected"));
   document.querySelectorAll(".climb-subsegment-card.selected").forEach((node) => node.classList.remove("selected"));
-  document.querySelectorAll(".route-km-card.selected").forEach((node) => node.classList.remove("selected"));
+  document.querySelectorAll(".route-km-card.selected, .route-km-row.selected").forEach((node) => node.classList.remove("selected"));
   if (ui.routeKmClearButton) ui.routeKmClearButton.disabled = false;
   if (ui.routeAnalysisClearButton) ui.routeAnalysisClearButton.disabled = false;
   if (ui.routeSegmentDetail) ui.routeSegmentDetail.classList.add("hidden");
@@ -4949,6 +5046,7 @@ function renderPersonal(activity) {
 
   const links = linksForActivity(activity);
   rebuildAddLandmarkSelect(links);
+  renderQuickLandmarkButtons(activity, links);
 
   if (!links.length) {
     const empty = document.createElement("span");
@@ -5000,6 +5098,43 @@ function renderPersonal(activity) {
     });
 }
 
+
+function renderQuickLandmarkButtons(activity, links = linksForActivity(activity)) {
+  if (!ui.quickLandmarkButtons) return;
+  ui.quickLandmarkButtons.innerHTML = "";
+  const used = new Set((links || []).map((link) => String(link.landmark_code ?? "")));
+
+  const rows = [...landmarks.entries()]
+    .sort((a,b) =>
+      Number(a[1]?.sort_order ?? 999) - Number(b[1]?.sort_order ?? 999) ||
+      String(a[0]).localeCompare(String(b[0]), "fr")
+    );
+
+  if (!rows.length) {
+    ui.quickLandmarkButtons.innerHTML = '<span class="muted">Aucun repère configuré</span>';
+    return;
+  }
+
+  rows.forEach(([code,row]) => {
+    const active = used.has(String(code));
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `quick-landmark-button${active ? " active" : ""}`;
+    button.textContent = code;
+    button.title = `${row?.name || row?.label || "Repère"} · ${active ? "cliquer pour retirer" : "cliquer pour ajouter"}`;
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        await setLandmarkOccurrence(activity, code, active ? 0 : 1);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    ui.quickLandmarkButtons.appendChild(button);
+  });
+}
+
 function rebuildAddLandmarkSelect(links) {
   const used = new Set((links || []).map((link) => String(link.landmark_code ?? "")));
   const selected = ui.addLandmarkSelect.value;
@@ -5041,6 +5176,18 @@ function renderLinkedRecords(activity) {
     row.append(left, right);
     ui.detailRecordsList.appendChild(row);
   });
+}
+
+
+function renderTechnicalSummary(activity) {
+  if (!ui.detailTechnicalSummary) return;
+  ui.detailTechnicalSummary.innerHTML = "";
+  addDetailItem(ui.detailTechnicalSummary, "Points GPS", formatInteger(activity.gps_point_count));
+  addDetailItem(ui.detailTechnicalSummary, "Points d’enregistrement", formatInteger(activity.record_count));
+  addDetailItem(ui.detailTechnicalSummary, "ID activité", valueOrDash(activity.id ?? activity.__docId));
+  const calories = activityCaloriesPresentation(activity);
+  addDetailItem(ui.detailTechnicalSummary, "Calories", calories.value);
+  addDetailItem(ui.detailTechnicalSummary, "Origine calories", calories.label.replace("Calories · ", "") || "—");
 }
 
 function renderImport(activity) {
@@ -5268,7 +5415,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB031",
+            webVersion: "WEB032",
             row: wanted
           }
         );
@@ -5291,7 +5438,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB031"
+            webVersion: "WEB032"
           }
         );
         countDelta -= 1;
@@ -5301,7 +5448,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB031"
+      webVersion: "WEB032"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5501,7 +5648,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB031"
+    webVersion: "WEB032"
   };
   if (row != null) event.row = row;
 
@@ -5510,7 +5657,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB031"
+    webVersion: "WEB032"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -5963,7 +6110,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB031",
+      webVersion: "WEB032",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -6029,7 +6176,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB031",
+    webVersion: "WEB032",
     androidVersion: 0,
     __synthetic: true
   };
@@ -7486,7 +7633,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB031",
+      webVersion: "WEB032",
       row: next
     }
   );
@@ -7522,7 +7669,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB031",
+        webVersion: "WEB032",
         row: patch
       }
     );
@@ -7534,7 +7681,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB031"
+      webVersion: "WEB032"
     },
     { merge: true }
   );

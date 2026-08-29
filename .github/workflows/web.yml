@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB031
+name: Publier SPORT Web · WEB032
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB031.md"
+      - "docs/releases/WEB032.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB031
+      - name: Valider WEB032
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +47,7 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB031"' web/app.js
+          grep -Fq 'webVersion: "WEB032"' web/app.js
 
           # WEB022 · WEBCARTO007.
           grep -Fq "WEB020 · WEBCARTO005" web/index.html
@@ -158,7 +158,25 @@ jobs:
           grep -Fq 'status === "USED"' web/app.js
           grep -Fq ':root[data-theme="aurum"]' web/styles.css
           grep -Fq '.ux-primary-nav' web/styles.css
-          echo "WEB031 : WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          grep -Fq 'WEB032 · WEBUX002' web/index.html
+
+          grep -Fq 'quickLandmarkButtons' web/index.html
+
+          grep -Fq 'route-km-table-host' web/index.html
+
+          grep -Fq 'Données techniques et source' web/index.html
+
+          grep -Fq 'function activityCaloriesPresentation' web/app.js
+
+          grep -Fq 'function renderQuickLandmarkButtons' web/app.js
+
+          grep -Fq 'className = "route-km-table"' web/app.js
+
+          grep -Fq '.detail-hero-compact' web/styles.css
+
+          grep -Fq '.route-km-table' web/styles.css
+
+          echo "WEB032 : WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -168,6 +186,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB031
+      - name: Publier SPORT Web · WEB032
         id: deployment
         uses: actions/deploy-pages@v4

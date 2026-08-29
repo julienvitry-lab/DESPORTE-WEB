@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB031 · WEBUX001 · Comfortaa">
-  <title>SPORT Web · WEB031</title>
+  <meta name="description" content="SPORT Web · WEB032 · WEBUX002 · Comfortaa">
+  <title>SPORT Web · WEB032</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB031 · WEBUX001 · Comfortaa · Firestore</div>
+      <div class="version">WEB032 · WEBUX002 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <label class="appearance-picker" title="Changer l’apparence">
@@ -693,6 +693,7 @@
         </section>
       </div>
 
+      <!-- Héritage WEB031 · WEBUX001 -->
       <section id="detailView" class="hidden">
         <div class="detail-toolbar">
           <button id="backToCatalogButton" class="secondary">← Répertoire</button>
@@ -704,20 +705,29 @@
           </div>
         </div>
 
-        <article class="detail-hero panel">
-          <div>
+        <article class="detail-hero detail-hero-compact panel">
+          <div class="detail-identity">
             <p id="detailSportLine" class="eyebrow">ACTIVITÉ</p>
             <h1 id="detailTitle">Activité</h1>
             <p id="detailDateLine" class="detail-date"></p>
           </div>
-          <div id="detailHeroMetrics" class="detail-hero-metrics"></div>
+          <div id="detailHeroMetrics" class="detail-hero-metrics detail-hero-metrics-compact"></div>
+
+          <div class="detail-quick-controls">
+            <label class="detail-quick-equipment">
+              <span>Matériel</span>
+              <select id="editEquipmentSelect">
+                <option value="">Aucun matériel</option>
+              </select>
+            </label>
+            <div class="detail-quick-landmarks">
+              <span>Repères</span>
+              <div id="quickLandmarkButtons" class="quick-landmark-buttons"></div>
+            </div>
+          </div>
         </article>
 
-        <section class="detail-section panel">
-          <div class="section-heading">
-            <p class="eyebrow">SYNTHÈSE</p>
-            <h2>Activité</h2>
-          </div>
+        <section class="detail-section panel ux32-redundant-section hidden" aria-hidden="true">
           <div id="detailSummaryGrid" class="detail-grid"></div>
         </section>
 
@@ -730,25 +740,24 @@
             <div id="mapStatus" class="pill neutral">Chargement du tracé…</div>
           </div>
 
-          <div id="routeComparisonPanel" class="route-comparison-panel">
-            <div class="route-comparison-head">
-              <div>
-                <p class="eyebrow">WEB022 · WEBCARTO007</p>
-                <strong>Comparer avec une autre activité</strong>
-                <span id="routeComparisonStatus" class="muted">Choisissez une activité pour superposer son tracé et son profil.</span>
+          <details id="routeComparisonPanel" class="compact-disclosure route-comparison-panel">
+            <summary>
+              <span>⇄ Comparer avec une autre activité</span>
+              <span id="routeComparisonStatus" class="muted">Option secondaire</span>
+            </summary>
+            <div class="compact-disclosure-body">
+              <div class="route-comparison-controls">
+                <select id="routeComparisonSelect" aria-label="Activité à comparer"></select>
+                <button id="routeComparisonButton" class="secondary" type="button">Comparer</button>
+                <button id="routeComparisonClearButton" class="secondary compact" type="button" disabled>Retirer</button>
               </div>
-              <button id="routeComparisonClearButton" class="secondary compact" type="button" disabled>Retirer la comparaison</button>
+              <div id="routeComparisonMetrics" class="route-comparison-metrics hidden"></div>
+              <div class="route-comparison-legend hidden" id="routeComparisonLegend">
+                <span><i class="route-legend-line current"></i>Activité affichée</span>
+                <span><i class="route-legend-line compared"></i>Activité comparée</span>
+              </div>
             </div>
-            <div class="route-comparison-controls">
-              <select id="routeComparisonSelect" aria-label="Activité à comparer"></select>
-              <button id="routeComparisonButton" class="secondary" type="button">Comparer</button>
-            </div>
-            <div id="routeComparisonMetrics" class="route-comparison-metrics hidden"></div>
-            <div class="route-comparison-legend hidden" id="routeComparisonLegend">
-              <span><i class="route-legend-line current"></i>Activité affichée</span>
-              <span><i class="route-legend-line compared"></i>Activité comparée</span>
-            </div>
-          </div>
+          </details>
 
           <div id="mapStage" class="map-stage">
             <div class="map-stage-toolbar">
@@ -779,7 +788,18 @@
             </div>
           </div>
 
-          <p class="map-help">WEBCARTO007 · comparaison de deux activités : traces, profils et écarts globaux, sans inventer de chronologie locale.</p>
+          <div class="profile-card profile-card-immediate">
+            <div class="profile-title-row">
+              <strong>Profil altimétrique</strong>
+              <span id="profileMeta" class="muted"></span>
+            </div>
+            <div id="profileLive" class="profile-live">Survolez la carte ou le profil pour suivre votre position.</div>
+            <svg id="elevationProfile" class="elevation-profile"
+                 viewBox="0 0 1000 240" preserveAspectRatio="none"
+                 aria-label="Profil altimétrique de l'activité"></svg>
+          </div>
+
+          <p class="map-help ux32-map-help">Carte et profil synchronisés.</p>
           <div id="routeStats" class="route-stats"></div>
 
           <div id="routeAnalysis" class="route-analysis-card">
@@ -833,18 +853,7 @@
               <button id="routeKmClearButton" class="secondary compact" type="button" disabled>Tout le tracé</button>
             </div>
             <p class="route-analysis-help">Cliquez sur un kilomètre pour le mettre en évidence simultanément sur la carte et le profil.</p>
-            <div id="routeKmAnalysisList" class="route-km-analysis-list"></div>
-          </div>
-
-          <div class="profile-card">
-            <div class="profile-title-row">
-              <strong>Profil altimétrique</strong>
-              <span id="profileMeta" class="muted"></span>
-            </div>
-            <div id="profileLive" class="profile-live">Survolez la carte ou le profil pour suivre votre position.</div>
-            <svg id="elevationProfile" class="elevation-profile"
-                 viewBox="0 0 1000 240" preserveAspectRatio="none"
-                 aria-label="Profil altimétrique de l'activité"></svg>
+            <div id="routeKmAnalysisList" class="route-km-analysis-list route-km-table-host"></div>
           </div>
 
           <section id="performanceTerrainAnalysis" class="performance-terrain-analysis">
@@ -872,15 +881,14 @@
 
             <div id="performanceInsight" class="performance-insight"></div>
 
-            <section id="performanceProgression" class="performance-progression">
-              <div class="route-analysis-heading">
-                <div>
-                  <p class="eyebrow">WEB027 · WEBANALYSE002</p>
-                  <strong>Progression sur activités comparables</strong>
-                  <span id="performanceProgressionMeta" class="muted">Historique du groupe comparable actuellement chargé.</span>
-                </div>
+            <!-- Héritage WEB027 · WEBANALYSE002 -->
+            <details id="performanceProgression" class="performance-progression compact-disclosure">
+              <summary>
+                <span>Progression sur activités comparables</span>
                 <span id="performanceProgressionTrend" class="pill neutral">Tendance</span>
-              </div>
+              </summary>
+              <div class="compact-disclosure-body">
+                <span id="performanceProgressionMeta" class="muted">Historique du groupe comparable actuellement chargé.</span>
 
               <div id="performanceProgressionSummary" class="performance-progression-summary"></div>
 
@@ -895,9 +903,10 @@
                 </div>
               </div>
 
-              <div id="performanceProgressionHistory" class="performance-progression-history"></div>
-              <p class="map-help">WEBANALYSE002 compare uniquement des activités du même sport, à distance proche et densité de D+ cohérente. La tendance porte sur l’allure/vitesse globale réelle de chaque séance ; aucune donnée locale n’est extrapolée.</p>
-            </section>
+                <div id="performanceProgressionHistory" class="performance-progression-history"></div>
+                <p class="map-help">Comparaison sur activités du même sport, de distance et D+ proches.</p>
+              </div>
+            </details>
 
             <p class="map-help">WEBANALYSE001 n’invente pas de données locales : l’allure/vitesse et la fréquence cardiaque sont celles de l’activité entière ; altitude et pente proviennent du tracé GPS. Une future publication des timestamps/FC point par point permettra l’analyse locale.</p>
           </section>
@@ -929,35 +938,27 @@
           </section>
         </section>
 
-        <section class="detail-section panel">
-          <div class="section-heading">
-            <p class="eyebrow">SPORT</p>
-            <h2>Performance</h2>
-          </div>
+        <section class="detail-section panel ux32-redundant-section hidden" aria-hidden="true">
           <div id="detailPerformanceGrid" class="detail-grid"></div>
         </section>
 
-        <section class="detail-section panel">
+        <section class="detail-section panel detail-edit-panel">
           <div class="section-heading interop-heading">
             <div>
-              <p class="eyebrow">WEB018 · MÉTIER001</p>
-              <h2>Matériel, repères et notes</h2>
+              <p class="eyebrow">MODIFIER</p>
+              <h2>Notes et informations personnelles</h2>
             </div>
             <div id="interopStatus" class="pill ok">Synchronisation active</div>
           </div>
 
           <div id="interopEditor" class="interop-editor">
-            <div class="interop-form-grid interop-form-grid-extended">
+            <details class="compact-disclosure">
+              <summary>Modifier titre, ressenti, difficulté et notes</summary>
+              <div class="compact-disclosure-body">
+                <div class="interop-form-grid interop-form-grid-extended">
               <label>
                 Titre personnalisé
                 <input id="editTitleInput" type="text" maxlength="120" placeholder="Titre facultatif">
-              </label>
-
-              <label>
-                Matériel utilisé
-                <select id="editEquipmentSelect">
-                  <option value="">Aucun matériel</option>
-                </select>
               </label>
 
               <label>
@@ -1007,8 +1008,10 @@
                 Note personnelle
                 <textarea id="editNoteInput" rows="3" maxlength="4000" placeholder="Note personnelle"></textarea>
               </label>
-            </div>
-            <div class="interop-actions autosave-explainer">
+                </div>
+              </div>
+            </details>
+            <div class="interop-actions autosave-explainer compact-autosave">
               <span class="autosave-dot" aria-hidden="true"></span>
               <div>
                 <strong>Synchronisation automatique</strong>
@@ -1016,15 +1019,17 @@
               </div>
             </div>
 
-            <div class="landmark-editor">
-              <label>
-                Ajouter un repère
-                <select id="addLandmarkSelect">
-                  <option value="">Choisir…</option>
-                </select>
-              </label>
-              <span class="muted">Le choix du repère l’ajoute immédiatement sur Web, téléphone et tablette.</span>
-            </div>
+            <details class="compact-disclosure landmark-more">
+              <summary>Autres repères…</summary>
+              <div class="compact-disclosure-body landmark-editor">
+                <label>
+                  Ajouter un repère
+                  <select id="addLandmarkSelect">
+                    <option value="">Choisir…</option>
+                  </select>
+                </label>
+              </div>
+            </details>
           </div>
 
           <div id="detailPersonalGrid" class="detail-grid"></div>
@@ -1039,19 +1044,18 @@
           <div id="detailRecordsList" class="record-list"></div>
         </section>
 
-        <section class="detail-section panel">
-          <div class="section-heading">
-            <p class="eyebrow">IMPORT</p>
-            <h2>Source et fichier</h2>
-          </div>
-          <div id="detailImportGrid" class="detail-grid"></div>
-        </section>
-
-        <section class="detail-section panel">
+        <section class="detail-section panel technical-panel">
           <details class="technical-details">
-            <summary>Données techniques Firestore</summary>
-            <p class="muted">Toutes les colonnes actuellement présentes dans le document activité.</p>
-            <div id="detailRawGrid" class="raw-grid"></div>
+            <summary>Données techniques et source</summary>
+            <p class="muted">Informations de diagnostic, source FIT, points GPS et colonnes Firestore.</p>
+            <h3>Source / import</h3>
+            <div id="detailImportGrid" class="detail-grid technical-grid"></div>
+            <h3>Résumé technique</h3>
+            <div id="detailTechnicalSummary" class="detail-grid technical-grid"></div>
+            <details class="technical-details technical-raw">
+              <summary>Toutes les colonnes Firestore</summary>
+              <div id="detailRawGrid" class="raw-grid"></div>
+            </details>
           </details>
         </section>
 

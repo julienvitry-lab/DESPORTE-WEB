@@ -2322,3 +2322,67 @@ footer {
   .ux-nav-button{padding:8px 11px;font-size:12px}
   .activity-directory-footer{align-items:flex-start;flex-direction:column}
 }
+
+
+/* WEB032 · WEBUX002 — fiche activité compacte */
+.detail-hero-compact{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(520px,1.4fr);gap:18px;padding:20px 24px}
+.detail-identity{align-self:center}
+.detail-hero-compact .detail-identity h1{font-size:clamp(1.35rem,2.4vw,2.1rem);line-height:1.08;margin:.18rem 0 .25rem}
+.detail-hero-compact .detail-sport-line,.detail-hero-compact .eyebrow{font-size:.75rem}
+.detail-hero-metrics-compact{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:9px}
+.detail-hero-metrics-compact .hero-metric{min-height:0;padding:10px 12px}
+.detail-hero-metrics-compact .hero-metric span{font-size:.66rem}
+.detail-hero-metrics-compact .hero-metric strong{font-size:1rem;line-height:1.2}
+.detail-quick-controls{grid-column:1/-1;display:grid;grid-template-columns:minmax(250px,.75fr) minmax(360px,1.25fr);gap:12px;padding-top:12px;border-top:1px solid var(--ux-line,rgba(255,255,255,.08))}
+.detail-quick-equipment,.detail-quick-landmarks{display:grid;gap:6px}
+.detail-quick-equipment>span,.detail-quick-landmarks>span{font-size:.67rem;color:var(--muted)}
+.quick-landmark-buttons{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.quick-landmark-button{min-width:34px;height:32px;padding:0 9px;border-radius:9px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.025);color:var(--text);font:700 .76rem "Comfortaa",sans-serif;cursor:pointer}
+.quick-landmark-button:hover{border-color:var(--accent);color:var(--accent)}
+.quick-landmark-button.active{background:var(--accent);border-color:var(--accent);color:#071006}
+.ux32-redundant-section{display:none!important}
+.profile-card-immediate{margin-top:12px}
+.ux32-map-help{margin:6px 0 10px}
+.compact-disclosure{border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.018);margin:10px 0}
+.compact-disclosure>summary{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 13px;cursor:pointer;font-weight:700;font-size:.78rem;list-style:none}
+.compact-disclosure>summary::-webkit-details-marker{display:none}
+.compact-disclosure>summary:after{content:"▾";color:var(--muted)}
+.compact-disclosure[open]>summary:after{content:"▴"}
+.compact-disclosure-body{padding:0 13px 13px}
+.route-comparison-panel{padding:0}
+.route-comparison-panel .route-comparison-controls{margin-top:8px}
+.route-km-table-host{overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:12px}
+.route-km-table{width:100%;border-collapse:collapse;font-size:.72rem}
+.route-km-table th,.route-km-table td{padding:9px 11px;border-bottom:1px solid rgba(255,255,255,.06);text-align:right;white-space:nowrap}
+.route-km-table thead th{position:sticky;top:0;background:var(--panel,#0d120f);color:var(--muted);font-size:.64rem;text-transform:none}
+.route-km-table th:first-child,.route-km-table td:first-child{text-align:left}
+.route-km-row{cursor:pointer}
+.route-km-row:hover,.route-km-row.selected{background:rgba(156,255,34,.065)}
+.route-km-row.selected th:first-child{color:var(--accent)}
+.performance-progression.compact-disclosure{padding:0;margin-top:12px}
+.performance-progression.compact-disclosure>summary{padding:11px 13px}
+.detail-edit-panel{padding-top:16px}
+.detail-edit-panel .section-heading h2{font-size:1rem}
+.compact-autosave{padding:8px 0;margin:0;font-size:.68rem}
+.landmark-more{max-width:420px}
+.technical-panel{padding-top:12px}
+.technical-panel h3{font-size:.82rem;margin:14px 0 8px}
+.technical-grid{grid-template-columns:repeat(4,minmax(120px,1fr))}
+.technical-raw{margin-top:14px}
+.route-stats{grid-template-columns:repeat(6,minmax(100px,1fr))}
+.route-stat{padding:8px 10px}
+.route-stat span{font-size:.62rem}
+.route-stat strong{font-size:.8rem}
+
+@media(max-width:900px){
+  .detail-hero-compact{grid-template-columns:1fr}
+  .detail-hero-metrics-compact{grid-template-columns:repeat(3,minmax(100px,1fr))}
+  .detail-quick-controls{grid-template-columns:1fr}
+}
+@media(max-width:620px){
+  .detail-hero-compact{padding:14px}
+  .detail-hero-metrics-compact{grid-template-columns:repeat(2,minmax(110px,1fr))}
+  .route-km-table{font-size:.66rem}
+  .route-km-table th,.route-km-table td{padding:8px}
+  .technical-grid{grid-template-columns:repeat(2,minmax(100px,1fr))}
+}
