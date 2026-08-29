@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB030 · WEBCARTO011 · Comfortaa">
-  <title>SPORT Web · WEB030</title>
+  <meta name="description" content="SPORT Web · WEB031 · WEBUX001 · Comfortaa">
+  <title>SPORT Web · WEB031</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,14 +16,35 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB030 · WEBCARTO011 · Comfortaa · Firestore</div>
+      <div class="version">WEB031 · WEBUX001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
+      <label class="appearance-picker" title="Changer l’apparence">
+        <span>Apparence</span>
+        <select id="appearanceSelect" aria-label="Apparence SPORT Web">
+          <option value="sport">SPORT · Noir / vert</option>
+          <option value="aurum">Aurum Futur · Or nocturne</option>
+          <option value="light">Clair</option>
+          <option value="contrast">Contraste</option>
+        </select>
+      </label>
       <span id="authState" class="pill neutral">Non connecté</span>
       <button id="loginButton" class="primary">Se connecter avec Google</button>
       <button id="logoutButton" class="secondary hidden">Déconnexion</button>
     </div>
   </header>
+
+  <nav id="uxPrimaryNav" class="ux-primary-nav hidden" aria-label="Navigation principale">
+    <div class="ux-primary-nav-inner">
+      <button type="button" class="ux-nav-button active" data-ux-page="home">Accueil</button>
+      <button type="button" class="ux-nav-button" data-ux-page="activities">Activités</button>
+      <button type="button" class="ux-nav-button" data-ux-page="analysis">Analyse</button>
+      <button type="button" class="ux-nav-button" data-ux-page="maps">Cartes</button>
+      <button type="button" class="ux-nav-button" data-ux-page="equipment">Matériel</button>
+      <button type="button" class="ux-nav-button" data-ux-page="more">Plus</button>
+    </div>
+  </nav>
+  <nav id="uxSecondaryNav" class="ux-secondary-nav hidden" aria-label="Navigation secondaire"></nav>
 
   <main>
     <section id="messageBox" class="message info">
@@ -34,8 +55,8 @@
       <div id="catalogView">
         <div class="hero">
           <div>
-            <p class="eyebrow">SPORT ⇄ FIRESTORE ⇄ WEB</p>
-            <h1>Mes activités</h1>
+            <p id="uxHeroEyebrow" class="eyebrow">SPORT ⇄ FIRESTORE ⇄ WEB</p>
+            <h1 id="uxHeroTitle">Accueil</h1>
             <p id="identityLine" class="muted"></p>
           </div>
           <div class="hero-actions">
@@ -57,9 +78,9 @@
                 <button id="dashboardCyclingButton" class="secondary dashboard-choice" type="button">Vélo</button>
               </div>
               <div class="dashboard-choice-group" aria-label="Période du tableau de bord">
-                <button id="dashboardWeekButton" class="secondary dashboard-choice active" type="button">Semaine</button>
+                <button id="dashboardWeekButton" class="secondary dashboard-choice" type="button">Semaine</button>
                 <button id="dashboardMonthButton" class="secondary dashboard-choice" type="button">Mois</button>
-                <button id="dashboardYearButton" class="secondary dashboard-choice" type="button">Année</button>
+                <button id="dashboardYearButton" class="secondary dashboard-choice active" type="button">Année</button>
                 <button id="dashboardTotalButton" class="secondary dashboard-choice" type="button">Total</button>
               </div>
             </div>
@@ -73,7 +94,7 @@
           </div>
           <p id="dashboardComparisonMeta" class="muted dashboard-comparison-meta">Comparaison avec la période précédente comparable.</p>
 
-          <div class="dashboard-chart-card">
+          <div class="dashboard-chart-card hidden ux-dashboard-chart-removed">
             <div class="dashboard-chart-heading">
               <div>
                 <h3 id="dashboardChartTitle">Évolution</h3>
@@ -279,7 +300,7 @@
           <div id="trashList" class="trash-list"></div>
         </section>
 
-        <div class="metric-grid">
+        <div id="bootstrapMetrics" class="metric-grid">
           <article class="metric"><span>Activités</span><strong id="activityCount">—</strong></article>
           <article class="metric"><span>Matériels</span><strong id="equipmentCount">—</strong></article>
           <article class="metric"><span>Repères</span><strong id="landmarkCount">—</strong></article>
@@ -299,6 +320,7 @@
               <input id="equipmentManagerSearch" class="equipment-manager-search" type="search"
                      placeholder="Rechercher un matériel…">
               <select id="equipmentManagerStatusFilter" aria-label="Filtrer le matériel par statut">
+                <option value="USED" selected>Utilisés</option>
                 <option value="">Tous les statuts</option>
                 <option value="ACTIVE">Actifs</option>
                 <option value="STORED">En réserve</option>
@@ -566,12 +588,12 @@
           <p class="map-help">WEBCARTO011 · la vue Densité compte les activités distinctes par zone. La granularité permet d’explorer les secteurs fins (~150 m), standards (~300 m) ou larges (~600 m). Cliquez sur un secteur du classement pour zoomer dessus et retrouver ses passages récents.</p>
         </section>
 
-        <section class="panel">
+        <section id="activityDirectorySection" class="panel">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB018 · MÉTIER001</p>
-              <h2>Répertoire avancé</h2>
-              <p id="loadedLabel" class="muted">Chargement…</p>
+              <p class="eyebrow">WEB031 · ACTIVITÉS</p>
+              <h2>Répertoire</h2>
+              <p id="loadedLabel" class="muted">20 activités récentes par défaut.</p>
             </div>
             <div class="panel-actions">
               <button id="loadMoreButton" class="secondary">Charger 250 de plus</button>

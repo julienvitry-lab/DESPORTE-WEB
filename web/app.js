@@ -51,6 +51,7 @@ provider.setCustomParameters({ prompt: "select_account" });
 const ui = Object.fromEntries(
   [
     "authState", "loginButton", "logoutButton", "messageBox", "dashboard",
+    "appearanceSelect", "uxPrimaryNav", "uxSecondaryNav", "uxHeroTitle", "uxHeroEyebrow", "bootstrapMetrics", "activityDirectorySection",
     "catalogView", "identityLine", "activityCount", "equipmentCount",
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
     "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
@@ -123,11 +124,14 @@ let loading = false;
 let loadingAll = false;
 let catalogScrollY = 0;
 let currentDetailId = null;
+let activityVisibleLimit = 20;
+let uxCurrentPage = "home";
+let uxCurrentSubpage = "main";
 let trashActivities = new Map();
 let trashMutationRunning = false;
 
 let dashboardSport = 1;
-let dashboardPeriod = "WEEK";
+let dashboardPeriod = "YEAR";
 let dashboardChartMetric = "distance";
 let dashboardLoadGeneration = 0;
 let dashboardDrilldownStartMs = 0;
@@ -226,6 +230,134 @@ let profileComparisonRenderer = null;
 let profileComparisonClearer = null;
 
 wireEvents();
+initUxNavigation();
+
+function uxPageConfig() {
+  return {
+    home: { title: "Accueil", eyebrow: "VUE D’ENSEMBLE", subs: [] },
+    activities: { title: "Activités", eyebrow: "HISTORIQUE", subs: [["directory","Répertoire"],["trash","Corbeille"]] },
+    analysis: { title: "Analyse", eyebrow: "PROGRESSION & REPÈRES", subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]] },
+    maps: { title: "Cartes", eyebrow: "EXPLORATION", subs: [["routes","Carte globale"],["density","Densité"]] },
+    equipment: { title: "Matériel", eyebrow: "ÉQUIPEMENT", subs: [["used","Utilisé"],["all","Tout le matériel"]] },
+    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["sync","Synchronisation"],["health","Santé sync"],["data","Données"]] }
+  };
+}
+
+function uxDefaultSubpage(page) {
+  const config = uxPageConfig()[page];
+  return config?.subs?.[0]?.[0] || "main";
+}
+
+function applyAppearance(theme, persist = true) {
+  const allowed = ["sport","aurum","light","contrast"];
+  const value = allowed.includes(theme) ? theme : "sport";
+  document.documentElement.dataset.theme = value;
+  if (ui.appearanceSelect) ui.appearanceSelect.value = value;
+  if (persist) localStorage.setItem("sport_web_theme", value);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", value === "aurum" ? "#090805" : value === "light" ? "#f5f5f1" : "#090b0a");
+}
+
+function initAppearance() {
+  applyAppearance(localStorage.getItem("sport_web_theme") || "sport", false);
+}
+
+function managedUxSections() {
+  return [
+    ui.webDashboardSection, ui.activityDirectorySection, ui.trashSection,
+    ui.personalSyncSection, ui.landmarkManagerSection, ui.recordsManagerSection,
+    ui.globalMapSection, ui.equipmentManagerSection,
+    ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics
+  ].filter(Boolean);
+}
+
+function setUxSectionVisibility(visible) {
+  const set = new Set(visible.filter(Boolean));
+  managedUxSections().forEach((section) => section.classList.toggle("hidden", !set.has(section)));
+}
+
+function renderUxSecondaryNav(page, activeSub) {
+  const config = uxPageConfig()[page];
+  if (!ui.uxSecondaryNav) return;
+  const subs = config?.subs || [];
+  ui.uxSecondaryNav.innerHTML = "";
+  ui.uxSecondaryNav.classList.toggle("hidden", !subs.length);
+  if (!subs.length) return;
+  const inner = document.createElement("div");
+  inner.className = "ux-secondary-nav-inner";
+  subs.forEach(([key,label]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `ux-subnav-button${key === activeSub ? " active" : ""}`;
+    button.textContent = label;
+    button.addEventListener("click", () => navigateUx(page,key));
+    inner.appendChild(button);
+  });
+  ui.uxSecondaryNav.appendChild(inner);
+}
+
+function navigateUx(page, subpage = null, options = {}) {
+  const config = uxPageConfig();
+  if (!config[page]) page = "home";
+  const allowedSubs = new Set(config[page].subs.map(([key]) => key));
+  let sub = subpage || uxCurrentSubpage;
+  if (!allowedSubs.has(sub)) sub = uxDefaultSubpage(page);
+
+  uxCurrentPage = page;
+  uxCurrentSubpage = sub;
+
+  if (!ui.detailView.classList.contains("hidden")) showCatalog(false);
+
+  document.querySelectorAll("[data-ux-page]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.uxPage === page);
+  });
+  renderUxSecondaryNav(page,sub);
+
+  ui.uxHeroTitle.textContent = config[page].title;
+  ui.uxHeroEyebrow.textContent = config[page].eyebrow;
+
+  if (page === "home") {
+    setUxSectionVisibility([ui.webDashboardSection]);
+  } else if (page === "activities") {
+    if (sub === "trash") setUxSectionVisibility([ui.trashSection]);
+    else setUxSectionVisibility([ui.activityDirectorySection]);
+  } else if (page === "analysis") {
+    if (sub === "landmarks") setUxSectionVisibility([ui.landmarkManagerSection]);
+    else if (sub === "records") setUxSectionVisibility([ui.recordsManagerSection]);
+    else setUxSectionVisibility([ui.personalSyncSection]);
+  } else if (page === "maps") {
+    setUxSectionVisibility([ui.globalMapSection]);
+    if (ui.globalMapModeSelect) {
+      ui.globalMapModeSelect.value = sub === "density" ? "density" : "routes";
+      markGlobalMapStale();
+    }
+  } else if (page === "equipment") {
+    setUxSectionVisibility([ui.equipmentManagerSection]);
+    if (ui.equipmentManagerStatusFilter) {
+      ui.equipmentManagerStatusFilter.value = sub === "all" ? "" : "USED";
+      renderEquipmentManager();
+    }
+  } else if (page === "more") {
+    if (sub === "health") setUxSectionVisibility([ui.syncHealthSection]);
+    else if (sub === "data") setUxSectionVisibility([ui.bootstrapMetrics]);
+    else setUxSectionVisibility([ui.syncCenterSection]);
+  }
+
+  if (!options.keepScroll) window.scrollTo({top:0,behavior:"smooth"});
+  sessionStorage.setItem("sport_web_ux_page", page);
+  sessionStorage.setItem("sport_web_ux_subpage", sub);
+}
+
+function initUxNavigation() {
+  initAppearance();
+  ui.appearanceSelect?.addEventListener("change", () => applyAppearance(ui.appearanceSelect.value));
+  document.querySelectorAll("[data-ux-page]").forEach((button) => {
+    button.addEventListener("click", () => navigateUx(button.dataset.uxPage));
+  });
+  const savedPage = sessionStorage.getItem("sport_web_ux_page") || "home";
+  const savedSub = sessionStorage.getItem("sport_web_ux_subpage") || null;
+  navigateUx(savedPage,savedSub,{keepScroll:true});
+}
 
 function wireEvents() {
   ui.loginButton.addEventListener("click", async () => {
@@ -287,6 +419,7 @@ function wireEvents() {
   ].forEach((element) => {
     element.addEventListener(element.tagName === "INPUT" ? "input" : "change", (event) => {
       if (event.isTrusted && dashboardDrilldownStartMs > 0) clearDashboardDrilldown(false);
+      activityVisibleLimit = 20;
       applyFiltersAndRender();
     });
   });
@@ -467,6 +600,8 @@ onAuthStateChanged(auth, async (user) => {
     ui.loginButton.classList.remove("hidden");
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
+    ui.uxPrimaryNav?.classList.add("hidden");
+    ui.uxSecondaryNav?.classList.add("hidden");
     setMessage(
       "WEB018 · Interop : connecte-toi avec le même compte Google que SPORT Android.",
       "info"
@@ -479,6 +614,8 @@ onAuthStateChanged(auth, async (user) => {
   ui.loginButton.classList.add("hidden");
   ui.logoutButton.classList.remove("hidden");
   ui.dashboard.classList.remove("hidden");
+  ui.uxPrimaryNav?.classList.remove("hidden");
+  navigateUx(uxCurrentPage, uxCurrentSubpage, {keepScroll:true});
   ui.identityLine.textContent = `${user.email || "Compte Google"} · projet sport-505813`;
   await reloadAll();
   startInteropWatch();
@@ -509,6 +646,7 @@ async function reloadAll() {
   journalEntries = new Map();
   trashActivities = new Map();
   currentDetailId = null;
+  activityVisibleLimit = 20;
   globalMapRouteCache = new Map();
   clearGlobalActivityMap();
 
@@ -1889,9 +2027,8 @@ function applyFiltersAndRender() {
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;
   ui.loadedLabel.textContent =
-    `${formatNumber(activeLoadedCount)} active(s) chargée(s) · ` +
-    `${formatNumber(trashActivities.size)} en corbeille · ` +
-    `${formatNumber(filteredActivities.length)} correspondant aux filtres`;
+    `${formatNumber(filteredActivities.length)} résultat(s) · ${formatNumber(Math.min(activityVisibleLimit, filteredActivities.length))} affiché(s) · ` +
+    `${formatNumber(activeLoadedCount)} activités chargées`;
 
   ui.activityList.innerHTML = "";
 
@@ -1904,8 +2041,9 @@ function renderActivities() {
   }
 
   const fragment = document.createDocumentFragment();
+  const visibleRows = filteredActivities.slice(0, activityVisibleLimit);
 
-  for (const activity of filteredActivities) {
+  for (const activity of visibleRows) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "activity-card";
@@ -1922,6 +2060,24 @@ function renderActivities() {
   }
 
   ui.activityList.appendChild(fragment);
+
+  if (filteredActivities.length > visibleRows.length) {
+    const footer = document.createElement("div");
+    footer.className = "activity-directory-footer";
+    const info = document.createElement("span");
+    info.className = "muted";
+    info.textContent = `${formatNumber(visibleRows.length)} / ${formatNumber(filteredActivities.length)} activités affichées`;
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "secondary";
+    more.textContent = "Afficher 20 de plus";
+    more.addEventListener("click", () => {
+      activityVisibleLimit += 20;
+      renderActivities();
+    });
+    footer.append(info,more);
+    ui.activityList.appendChild(footer);
+  }
 }
 
 function activityMain(activity) {
@@ -2416,6 +2572,7 @@ async function renderGlobalActivityMap(loadEverything) {
 
 function showActivity(activity) {
   catalogScrollY = window.scrollY;
+  ui.uxSecondaryNav?.classList.add("hidden");
   currentDetailId = activityKey(activity);
 
   ui.catalogView.classList.add("hidden");
@@ -2426,11 +2583,13 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB030";
+  document.title = "SPORT Web · WEB031";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
   ui.catalogView.classList.remove("hidden");
+  ui.uxPrimaryNav?.classList.remove("hidden");
+  navigateUx(uxCurrentPage, uxCurrentSubpage, {keepScroll:true});
   window.setTimeout(() => {
     if (globalMapInstance) globalMapInstance.invalidateSize(false);
   }, 80);
@@ -5109,7 +5268,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB030",
+            webVersion: "WEB031",
             row: wanted
           }
         );
@@ -5132,7 +5291,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB030"
+            webVersion: "WEB031"
           }
         );
         countDelta -= 1;
@@ -5142,7 +5301,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB030"
+      webVersion: "WEB031"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5342,7 +5501,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB030"
+    webVersion: "WEB031"
   };
   if (row != null) event.row = row;
 
@@ -5351,7 +5510,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB030"
+    webVersion: "WEB031"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -5804,7 +5963,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB030",
+      webVersion: "WEB031",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -5870,7 +6029,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB030",
+    webVersion: "WEB031",
     androidVersion: 0,
     __synthetic: true
   };
@@ -6812,7 +6971,8 @@ function renderEquipmentManager() {
     .slice()
     .filter((item) => {
       const itemStatus = String(item.status ?? "ACTIVE").toUpperCase();
-      if (status && itemStatus !== status) return false;
+      if (status === "USED" && numberOrZero(item.activity_count) <= 0) return false;
+      if (status && status !== "USED" && itemStatus !== status) return false;
 
       if (!needle) return true;
       const haystack = [
@@ -6842,8 +7002,10 @@ function renderEquipmentManager() {
   const storedCount = equipmentRows.filter((item) => String(item.status ?? "").toUpperCase() === "STORED").length;
   const retiredCount = equipmentRows.filter((item) => String(item.status ?? "").toUpperCase() === "RETIRED").length;
 
-  ui.equipmentManagerMeta.textContent =
-    `${formatNumber(equipmentRows.length)} matériels · ${activeCount} actifs · ${storedCount} en réserve · ${retiredCount} archivés`;
+  const usedCount = equipmentRows.filter((item) => numberOrZero(item.activity_count) > 0).length;
+  ui.equipmentManagerMeta.textContent = status === "USED"
+    ? `${usedCount} matériel(s) utilisé(s) · vue par défaut`
+    : `${formatNumber(equipmentRows.length)} matériels · ${activeCount} actifs · ${storedCount} en réserve · ${retiredCount} archivés`;
 
   ui.equipmentManagerList.innerHTML = "";
 
@@ -7324,7 +7486,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB030",
+      webVersion: "WEB031",
       row: next
     }
   );
@@ -7360,7 +7522,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB030",
+        webVersion: "WEB031",
         row: patch
       }
     );
@@ -7372,7 +7534,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB030"
+      webVersion: "WEB031"
     },
     { merge: true }
   );
