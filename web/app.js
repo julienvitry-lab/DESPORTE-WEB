@@ -51,7 +51,7 @@ provider.setCustomParameters({ prompt: "select_account" });
 const ui = Object.fromEntries(
   [
     "authState", "loginButton", "logoutButton", "messageBox", "dashboard",
-    "appearanceSelect", "uxPrimaryNav", "uxSecondaryNav", "uxHeroTitle", "uxHeroEyebrow", "bootstrapMetrics", "activityDirectorySection",
+    "appearanceSelect", "uxPrimaryNav", "uxSecondaryNav", "uxHeroTitle", "uxHeroEyebrow", "bootstrapMetrics", "activityDirectorySection", "advancedLandmarksSection",
     "catalogView", "identityLine", "activityCount", "equipmentCount",
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
     "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
@@ -101,7 +101,7 @@ const ui = Object.fromEntries(
     "detailView", "backToCatalogButton", "backToCatalogBottomButton",
     "previousActivityButton", "nextActivityButton",
     "previousActivityBottomButton", "nextActivityBottomButton", "detailPosition",
-    "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics", "quickLandmarkButtons", "detailCaloriesQuality", "metricChartPanel", "metricChartTitle", "metricChartMeta", "metricChartStatus", "metricChartSvg", "metricChartCloseButton", "detailTechnicalButton", "detailTechnicalPanel", "trashCurrentActivityButton",
+    "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics", "quickLandmarkButtons", "detailCaloriesQuality", "metricChartPanel", "metricChartTitle", "metricChartMeta", "metricChartStatus", "metricChartSvg", "metricChartCloseButton", "detailTechnicalPanel", "trashCurrentActivityButton",
     "detailSummaryGrid", "detailPerformanceGrid", "detailPersonalGrid",
     "interopStatus", "interopEditor", "editTitleInput", "editDescriptionInput", "editNoteInput",
     "editEquipmentSelect", "editFeelingSelect", "editDifficultySelect", "editPrivacySelect",
@@ -239,7 +239,7 @@ function uxPageConfig() {
     analysis: { title: "Analyse", eyebrow: "PROGRESSION & REPÈRES", subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]] },
     maps: { title: "Cartes", eyebrow: "EXPLORATION", subs: [["routes","Carte globale"],["density","Densité"]] },
     equipment: { title: "Matériel", eyebrow: "ÉQUIPEMENT", subs: [["used","Utilisé"],["all","Tout le matériel"]] },
-    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["sync","Synchronisation"],["health","Santé sync"],["data","Données"]] }
+    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["sync","Synchronisation"],["health","Santé sync"],["data","Données"],["landmarks-advanced","Repères avancés"]] }
   };
 }
 
@@ -267,7 +267,7 @@ function managedUxSections() {
     ui.webDashboardSection, ui.activityDirectorySection, ui.trashSection,
     ui.personalSyncSection, ui.landmarkManagerSection, ui.recordsManagerSection,
     ui.globalMapSection, ui.equipmentManagerSection,
-    ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics
+    ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
   ].filter(Boolean);
 }
 
@@ -340,6 +340,7 @@ function navigateUx(page, subpage = null, options = {}) {
   } else if (page === "more") {
     if (sub === "health") setUxSectionVisibility([ui.syncHealthSection]);
     else if (sub === "data") setUxSectionVisibility([ui.bootstrapMetrics]);
+    else if (sub === "landmarks-advanced") setUxSectionVisibility([ui.advancedLandmarksSection]);
     else setUxSectionVisibility([ui.syncCenterSection]);
   }
 
@@ -371,7 +372,6 @@ function wireEvents() {
 
   ui.logoutButton.addEventListener("click", () => signOut(auth));
   ui.metricChartCloseButton?.addEventListener("click", () => closeMetricChart());
-  ui.detailTechnicalButton?.addEventListener("click", () => toggleDetailTechnicalPanel());
 
   ui.refreshButton.addEventListener("click", () => reloadAll());
 
@@ -2586,7 +2586,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB033";
+  document.title = "SPORT Web · WEB034";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -2644,7 +2644,7 @@ function renderDetail(activity) {
     activity.deleted_at_ms == null ? "🗑 Mettre à la corbeille" : "↩ Restaurer";
   const sportLabel = sportName(activity.sport);
   ui.detailSportLine.textContent = sportLabel;
-  ui.detailDateLine.textContent = formatDateLong(activity.start_time_ms);
+  ui.detailDateLine.textContent = formatDateLong(activity.start_time_ms).replace(" à ", " · ");
 
   renderHeroMetrics(activity);
   renderSummary(activity);
@@ -2655,9 +2655,6 @@ function renderDetail(activity) {
   renderRecurringLandmarkHistory(activity);
   resetRecurringClimbAnalysis();
   renderLinkedRecords(activity);
-  renderImport(activity);
-  renderTechnicalSummary(activity);
-  renderRaw(activity);
 
   document.title = `${title} · SPORT Web`;
 }
@@ -3016,6 +3013,22 @@ function normalizeRoute(data) {
   const lon = Array.isArray(data?.lon) ? data.lon : [];
   const alt = Array.isArray(data?.alt_m) ? data.alt_m : [];
   const distance = Array.isArray(data?.distance_m) ? data.distance_m : [];
+  const routeTime = Array.isArray(data?.time_ms) ? data.time_ms
+    : Array.isArray(data?.timestamp_ms) ? data.timestamp_ms
+    : Array.isArray(data?.timestamps_ms) ? data.timestamps_ms
+    : [];
+  const routeHr = Array.isArray(data?.hr_bpm) ? data.hr_bpm
+    : Array.isArray(data?.heart_rate_bpm) ? data.heart_rate_bpm
+    : Array.isArray(data?.heart_rate) ? data.heart_rate
+    : [];
+  const routeSpeed = Array.isArray(data?.speed_mps) ? data.speed_mps
+    : Array.isArray(data?.enhanced_speed_mps) ? data.enhanced_speed_mps
+    : Array.isArray(data?.speed) ? data.speed
+    : [];
+  const routeGap = Array.isArray(data?.gap_sec_per_km) ? data.gap_sec_per_km
+    : Array.isArray(data?.grade_adjusted_pace_sec_per_km) ? data.grade_adjusted_pace_sec_per_km
+    : Array.isArray(data?.gap_s_per_km) ? data.gap_s_per_km
+    : [];
 
   const count = Math.min(lat.length, lon.length);
   const points = [];
@@ -3056,6 +3069,10 @@ function normalizeRoute(data) {
       altitudeMeters,
       distanceMeters,
       cumulativeAscentMeters: cumulativeAscent,
+      timeMs: Number(routeTime[i]),
+      heartRateBpm: Number(routeHr[i]),
+      speedMps: Number(routeSpeed[i]),
+      gapSecondsPerKm: Number(routeGap[i]),
       sourceIndex: i
     };
     points.push(point);
@@ -3408,6 +3425,59 @@ function buildKilometerSegments(route) {
   return result;
 }
 
+
+function routePointTimeMs(point) {
+  const value = Number(point?.timeMs);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function routePointHeartRate(point) {
+  const value = Number(point?.heartRateBpm);
+  return Number.isFinite(value) && value >= 20 && value <= 260 ? value : null;
+}
+
+function routePointSpeedMps(point) {
+  const value = Number(point?.speedMps);
+  return Number.isFinite(value) && value > 0.2 && value < 30 ? value : null;
+}
+
+function formatPaceFromSeconds(secondsPerKm) {
+  if (!Number.isFinite(secondsPerKm) || secondsPerKm <= 0) return "—";
+  const total = Math.round(secondsPerKm);
+  return `${Math.floor(total/60)}:${String(total%60).padStart(2,"0")} /km`;
+}
+
+function routePointGapSecondsPerKm(point) {
+  const value = Number(point?.gapSecondsPerKm);
+  return Number.isFinite(value) && value > 30 && value < 3600 ? value : null;
+}
+
+function kilometerPerformanceValues(segment) {
+  const points = segment?.points || [];
+  if (!points.length) return {pace:null, gap:null, avgHr:null};
+
+  const first = points[0], last = points[points.length-1];
+  const t0 = routePointTimeMs(first), t1 = routePointTimeMs(last);
+  let pace = null;
+
+  if (Number.isFinite(t0) && Number.isFinite(t1) && t1 > t0 && segment.distanceMeters > 0) {
+    pace = ((t1-t0)/1000) / (segment.distanceMeters/1000);
+  } else {
+    const speeds = points.map(routePointSpeedMps).filter(Number.isFinite);
+    if (speeds.length) {
+      const avgSpeed = speeds.reduce((a,b)=>a+b,0)/speeds.length;
+      pace = 1000 / avgSpeed;
+    }
+  }
+
+  const hrs = points.map(routePointHeartRate).filter(Number.isFinite);
+  const avgHr = hrs.length ? hrs.reduce((a,b)=>a+b,0)/hrs.length : null;
+  const gaps = points.map(routePointGapSecondsPerKm).filter(Number.isFinite);
+  const gap = gaps.length ? gaps.reduce((a,b)=>a+b,0)/gaps.length : null;
+
+  return {pace, gap, avgHr};
+}
+
 function renderKilometerAnalysis(route) {
   if (!ui.routeKmAnalysisList || !ui.routeKmAnalysisMeta) return;
   const segments = buildKilometerSegments(route);
@@ -3423,42 +3493,43 @@ function renderKilometerAnalysis(route) {
 
   const table = document.createElement("table");
   table.className = "route-km-table";
+  table.classList.add("route-km-performance-table");
   table.innerHTML = `
     <thead>
       <tr>
         <th>Km</th>
+        <th>Allure moy.</th>
+        <th>GAP</th>
         <th>D+</th>
         <th>D−</th>
-        <th>Altitude</th>
-        <th>Pente moy.</th>
-        <th>Pente max.</th>
+        <th>FC moy.</th>
       </tr>
     </thead>
     <tbody></tbody>`;
   const tbody = table.querySelector("tbody");
 
+  let detailedPace = false;
+  let detailedHr = false;
+
   for (const segment of segments) {
+    const perf = kilometerPerformanceValues(segment);
+    if (Number.isFinite(perf.pace)) detailedPace = true;
+    if (Number.isFinite(perf.avgHr)) detailedHr = true;
+
     const row = document.createElement("tr");
     row.className = "route-km-row";
     row.dataset.segmentId = segment.id;
     row.tabIndex = 0;
-    const kmLabel = segment.distanceMeters >= 995
-      ? String(segment.rank)
-      : `${segment.rank}*`;
-    const avg = Number.isFinite(segment.averageGrade)
-      ? `${segment.averageGrade >= 0 ? "+" : ""}${segment.averageGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`
-      : "—";
-    const max = Number.isFinite(segment.maxGrade)
-      ? `${segment.maxGrade >= 0 ? "+" : ""}${segment.maxGrade.toLocaleString("fr-FR",{maximumFractionDigits:1})} %`
-      : "—";
-    const alt = `${Number.isFinite(segment.minAltitude)?Math.round(segment.minAltitude):"—"}–${Number.isFinite(segment.maxAltitude)?Math.round(segment.maxAltitude):"—"} m`;
+    const kmLabel = segment.distanceMeters >= 995 ? String(segment.rank) : `${segment.rank}*`;
+
     row.innerHTML = `
       <th scope="row">${kmLabel}</th>
+      <td>${formatPaceFromSeconds(perf.pace)}</td>
+      <td>${formatPaceFromSeconds(perf.gap)}</td>
       <td>+${Math.round(segment.gainMeters)} m</td>
       <td>−${Math.round(segment.lossMeters)} m</td>
-      <td>${alt}</td>
-      <td>${avg}</td>
-      <td>${max}</td>`;
+      <td>${Number.isFinite(perf.avgHr) ? `${Math.round(perf.avgHr)} bpm` : "—"}</td>`;
+
     row.addEventListener("click", () => selectKilometerSegment(segment));
     row.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -3470,6 +3541,14 @@ function renderKilometerAnalysis(route) {
   }
 
   ui.routeKmAnalysisList.appendChild(table);
+
+  if (!detailedPace || !detailedHr) {
+    const note = document.createElement("p");
+    note.className = "map-help route-km-data-note";
+    note.textContent =
+      "Allure, GAP et FC par km nécessitent les séries point-par-point publiées dans activity_routes. Le GAP n’est jamais estimé par le Web : il reste vide tant qu’une série GAP fiable n’est pas fournie. D+ et D− restent disponibles.";
+    ui.routeKmAnalysisList.appendChild(note);
+  }
 }
 
 function selectKilometerSegment(segment) {
@@ -5567,7 +5646,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB033",
+            webVersion: "WEB034",
             row: wanted
           }
         );
@@ -5590,7 +5669,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB033"
+            webVersion: "WEB034"
           }
         );
         countDelta -= 1;
@@ -5600,7 +5679,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB033"
+      webVersion: "WEB034"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5800,7 +5879,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB033"
+    webVersion: "WEB034"
   };
   if (row != null) event.row = row;
 
@@ -5809,7 +5888,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB033"
+    webVersion: "WEB034"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -6267,7 +6346,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB033",
+      webVersion: "WEB034",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -6333,7 +6412,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB033",
+    webVersion: "WEB034",
     androidVersion: 0,
     __synthetic: true
   };
@@ -7790,7 +7869,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB033",
+      webVersion: "WEB034",
       row: next
     }
   );
@@ -7826,7 +7905,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB033",
+        webVersion: "WEB034",
         row: patch
       }
     );
@@ -7838,7 +7917,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB033"
+      webVersion: "WEB034"
     },
     { merge: true }
   );

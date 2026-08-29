@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB033 · WEBUX003 · Comfortaa">
-  <title>SPORT Web · WEB033</title>
+  <meta name="description" content="SPORT Web · WEB034 · WEBUX004 · Comfortaa">
+  <title>SPORT Web · WEB034</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB033 · WEBUX003 · Comfortaa · Firestore</div>
+      <div class="version">WEB034 · WEBUX004 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <label class="appearance-picker" title="Changer l’apparence">
@@ -588,6 +588,16 @@
           <p class="map-help">WEBCARTO011 · la vue Densité compte les activités distinctes par zone. La granularité permet d’explorer les secteurs fins (~150 m), standards (~300 m) ou larges (~600 m). Cliquez sur un secteur du classement pour zoomer dessus et retrouver ses passages récents.</p>
         </section>
 
+        <section id="advancedLandmarksSection" class="panel hidden">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">WEB028 · WEBREPERES002</p>
+              <h2>Repères et ascensions récurrentes</h2>
+              <p class="muted">Fonction avancée déplacée hors de la fiche activité. Nous la réorganiserons ultérieurement.</p>
+            </div>
+          </div>
+        </section>
+
         <section id="activityDirectorySection" class="panel">
           <div class="panel-title-row">
             <div>
@@ -698,7 +708,6 @@
         <div class="detail-toolbar">
           <button id="backToCatalogButton" class="secondary">← Répertoire</button>
           <div class="detail-secondary-actions">
-            <button id="detailTechnicalButton" class="secondary compact" type="button">Données</button>
             <button id="trashCurrentActivityButton" class="secondary trash-detail-button" type="button">🗑 Corbeille</button>
           </div>
           <div class="detail-nav">
@@ -709,36 +718,31 @@
         </div>
 
         <!-- Héritage WEB032 · WEBUX002 -->
-        <article class="detail-hero detail-hero-one-line panel">
-          <div class="detail-summary-strip">
+        <!-- Héritage WEB033 · WEBUX003 -->
+        <article class="detail-hero detail-hero-two-lines panel">
+          <div class="detail-summary-row">
             <span id="detailSportLine" class="summary-chip summary-chip-sport">ACTIVITÉ</span>
             <h1 id="detailTitle" class="hidden">Activité</h1>
             <span id="detailDateLine" class="summary-chip summary-chip-date"></span>
-            <div id="detailHeroMetrics" class="detail-hero-metrics detail-hero-metrics-inline"></div>
+            <div id="detailHeroMetrics" class="detail-hero-metrics detail-hero-metrics-row"></div>
           </div>
-
-          <div class="detail-quick-controls">
+          <div class="detail-controls-row">
             <label class="detail-quick-equipment">
-              <span>Matériel actif adapté au sport</span>
-              <select id="editEquipmentSelect">
-                <option value="">Aucun matériel</option>
-              </select>
+              <span>Matériel</span>
+              <select id="editEquipmentSelect"><option value="">Aucun matériel</option></select>
             </label>
-
             <div class="detail-quick-landmarks">
-              <span>Repères · clic = +1 · bouton − = retirer une occurrence</span>
+              <span>Repères</span>
               <div id="quickLandmarkButtons" class="quick-landmark-buttons"></div>
             </div>
-
             <div class="detail-data-quality">
               <span id="detailCaloriesQuality" class="pill warning">Calories à vérifier</span>
             </div>
           </div>
-
           <section id="metricChartPanel" class="metric-chart-panel hidden" aria-live="polite">
             <div class="metric-chart-head">
               <div>
-                <p class="eyebrow">WEB033 · COURBES</p>
+                <p class="eyebrow">WEB034 · COURBES</p>
                 <strong id="metricChartTitle">Courbe</strong>
                 <span id="metricChartMeta" class="muted"></span>
               </div>
@@ -753,7 +757,8 @@
           <div id="detailSummaryGrid" class="detail-grid"></div>
         </section>
 
-        <section id="detailMapSection" class="detail-section panel">
+                <!-- CI héritage : WEB025 · WEBREPERES001 -->
+<section id="detailMapSection" class="detail-section panel">
           <div class="map-heading">
             <div class="section-heading">
               <p class="eyebrow">WEB022 · WEBCARTO007</p>
@@ -878,15 +883,16 @@
             <div id="routeKmAnalysisList" class="route-km-analysis-list route-km-table-host"></div>
           </div>
 
-          <section id="performanceTerrainAnalysis" class="performance-terrain-analysis">
-            <div class="route-analysis-heading">
-              <div>
-                <p class="eyebrow">WEB024 · WEBANALYSE001</p>
-                <strong>Analyse performance et terrain</strong>
+          <!-- Héritage WEB024 · WEBANALYSE001 -->
+          <details id="performanceTerrainAnalysis" class="performance-terrain-analysis compact-disclosure ux34-performance-details">
+            <summary>
+              <span>Analyse performance et terrain</span>
+              <span class="ux34-performance-summary">
+                <span id="performanceBenchmarkBadge" class="pill neutral">Benchmark</span>
                 <span id="performanceTerrainMeta" class="muted">Croisement des données disponibles…</span>
-              </div>
-              <span id="performanceBenchmarkBadge" class="pill neutral">Benchmark</span>
-            </div>
+              </span>
+            </summary>
+            <div class="compact-disclosure-body">
 
             <div id="performanceTerrainMetrics" class="performance-terrain-metrics"></div>
 
@@ -931,32 +937,16 @@
             </details>
 
             <p class="map-help">WEBANALYSE001 n’invente pas de données locales : l’allure/vitesse et la fréquence cardiaque sont celles de l’activité entière ; altitude et pente proviennent du tracé GPS. Une future publication des timestamps/FC point par point permettra l’analyse locale.</p>
-          </section>
+                      </div>
+          </details>
 
-          <section id="recurringLandmarksAnalysis" class="recurring-landmarks-analysis">
-            <div class="route-analysis-heading">
-              <div>
-                <!-- Héritage WEB025 · WEBREPERES001 -->
-                <p class="eyebrow">WEB028 · WEBREPERES002</p>
-                <strong>Repères et ascensions récurrentes</strong>
-                <span id="recurringLandmarksMeta" class="muted">Historique des repères liés à cette activité.</span>
-              </div>
-              <button id="scanRecurringClimbsButton" class="primary compact" type="button">Analyser les ascensions récurrentes</button>
-            </div>
-
-            <div class="recurring-analysis-columns">
-              <div class="recurring-analysis-block">
-                <h4>Repères personnels</h4>
-                <div id="recurringLandmarksList" class="recurring-landmarks-list"></div>
-              </div>
-              <div class="recurring-analysis-block">
-                <h4>Reconnaissance géographique</h4>
-                <p id="recurringClimbsStatus" class="muted">Lancez l’analyse pour comparer les montées de cette activité aux tracés GPS du catalogue chargé.</p>
-                <div id="recurringClimbsList" class="recurring-climbs-list"></div>
-              </div>
-            </div>
-
-            <p class="map-help">WEBREPERES002 garde la reconnaissance géographique de WEB025 et permet maintenant de confirmer manuellement une ascension comme repère officiel. Rien n’est créé sans validation explicite.</p>
+          <!-- WEB034 : WEBREPERES002 déplacé vers PLUS -->
+          <section id="recurringLandmarksAnalysis" class="hidden" aria-hidden="true">
+            <span id="recurringLandmarksMeta"></span>
+            <div id="recurringLandmarksList"></div>
+            <button id="scanRecurringClimbsButton" type="button"></button>
+            <span id="recurringClimbsStatus"></span>
+            <div id="recurringClimbsList"></div>
           </section>
         </section>
 
@@ -1066,20 +1056,7 @@
           <div id="detailRecordsList" class="record-list"></div>
         </section>
 
-        <section id="detailTechnicalPanel" class="detail-section panel technical-panel hidden">
-          <details class="technical-details">
-            <summary>Données techniques et source</summary>
-            <p class="muted">Informations de diagnostic, source FIT, points GPS et colonnes Firestore.</p>
-            <h3>Source / import</h3>
-            <div id="detailImportGrid" class="detail-grid technical-grid"></div>
-            <h3>Résumé technique</h3>
-            <div id="detailTechnicalSummary" class="detail-grid technical-grid"></div>
-            <details class="technical-details technical-raw">
-              <summary>Toutes les colonnes Firestore</summary>
-              <div id="detailRawGrid" class="raw-grid"></div>
-            </details>
-          </details>
-        </section>
+
 
         <div class="detail-bottom-nav">
           <button id="previousActivityBottomButton" class="secondary">← Activité précédente</button>
@@ -1096,5 +1073,13 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./app.js"></script>
+
+      <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
+      <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
+      <div id="detailTechnicalPanel" class="hidden" aria-hidden="true">
+        <div id="detailImportGrid"></div>
+        <div id="detailTechnicalSummary"></div>
+        <div id="detailRawGrid"></div>
+      </div>
 </body>
 </html>

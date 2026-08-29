@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB033
+name: Publier SPORT Web · WEB034
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB033.md"
+      - "docs/releases/WEB034.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB033
+      - name: Valider WEB034
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +47,7 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB033"' web/app.js
+          grep -Fq 'webVersion: "WEB034"' web/app.js
 
           # WEB022 · WEBCARTO007.
           grep -Fq "WEB020 · WEBCARTO005" web/index.html
@@ -206,7 +206,51 @@ jobs:
           grep -Fq '.quick-landmark-stepper' web/styles.css
 
 
-          echo "WEB033 : WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          grep -Fq 'WEB034 · WEBUX004' docs/releases/WEB034.md
+
+
+
+          grep -Fq 'detail-summary-row' web/index.html
+
+
+
+          grep -Fq 'detail-controls-row' web/index.html
+
+
+
+          grep -Fq 'WEBREPERES002 déplacé vers PLUS' web/index.html
+
+
+
+          grep -Fq 'advancedLandmarksSection' web/index.html
+
+
+
+          grep -Fq 'function kilometerPerformanceValues' web/app.js
+
+
+
+          grep -Fq '<th>Allure moy.</th>' web/app.js
+
+
+
+          grep -Fq '<th>GAP</th>' web/app.js
+
+
+
+          grep -Fq '<th>FC moy.</th>' web/app.js
+
+
+
+          grep -Fq 'Le GAP n’est jamais estimé' web/app.js
+
+
+
+          grep -Fq '.ux34-performance-details' web/styles.css
+
+
+
+          echo "WEB034 : WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -216,6 +260,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB033
+      - name: Publier SPORT Web · WEB034
         id: deployment
         uses: actions/deploy-pages@v4
