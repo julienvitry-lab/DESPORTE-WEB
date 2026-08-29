@@ -98,7 +98,7 @@ const ui = Object.fromEntries(
     "searchInput", "sportFilter", "yearFilter", "equipmentFilter",
     "landmarkFilter", "sourceFilter", "distanceFilter", "ascentFilter", "sortFilter",
     "activityList", "recordsList",
-    "detailView", "backToCatalogButton", "backToCatalogBottomButton",
+    "detailView", "backToCatalogButton", "backToCatalogBottomButton", "splitActivityButton", "splitActivityPanel", "splitActivityCloseButton", "splitActivityStatus", "splitActivityWorkspace", "splitProfileSvg", "splitActivityRange", "splitActivityRangeLabel", "splitActivityPreview", "splitActivityTitleA", "splitActivityTitleB", "splitActivityCommitButton",
     "previousActivityButton", "nextActivityButton",
     "previousActivityBottomButton", "nextActivityBottomButton", "detailPosition",
     "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics", "quickLandmarkButtons", "detailCaloriesQuality", "metricChartPanel", "metricChartTitle", "metricChartMeta", "metricChartStatus", "metricChartSvg", "metricChartCloseButton", "detailTechnicalPanel", "trashCurrentActivityButton",
@@ -211,6 +211,10 @@ const WEB_IMPORT_ARCHIVE_STORE = "original_fit";
 const FIT_UNIX_EPOCH_MS = 631065600000;
 let webManualLandmarkCounts = new Map();
 let webManualSaving = false;
+let splitActivityRoute = null;
+let splitActivitySource = null;
+let splitActivitySaving = false;
+
 
 
 
@@ -403,6 +407,11 @@ function wireEvents() {
       ui.webImportFileInput?.click();
     }
   });
+  ui.splitActivityButton?.addEventListener("click", () => { void openSplitActivityPanel(); });
+  ui.splitActivityCloseButton?.addEventListener("click", closeSplitActivityPanel);
+  ui.splitActivityRange?.addEventListener("input", renderSplitActivityPreview);
+  ui.splitActivityCommitButton?.addEventListener("click", () => { void commitSplitActivity(); });
+
   ui.webManualSport?.addEventListener("change", () => {
     rebuildWebManualEquipment();
     updateWebManualPreview();
@@ -2631,13 +2640,14 @@ function showActivity(activity) {
 
   ui.catalogView.classList.add("hidden");
   ui.detailView.classList.remove("hidden");
+  closeSplitActivityPanel();
 
   renderDetail(activity);
   window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB036";
+  document.title = "SPORT Web · WEB037";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -5697,7 +5707,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB036",
+            webVersion: "WEB037",
             row: wanted
           }
         );
@@ -5720,7 +5730,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB036"
+            webVersion: "WEB037"
           }
         );
         countDelta -= 1;
@@ -5730,7 +5740,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB036"
+      webVersion: "WEB037"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5791,6 +5801,324 @@ function markerSummary(activity) {
 }
 
 
+
+
+// -----------------------------------------------------------------------------
+// WEB037 · WEBSPLIT001 — découpe non destructive d'une activité
+// -----------------------------------------------------------------------------
+function splitRouteHasTimeline(route) {
+  const points=route?.points || [];
+  const valid=points.filter((point)=>Number.isFinite(Number(point.timeMs)) && Number(point.timeMs)>0);
+  return valid.length >= Math.max(2, Math.floor(points.length*0.7));
+}
+
+function closeSplitActivityPanel() {
+  ui.splitActivityPanel?.classList.add("hidden");
+  if (ui.splitActivityWorkspace) ui.splitActivityWorkspace.classList.add("hidden");
+  if (ui.splitActivityStatus) ui.splitActivityStatus.textContent="Chargement du tracé détaillé…";
+  splitActivityRoute=null;
+  splitActivitySource=null;
+}
+
+async function openSplitActivityPanel() {
+  const activity=currentDetailActivity();
+  if (!activity || splitActivitySaving) return;
+
+  splitActivitySource=activity;
+  ui.splitActivityPanel.classList.remove("hidden");
+  ui.splitActivityWorkspace.classList.add("hidden");
+  ui.splitActivityStatus.textContent="Lecture du tracé et de la chronologie…";
+  ui.splitActivityStatus.className="split-activity-status pending";
+  ui.splitActivityPanel.scrollIntoView({behavior:"smooth",block:"start"});
+
+  try {
+    let route=activeRoute;
+    if (!route || route.points.length<2) {
+      const key=activityKey(activity);
+      const snapshot=await getDoc(doc(db,ROOT,currentUser.uid,"activity_routes",key));
+      if (!snapshot.exists()) throw new Error("Aucun tracé activity_routes pour cette activité.");
+      route=normalizeRoute(snapshot.data());
+    }
+
+    if (!route?.points?.length || route.points.length<4) {
+      throw new Error("Le tracé ne contient pas assez de points pour être découpé.");
+    }
+    if (!splitRouteHasTimeline(route)) {
+      throw new Error("Cette activité ne possède pas encore une chronologie point-par-point suffisante. WEBSPLIT001 est disponible pour les tracés contenant de vrais timestamps, notamment les FIT importés par WEB035.");
+    }
+
+    splitActivityRoute=route;
+    ui.splitActivityRange.value="50";
+    ui.splitActivityTitleA.value=activity.custom_title ? `${activity.custom_title} · 1` : `${sportName(activity.sport)} · partie 1`;
+    ui.splitActivityTitleB.value=activity.custom_title ? `${activity.custom_title} · 2` : `${sportName(activity.sport)} · partie 2`;
+    ui.splitActivityWorkspace.classList.remove("hidden");
+    ui.splitActivityStatus.textContent=`${formatNumber(route.points.length)} points détaillés · source conservée`;
+    ui.splitActivityStatus.className="split-activity-status success";
+    renderSplitActivityPreview();
+  } catch (error) {
+    console.error(error);
+    ui.splitActivityStatus.textContent=error?.message || String(error);
+    ui.splitActivityStatus.className="split-activity-status error";
+  }
+}
+
+function splitIndexFromPercent(route,percent) {
+  const points=route?.points || [];
+  if (points.length<2) return 0;
+  const target=Math.max(0,Math.min(1,Number(percent)/100));
+  const total=numberOrZero(points[points.length-1].distanceMeters)-numberOrZero(points[0].distanceMeters);
+  if (total<=0) return Math.max(1,Math.min(points.length-2,Math.round(target*(points.length-1))));
+  const targetDistance=numberOrZero(points[0].distanceMeters)+total*target;
+  let best=1, bestDelta=Infinity;
+  for (let i=1;i<points.length-1;i++) {
+    const delta=Math.abs(numberOrZero(points[i].distanceMeters)-targetDistance);
+    if (delta<bestDelta) { best=i; bestDelta=delta; }
+  }
+  return best;
+}
+
+function splitPartStats(points) {
+  if (!points?.length) return null;
+  const first=points[0], last=points[points.length-1];
+  const distance=Math.max(0,numberOrZero(last.distanceMeters)-numberOrZero(first.distanceMeters));
+  const firstTime=Number(first.timeMs), lastTime=Number(last.timeMs);
+  const duration=Number.isFinite(firstTime)&&Number.isFinite(lastTime)&&lastTime>=firstTime ? lastTime-firstTime : null;
+
+  let ascent=0,descent=0;
+  for (let i=1;i<points.length;i++) {
+    const a=Number(points[i-1].altitudeMeters), b=Number(points[i].altitudeMeters);
+    if (!Number.isFinite(a)||!Number.isFinite(b)) continue;
+    const d=b-a;
+    if (d>0) ascent+=d; else descent-=d;
+  }
+  const hrs=points.map((p)=>Number(p.heartRateBpm)).filter((v)=>Number.isFinite(v)&&v>=20&&v<=260);
+  const avgHr=hrs.length ? Math.round(hrs.reduce((a,b)=>a+b,0)/hrs.length) : null;
+  const maxHr=hrs.length ? Math.max(...hrs) : null;
+
+  return {
+    start_time_ms:Number(first.timeMs),
+    end_time_ms:Number(last.timeMs),
+    elapsed_time_ms:duration,
+    timer_time_ms:duration,
+    distance_m:distance,
+    ascent_m:Math.round(ascent),
+    descent_m:Math.round(descent),
+    avg_hr:avgHr,
+    max_hr:maxHr,
+    gps_point_count:points.length,
+    record_count:points.length,
+    avg_speed_mps:Number.isFinite(duration)&&duration>0 ? distance/(duration/1000) : null
+  };
+}
+
+function renderSplitProfile(route,index) {
+  if (!ui.splitProfileSvg) return;
+  const points=route?.points || [];
+  if (points.length<2) {
+    ui.splitProfileSvg.innerHTML="";
+    return;
+  }
+  const width=1000,height=220,padX=20,padY=18;
+  const alts=points.map((p)=>Number(p.altitudeMeters)).filter(Number.isFinite);
+  if (!alts.length) {
+    ui.splitProfileSvg.innerHTML='<text x="20" y="40" class="metric-chart-label">Altitude indisponible</text>';
+    return;
+  }
+  const minAlt=Math.min(...alts),maxAlt=Math.max(...alts),span=Math.max(1,maxAlt-minAlt);
+  const firstD=numberOrZero(points[0].distanceMeters),lastD=numberOrZero(points[points.length-1].distanceMeters);
+  const total=Math.max(1,lastD-firstD);
+  const x=(p)=>padX+((numberOrZero(p.distanceMeters)-firstD)/total)*(width-padX*2);
+  const y=(p)=>padY+((maxAlt-numberOrZero(p.altitudeMeters))/span)*(height-padY*2);
+  const valid=points.filter((p)=>Number.isFinite(Number(p.altitudeMeters)));
+  const poly=valid.map((p)=>`${x(p).toFixed(1)},${y(p).toFixed(1)}`).join(" ");
+  const cutX=x(points[index]);
+  ui.splitProfileSvg.innerHTML=`
+    <polyline points="${poly}" class="split-profile-line"></polyline>
+    <line x1="${cutX}" y1="0" x2="${cutX}" y2="${height}" class="split-cut-line"></line>
+    <text x="${Math.min(width-110,cutX+8)}" y="24" class="metric-chart-label">Coupure</text>`;
+}
+
+function splitPreviewCard(label,stats) {
+  const pace=Number.isFinite(stats?.elapsed_time_ms)&&stats.elapsed_time_ms>0&&stats.distance_m>0
+    ? formatPaceFromSeconds((stats.elapsed_time_ms/1000)/(stats.distance_m/1000))
+    : "—";
+  return `<article class="split-preview-card">
+    <strong>${escapeHtml(label)}</strong>
+    <div>
+      <span><small>Distance</small><b>${escapeHtml(formatDistance(stats.distance_m))}</b></span>
+      <span><small>Durée</small><b>${escapeHtml(formatDuration(stats.elapsed_time_ms))}</b></span>
+      <span><small>D+</small><b>${escapeHtml(formatMeters(stats.ascent_m))}</b></span>
+      <span><small>D−</small><b>${escapeHtml(formatMeters(stats.descent_m))}</b></span>
+      <span><small>Allure</small><b>${escapeHtml(pace)}</b></span>
+      <span><small>FC</small><b>${escapeHtml(formatHeartRate(stats.avg_hr))}</b></span>
+    </div>
+  </article>`;
+}
+
+function currentSplitParts() {
+  const route=splitActivityRoute;
+  if (!route) return null;
+  const index=splitIndexFromPercent(route,ui.splitActivityRange?.value || 50);
+  const pointsA=route.points.slice(0,index+1);
+  const pointsB=route.points.slice(index);
+  return {
+    index,
+    pointsA,
+    pointsB,
+    statsA:splitPartStats(pointsA),
+    statsB:splitPartStats(pointsB)
+  };
+}
+
+function renderSplitActivityPreview() {
+  if (!splitActivityRoute) return;
+  const parts=currentSplitParts();
+  const pct=Number(ui.splitActivityRange.value);
+  ui.splitActivityRangeLabel.textContent=`${pct.toLocaleString("fr-FR",{maximumFractionDigits:1})} % · ${formatDistance(parts.statsA.distance_m)}`;
+  renderSplitProfile(splitActivityRoute,parts.index);
+  ui.splitActivityPreview.innerHTML=
+    splitPreviewCard("Partie 1",parts.statsA)+splitPreviewCard("Partie 2",parts.statsB);
+}
+
+function splitRouteDocument(points) {
+  const firstDistance=numberOrZero(points[0]?.distanceMeters);
+  return {
+    lat:points.map((p)=>p.latitude),
+    lon:points.map((p)=>p.longitude),
+    alt_m:points.map((p)=>Number.isFinite(Number(p.altitudeMeters))?Number(p.altitudeMeters):null),
+    distance_m:points.map((p)=>Math.max(0,numberOrZero(p.distanceMeters)-firstDistance)),
+    time_ms:points.map((p)=>Number.isFinite(Number(p.timeMs))?Number(p.timeMs):null),
+    hr_bpm:points.map((p)=>Number.isFinite(Number(p.heartRateBpm))?Number(p.heartRateBpm):null),
+    speed_mps:points.map((p)=>Number.isFinite(Number(p.speedMps))?Number(p.speedMps):null),
+    gap_sec_per_km:points.map((p)=>Number.isFinite(Number(p.gapSecondsPerKm))?Number(p.gapSecondsPerKm):null),
+    source_point_count:points.length,
+    web_preview_point_count:points.length,
+    route_format:"WEBSPLIT001"
+  };
+}
+
+function splitCalories(source,partDuration,totalDuration) {
+  const calories=originalCalories(source);
+  if (!Number.isFinite(calories)||!Number.isFinite(partDuration)||!Number.isFinite(totalDuration)||totalDuration<=0) return null;
+  return Math.max(0,Math.round(calories*(partDuration/totalDuration)));
+}
+
+function buildSplitChild(source,stats,id,title,partNumber,totalDuration) {
+  const calories=splitCalories(source,stats.elapsed_time_ms,totalDuration);
+  return {
+    ...source,
+    id,
+    __docId:undefined,
+    custom_title:String(title||"").trim(),
+    start_time_ms:stats.start_time_ms,
+    elapsed_time_ms:stats.elapsed_time_ms,
+    timer_time_ms:stats.timer_time_ms,
+    distance_m:stats.distance_m,
+    ascent_m:stats.ascent_m,
+    descent_m:stats.descent_m,
+    avg_hr:stats.avg_hr,
+    max_hr:stats.max_hr,
+    avg_speed_mps:stats.avg_speed_mps,
+    calories,
+    gps_point_count:stats.gps_point_count,
+    record_count:stats.record_count,
+    import_source:"WEB_SPLIT",
+    import_profile:"WEBSPLIT001",
+    split_parent_activity_id:String(activityKey(source)),
+    split_part:partNumber,
+    split_created_at_ms:Date.now(),
+    calories_split_method:Number.isFinite(calories) ? "PROPORTIONAL_TIME" : null,
+    deleted_at_ms:null
+  };
+}
+
+async function commitSplitActivity() {
+  if (splitActivitySaving || !splitActivitySource || !splitActivityRoute) return;
+  const parts=currentSplitParts();
+  if (!parts || parts.pointsA.length<2 || parts.pointsB.length<2) return;
+
+  const durationA=parts.statsA.elapsed_time_ms,durationB=parts.statsB.elapsed_time_ms;
+  if (!Number.isFinite(durationA)||!Number.isFinite(durationB)||durationA<=0||durationB<=0) {
+    setMessage("WEBSPLIT001 · chronologie insuffisante pour créer des activités fiables.","error");
+    return;
+  }
+
+  const source=splitActivitySource;
+  const confirmText=
+    `Créer deux activités dérivées ?\n\n`+
+    `Partie 1 : ${formatDistance(parts.statsA.distance_m)} · ${formatDuration(durationA)}\n`+
+    `Partie 2 : ${formatDistance(parts.statsB.distance_m)} · ${formatDuration(durationB)}\n\n`+
+    `L’activité source ${activityKey(source)} restera intacte.`;
+  if (!window.confirm(confirmText)) return;
+
+  splitActivitySaving=true;
+  ui.splitActivityCommitButton.disabled=true;
+  ui.splitActivityCommitButton.textContent="Création…";
+  ui.splitActivityStatus.textContent="Création des activités dérivées…";
+  ui.splitActivityStatus.className="split-activity-status pending";
+
+  try {
+    const totalDuration=durationA+durationB;
+    const idA=makeWebImportedActivityId(parts.statsA.start_time_ms);
+    let idB=makeWebImportedActivityId(parts.statsB.start_time_ms);
+    if (idB===idA) idB+=1;
+
+    const childA=buildSplitChild(source,parts.statsA,idA,ui.splitActivityTitleA.value,1,totalDuration);
+    const childB=buildSplitChild(source,parts.statsB,idB,ui.splitActivityTitleB.value,2,totalDuration);
+    const routeA=splitRouteDocument(parts.pointsA);
+    const routeB=splitRouteDocument(parts.pointsB);
+
+    for (const [child,route] of [[childA,routeA],[childB,routeB]]) {
+      const key=String(child.id);
+      const materialized={...child};
+      delete materialized.__docId;
+
+      await commitWebMutation({
+        table:"activities",rowKey:key,operation:"UPSERT",row:materialized,
+        materializedCollection:"activities",materializedData:materialized,
+        metaIncrements:{activityCount:1,expectedDocuments:1}
+      });
+      await commitWebMutation({
+        table:"activity_routes",rowKey:key,operation:"UPSERT",
+        row:{id:child.id,source_point_count:route.source_point_count,split_parent_activity_id:String(activityKey(source))},
+        materializedCollection:"activity_routes",materializedData:route
+      });
+      activities.push({...materialized,__docId:key});
+    }
+
+    const sourcePatch={
+      ...source,
+      split_status:"SOURCE",
+      split_children_ids:[String(idA),String(idB)],
+      split_updated_at_ms:Date.now()
+    };
+    delete sourcePatch.__docId;
+
+    await commitWebMutation({
+      table:"activities",rowKey:String(activityKey(source)),operation:"UPSERT",
+      row:sourcePatch,materializedCollection:"activities",materializedData:sourcePatch
+    });
+    Object.assign(source,sourcePatch);
+
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+    await loadWebDashboard();
+
+    ui.splitActivityStatus.textContent=
+      `Découpe terminée · ${formatDistance(childA.distance_m)} + ${formatDistance(childB.distance_m)} · source conservée.`;
+    ui.splitActivityStatus.className="split-activity-status success";
+    setMessage("WEBSPLIT001 · 2 activités dérivées créées. L’activité source reste intacte.","success");
+  } catch (error) {
+    console.error(error);
+    ui.splitActivityStatus.textContent=`Découpe impossible : ${error?.message||error}`;
+    ui.splitActivityStatus.className="split-activity-status error";
+    handleError(error,"Découpe impossible");
+  } finally {
+    splitActivitySaving=false;
+    ui.splitActivityCommitButton.disabled=false;
+    ui.splitActivityCommitButton.textContent="Créer les 2 activités";
+  }
+}
 
 // -----------------------------------------------------------------------------
 // WEB036 · WEBMANUAL001 — création manuelle d'activités
@@ -6816,7 +7144,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB036"
+    webVersion: "WEB037"
   };
   if (row != null) event.row = row;
 
@@ -6825,7 +7153,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB036"
+    webVersion: "WEB037"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -7283,7 +7611,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB036",
+      webVersion: "WEB037",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -7349,7 +7677,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB036",
+    webVersion: "WEB037",
     androidVersion: 0,
     __synthetic: true
   };
@@ -8806,7 +9134,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB036",
+      webVersion: "WEB037",
       row: next
     }
   );
@@ -8842,7 +9170,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB036",
+        webVersion: "WEB037",
         row: patch
       }
     );
@@ -8854,7 +9182,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB036"
+      webVersion: "WEB037"
     },
     { merge: true }
   );
