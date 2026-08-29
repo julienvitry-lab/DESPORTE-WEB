@@ -101,7 +101,7 @@ const ui = Object.fromEntries(
     "detailView", "backToCatalogButton", "backToCatalogBottomButton",
     "previousActivityButton", "nextActivityButton",
     "previousActivityBottomButton", "nextActivityBottomButton", "detailPosition",
-    "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics", "quickLandmarkButtons", "trashCurrentActivityButton",
+    "detailSportLine", "detailTitle", "detailDateLine", "detailHeroMetrics", "quickLandmarkButtons", "detailCaloriesQuality", "metricChartPanel", "metricChartTitle", "metricChartMeta", "metricChartStatus", "metricChartSvg", "metricChartCloseButton", "detailTechnicalButton", "detailTechnicalPanel", "trashCurrentActivityButton",
     "detailSummaryGrid", "detailPerformanceGrid", "detailPersonalGrid",
     "interopStatus", "interopEditor", "editTitleInput", "editDescriptionInput", "editNoteInput",
     "editEquipmentSelect", "editFeelingSelect", "editDifficultySelect", "editPrivacySelect",
@@ -370,6 +370,9 @@ function wireEvents() {
   });
 
   ui.logoutButton.addEventListener("click", () => signOut(auth));
+  ui.metricChartCloseButton?.addEventListener("click", () => closeMetricChart());
+  ui.detailTechnicalButton?.addEventListener("click", () => toggleDetailTechnicalPanel());
+
   ui.refreshButton.addEventListener("click", () => reloadAll());
 
   ui.dashboardRunningButton.addEventListener("click", () => selectDashboardSport(1));
@@ -2583,7 +2586,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB032";
+  document.title = "SPORT Web · WEB033";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -2640,11 +2643,7 @@ function renderDetail(activity) {
   ui.trashCurrentActivityButton.textContent =
     activity.deleted_at_ms == null ? "🗑 Mettre à la corbeille" : "↩ Restaurer";
   const sportLabel = sportName(activity.sport);
-  const subLabel = subSportName(activity.sub_sport);
-  ui.detailSportLine.textContent =
-    subLabel && subLabel !== "—" && subLabel.toLowerCase() !== sportLabel.toLowerCase()
-      ? `${sportLabel} · ${subLabel}`
-      : sportLabel;
+  ui.detailSportLine.textContent = sportLabel;
   ui.detailDateLine.textContent = formatDateLong(activity.start_time_ms);
 
   renderHeroMetrics(activity);
@@ -2722,21 +2721,157 @@ function activityCaloriesPresentation(activity) {
   return { value: "—", label: "Calories", estimated: false };
 }
 
+
+function metricSeriesFromRoute(route, activity) {
+  const raw = route?.raw || {};
+  const routePoints = route?.points || [];
+  const aliases = {
+    time: [raw.time_ms, raw.timestamp_ms, raw.timestamps_ms, raw.record_time_ms],
+    hr: [raw.hr_bpm, raw.heart_rate_bpm, raw.heart_rate, raw.hr],
+    speed: [raw.speed_mps, raw.enhanced_speed_mps, raw.speed]
+  };
+
+  const firstArray = (values) => values.find((value) => Array.isArray(value) && value.length) || [];
+  const time = firstArray(aliases.time);
+  const hr = firstArray(aliases.hr);
+  const speed = firstArray(aliases.speed);
+
+  const length = Math.max(time.length, hr.length, speed.length, routePoints.length);
+  if (!length) return { pace: [], hr: [] };
+
+  const paceSeries = [];
+  const hrSeries = [];
+
+  for (let i = 0; i < length; i++) {
+    const distanceM = numberOrZero(routePoints[i]?.distanceMeters);
+    const x = distanceM > 0 ? distanceM / 1000 : i;
+
+    const heart = Number(hr[i]);
+    if (Number.isFinite(heart) && heart > 20 && heart < 260) {
+      hrSeries.push({ x, y: heart });
+    }
+
+    let speedMps = Number(speed[i]);
+    if ((!Number.isFinite(speedMps) || speedMps <= 0) && i > 0 && time.length > i && routePoints.length > i) {
+      const dt = Number(time[i]) - Number(time[i - 1]);
+      const dd = numberOrZero(routePoints[i]?.distanceMeters) - numberOrZero(routePoints[i - 1]?.distanceMeters);
+      if (Number.isFinite(dt) && dt > 0 && dd >= 0) {
+        speedMps = dd / (dt / 1000);
+      }
+    }
+    if (Number.isFinite(speedMps) && speedMps > 0.2 && speedMps < 30) {
+      const paceMinKm = 1000 / speedMps / 60;
+      if (Number.isFinite(paceMinKm) && paceMinKm > 1 && paceMinKm < 60) {
+        paceSeries.push({ x, y: paceMinKm });
+      }
+    }
+  }
+
+  return { pace: paceSeries, hr: hrSeries };
+}
+
+function renderMetricChart(activity, kind) {
+  if (!ui.metricChartPanel || !ui.metricChartSvg) return;
+  ui.metricChartPanel.classList.remove("hidden");
+  ui.metricChartSvg.innerHTML = "";
+
+  const route = activeRoute;
+  const series = metricSeriesFromRoute(route, activity);
+  const rows = kind === "hr" ? series.hr : series.pace;
+
+  ui.metricChartTitle.textContent = kind === "hr" ? "Fréquence cardiaque" : "Allure";
+  ui.metricChartMeta.textContent = kind === "hr"
+    ? `${formatHeartRate(activity.avg_hr)} moy. · ${formatHeartRate(activity.max_hr)} max`
+    : primarySpeedMetric(activity);
+
+  if (rows.length < 2) {
+    ui.metricChartStatus.textContent =
+      "Série point-par-point non disponible dans activity_routes. Le Web n’invente pas de courbe à partir des seules moyennes : il faudra publier timestamps/FC/vitesse depuis Android pour obtenir ce graphique.";
+    return;
+  }
+
+  ui.metricChartStatus.textContent = `${formatNumber(rows.length)} points détaillés`;
+  const width = 1000, height = 240, px = 35, py = 26;
+  const xs = rows.map((row) => row.x);
+  const ys = rows.map((row) => row.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  let minY = Math.min(...ys), maxY = Math.max(...ys);
+  if (maxY - minY < 1) { minY -= 0.5; maxY += 0.5; }
+
+  const xMap = (value) => px + ((value - minX) / Math.max(0.0001, maxX - minX)) * (width - px * 2);
+  const yMap = (value) => py + ((maxY - value) / Math.max(0.0001, maxY - minY)) * (height - py * 2);
+  const points = rows.map((row) => `${xMap(row.x).toFixed(1)},${yMap(row.y).toFixed(1)}`).join(" ");
+
+  const grid = [0, .25, .5, .75, 1].map((ratio) => {
+    const y = py + ratio * (height - py * 2);
+    const value = maxY - ratio * (maxY - minY);
+    const label = kind === "hr"
+      ? `${Math.round(value)}`
+      : `${Math.floor(value)}:${String(Math.round((value % 1) * 60)).padStart(2,"0")}`;
+    return `<line x1="${px}" y1="${y}" x2="${width-px}" y2="${y}" class="metric-chart-grid"></line>
+            <text x="4" y="${y+4}" class="metric-chart-label">${label}</text>`;
+  }).join("");
+
+  ui.metricChartSvg.innerHTML = `
+    ${grid}
+    <polyline points="${points}" class="metric-chart-line"></polyline>
+    <text x="${px}" y="${height-4}" class="metric-chart-label">${minX.toLocaleString("fr-FR",{maximumFractionDigits:1})} km</text>
+    <text x="${width-px-70}" y="${height-4}" class="metric-chart-label">${maxX.toLocaleString("fr-FR",{maximumFractionDigits:1})} km</text>`;
+}
+
+function closeMetricChart() {
+  if (!ui.metricChartPanel) return;
+  ui.metricChartPanel.classList.add("hidden");
+  if (ui.metricChartSvg) ui.metricChartSvg.innerHTML = "";
+}
+
+function toggleDetailTechnicalPanel() {
+  if (!ui.detailTechnicalPanel) return;
+  const willShow = ui.detailTechnicalPanel.classList.contains("hidden");
+  ui.detailTechnicalPanel.classList.toggle("hidden", !willShow);
+  if (willShow) ui.detailTechnicalPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function updateCaloriesQuality(activity) {
+  if (!ui.detailCaloriesQuality) return;
+  const calories = activityCaloriesPresentation(activity);
+  if (calories.value === "—") {
+    ui.detailCaloriesQuality.textContent = "⚠ Calories manquantes";
+    ui.detailCaloriesQuality.className = "pill error";
+  } else {
+    ui.detailCaloriesQuality.textContent = calories.value;
+    ui.detailCaloriesQuality.className = calories.estimated ? "pill pending" : "pill ok";
+  }
+}
+
+function equipmentCategoriesForSport(activity) {
+  const sport = Number(activity?.sport);
+  if ([1, 6].includes(sport)) return new Set(["SHOES"]);
+  if ([2, 3, 4].includes(sport)) return new Set(["BIKE", "HOME_TRAINER"]);
+  if ([11, 17].includes(sport)) return new Set(["SHOES", "BACKPACK", "POLES"]);
+  return null;
+}
+
 function renderHeroMetrics(activity) {
   ui.detailHeroMetrics.innerHTML = "";
-  const calories = activityCaloriesPresentation(activity);
+  updateCaloriesQuality(activity);
+
   const metrics = [
-    ["Distance", formatDistance(activity.distance_m)],
-    ["Durée", formatDuration(activity.elapsed_time_ms)],
-    ["D+", formatMeters(activity.ascent_m)],
-    ["Allure / vitesse", primarySpeedMetric(activity)],
-    ["FC moy.", formatHeartRate(activity.avg_hr)],
-    [calories.label, calories.value]
+    ["Distance", formatDistance(activity.distance_m), null],
+    ["Durée", formatDuration(activity.elapsed_time_ms), null],
+    ["D+", formatMeters(activity.ascent_m), null],
+    ["Allure / vitesse", primarySpeedMetric(activity), "pace"],
+    ["FC moy.", formatHeartRate(activity.avg_hr), "hr"]
   ];
 
-  for (const [label, value] of metrics) {
-    const box = document.createElement("div");
-    box.className = "hero-metric";
+  for (const [label, value, chartKind] of metrics) {
+    const box = document.createElement(chartKind ? "button" : "div");
+    box.className = `hero-metric summary-chip${chartKind ? " metric-clickable" : ""}`;
+    if (chartKind) {
+      box.type = "button";
+      box.title = `Afficher le graphique ${label.toLowerCase()}`;
+      box.addEventListener("click", () => renderMetricChart(activity, chartKind));
+    }
     const span = document.createElement("span");
     span.textContent = label;
     const strong = document.createElement("strong");
@@ -2951,7 +3086,7 @@ function normalizeRoute(data) {
   }
 
   calculateRouteGrades(points);
-  return { points };
+  return { raw: data || {}, points };
 }
 
 function calculateRouteGrades(points) {
@@ -5102,7 +5237,11 @@ function renderPersonal(activity) {
 function renderQuickLandmarkButtons(activity, links = linksForActivity(activity)) {
   if (!ui.quickLandmarkButtons) return;
   ui.quickLandmarkButtons.innerHTML = "";
-  const used = new Set((links || []).map((link) => String(link.landmark_code ?? "")));
+
+  const counts = new Map();
+  for (const link of links || []) {
+    counts.set(String(link.landmark_code ?? ""), Math.max(1, numberOrZero(link.occurrences)));
+  }
 
   const rows = [...landmarks.entries()]
     .sort((a,b) =>
@@ -5116,22 +5255,35 @@ function renderQuickLandmarkButtons(activity, links = linksForActivity(activity)
   }
 
   rows.forEach(([code,row]) => {
-    const active = used.has(String(code));
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `quick-landmark-button${active ? " active" : ""}`;
-    button.textContent = code;
-    button.title = `${row?.name || row?.label || "Repère"} · ${active ? "cliquer pour retirer" : "cliquer pour ajouter"}`;
-    button.setAttribute("aria-pressed", active ? "true" : "false");
-    button.addEventListener("click", async () => {
-      button.disabled = true;
-      try {
-        await setLandmarkOccurrence(activity, code, active ? 0 : 1);
-      } finally {
-        button.disabled = false;
-      }
+    const count = counts.get(String(code)) || 0;
+    const wrap = document.createElement("div");
+    wrap.className = `quick-landmark-stepper${count ? " active" : ""}`;
+
+    const plus = document.createElement("button");
+    plus.type = "button";
+    plus.className = "quick-landmark-plus";
+    plus.innerHTML = `<strong>${escapeHtml(code)}</strong>${count ? `<span>×${count}</span>` : ""}`;
+    plus.title = `${row?.name || row?.label || "Repère"} · ajouter une occurrence`;
+    plus.addEventListener("click", async () => {
+      plus.disabled = true;
+      try { await changeLandmarkOccurrence(activity, code, +1); }
+      finally { plus.disabled = false; }
     });
-    ui.quickLandmarkButtons.appendChild(button);
+
+    const minus = document.createElement("button");
+    minus.type = "button";
+    minus.className = "quick-landmark-minus";
+    minus.textContent = "−";
+    minus.title = `Retirer une occurrence de ${code}`;
+    minus.disabled = count <= 0;
+    minus.addEventListener("click", async () => {
+      minus.disabled = true;
+      try { await changeLandmarkOccurrence(activity, code, -1); }
+      finally { minus.disabled = false; }
+    });
+
+    wrap.append(plus, minus);
+    ui.quickLandmarkButtons.appendChild(wrap);
   });
 }
 
@@ -5415,7 +5567,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB032",
+            webVersion: "WEB033",
             row: wanted
           }
         );
@@ -5438,7 +5590,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB032"
+            webVersion: "WEB033"
           }
         );
         countDelta -= 1;
@@ -5448,7 +5600,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB032"
+      webVersion: "WEB033"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5648,7 +5800,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB032"
+    webVersion: "WEB033"
   };
   if (row != null) event.row = row;
 
@@ -5657,7 +5809,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB032"
+    webVersion: "WEB033"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -5889,36 +6041,41 @@ function rebuildEquipmentEditor(activity) {
   none.textContent = "Aucun matériel";
   ui.editEquipmentSelect.appendChild(none);
 
+  const allowedCategories = equipmentCategoriesForSport(activity);
   const rows = equipmentRows
+    .filter((item) => {
+      const active = String(item.status ?? "ACTIVE").toUpperCase() === "ACTIVE";
+      if (!active) return false;
+      if (!allowedCategories) return true;
+      return allowedCategories.has(String(item.category ?? "").toUpperCase());
+    })
     .slice()
-    .sort((a, b) => {
-      const activeA = String(a.status ?? "ACTIVE").toUpperCase() === "ACTIVE" ? 0 : 1;
-      const activeB = String(b.status ?? "ACTIVE").toUpperCase() === "ACTIVE" ? 0 : 1;
-      if (activeA !== activeB) return activeA - activeB;
-      return equipmentDisplayName(a).localeCompare(equipmentDisplayName(b), "fr", { sensitivity: "base" });
-    });
+    .sort((a,b) =>
+      equipmentDisplayName(a).localeCompare(equipmentDisplayName(b), "fr", {sensitivity:"base"})
+    );
 
   const values = new Set();
   for (const item of rows) {
     const value = equipmentDisplayName(item);
     if (!value || values.has(value)) continue;
     values.add(value);
-
     const option = document.createElement("option");
     option.value = value;
-    const category = String(item.category ?? "").trim();
-    const reserve = String(item.status ?? "ACTIVE").toUpperCase() === "ACTIVE" ? "" : " · réserve";
-    option.textContent = `${value}${category ? ` · ${category}` : ""}${reserve}`;
+    option.textContent = value;
     ui.editEquipmentSelect.appendChild(option);
   }
 
+  // Une affectation historique en réserve/archivée reste visible, mais n'est pas proposée pour un nouveau choix.
   if (selected && !values.has(selected)) {
     const legacy = document.createElement("option");
     legacy.value = selected;
-    legacy.textContent = `${selected} · affectation actuelle`;
+    legacy.textContent = `${selected} · affectation historique`;
+    legacy.disabled = true;
+    legacy.selected = true;
     ui.editEquipmentSelect.appendChild(legacy);
+  } else {
+    ui.editEquipmentSelect.value = selected;
   }
-  ui.editEquipmentSelect.value = selected;
 }
 
 async function saveImmediateActivityFields(partialPatch, successLabel) {
@@ -6110,7 +6267,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB032",
+      webVersion: "WEB033",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -6176,7 +6333,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB032",
+    webVersion: "WEB033",
     androidVersion: 0,
     __synthetic: true
   };
@@ -7633,7 +7790,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB032",
+      webVersion: "WEB033",
       row: next
     }
   );
@@ -7669,7 +7826,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB032",
+        webVersion: "WEB033",
         row: patch
       }
     );
@@ -7681,7 +7838,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB032"
+      webVersion: "WEB033"
     },
     { merge: true }
   );

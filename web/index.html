@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB032 · WEBUX002 · Comfortaa">
-  <title>SPORT Web · WEB032</title>
+  <meta name="description" content="SPORT Web · WEB033 · WEBUX003 · Comfortaa">
+  <title>SPORT Web · WEB033</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB032 · WEBUX002 · Comfortaa · Firestore</div>
+      <div class="version">WEB033 · WEBUX003 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <label class="appearance-picker" title="Changer l’apparence">
@@ -697,7 +697,10 @@
       <section id="detailView" class="hidden">
         <div class="detail-toolbar">
           <button id="backToCatalogButton" class="secondary">← Répertoire</button>
-          <button id="trashCurrentActivityButton" class="secondary trash-detail-button" type="button">🗑 Mettre à la corbeille</button>
+          <div class="detail-secondary-actions">
+            <button id="detailTechnicalButton" class="secondary compact" type="button">Données</button>
+            <button id="trashCurrentActivityButton" class="secondary trash-detail-button" type="button">🗑 Corbeille</button>
+          </div>
           <div class="detail-nav">
             <button id="previousActivityButton" class="secondary">← Activité précédente</button>
             <span id="detailPosition" class="pill neutral">—</span>
@@ -705,26 +708,45 @@
           </div>
         </div>
 
-        <article class="detail-hero detail-hero-compact panel">
-          <div class="detail-identity">
-            <p id="detailSportLine" class="eyebrow">ACTIVITÉ</p>
-            <h1 id="detailTitle">Activité</h1>
-            <p id="detailDateLine" class="detail-date"></p>
+        <!-- Héritage WEB032 · WEBUX002 -->
+        <article class="detail-hero detail-hero-one-line panel">
+          <div class="detail-summary-strip">
+            <span id="detailSportLine" class="summary-chip summary-chip-sport">ACTIVITÉ</span>
+            <h1 id="detailTitle" class="hidden">Activité</h1>
+            <span id="detailDateLine" class="summary-chip summary-chip-date"></span>
+            <div id="detailHeroMetrics" class="detail-hero-metrics detail-hero-metrics-inline"></div>
           </div>
-          <div id="detailHeroMetrics" class="detail-hero-metrics detail-hero-metrics-compact"></div>
 
           <div class="detail-quick-controls">
             <label class="detail-quick-equipment">
-              <span>Matériel</span>
+              <span>Matériel actif adapté au sport</span>
               <select id="editEquipmentSelect">
                 <option value="">Aucun matériel</option>
               </select>
             </label>
+
             <div class="detail-quick-landmarks">
-              <span>Repères</span>
+              <span>Repères · clic = +1 · bouton − = retirer une occurrence</span>
               <div id="quickLandmarkButtons" class="quick-landmark-buttons"></div>
             </div>
+
+            <div class="detail-data-quality">
+              <span id="detailCaloriesQuality" class="pill warning">Calories à vérifier</span>
+            </div>
           </div>
+
+          <section id="metricChartPanel" class="metric-chart-panel hidden" aria-live="polite">
+            <div class="metric-chart-head">
+              <div>
+                <p class="eyebrow">WEB033 · COURBES</p>
+                <strong id="metricChartTitle">Courbe</strong>
+                <span id="metricChartMeta" class="muted"></span>
+              </div>
+              <button id="metricChartCloseButton" class="secondary compact" type="button">Fermer</button>
+            </div>
+            <div id="metricChartStatus" class="muted"></div>
+            <svg id="metricChartSvg" class="metric-chart-svg" viewBox="0 0 1000 240" preserveAspectRatio="none"></svg>
+          </section>
         </article>
 
         <section class="detail-section panel ux32-redundant-section hidden" aria-hidden="true">
@@ -942,7 +964,7 @@
           <div id="detailPerformanceGrid" class="detail-grid"></div>
         </section>
 
-        <section class="detail-section panel detail-edit-panel">
+        <section class="detail-section panel detail-edit-panel hidden" aria-hidden="true">
           <div class="section-heading interop-heading">
             <div>
               <p class="eyebrow">MODIFIER</p>
@@ -1044,7 +1066,7 @@
           <div id="detailRecordsList" class="record-list"></div>
         </section>
 
-        <section class="detail-section panel technical-panel">
+        <section id="detailTechnicalPanel" class="detail-section panel technical-panel hidden">
           <details class="technical-details">
             <summary>Données techniques et source</summary>
             <p class="muted">Informations de diagnostic, source FIT, points GPS et colonnes Firestore.</p>

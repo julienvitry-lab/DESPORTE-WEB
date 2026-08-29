@@ -2386,3 +2386,45 @@ footer {
   .route-km-table th,.route-km-table td{padding:8px}
   .technical-grid{grid-template-columns:repeat(2,minmax(100px,1fr))}
 }
+
+
+/* WEB033 · WEBUX003 — barre activité, matériel contextualisé, repères compteurs */
+.detail-hero-one-line{padding:14px 18px;display:grid;gap:12px}
+.detail-summary-strip{display:flex;align-items:stretch;gap:7px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}
+.summary-chip{flex:0 0 auto;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.018);padding:8px 11px;color:var(--text)}
+.summary-chip-sport{display:flex;align-items:center;font-weight:800;color:var(--accent);font-size:.75rem}
+.summary-chip-date{display:flex;align-items:center;font-size:.72rem;color:var(--muted);white-space:nowrap}
+.detail-hero-metrics-inline{display:flex;gap:7px}
+.detail-hero-metrics-inline .hero-metric{min-width:118px;display:grid;gap:2px;text-align:left;font-family:inherit}
+.detail-hero-metrics-inline .hero-metric span{font-size:.58rem;color:var(--muted)}
+.detail-hero-metrics-inline .hero-metric strong{font-size:.86rem;color:var(--accent)}
+.metric-clickable{cursor:pointer}
+.metric-clickable:hover{border-color:var(--accent);background:rgba(156,255,34,.045)}
+.metric-clickable:after{content:"↗";position:absolute;opacity:0}
+.detail-quick-controls{grid-column:auto;display:grid;grid-template-columns:minmax(240px,.75fr) minmax(400px,1.5fr) auto;align-items:end;gap:12px;padding-top:10px}
+.detail-data-quality{align-self:end;padding-bottom:2px}
+.detail-secondary-actions{display:flex;gap:7px}
+.quick-landmark-buttons{gap:7px}
+.quick-landmark-stepper{display:inline-flex;border:1px solid rgba(255,255,255,.14);border-radius:9px;overflow:hidden;background:rgba(255,255,255,.018)}
+.quick-landmark-stepper.active{border-color:var(--accent);background:rgba(156,255,34,.045)}
+.quick-landmark-stepper button{border:0;border-radius:0;background:transparent;color:var(--text);font-family:inherit;cursor:pointer}
+.quick-landmark-plus{height:32px;min-width:38px;padding:0 8px;display:flex;gap:4px;align-items:center;justify-content:center}
+.quick-landmark-plus span{font-size:.62rem;color:var(--accent)}
+.quick-landmark-minus{width:27px;height:32px;border-left:1px solid rgba(255,255,255,.1)!important;color:var(--muted)!important;font-size:1rem}
+.quick-landmark-minus:not(:disabled):hover{background:rgba(255,80,80,.08);color:#ff8d8d!important}
+.quick-landmark-minus:disabled{opacity:.28;cursor:default}
+.metric-chart-panel{border-top:1px solid rgba(255,255,255,.08);padding-top:12px;display:grid;gap:8px}
+.metric-chart-panel.hidden{display:none}
+.metric-chart-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.metric-chart-head>div{display:grid;gap:3px}
+.metric-chart-svg{width:100%;height:220px;border:1px solid rgba(255,255,255,.07);border-radius:10px;background:rgba(0,0,0,.12)}
+.metric-chart-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.metric-chart-grid{stroke:rgba(255,255,255,.08);stroke-width:1}
+.metric-chart-label{fill:var(--muted);font:11px "Comfortaa",sans-serif}
+.detail-edit-panel.hidden{display:none!important}
+.technical-panel.hidden{display:none!important}
+
+@media(max-width:950px){
+  .detail-quick-controls{grid-template-columns:1fr}
+  .detail-data-quality{align-self:start}
+}
