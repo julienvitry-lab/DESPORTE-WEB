@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB035
+name: Publier SPORT Web · WEB036
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB035.md"
+      - "docs/releases/WEB036.md"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB035
+      - name: Valider WEB036
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +47,7 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB035"' web/app.js
+          grep -Fq 'webVersion: "WEB036"' web/app.js
 
           # WEB022 · WEBCARTO007.
           grep -Fq "WEB020 · WEBCARTO005" web/index.html
@@ -300,7 +300,55 @@ jobs:
 
 
 
-          echo "WEB035 : WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          grep -Fq 'WEB036 · WEBMANUAL001' web/index.html
+
+
+
+
+
+          grep -Fq 'webManualSection' web/index.html
+
+
+
+
+
+          grep -Fq 'webManualLandmarkButtons' web/index.html
+
+
+
+
+
+          grep -Fq 'function buildWebManualDraft' web/app.js
+
+
+
+
+
+          grep -Fq 'function probableManualDuplicate' web/app.js
+
+
+
+
+
+          grep -Fq 'function commitWebManualActivity' web/app.js
+
+
+
+
+
+          grep -Fq 'import_source:"WEB_MANUAL"' web/app.js
+
+
+
+
+
+          grep -Fq '.web-manual-grid' web/styles.css
+
+
+
+
+
+          echo "WEB036 : WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -310,6 +358,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB035
+      - name: Publier SPORT Web · WEB036
         id: deployment
         uses: actions/deploy-pages@v4

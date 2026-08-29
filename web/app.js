@@ -56,7 +56,7 @@ const ui = Object.fromEntries(
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
     "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
     "personalSyncSection", "personalSyncMeta", "personalSyncStatus", "goalSportSelect",
-    "webImportSection", "webImportDropZone", "webImportFileInput", "webImportArchiveOriginals", "webImportArchiveBadge", "webImportArchiveMeta", "webImportStatus", "webImportPreviewList", "webImportClearButton", "webImportCommitButton", "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
+    "webManualSection", "webManualForm", "webManualSport", "webManualDate", "webManualTime", "webManualDistanceKm", "webManualDuration", "webManualAscent", "webManualDescent", "webManualAvgHr", "webManualMaxHr", "webManualCalories", "webManualEquipment", "webManualTitle", "webManualLandmarkButtons", "webManualNotes", "webManualPreview", "webManualResetButton", "webManualCommitButton", "webImportSection", "webImportDropZone", "webImportFileInput", "webImportArchiveOriginals", "webImportArchiveBadge", "webImportArchiveMeta", "webImportStatus", "webImportPreviewList", "webImportClearButton", "webImportCommitButton", "syncCenterSection", "syncCenterMeta", "syncHistoryTableFilter", "syncHistorySourceFilter",
     "syncEventCount", "syncConflictCount", "syncLastSource", "syncConflictBanner", "syncHistoryList",
     "syncHealthSection", "syncHealthMeta", "syncHealthClientCount", "syncHealthHealthyCount",
     "syncHealthPendingCount", "syncHealthErrorCount", "syncHealthNetwork", "syncHealthList",
@@ -209,6 +209,9 @@ let webImportRunning = false;
 const WEB_IMPORT_ARCHIVE_DB = "sport_web_import_archive_v1";
 const WEB_IMPORT_ARCHIVE_STORE = "original_fit";
 const FIT_UNIX_EPOCH_MS = 631065600000;
+let webManualLandmarkCounts = new Map();
+let webManualSaving = false;
+
 
 
 let activityMapInstance = null;
@@ -245,7 +248,7 @@ function uxPageConfig() {
     analysis: { title: "Analyse", eyebrow: "PROGRESSION & REPÈRES", subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]] },
     maps: { title: "Cartes", eyebrow: "EXPLORATION", subs: [["routes","Carte globale"],["density","Densité"]] },
     equipment: { title: "Matériel", eyebrow: "ÉQUIPEMENT", subs: [["used","Utilisé"],["all","Tout le matériel"]] },
-    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["import","Import"],["sync","Synchronisation"],["health","Santé sync"],["data","Données"],["landmarks-advanced","Repères avancés"]] }
+    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["manual","Ajout manuel"],["import","Import"],["sync","Synchronisation"],["health","Santé sync"],["data","Données"],["landmarks-advanced","Repères avancés"]] }
   };
 }
 
@@ -273,7 +276,7 @@ function managedUxSections() {
     ui.webDashboardSection, ui.activityDirectorySection, ui.trashSection,
     ui.personalSyncSection, ui.landmarkManagerSection, ui.recordsManagerSection,
     ui.globalMapSection, ui.equipmentManagerSection,
-    ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
+    ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
   ].filter(Boolean);
 }
 
@@ -344,7 +347,8 @@ function navigateUx(page, subpage = null, options = {}) {
       renderEquipmentManager();
     }
   } else if (page === "more") {
-    if (sub === "import") setUxSectionVisibility([ui.webImportSection]);
+    if (sub === "manual") setUxSectionVisibility([ui.webManualSection]);
+    else if (sub === "import") setUxSectionVisibility([ui.webImportSection]);
     else if (sub === "health") setUxSectionVisibility([ui.syncHealthSection]);
     else if (sub === "data") setUxSectionVisibility([ui.bootstrapMetrics]);
     else if (sub === "landmarks-advanced") setUxSectionVisibility([ui.advancedLandmarksSection]);
@@ -399,6 +403,21 @@ function wireEvents() {
       ui.webImportFileInput?.click();
     }
   });
+  ui.webManualSport?.addEventListener("change", () => {
+    rebuildWebManualEquipment();
+    updateWebManualPreview();
+  });
+  [
+    ui.webManualDate, ui.webManualTime, ui.webManualDistanceKm, ui.webManualDuration,
+    ui.webManualAscent, ui.webManualDescent, ui.webManualAvgHr, ui.webManualMaxHr,
+    ui.webManualCalories, ui.webManualTitle, ui.webManualNotes
+  ].forEach((node) => node?.addEventListener("input", updateWebManualPreview));
+  ui.webManualResetButton?.addEventListener("click", resetWebManualForm);
+  ui.webManualForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void commitWebManualActivity();
+  });
+
   ui.webImportClearButton?.addEventListener("click", clearWebImportCandidates);
   ui.webImportCommitButton?.addEventListener("click", () => { void commitSelectedWebImports(); });
 
@@ -1305,6 +1324,8 @@ async function openDashboardBucket(bucket) {
     });
     activities = [...merged.values()];
     rebuildDynamicFilters();
+  initializeWebManualForm();
+
     dashboardDrilldownStartMs = bucket.start;
     dashboardDrilldownEndMs = bucket.end;
     dashboardDrilldownText = `${sportName(dashboardSport)} · ${formatDashboardBucketRange(bucket.start, bucket.end)}`;
@@ -2616,7 +2637,7 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
-  document.title = "SPORT Web · WEB035";
+  document.title = "SPORT Web · WEB036";
   cartographyRequestToken++;
   destroyActivityMap();
   ui.detailView.classList.add("hidden");
@@ -5676,7 +5697,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB035",
+            webVersion: "WEB036",
             row: wanted
           }
         );
@@ -5699,7 +5720,7 @@ async function rebuildRecordsFromFirestore() {
             changedAtMs: now,
             publishedAt: serverTimestamp(),
             androidVersion: 0,
-            webVersion: "WEB035"
+            webVersion: "WEB036"
           }
         );
         countDelta -= 1;
@@ -5709,7 +5730,7 @@ async function rebuildRecordsFromFirestore() {
     const metaPatch = {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB035"
+      webVersion: "WEB036"
     };
     if (countDelta !== 0) {
       metaPatch.recordCount = increment(countDelta);
@@ -5769,6 +5790,315 @@ function markerSummary(activity) {
     .join(" · ");
 }
 
+
+
+// -----------------------------------------------------------------------------
+// WEB036 · WEBMANUAL001 — création manuelle d'activités
+// -----------------------------------------------------------------------------
+function parseManualDurationMs(value) {
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  const parts = text.split(":").map(Number);
+  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  if (parts.length === 1) return Math.round(parts[0] * 60000);
+  if (parts.length === 2) return Math.round((parts[0] * 60 + parts[1]) * 1000);
+  if (parts.length === 3) return Math.round((parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000);
+  return null;
+}
+
+function manualSportChoices() {
+  const candidates = [...new Set(
+    activities
+      .map((activity) => Number(activity.sport))
+      .filter(Number.isFinite)
+  )];
+  if (!candidates.length) return [1,2,11];
+  return candidates.sort((a,b) => sportName(a).localeCompare(sportName(b), "fr"));
+}
+
+function initializeWebManualForm() {
+  if (!ui.webManualSport) return;
+
+  const previous = ui.webManualSport.value;
+  ui.webManualSport.innerHTML = "";
+  for (const sport of manualSportChoices()) {
+    const option = document.createElement("option");
+    option.value = String(sport);
+    option.textContent = sportName(sport);
+    ui.webManualSport.appendChild(option);
+  }
+  if (previous && [...ui.webManualSport.options].some((o) => o.value === previous)) {
+    ui.webManualSport.value = previous;
+  }
+
+  if (!ui.webManualDate.value) {
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset()*60000);
+    ui.webManualDate.value = local.toISOString().slice(0,10);
+    ui.webManualTime.value = local.toISOString().slice(11,16);
+  }
+
+  rebuildWebManualEquipment();
+  renderWebManualLandmarks();
+  updateWebManualPreview();
+}
+
+function rebuildWebManualEquipment() {
+  if (!ui.webManualEquipment) return;
+  const current = ui.webManualEquipment.value;
+  ui.webManualEquipment.innerHTML = '<option value="">Aucun matériel</option>';
+
+  const fakeActivity = {sport:Number(ui.webManualSport?.value)};
+  const allowed = equipmentCategoriesForSport(fakeActivity);
+
+  const rows = equipmentRows
+    .filter((item) => String(item.status ?? "ACTIVE").toUpperCase() === "ACTIVE")
+    .filter((item) => !allowed || allowed.has(String(item.category ?? "").toUpperCase()))
+    .slice()
+    .sort((a,b) => equipmentDisplayName(a).localeCompare(equipmentDisplayName(b),"fr",{sensitivity:"base"}));
+
+  const seen = new Set();
+  for (const item of rows) {
+    const value = equipmentDisplayName(item);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    ui.webManualEquipment.appendChild(option);
+  }
+
+  if ([...ui.webManualEquipment.options].some((o) => o.value === current)) {
+    ui.webManualEquipment.value = current;
+  }
+}
+
+function renderWebManualLandmarks() {
+  if (!ui.webManualLandmarkButtons) return;
+  ui.webManualLandmarkButtons.innerHTML = "";
+
+  const rows = [...landmarks.entries()]
+    .sort((a,b) =>
+      Number(a[1]?.sort_order ?? 999) - Number(b[1]?.sort_order ?? 999) ||
+      String(a[0]).localeCompare(String(b[0]),"fr")
+    );
+
+  if (!rows.length) {
+    ui.webManualLandmarkButtons.innerHTML = '<span class="muted">Aucun repère configuré.</span>';
+    return;
+  }
+
+  rows.forEach(([code,row]) => {
+    const count = webManualLandmarkCounts.get(code) || 0;
+    const wrap = document.createElement("div");
+    wrap.className = `quick-landmark-stepper${count ? " active" : ""}`;
+
+    const plus = document.createElement("button");
+    plus.type = "button";
+    plus.className = "quick-landmark-plus";
+    plus.innerHTML = `<strong>${escapeHtml(code)}</strong>${count ? `<span>×${count}</span>` : ""}`;
+    plus.title = `${row?.name || row?.label || "Repère"} · ajouter`;
+    plus.addEventListener("click", () => {
+      webManualLandmarkCounts.set(code, count + 1);
+      renderWebManualLandmarks();
+      updateWebManualPreview();
+    });
+
+    const minus = document.createElement("button");
+    minus.type = "button";
+    minus.className = "quick-landmark-minus";
+    minus.textContent = "−";
+    minus.disabled = count <= 0;
+    minus.addEventListener("click", () => {
+      if (count <= 1) webManualLandmarkCounts.delete(code);
+      else webManualLandmarkCounts.set(code, count - 1);
+      renderWebManualLandmarks();
+      updateWebManualPreview();
+    });
+
+    wrap.append(plus,minus);
+    ui.webManualLandmarkButtons.appendChild(wrap);
+  });
+}
+
+function manualStartTimeMs() {
+  const date = ui.webManualDate?.value;
+  const time = ui.webManualTime?.value || "00:00";
+  if (!date) return null;
+  const parsed = new Date(`${date}T${time}:00`);
+  return Number.isFinite(parsed.getTime()) ? parsed.getTime() : null;
+}
+
+function buildWebManualDraft() {
+  const start = manualStartTimeMs();
+  const duration = parseManualDurationMs(ui.webManualDuration?.value);
+  const distanceKm = Number(ui.webManualDistanceKm?.value || 0);
+
+  if (!Number.isFinite(start)) throw new Error("Date/heure invalide.");
+  if (duration == null) throw new Error("Durée invalide. Utilisez HH:MM:SS ou MM:SS.");
+  if (!Number.isFinite(distanceKm) || distanceKm < 0) throw new Error("Distance invalide.");
+
+  const avgHr = ui.webManualAvgHr?.value ? Number(ui.webManualAvgHr.value) : null;
+  const maxHr = ui.webManualMaxHr?.value ? Number(ui.webManualMaxHr.value) : null;
+  const calories = ui.webManualCalories?.value ? Number(ui.webManualCalories.value) : null;
+
+  return {
+    sport:Number(ui.webManualSport?.value || 1),
+    sub_sport:0,
+    start_time_ms:start,
+    elapsed_time_ms:duration,
+    timer_time_ms:duration,
+    distance_m:Math.round(distanceKm*1000),
+    ascent_m:Math.max(0,Number(ui.webManualAscent?.value || 0)),
+    descent_m:Math.max(0,Number(ui.webManualDescent?.value || 0)),
+    avg_hr:Number.isFinite(avgHr)?Math.round(avgHr):null,
+    max_hr:Number.isFinite(maxHr)?Math.round(maxHr):null,
+    calories:Number.isFinite(calories)?Math.round(calories):null,
+    equipment_name:String(ui.webManualEquipment?.value || ""),
+    custom_title:String(ui.webManualTitle?.value || "").trim(),
+    notes:String(ui.webManualNotes?.value || "").trim(),
+    import_source:"WEB_MANUAL",
+    import_profile:"WEBMANUAL001",
+    gps_point_count:0,
+    record_count:0,
+    imported_at_ms:Date.now(),
+    deleted_at_ms:null
+  };
+}
+
+async function probableManualDuplicate(draft) {
+  const min = draft.start_time_ms - 120000;
+  const max = draft.start_time_ms + 120000;
+
+  try {
+    const snap = await getDocs(query(
+      userCollection("activities"),
+      where("start_time_ms",">=",min),
+      where("start_time_ms","<=",max),
+      limit(20)
+    ));
+    for (const docSnap of snap.docs) {
+      const a = docSnap.data();
+      const distDiff = Math.abs(numberOrZero(a.distance_m) - numberOrZero(draft.distance_m));
+      const tolerance = Math.max(100, numberOrZero(draft.distance_m)*0.02);
+      if (distDiff <= tolerance) return a;
+    }
+  } catch (error) {
+    console.warn("WEBMANUAL001 duplicate query", error);
+  }
+  return null;
+}
+
+function updateWebManualPreview() {
+  if (!ui.webManualPreview) return;
+  try {
+    const draft = buildWebManualDraft();
+    const landmarkCount = [...webManualLandmarkCounts.values()].reduce((a,b)=>a+b,0);
+    const calories = Number.isFinite(draft.calories) && draft.calories > 0
+      ? `${formatNumber(draft.calories)} kcal`
+      : "⚠ calories absentes";
+
+    ui.webManualPreview.innerHTML = `
+      <strong>${escapeHtml(sportName(draft.sport))}</strong> ·
+      ${escapeHtml(formatDateLong(draft.start_time_ms))} ·
+      ${escapeHtml(formatDistance(draft.distance_m))} ·
+      ${escapeHtml(formatDuration(draft.elapsed_time_ms))} ·
+      ${escapeHtml(formatMeters(draft.ascent_m))} D+ ·
+      ${escapeHtml(calories)} ·
+      ${landmarkCount} repère(s)`;
+    ui.webManualPreview.className = `web-manual-preview${draft.calories ? "" : " warning"}`;
+  } catch (error) {
+    ui.webManualPreview.textContent = error?.message || "Informations incomplètes.";
+    ui.webManualPreview.className = "web-manual-preview muted";
+  }
+}
+
+function resetWebManualForm() {
+  if (!ui.webManualForm || webManualSaving) return;
+  ui.webManualForm.reset();
+  webManualLandmarkCounts = new Map();
+
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset()*60000);
+  ui.webManualDate.value = local.toISOString().slice(0,10);
+  ui.webManualTime.value = local.toISOString().slice(11,16);
+
+  initializeWebManualForm();
+  renderWebManualLandmarks();
+  updateWebManualPreview();
+}
+
+async function commitWebManualActivity() {
+  if (webManualSaving) return;
+
+  let draft;
+  try {
+    draft = buildWebManualDraft();
+  } catch (error) {
+    setMessage(error?.message || "Activité manuelle invalide.", "error");
+    return;
+  }
+
+  if (!draft.elapsed_time_ms && !draft.distance_m) {
+    setMessage("Renseignez au moins une durée ou une distance.", "error");
+    return;
+  }
+
+  if (!draft.calories || draft.calories <= 0) {
+    const ok = window.confirm(
+      "Aucune calorie n’est renseignée.\n\nCréer tout de même cette activité ?"
+    );
+    if (!ok) return;
+  }
+
+  const duplicate = await probableManualDuplicate(draft);
+  if (duplicate) {
+    const ok = window.confirm(
+      `Doublon probable détecté : ${formatDateLong(duplicate.start_time_ms)} · ${formatDistance(duplicate.distance_m)}.\n\nCréer quand même cette activité ?`
+    );
+    if (!ok) return;
+  }
+
+  webManualSaving = true;
+  ui.webManualCommitButton.disabled = true;
+  ui.webManualCommitButton.textContent = "Création…";
+
+  try {
+    const id = makeWebImportedActivityId(draft.start_time_ms);
+    const row = {...draft,id};
+
+    await commitWebMutation({
+      table:"activities",
+      rowKey:String(id),
+      operation:"UPSERT",
+      row,
+      materializedCollection:"activities",
+      materializedData:row,
+      metaIncrements:{activityCount:1,expectedDocuments:1}
+    });
+
+    activities.push({...row,__docId:String(id)});
+
+    for (const [code,count] of webManualLandmarkCounts.entries()) {
+      if (count <= 0) continue;
+      await setLandmarkOccurrence(row,code,count);
+    }
+
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+    await loadWebDashboard();
+
+    setMessage(`WEBMANUAL001 · activité créée : ${sportName(row.sport)} · ${formatDateLong(row.start_time_ms)}.`, "success");
+    resetWebManualForm();
+  } catch (error) {
+    console.error(error);
+    handleError(error,"Création manuelle impossible");
+  } finally {
+    webManualSaving = false;
+    ui.webManualCommitButton.disabled = false;
+    ui.webManualCommitButton.textContent = "Créer l’activité";
+  }
+}
 
 // -----------------------------------------------------------------------------
 // WEB035 · WEBIMPORT001 — import FIT natif dans le navigateur
@@ -6486,7 +6816,7 @@ async function commitWebMutationOnline({
     changedAtMs: now,
     publishedAt: serverTimestamp(),
     androidVersion: 0,
-    webVersion: "WEB035"
+    webVersion: "WEB036"
   };
   if (row != null) event.row = row;
 
@@ -6495,7 +6825,7 @@ async function commitWebMutationOnline({
   const metaPatch = {
     updatedAtMs: now,
     sourceDeviceId: webDeviceId,
-    webVersion: "WEB035"
+    webVersion: "WEB036"
   };
   if (metaIncrements && typeof metaIncrements === "object") {
     for (const [field, delta] of Object.entries(metaIncrements)) {
@@ -6953,7 +7283,7 @@ async function publishWebHealth(state = "OK", errorMessage = "") {
       lastSeenAtMs: now,
       lastSyncAtMs: state === "OK" ? now : 0,
       lastStatus: state === "ERROR" ? "Erreur Web" : "SPORT Web actif",
-      webVersion: "WEB035",
+      webVersion: "WEB036",
       androidVersion: 0
     };
     batch.set(ref, health, { merge: true });
@@ -7019,7 +7349,7 @@ function renderSyncHealth() {
     lastError: "",
     lastSeenAtMs: now,
     lastSyncAtMs: now,
-    webVersion: "WEB035",
+    webVersion: "WEB036",
     androidVersion: 0,
     __synthetic: true
   };
@@ -8476,7 +8806,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
       changedAtMs: now,
       publishedAt: serverTimestamp(),
       androidVersion: 0,
-      webVersion: "WEB035",
+      webVersion: "WEB036",
       row: next
     }
   );
@@ -8512,7 +8842,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
         changedAtMs: now,
         publishedAt: serverTimestamp(),
         androidVersion: 0,
-        webVersion: "WEB035",
+        webVersion: "WEB036",
         row: patch
       }
     );
@@ -8524,7 +8854,7 @@ async function commitEquipmentRenameAtomic(previous, next, oldDisplay, newDispla
     {
       updatedAtMs: now,
       sourceDeviceId: webDeviceId,
-      webVersion: "WEB035"
+      webVersion: "WEB036"
     },
     { merge: true }
   );

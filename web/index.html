@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB035 · WEBIMPORT001 · Comfortaa">
-  <title>SPORT Web · WEB035</title>
+  <meta name="description" content="SPORT Web · WEB036 · WEBMANUAL001 · Comfortaa">
+  <title>SPORT Web · WEB036</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB035 · WEBIMPORT001 · Comfortaa · Firestore</div>
+      <div class="version">WEB036 · WEBMANUAL001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <label class="appearance-picker" title="Changer l’apparence">
@@ -205,6 +205,89 @@
               <div id="weightHistory" class="weight-history"></div>
             </div>
           </div>
+        </section>
+
+        <section id="webManualSection" class="panel web-manual-panel hidden">
+          <div class="panel-title-row">
+            <div>
+              <p class="eyebrow">WEB036 · WEBMANUAL001</p>
+              <h2>Ajouter une activité manuellement</h2>
+              <p class="muted">Créez une activité sans fichier FIT. Une trace pourra être associée plus tard.</p>
+            </div>
+            <span class="pill neutral">Création Web</span>
+          </div>
+
+          <form id="webManualForm" class="web-manual-form">
+            <div class="web-manual-grid">
+              <label>
+                <span>Sport</span>
+                <select id="webManualSport" required></select>
+              </label>
+              <label>
+                <span>Date</span>
+                <input id="webManualDate" type="date" required>
+              </label>
+              <label>
+                <span>Heure</span>
+                <input id="webManualTime" type="time" required>
+              </label>
+              <label>
+                <span>Distance (km)</span>
+                <input id="webManualDistanceKm" type="number" min="0" step="0.01" inputmode="decimal">
+              </label>
+              <label>
+                <span>Durée</span>
+                <input id="webManualDuration" type="text" inputmode="numeric" placeholder="1:23:45 ou 45:00">
+              </label>
+              <label>
+                <span>D+</span>
+                <input id="webManualAscent" type="number" min="0" step="1" inputmode="numeric">
+              </label>
+              <label>
+                <span>D−</span>
+                <input id="webManualDescent" type="number" min="0" step="1" inputmode="numeric">
+              </label>
+              <label>
+                <span>FC moyenne</span>
+                <input id="webManualAvgHr" type="number" min="20" max="260" step="1" inputmode="numeric">
+              </label>
+              <label>
+                <span>FC max.</span>
+                <input id="webManualMaxHr" type="number" min="20" max="260" step="1" inputmode="numeric">
+              </label>
+              <label>
+                <span>Calories</span>
+                <input id="webManualCalories" type="number" min="0" step="1" inputmode="numeric">
+              </label>
+              <label>
+                <span>Matériel</span>
+                <select id="webManualEquipment">
+                  <option value="">Aucun matériel</option>
+                </select>
+              </label>
+              <label class="web-manual-title-field">
+                <span>Titre personnalisé</span>
+                <input id="webManualTitle" type="text" maxlength="160" placeholder="Facultatif">
+              </label>
+            </div>
+
+            <div class="web-manual-landmarks">
+              <span>Repères</span>
+              <div id="webManualLandmarkButtons" class="quick-landmark-buttons"></div>
+            </div>
+
+            <label class="web-manual-notes">
+              <span>Notes</span>
+              <textarea id="webManualNotes" rows="3" placeholder="Facultatif"></textarea>
+            </label>
+
+            <div id="webManualPreview" class="web-manual-preview muted">Renseignez au minimum sport, date et heure.</div>
+
+            <div class="web-manual-actions">
+              <button id="webManualResetButton" class="secondary" type="button">Réinitialiser</button>
+              <button id="webManualCommitButton" class="primary" type="submit">Créer l’activité</button>
+            </div>
+          </form>
         </section>
 
         <section id="webImportSection" class="panel web-import-panel hidden">
