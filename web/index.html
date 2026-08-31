@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB041 · WEBSTRAVA002-FIX1 · Comfortaa">
+  <meta name="description" content="SPORT Web · WEB041 · WEBSTRAVA002-FIX2 · WEBEQUIPMAP001 · Comfortaa">
   <title>SPORT Web · WEB041</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB041 · WEBSTRAVA002-FIX1 · Comfortaa · Firestore</div>
+      <div class="version">WEB041 · WEBSTRAVA002-FIX2 · WEBEQUIPMAP001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <label class="appearance-picker" title="Changer l’apparence">
@@ -255,6 +255,62 @@
               </div>
             </div>
           </details>
+        </section>
+
+        <section id="equipmentMappingSection" class="panel equipment-manager-panel hidden">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">WEB041 · WEBEQUIPMAP001</p>
+              <h2>Correspondances automatiques de matériel</h2>
+              <p class="muted">Associe une source d’import + un sport + un sous-sport à un matériel. La règle est appliquée aux nouveaux imports et peut être propagée à l’historique sans écraser les choix manuels.</p>
+            </div>
+          </div>
+
+          <div class="equipment-editor">
+            <div class="equipment-form-grid">
+              <label>
+                <span>Source d’import</span>
+                <input id="equipmentMappingSource" list="equipmentMappingSourceList" value="KINOMAP_STRAVA_WEB" spellcheck="false">
+                <datalist id="equipmentMappingSourceList">
+                  <option value="KINOMAP_STRAVA_WEB">Kinomap via Strava</option>
+                  <option value="STRAVA_WEB">Strava Web</option>
+                  <option value="WEB_MANUAL_FIT">FIT importé sur le Web</option>
+                  <option value="WEB_MANUAL">Ajout manuel Web</option>
+                  <option value="WEB_SPLIT">Découpe Web</option>
+                </datalist>
+              </label>
+              <label>
+                <span>Sport</span>
+                <select id="equipmentMappingSport">
+                  <option value="1">Course à pied</option>
+                  <option value="2">Vélo</option>
+                  <option value="5">Natation</option>
+                  <option value="11">Marche</option>
+                  <option value="17">Randonnée</option>
+                  <option value="0">Autre</option>
+                </select>
+              </label>
+              <label>
+                <span>Sous-sport</span>
+                <input id="equipmentMappingSubSport" type="number" min="0" step="1" value="21">
+              </label>
+              <label>
+                <span>Matériel SPORT</span>
+                <select id="equipmentMappingEquipment">
+                  <option value="">Choisir un matériel…</option>
+                </select>
+              </label>
+            </div>
+            <div class="equipment-editor-footer">
+              <span id="equipmentMappingStatus" class="muted">Chargement des correspondances…</span>
+              <div class="panel-actions">
+                <button id="equipmentMappingAddButton" class="primary" type="button">Enregistrer la correspondance</button>
+                <button id="equipmentMappingApplyButton" class="secondary" type="button">Appliquer à l’historique</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="equipmentMappingList" class="equipment-manager-list"></div>
         </section>
 
         <section id="webFilesSection" class="panel web-files-panel hidden">
