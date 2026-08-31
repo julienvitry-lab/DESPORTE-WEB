@@ -234,6 +234,8 @@ const WEB_STRAVA_AUTO_INTERVAL_MS = 5 * 60 * 1000;
 const WEB_STRAVA_AUTO_MIN_GAP_MS = 60 * 1000;
 const WEB_STRAVA_AUTO_INITIAL_LOOKBACK_DAYS = 30;
 const WEB_STRAVA_AUTO_OVERLAP_MS = 2 * 24 * 60 * 60 * 1000;
+const WEB_STRAVA_DUPLICATE_TIME_WINDOW_MS = 2 * 60 * 1000;
+const WEB_STRAVA_TREADMILL_SLOPE_PERCENT = 12;
 
 
 
@@ -6074,20 +6076,55 @@ function stravaSportToFitSport(type,sportType) {
   return 0;
 }
 
-function probableExistingActivityForStrava(summary) {
-  const stravaId=String(summary.id);
-  const startMs=Date.parse(summary.start_date || summary.start_date_local || "");
-  const distance=numberOrZero(summary.distance);
+function stravaSummaryStartMs(summary) {
+  const value=Date.parse(summary?.start_date || summary?.start_date_local || "");
+  return Number.isFinite(value) ? value : null;
+}
 
-  const exact=activities.find((activity)=>String(activity.strava_activity_id || "")===stravaId);
+function stravaSummaryDurationMs(summary) {
+  const seconds=numberOrZero(summary?.elapsed_time) || numberOrZero(summary?.moving_time);
+  return seconds>0 ? seconds*1000 : 0;
+}
+
+function isProbableActivityForStrava(activity,summary) {
+  if (!activity || activity.deleted_at_ms!=null) return false;
+
+  const startMs=stravaSummaryStartMs(summary);
+  if (!Number.isFinite(startMs)) return false;
+
+  const remoteSport=stravaSportToFitSport(summary?.type,summary?.sport_type);
+  const localSport=Number(activity.sport);
+  if (remoteSport>0 && Number.isFinite(localSport) && localSport>0 && localSport!==remoteSport) return false;
+
+  const timeDelta=Math.abs(numberOrZero(activity.start_time_ms)-startMs);
+  if (timeDelta>WEB_STRAVA_DUPLICATE_TIME_WINDOW_MS) return false;
+
+  const remoteDistance=numberOrZero(summary?.distance);
+  const localDistance=numberOrZero(activity.distance_m);
+  if (remoteDistance>0 && localDistance>0) {
+    const distanceDelta=Math.abs(localDistance-remoteDistance);
+    if (distanceDelta>Math.max(100,remoteDistance*0.02)) return false;
+  }
+
+  const remoteDuration=stravaSummaryDurationMs(summary);
+  const localDuration=numberOrZero(activity.elapsed_time_ms) || numberOrZero(activity.timer_time_ms);
+  if (remoteDuration>0 && localDuration>0) {
+    const durationDelta=Math.abs(localDuration-remoteDuration);
+    if (durationDelta>Math.max(180000,remoteDuration*0.10)) return false;
+  }
+
+  return true;
+}
+
+function probableExistingActivityForStrava(summary) {
+  const stravaId=String(summary?.id || "");
+
+  const exact=activities.find((activity)=>
+    activity.deleted_at_ms==null && String(activity.strava_activity_id || "")===stravaId
+  );
   if (exact) return {kind:"exact",activity:exact,label:"Déjà importée depuis Strava"};
 
-  if (!Number.isFinite(startMs)) return null;
-  const probable=activities.find((activity)=>{
-    const timeDelta=Math.abs(numberOrZero(activity.start_time_ms)-startMs);
-    const distanceDelta=Math.abs(numberOrZero(activity.distance_m)-distance);
-    return timeDelta<=120000 && distanceDelta<=Math.max(100,distance*0.02);
-  });
+  const probable=activities.find((activity)=>isProbableActivityForStrava(activity,summary));
   return probable ? {kind:"probable",activity:probable,label:"Activité SPORT probablement identique"} : null;
 }
 
@@ -6097,23 +6134,105 @@ async function existingActivityForStravaAuto(summary) {
   if (!currentUser || !summary?.id) return null;
 
   try {
-    const snap=await getDocs(query(
+    // 1. Identifiant Strava exact. Une ligne en corbeille ne bloque jamais une réimportation.
+    const exactSnap=await getDocs(query(
       userCollection("activities"),
       where("strava_activity_id","==",String(summary.id)),
-      limit(1)
+      limit(5)
     ));
-    if (!snap.empty) {
-      const hit=snap.docs[0];
-      return {
-        kind:"exact",
-        activity:{__docId:hit.id,...hit.data()},
-        label:"Déjà importée depuis Strava"
-      };
+    for (const hit of exactSnap.docs) {
+      const row={__docId:hit.id,...hit.data()};
+      if (row.deleted_at_ms==null) {
+        return {kind:"exact",activity:row,label:"Déjà importée depuis Strava"};
+      }
+    }
+
+    // 2. Anti-doublon inter-plateformes : l'activité Android/Kinomap peut ne pas
+    // encore porter strava_activity_id. On recherche donc directement Firestore
+    // autour de l'heure de départ, indépendamment des 250 lignes chargées à l'écran.
+    const startMs=stravaSummaryStartMs(summary);
+    if (Number.isFinite(startMs)) {
+      const probableSnap=await getDocs(query(
+        userCollection("activities"),
+        where("start_time_ms",">=",startMs-WEB_STRAVA_DUPLICATE_TIME_WINDOW_MS),
+        where("start_time_ms","<=",startMs+WEB_STRAVA_DUPLICATE_TIME_WINDOW_MS),
+        limit(25)
+      ));
+      for (const hit of probableSnap.docs) {
+        const row={__docId:hit.id,...hit.data()};
+        if (isProbableActivityForStrava(row,summary)) {
+          return {kind:"probable",activity:row,label:"Activité SPORT probablement identique"};
+        }
+      }
     }
   } catch (error) {
-    console.warn("WEBSTRAVA002 duplicate lookup",summary.id,error);
+    console.warn("WEBSTRAVA002-FIX1 duplicate lookup",summary.id,error);
   }
   return null;
+}
+
+function isWebStravaKinomapActivity(activity) {
+  const text=[activity?.name,activity?.device_name].map((v)=>String(v || "").toLowerCase()).join(" ");
+  return text.includes("kinomap");
+}
+
+function isWebStravaTreadmillActivity(activity) {
+  if (stravaSportToFitSport(activity?.type,activity?.sport_type)!==1) return false;
+  const text=[activity?.sport_type,activity?.type,activity?.name,activity?.device_name]
+    .map((v)=>String(v || "").toLowerCase())
+    .join(" ");
+  return Boolean(activity?.trainer)
+    || text.includes("virtualrun")
+    || text.includes("virtual run")
+    || text.includes("treadmill")
+    || text.includes("tapis")
+    || text.includes("kinomap");
+}
+
+function treadmillAscentMeters(distanceMeters,slopePercent=WEB_STRAVA_TREADMILL_SLOPE_PERCENT) {
+  return Math.max(0,Math.round(numberOrZero(distanceMeters)*Math.max(0,numberOrZero(slopePercent))/100));
+}
+
+function applyWebStravaTreadmillSlope(route,totalDistanceMeters,slopePercent=WEB_STRAVA_TREADMILL_SLOPE_PERCENT) {
+  const count=Math.max(
+    route?.lat?.length || 0,
+    route?.lon?.length || 0,
+    route?.alt_m?.length || 0,
+    route?.distance_m?.length || 0,
+    route?.time_ms?.length || 0
+  );
+  if (!route || count<=0) return route;
+
+  const total=Math.max(0,numberOrZero(totalDistanceMeters));
+  const slope=Math.max(0,numberOrZero(slopePercent));
+  const firstAltitude=(route.alt_m || []).find((value)=>Number.isFinite(Number(value)));
+  const baseAltitude=Number.isFinite(Number(firstAltitude)) ? Number(firstAltitude) : 0;
+  let previousDistance=0;
+
+  while (route.distance_m.length<count) route.distance_m.push(null);
+  while (route.alt_m.length<count) route.alt_m.push(null);
+
+  for (let i=0;i<count;i++) {
+    const stored=Number(route.distance_m[i]);
+    let distance=Number.isFinite(stored) && stored>=0
+      ? stored
+      : (count<=1 ? 0 : total*i/(count-1));
+    distance=Math.max(previousDistance,Math.min(total,distance));
+    previousDistance=distance;
+    route.distance_m[i]=distance;
+    route.alt_m[i]=baseAltitude + distance*slope/100;
+  }
+
+  route.route_format="WEBSTRAVA002-TREADMILL12";
+  return route;
+}
+
+function makeWebStravaActivityId(startMs,stravaId) {
+  const base=Math.max(1,Math.floor(Number(startMs)||Date.now()));
+  const text=String(stravaId || "");
+  let suffix=0;
+  for (let i=0;i<text.length;i++) suffix=(suffix*31+text.charCodeAt(i))%1000;
+  return base*1000+suffix;
 }
 
 function webStravaAutoStorageKey() {
@@ -6324,7 +6443,7 @@ function normalizeStravaDetail(payload) {
   const cadence=Array.isArray(streams.cadence?.data)?streams.cadence.data:[];
 
   const startMs=Date.parse(a.start_date || a.start_date_local || "");
-  const count=Math.max(latlng.length,time.length,distance.length,altitude.length,hr.length,speed.length);
+  const count=Math.max(latlng.length,time.length,distance.length,altitude.length,hr.length,speed.length,cadence.length);
   const route={
     lat:[],lon:[],alt_m:[],distance_m:[],time_ms:[],hr_bpm:[],speed_mps:[],cadence:[],
     source_point_count:count,
@@ -6344,15 +6463,26 @@ function normalizeStravaDetail(payload) {
     route.cadence.push(Number.isFinite(Number(cadence[i]))?Number(cadence[i]):null);
   }
 
+  const treadmill=isWebStravaTreadmillActivity(a);
+  const kinomap=isWebStravaKinomapActivity(a);
+  const distanceMeters=numberOrZero(a.distance);
+  if (treadmill) {
+    applyWebStravaTreadmillSlope(route,distanceMeters,WEB_STRAVA_TREADMILL_SLOPE_PERCENT);
+  }
+
   const activity={
-    id:makeWebImportedActivityId(startMs),
+    // FIX1 : identifiant déterministe pour qu'un même Strava soit idempotent
+    // même si deux déclencheurs automatiques se succèdent.
+    id:makeWebStravaActivityId(startMs,a.id),
     sport:stravaSportToFitSport(a.type,a.sport_type),
-    sub_sport:0,
+    sub_sport:treadmill?21:0,
     start_time_ms:startMs,
     elapsed_time_ms:numberOrZero(a.elapsed_time)*1000,
     timer_time_ms:numberOrZero(a.moving_time)*1000 || numberOrZero(a.elapsed_time)*1000,
-    distance_m:numberOrZero(a.distance),
-    ascent_m:numberOrZero(a.total_elevation_gain),
+    distance_m:distanceMeters,
+    ascent_m:treadmill
+      ? treadmillAscentMeters(distanceMeters,WEB_STRAVA_TREADMILL_SLOPE_PERCENT)
+      : numberOrZero(a.total_elevation_gain),
     descent_m:0,
     calories:Number.isFinite(Number(a.calories))&&Number(a.calories)>0?Math.round(Number(a.calories)):null,
     avg_hr:Number.isFinite(Number(a.average_heartrate))?Math.round(Number(a.average_heartrate)):null,
@@ -6365,8 +6495,8 @@ function normalizeStravaDetail(payload) {
     strava_type:a.type || null,
     strava_sport_type:a.sport_type || null,
     strava_device_name:a.device_name || null,
-    import_source:"STRAVA_WEB",
-    import_profile:"WEBSTRAVA002",
+    import_source:kinomap?"KINOMAP_STRAVA_WEB":"STRAVA_WEB",
+    import_profile:treadmill?"WEBSTRAVA002_TREADMILL12":"WEBSTRAVA002",
     imported_at_ms:Date.now(),
     gps_point_count:route.lat.filter((v,i)=>Number.isFinite(v)&&Number.isFinite(route.lon[i])).length,
     record_count:count,
