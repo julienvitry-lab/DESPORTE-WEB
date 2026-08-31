@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB040
+name: Publier SPORT Web · WEB041
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - "firebase.functions.json"
       - "scripts/deploy_strava_backend.sh"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB040.md"
+      - "docs/releases/WEB041.md"
   workflow_dispatch:
 
 permissions:
@@ -32,10 +32,10 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB040
+      - name: Valider WEB041
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           test -f web/index.html
           test -f web/styles.css
           test -f web/app.js
@@ -50,7 +50,7 @@ jobs:
           grep -Fq 'function flushPendingWebMutations' web/app.js
           grep -Fq 'function commitWebMutationOnline' web/app.js
           grep -Fq '"sync_health"' web/app.js
-          grep -Fq 'webVersion: "WEB040"' web/app.js
+          grep -Fq 'webVersion: "WEB041"' web/app.js
 
           # WEB022 · WEBCARTO007.
           grep -Fq "WEB020 · WEBCARTO005" web/index.html
@@ -583,7 +583,7 @@ jobs:
 
 
 
-          grep -Fq 'WEB040 · WEBSTRAVA001' web/index.html
+          grep -Fq 'WEB041 · WEBSTRAVA002' web/index.html
 
 
 
@@ -734,6 +734,14 @@ jobs:
 
 
 
+          grep -Fq 'WEB041 · WEBSTRAVA002' web/index.html
+          grep -Fq 'function autoSyncWebStrava' web/app.js
+          grep -Fq 'function startWebStravaAutoSync' web/app.js
+          grep -Fq 'existingActivityForStravaAuto' web/app.js
+          grep -Fq 'WEB_STRAVA_AUTO_INTERVAL_MS' web/app.js
+          grep -Fq 'refreshWebStravaStatus({autoSync:true})' web/app.js
+          grep -Fq 'Synchronisation Strava automatique' web/app.js
+
           ! grep -Fqi 'client_secret:' web/app.js
 
 
@@ -744,7 +752,7 @@ jobs:
 
 
 
-          echo "WEB040 : WEBSTRAVA001 + WEBDRIVE001 + WEBFILES001 + WEBSPLIT001 + WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          echo "WEB041 : WEBSTRAVA002 + WEBDRIVE001 + WEBFILES001 + WEBSPLIT001 + WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -754,6 +762,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB040
+      - name: Publier SPORT Web · WEB041
         id: deployment
         uses: actions/deploy-pages@v4
