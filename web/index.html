@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB042 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa">
-  <title>SPORT Web · WEB042</title>
+  <meta name="description" content="SPORT Web · WEB043 · WEBSPLIT002 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa">
+  <title>SPORT Web · WEB043</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <div class="brand">SPORT <span>Web</span></div>
-      <div class="version">WEB042 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa · Firestore</div>
+      <div class="version">WEB043 · WEBSPLIT002 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
       <label class="appearance-picker" title="Changer l’apparence">
@@ -1054,9 +1054,9 @@
         <section id="splitActivityPanel" class="detail-section panel split-activity-panel hidden">
           <div class="panel-title-row">
             <div>
-              <p class="eyebrow">WEB037 · WEBSPLIT001</p>
+              <p class="eyebrow">WEB043 · WEBSPLIT002</p>
               <h2>Découper l’activité</h2>
-              <p class="muted">L’activité source et le fichier original sont conservés. Deux activités dérivées seront créées.</p>
+              <p class="muted">Découpe manuelle de secours. WEBSPLIT002 découpe automatiquement les imports si une pause dépasse 15 minutes ou si le FIT change de sport / sous-sport. Le tracé manquant est reconstruit depuis Strava ou le FIT archivé lorsque possible.</p>
             </div>
             <button id="splitActivityCloseButton" class="secondary compact" type="button">Fermer</button>
           </div>
@@ -1088,12 +1088,13 @@
             </div>
 
             <div class="split-source-note">
-              <span class="pill ok">Source conservée</span>
-              <span>L’activité d’origine reste intacte. Les calories sont réparties proportionnellement au temps si elles existent.</span>
+              <span class="pill ok">Réversible</span>
+              <span>Découpe manuelle : source conservée. Découpe automatique : source placée dans la corbeille pour éviter le double comptage.</span>
             </div>
 
             <div class="split-activity-actions">
-              <button id="splitActivityCommitButton" class="primary" type="button">Créer les 2 activités</button>
+              <button id="splitActivityAutoButton" class="primary" type="button" disabled>Aucune rupture automatique détectée</button>
+              <button id="splitActivityCommitButton" class="secondary" type="button">Créer manuellement les 2 activités</button>
             </div>
           </div>
         </section>

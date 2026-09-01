@@ -14,8 +14,10 @@ const ROOT = "sport_users";
 const WEBSTRAVA_VERSION = "WEBSTRAVA003";
 const WEBSTRAVA_TREADMILL_SLOPE_PERCENT = 12;
 const WEBSTRAVA_DUPLICATE_TIME_WINDOW_MS = 2 * 60 * 1000;
-const STRAVA_API_BASE = "https://api-v3.strava.com";
-const STRAVA_API_FALLBACK_BASE = "https://www.strava.com/api/v3";
+const WEBSPLIT_VERSION = "WEBSPLIT002";
+const WEBSPLIT_AUTO_GAP_MS = 15 * 60 * 1000;
+const STRAVA_API_BASE = "https://www.strava.com/api/v3";
+const STRAVA_API_FALLBACK_BASE = "https://api-v3.strava.com";
 const STRAVA_PUSH_SUBSCRIPTIONS_URL = "https://www.strava.com/api/v3/push_subscriptions";
 
 function firestore() {
@@ -106,9 +108,16 @@ async function fetchJsonWithFallback(path, token) {
   let lastError = null;
 
   for (let index = 0; index < urls.length; index++) {
-    const response = await fetch(urls[index], {
-      headers:{Authorization:`Bearer ${token}`}
-    });
+    let response = null;
+    try {
+      response = await fetch(urls[index], {
+        headers:{Authorization:`Bearer ${token}`}
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (index < urls.length - 1) continue;
+      break;
+    }
     let payload = null;
     try {
       payload = await response.json();
@@ -438,6 +447,234 @@ function normalizeStravaDetailServer(payload) {
   return {activity, route};
 }
 
+
+function serverRouteCount(route) {
+  return Math.max(
+    route?.lat?.length || 0,
+    route?.lon?.length || 0,
+    route?.alt_m?.length || 0,
+    route?.distance_m?.length || 0,
+    route?.time_ms?.length || 0,
+    route?.hr_bpm?.length || 0,
+    route?.speed_mps?.length || 0,
+    route?.cadence?.length || 0
+  );
+}
+
+function serverSliceRoute(route, startIndex, endIndex) {
+  const start = Math.max(0, Number(startIndex) || 0);
+  const end = Math.max(start, Number(endIndex) || start);
+  const fields = ["lat", "lon", "alt_m", "distance_m", "time_ms", "hr_bpm", "speed_mps", "cadence"];
+  const sliced = {};
+  for (const field of fields) {
+    const source = Array.isArray(route?.[field]) ? route[field] : [];
+    sliced[field] = source.slice(start, end + 1);
+  }
+
+  const firstDistance = sliced.distance_m.find((value) => Number.isFinite(Number(value)));
+  const baseDistance = Number.isFinite(Number(firstDistance)) ? Number(firstDistance) : 0;
+  sliced.distance_m = sliced.distance_m.map((value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, n - baseDistance) : null;
+  });
+
+  const count = Math.max(...fields.map((field) => sliced[field].length), 0);
+  sliced.source_point_count = count;
+  sliced.web_preview_point_count = count;
+  sliced.route_format = `${WEBSTRAVA_VERSION}-${WEBSPLIT_VERSION}`;
+  return sliced;
+}
+
+function serverRouteStats(route) {
+  const count = serverRouteCount(route);
+  if (count < 2) return null;
+
+  const times = Array.isArray(route.time_ms) ? route.time_ms.map(Number) : [];
+  const validTimes = times.filter(Number.isFinite);
+  const startTime = validTimes.length ? validTimes[0] : null;
+  const endTime = validTimes.length ? validTimes[validTimes.length - 1] : null;
+  const elapsed = Number.isFinite(startTime) && Number.isFinite(endTime) && endTime >= startTime
+    ? endTime - startTime : null;
+
+  const distances = Array.isArray(route.distance_m) ? route.distance_m.map(Number) : [];
+  const validDistances = distances.filter(Number.isFinite);
+  const distance = validDistances.length >= 2
+    ? Math.max(0, validDistances[validDistances.length - 1] - validDistances[0])
+    : 0;
+
+  let ascent = 0;
+  let descent = 0;
+  const alts = Array.isArray(route.alt_m) ? route.alt_m.map(Number) : [];
+  for (let index = 1; index < alts.length; index++) {
+    const previous = alts[index - 1];
+    const current = alts[index];
+    if (!Number.isFinite(previous) || !Number.isFinite(current)) continue;
+    const delta = current - previous;
+    if (delta > 0) ascent += delta;
+    else descent -= delta;
+  }
+
+  const hrs = (Array.isArray(route.hr_bpm) ? route.hr_bpm : [])
+    .map(Number).filter((value) => Number.isFinite(value) && value >= 20 && value <= 260);
+  const speeds = (Array.isArray(route.speed_mps) ? route.speed_mps : [])
+    .map(Number).filter((value) => Number.isFinite(value) && value >= 0 && value <= 100);
+  const gpsCount = Math.min(route?.lat?.length || 0, route?.lon?.length || 0) > 0
+    ? route.lat.reduce((total, value, index) => total + (
+        Number.isFinite(Number(value)) && Number.isFinite(Number(route.lon[index])) ? 1 : 0
+      ), 0)
+    : 0;
+
+  return {
+    start_time_ms:startTime,
+    elapsed_time_ms:elapsed,
+    timer_time_ms:elapsed,
+    distance_m:distance,
+    ascent_m:Math.round(ascent),
+    descent_m:Math.round(descent),
+    avg_hr:hrs.length ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : null,
+    max_hr:hrs.length ? Math.max(...hrs) : null,
+    avg_speed_mps:Number.isFinite(elapsed) && elapsed > 0 ? distance / (elapsed / 1000) : null,
+    max_speed_mps:speeds.length ? Math.max(...speeds) : null,
+    gps_point_count:gpsCount,
+    record_count:count
+  };
+}
+
+function detectServerPauseBoundaries(route) {
+  const times = Array.isArray(route?.time_ms) ? route.time_ms : [];
+  const boundaries = [];
+  for (let index = 1; index < times.length; index++) {
+    const previous = Number(times[index - 1]);
+    const current = Number(times[index]);
+    if (!Number.isFinite(previous) || !Number.isFinite(current)) continue;
+    const gap = current - previous;
+    if (gap > WEBSPLIT_AUTO_GAP_MS) {
+      boundaries.push({index, reason:"PAUSE_OVER_THRESHOLD", gap_ms:gap});
+    }
+  }
+  return boundaries;
+}
+
+function serverAutoSplitNormalized(normalized) {
+  const route = normalized?.route;
+  const activity = normalized?.activity;
+  if (!route || !activity) return [];
+
+  const count = serverRouteCount(route);
+  if (count < 4) return [{activity, route}];
+
+  const boundaries = detectServerPauseBoundaries(route)
+    .filter((boundary) => boundary.index >= 2 && boundary.index <= count - 2);
+  if (!boundaries.length) return [{activity, route}];
+
+  const ranges = [];
+  let start = 0;
+  for (const boundary of boundaries) {
+    const end = boundary.index - 1;
+    if (end - start + 1 >= 2) ranges.push({start, end, reason:boundary.reason, gap_ms:boundary.gap_ms});
+    start = boundary.index;
+  }
+  if (count - start >= 2) ranges.push({start, end:count - 1, reason:boundaries.at(-1)?.reason || "PAUSE_OVER_THRESHOLD"});
+  if (ranges.length < 2) return [{activity, route}];
+
+  const totalElapsed = numberOrZero(activity.elapsed_time_ms);
+  const parts = [];
+  for (let index = 0; index < ranges.length; index++) {
+    const range = ranges[index];
+    const childRoute = serverSliceRoute(route, range.start, range.end);
+    const stats = serverRouteStats(childRoute);
+    if (!stats || !Number.isFinite(Number(stats.start_time_ms))) continue;
+
+    const child = {
+      ...activity,
+      id:makeActivityId(stats.start_time_ms, `${activity.strava_activity_id}_split_${index + 1}`),
+      start_time_ms:stats.start_time_ms,
+      elapsed_time_ms:stats.elapsed_time_ms,
+      timer_time_ms:stats.timer_time_ms,
+      distance_m:stats.distance_m,
+      ascent_m:stats.ascent_m,
+      descent_m:stats.descent_m,
+      avg_hr:stats.avg_hr,
+      max_hr:stats.max_hr,
+      avg_speed_mps:stats.avg_speed_mps,
+      max_speed_mps:stats.max_speed_mps,
+      gps_point_count:stats.gps_point_count,
+      record_count:stats.record_count,
+      calories:Number.isFinite(Number(activity.calories)) && totalElapsed > 0 && Number.isFinite(stats.elapsed_time_ms)
+        ? Math.max(0, Math.round(Number(activity.calories) * stats.elapsed_time_ms / totalElapsed))
+        : activity.calories,
+      custom_title:String(activity.custom_title || "").trim() + ` · ${index + 1}/${ranges.length}`,
+      import_profile:`${WEBSTRAVA_VERSION}_${WEBSPLIT_VERSION}`,
+      split_parent_strava_activity_id:String(activity.strava_activity_id),
+      split_part:index + 1,
+      split_total:ranges.length,
+      split_reason:range.reason,
+      split_gap_ms:Number(range.gap_ms || 0) || null,
+      split_created_at_ms:Date.now()
+    };
+    parts.push({activity:child, route:childRoute});
+  }
+  return parts.length >= 2 ? parts : [{activity, route}];
+}
+
+async function exactStravaRows(uid, stravaId) {
+  const snap = await firestore().collection(`${ROOT}/${uid}/activities`)
+    .where("strava_activity_id", "==", String(stravaId))
+    .limit(25)
+    .get();
+  return snap.docs.map((doc) => ({__docId:doc.id, ...doc.data()}));
+}
+
+async function importServerSplitParts(uid, parts, webhookEvent) {
+  const stravaId = String(parts[0]?.activity?.strava_activity_id || "");
+  const existingRows = await exactStravaRows(uid, stravaId);
+  if (existingRows.length === 1 && existingRows[0].deleted_at_ms != null && !existingRows[0].split_part) {
+    return {status:"ignored_deleted", activity_id:existingRows[0].id};
+  }
+
+  const byPart = new Map();
+  let unsplit = null;
+  for (const row of existingRows) {
+    const part = Number(row.split_part);
+    if (Number.isFinite(part) && part > 0) byPart.set(part, row);
+    else if (row.deleted_at_ms == null && !unsplit) unsplit = row;
+  }
+
+  let created = 0;
+  let updated = 0;
+  let ignored = 0;
+  const ids = [];
+
+  for (let index = 0; index < parts.length; index++) {
+    const item = parts[index];
+    await applyEquipmentMapping(uid, item.activity);
+    const existing = byPart.get(index + 1) || (index === 0 ? unsplit : null);
+    if (existing?.deleted_at_ms != null) {
+      ignored++;
+      continue;
+    }
+    if (existing) {
+      const result = await updateServerActivity(uid, existing, item.activity, item.route, webhookEvent);
+      ids.push(result.activity_id || existing.id);
+      updated++;
+    } else {
+      const result = await writeServerActivity(uid, item.activity, item.route, webhookEvent);
+      ids.push(result.activity_id);
+      created++;
+    }
+  }
+
+  return {
+    status:created > 0 ? "split_created" : "split_updated",
+    split_version:WEBSPLIT_VERSION,
+    split_total:parts.length,
+    created,
+    updated,
+    ignored,
+    activity_ids:ids
+  };
+}
+
 async function applyEquipmentMapping(uid, activity) {
   if (!activity || Number(activity.equipment_manual) === 1) return activity;
   const snap = await firestore().collection(`${ROOT}/${uid}/equipment_mappings`).get();
@@ -511,15 +748,16 @@ async function findExistingActivity(uid, activity) {
   return null;
 }
 
-function serverEventId(stravaId, aspect, eventTime) {
-  return `strava_${String(aspect || "create")}_${String(stravaId)}_${String(eventTime || Math.floor(Date.now()/1000))}`;
+function serverEventId(stravaId, aspect, eventTime, splitPart = null) {
+  const suffix = Number(splitPart) > 0 ? `_part${Number(splitPart)}` : "";
+  return `strava_${String(aspect || "create")}_${String(stravaId)}_${String(eventTime || Math.floor(Date.now()/1000))}${suffix}`;
 }
 
 async function writeServerActivity(uid, activity, route, webhookEvent) {
   const root = firestore().doc(`${ROOT}/${uid}`);
   const activityKey = String(activity.id);
   const now = Date.now();
-  const eventId = serverEventId(activity.strava_activity_id, webhookEvent?.aspect_type, webhookEvent?.event_time);
+  const eventId = serverEventId(activity.strava_activity_id, webhookEvent?.aspect_type, webhookEvent?.event_time, activity.split_part);
   const batch = firestore().batch();
 
   const activityRef = root.collection("activities").doc(activityKey);
@@ -588,7 +826,7 @@ async function updateServerActivity(uid, existing, activity, route, webhookEvent
   activity.id = Number(existing.id || key) || activity.id;
   activity.imported_at_ms = existing.imported_at_ms || activity.imported_at_ms;
 
-  const eventId = serverEventId(activity.strava_activity_id, webhookEvent?.aspect_type || "update", webhookEvent?.event_time);
+  const eventId = serverEventId(activity.strava_activity_id, webhookEvent?.aspect_type || "update", webhookEvent?.event_time, activity.split_part);
   const batch = firestore().batch();
   batch.set(root.collection("activities").doc(key), {
     ...activity,
@@ -649,6 +887,11 @@ async function importStravaActivityServer(uid, stravaId, webhookEvent) {
 
   if (!Number.isFinite(Number(activity.start_time_ms))) {
     throw new Error(`Activité Strava ${stravaId} sans date valide.`);
+  }
+
+  const automaticParts = serverAutoSplitNormalized(normalized);
+  if (automaticParts.length > 1) {
+    return importServerSplitParts(uid, automaticParts, webhookEvent);
   }
 
   const existing = await findExistingActivity(uid, activity);

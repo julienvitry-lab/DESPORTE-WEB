@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB042
+name: Publier SPORT Web · WEB043
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - "firebase.functions.json"
       - "scripts/deploy_strava_backend.sh"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB042.md"
+      - "docs/releases/WEB043.md"
   workflow_dispatch:
 
 permissions:
@@ -32,7 +32,7 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB042
+      - name: Valider WEB043
         shell: bash
         run: |
           set -euo pipefail
@@ -583,7 +583,7 @@ jobs:
 
 
 
-          grep -Fq 'WEB042 · WEBSTRAVA003' web/index.html
+          grep -Fq 'WEBSTRAVA003' web/index.html
 
 
 
@@ -734,7 +734,7 @@ jobs:
 
 
 
-          grep -Fq 'WEB042 · WEBSTRAVA003' web/index.html
+          grep -Fq 'WEBSTRAVA003' web/index.html
           grep -Fq 'function autoSyncWebStrava' web/app.js
           grep -Fq 'function startWebStravaAutoSync' web/app.js
           grep -Fq 'existingActivityForStravaAuto' web/app.js
@@ -773,7 +773,29 @@ jobs:
 
 
 
-          echo "WEB042 : WEBSTRAVA003 + WEBDRIVE001 + WEBFILES001 + WEBSPLIT001 + WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          # WEB043 · WEBSPLIT002 : découpe automatique + reconstruction.
+          grep -Fq 'WEB043 · WEBSPLIT002' web/index.html
+          grep -Fq 'const WEB_SPLIT_AUTO_GAP_MS = 15 * 60 * 1000' web/app.js
+          grep -Fq 'function automaticSplitPartsFromRawRoute' web/app.js
+          grep -Fq 'function detectAutomaticSplitBoundariesFromPoints' web/app.js
+          grep -Fq 'function recoverSplitRouteForActivity' web/app.js
+          grep -Fq 'splitActivityAutoButton' web/index.html
+          grep -Fq 'function commitAutomaticSplitActivity' web/app.js
+          grep -Fq 'fit_sessions' web/app.js
+          grep -Fq 'PAUSE_OVER_THRESHOLD' web/app.js
+          grep -Fq 'SPORT_CHANGED' web/app.js
+          grep -Fq 'SUB_SPORT_CHANGED' web/app.js
+          grep -Fq 'const WEBSPLIT_VERSION = "WEBSPLIT002"' functions/index.js
+          grep -Fq 'const WEBSPLIT_AUTO_GAP_MS = 15 * 60 * 1000' functions/index.js
+          grep -Fq 'function serverAutoSplitNormalized' functions/index.js
+          grep -Fq 'function importServerSplitParts' functions/index.js
+          grep -Fq 'split_parent_strava_activity_id' functions/index.js
+          grep -Fq 'const STRAVA_API_BASE = "https://www.strava.com/api/v3"' functions/index.js
+          node --check web/app.js
+          node --check functions/index.js
+          test -f docs/releases/WEB043.md
+
+          echo "WEB043 : WEBSPLIT002 + WEBSTRAVA003 + WEBDRIVE001 + WEBFILES001 + WEBSPLIT001 + WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -783,6 +805,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB042
+      - name: Publier SPORT Web · WEB043
         id: deployment
         uses: actions/deploy-pages@v4
