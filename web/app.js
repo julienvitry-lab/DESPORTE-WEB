@@ -244,6 +244,9 @@ const WEB_STRAVA_AUTO_OVERLAP_MS = 2 * 24 * 60 * 60 * 1000;
 const WEB_STRAVA_DUPLICATE_TIME_WINDOW_MS = 2 * 60 * 1000;
 const WEB_STRAVA_TREADMILL_SLOPE_PERCENT = 12;
 const WEB_SPLIT_AUTO_GAP_MS = 15 * 60 * 1000;
+const WEB_SPLIT_INACTIVE_SPEED_MPS = 0.30;
+const WEB_SPLIT_INACTIVE_MERGE_MS = 2 * 60 * 1000;
+const WEB_SPLIT_DISTANCE_PLATEAU_M = 30;
 const WEB_SPLIT_VERSION = "WEBSPLIT003";
 
 
@@ -6740,11 +6743,12 @@ function normalizeStravaDetail(payload) {
   const hr=Array.isArray(streams.heartrate?.data)?streams.heartrate.data:[];
   const speed=Array.isArray(streams.velocity_smooth?.data)?streams.velocity_smooth.data:[];
   const cadence=Array.isArray(streams.cadence?.data)?streams.cadence.data:[];
+  const moving=Array.isArray(streams.moving?.data)?streams.moving.data:[];
 
   const startMs=Date.parse(a.start_date || a.start_date_local || "");
-  const count=Math.max(latlng.length,time.length,distance.length,altitude.length,hr.length,speed.length,cadence.length);
+  const count=Math.max(latlng.length,time.length,distance.length,altitude.length,hr.length,speed.length,cadence.length,moving.length);
   const route={
-    lat:[],lon:[],alt_m:[],distance_m:[],time_ms:[],hr_bpm:[],speed_mps:[],cadence:[],
+    lat:[],lon:[],alt_m:[],distance_m:[],time_ms:[],hr_bpm:[],speed_mps:[],cadence:[],moving:[],
     source_point_count:count,
     web_preview_point_count:count,
     route_format:"WEBSTRAVA003"
@@ -6754,12 +6758,14 @@ function normalizeStravaDetail(payload) {
     const ll=latlng[i];
     route.lat.push(Array.isArray(ll)&&Number.isFinite(Number(ll[0]))?Number(ll[0]):null);
     route.lon.push(Array.isArray(ll)&&Number.isFinite(Number(ll[1]))?Number(ll[1]):null);
-    route.alt_m.push(Number.isFinite(Number(altitude[i]))?Number(altitude[i]):null);
-    route.distance_m.push(Number.isFinite(Number(distance[i]))?Number(distance[i]):null);
-    route.time_ms.push(Number.isFinite(Number(time[i]))&&Number.isFinite(startMs)?startMs+Number(time[i])*1000:null);
-    route.hr_bpm.push(Number.isFinite(Number(hr[i]))?Number(hr[i]):null);
-    route.speed_mps.push(Number.isFinite(Number(speed[i]))?Number(speed[i]):null);
-    route.cadence.push(Number.isFinite(Number(cadence[i]))?Number(cadence[i]):null);
+    route.alt_m.push(splitFiniteNumber(altitude[i]));
+    route.distance_m.push(splitFiniteNumber(distance[i]));
+    const relativeTime=splitFiniteNumber(time[i]);
+    route.time_ms.push(relativeTime!=null&&Number.isFinite(startMs)?startMs+relativeTime*1000:null);
+    route.hr_bpm.push(splitFiniteNumber(hr[i]));
+    route.speed_mps.push(splitFiniteNumber(speed[i]));
+    route.cadence.push(splitFiniteNumber(cadence[i]));
+    route.moving.push(typeof moving[i]==="boolean"?moving[i]:null);
   }
 
   const treadmill=isWebStravaTreadmillActivity(a);
@@ -7576,6 +7582,12 @@ function closeSplitActivityPanel() {
   splitActivitySessions=[];
 }
 
+function splitFiniteNumber(value) {
+  if (value==null || value==="") return null;
+  const number=Number(value);
+  return Number.isFinite(number)?number:null;
+}
+
 function normalizeSplitRoute(data) {
   const equipmentSource=Array.isArray(data?.equipment_key)?data.equipment_key
     :Array.isArray(data?.gear_id)?data.gear_id
@@ -7588,21 +7600,23 @@ function normalizeSplitRoute(data) {
     time:Array.isArray(data?.time_ms)?data.time_ms:Array.isArray(data?.timestamp_ms)?data.timestamp_ms:[],
     hr:Array.isArray(data?.hr_bpm)?data.hr_bpm:[],
     speed:Array.isArray(data?.speed_mps)?data.speed_mps:[],
+    moving:Array.isArray(data?.moving)?data.moving:[],
     equipment:equipmentSource
   };
   const count=Math.max(...Object.values(fields).map((values)=>values.length),0);
   const points=[];
   for (let index=0;index<count;index++) {
-    const lat=Number(fields.lat[index]),lon=Number(fields.lon[index]);
+    const lat=splitFiniteNumber(fields.lat[index]),lon=splitFiniteNumber(fields.lon[index]);
     const equipmentRaw=fields.equipment[index];
     points.push({
-      latitude:Number.isFinite(lat)?lat:null,
-      longitude:Number.isFinite(lon)?lon:null,
-      altitudeMeters:Number.isFinite(Number(fields.alt[index]))?Number(fields.alt[index]):null,
-      distanceMeters:Number.isFinite(Number(fields.distance[index]))?Number(fields.distance[index]):null,
-      timeMs:Number.isFinite(Number(fields.time[index]))?Number(fields.time[index]):null,
-      heartRateBpm:Number.isFinite(Number(fields.hr[index]))?Number(fields.hr[index]):null,
-      speedMps:Number.isFinite(Number(fields.speed[index]))?Number(fields.speed[index]):null,
+      latitude:lat,
+      longitude:lon,
+      altitudeMeters:splitFiniteNumber(fields.alt[index]),
+      distanceMeters:splitFiniteNumber(fields.distance[index]),
+      timeMs:splitFiniteNumber(fields.time[index]),
+      heartRateBpm:splitFiniteNumber(fields.hr[index]),
+      speedMps:splitFiniteNumber(fields.speed[index]),
+      moving:typeof fields.moving[index]==="boolean"?fields.moving[index]:null,
       equipmentKey:equipmentRaw==null?null:String(equipmentRaw).trim() || null,
       sourceIndex:index
     });
@@ -7728,8 +7742,9 @@ async function openSplitActivityPanel() {
       ui.splitActivityAutoButton.hidden=true;
       ui.splitActivityAutoButton.textContent="Aucune rupture automatique détectée";
     }
+    const gapDiag=splitGapDiagnostics(route.points);
     ui.splitActivityStatus.textContent=
-      `WEBSPLIT003 · ${formatNumber(route.points.length)} points · aucun GAP > 15 min, changement de sport/sous-sport ou changement de matériel détecté · découpe manuelle disponible.`;
+      `WEBSPLIT003 · ${formatNumber(route.points.length)} points · aucune rupture automatique · saut temporel max ${formatSplitGap(gapDiag.maxAdjacent)||"—"} · signal mouvement ${Math.round(gapDiag.signalCoverage*100)} % · découpe manuelle disponible.`;
     ui.splitActivityStatus.className="split-activity-status muted";
     renderSplitActivityPreview();
   } catch (error) {
@@ -7949,7 +7964,7 @@ function renderAutomaticSplitPreview(parts,boundaries) {
 }
 
 function sliceWebRouteData(route,startIndex,endIndex) {
-  const fields=["lat","lon","alt_m","distance_m","time_ms","hr_bpm","speed_mps","cadence","gap_sec_per_km","equipment_key"];
+  const fields=["lat","lon","alt_m","distance_m","time_ms","hr_bpm","speed_mps","cadence","moving","gap_sec_per_km","equipment_key"];
   const result={};
   for (const field of fields) {
     const values=Array.isArray(route?.[field])?route[field]:[];
@@ -7965,20 +7980,122 @@ function sliceWebRouteData(route,startIndex,endIndex) {
   return result;
 }
 
+function splitPointTimeMs(point) {
+  return splitFiniteNumber(point?.timeMs ?? point?.time_ms);
+}
+
+function splitPointDistanceM(point) {
+  return splitFiniteNumber(point?.distanceMeters ?? point?.distance_m);
+}
+
+function splitPointMovingSignal(point) {
+  if (typeof point?.moving==="boolean") return point.moving;
+  const speed=splitFiniteNumber(point?.speedMps ?? point?.speed_mps);
+  if (speed!=null) return speed>WEB_SPLIT_INACTIVE_SPEED_MPS;
+  return null;
+}
+
+function detectInactiveSignalBoundaries(points) {
+  const runs=[];
+  let start=-1,end=-1,before=-1;
+  const closeRun=()=>{
+    if (start<0 || end<start) { start=end=before=-1; return; }
+    const after=end+1;
+    if (before>=0 && after<points.length) {
+      const t0=splitPointTimeMs(points[before]);
+      const t1=splitPointTimeMs(points[after]);
+      if (t0!=null && t1!=null && t1-t0>WEB_SPLIT_AUTO_GAP_MS) {
+        runs.push({index:after,before_index:before,after_index:after,reason:"PAUSE_OVER_THRESHOLD",gap_ms:t1-t0,gap_kind:"INACTIVE_SIGNAL"});
+      }
+    }
+    start=end=before=-1;
+  };
+
+  for (let index=1;index<points.length-1;index++) {
+    const signal=splitPointMovingSignal(points[index]);
+    if (signal===false) {
+      if (start<0) { start=index; before=index-1; }
+      end=index;
+      continue;
+    }
+    if (signal===true && start>=0) {
+      const lastIdleTime=splitPointTimeMs(points[end]);
+      const currentTime=splitPointTimeMs(points[index]);
+      if (lastIdleTime!=null && currentTime!=null && currentTime-lastIdleTime<=WEB_SPLIT_INACTIVE_MERGE_MS) {
+        // Un bref mouvement parasite (GPS / vitesse lissée) ne clôt pas une pause longue.
+        continue;
+      }
+      closeRun();
+    }
+  }
+  closeRun();
+  return runs;
+}
+
+function detectDistancePlateauBoundaries(points) {
+  const valid=[];
+  for (let index=0;index<points.length;index++) {
+    const time=splitPointTimeMs(points[index]);
+    const distance=splitPointDistanceM(points[index]);
+    if (time!=null && distance!=null) valid.push({index,time,distance});
+  }
+  if (valid.length<4) return [];
+
+  const boundaries=[];
+  let left=0;
+  let candidate=null;
+  for (let right=1;right<valid.length;right++) {
+    while (left<right && valid[right].distance-valid[left].distance>WEB_SPLIT_DISTANCE_PLATEAU_M) {
+      if (candidate && candidate.left===left) {
+        const before=Math.max(0,valid[left].index-1);
+        const after=valid[right].index;
+        const t0=splitPointTimeMs(points[before]);
+        const t1=splitPointTimeMs(points[after]);
+        if (before>=1 && after<points.length-1 && t0!=null && t1!=null && t1-t0>WEB_SPLIT_AUTO_GAP_MS) {
+          boundaries.push({index:after,before_index:before,after_index:after,reason:"PAUSE_OVER_THRESHOLD",gap_ms:t1-t0,gap_kind:"DISTANCE_PLATEAU"});
+        }
+        candidate=null;
+        left=right;
+        break;
+      }
+      left++;
+    }
+    if (left>=right) continue;
+    if (valid[right].time-valid[left].time>WEB_SPLIT_AUTO_GAP_MS) {
+      candidate={left,right};
+    }
+  }
+  return boundaries;
+}
+
+function splitGapDiagnostics(points) {
+  let maxAdjacent=0;
+  for (let index=1;index<points.length;index++) {
+    const a=splitPointTimeMs(points[index-1]),b=splitPointTimeMs(points[index]);
+    if (a!=null && b!=null && b>=a) maxAdjacent=Math.max(maxAdjacent,b-a);
+  }
+  const signalCoverage=points.length ? points.filter((point)=>splitPointMovingSignal(point)!=null).length/points.length : 0;
+  return {maxAdjacent,signalCoverage};
+}
+
 function detectAutomaticSplitBoundariesFromPoints(points, sessions=[]) {
   const boundaries=[];
   for (let index=1;index<points.length;index++) {
-    const previous=Number(points[index-1]?.timeMs ?? points[index-1]?.time_ms);
-    const current=Number(points[index]?.timeMs ?? points[index]?.time_ms);
-    if (Number.isFinite(previous)&&Number.isFinite(current)&&current-previous>WEB_SPLIT_AUTO_GAP_MS) {
-      boundaries.push({index,reason:"PAUSE_OVER_THRESHOLD",gap_ms:current-previous});
+    const previous=splitPointTimeMs(points[index-1]);
+    const current=splitPointTimeMs(points[index]);
+    if (previous!=null&&current!=null&&current-previous>WEB_SPLIT_AUTO_GAP_MS) {
+      boundaries.push({index,before_index:index-1,after_index:index,reason:"PAUSE_OVER_THRESHOLD",gap_ms:current-previous,gap_kind:"TIMESTAMP_JUMP"});
     }
     const previousEquipment=splitEquipmentKey(points[index-1]?.equipmentKey ?? points[index-1]?.equipment_key);
     const currentEquipment=splitEquipmentKey(points[index]?.equipmentKey ?? points[index]?.equipment_key);
     if (previousEquipment && currentEquipment && previousEquipment!==currentEquipment) {
-      boundaries.push({index,reason:"EQUIPMENT_CHANGED",equipment_before:previousEquipment,equipment_after:currentEquipment});
+      boundaries.push({index,before_index:index-1,after_index:index,reason:"EQUIPMENT_CHANGED",equipment_before:previousEquipment,equipment_after:currentEquipment});
     }
   }
+
+  const signalCoverage=points.length ? points.filter((point)=>splitPointMovingSignal(point)!=null).length/points.length : 0;
+  if (signalCoverage>=0.30) boundaries.push(...detectInactiveSignalBoundaries(points));
+  else boundaries.push(...detectDistancePlateauBoundaries(points));
 
   const ordered=(Array.isArray(sessions)?sessions:[])
     .filter((session)=>Number.isFinite(Number(session?.start_time_ms)))
@@ -7995,26 +8112,46 @@ function detectAutomaticSplitBoundariesFromPoints(points, sessions=[]) {
     const boundaryTime=Number(current.start_time_ms);
     let best=-1,bestDelta=Infinity;
     for (let pointIndex=1;pointIndex<points.length;pointIndex++) {
-      const t=Number(points[pointIndex]?.timeMs ?? points[pointIndex]?.time_ms);
-      if (!Number.isFinite(t)) continue;
+      const t=splitPointTimeMs(points[pointIndex]);
+      if (t==null) continue;
       const delta=Math.abs(t-boundaryTime);
       if (delta<bestDelta) { best=pointIndex; bestDelta=delta; }
     }
     if (best>0) {
       const reason=equipmentChanged?"EQUIPMENT_CHANGED":sportChanged?"SPORT_CHANGED":"SUB_SPORT_CHANGED";
-      boundaries.push({index:best,reason,session:current,equipment_before:previousEquipment||null,equipment_after:currentEquipment||null});
+      boundaries.push({index:best,before_index:best-1,after_index:best,reason,session:current,equipment_before:previousEquipment||null,equipment_after:currentEquipment||null});
     }
   }
 
-  const priority={EQUIPMENT_CHANGED:4,SPORT_CHANGED:3,SUB_SPORT_CHANGED:2,PAUSE_OVER_THRESHOLD:1};
-  const dedup=new Map();
-  for (const boundary of boundaries) {
-    if (boundary.index<2 || boundary.index>points.length-2) continue;
-    const previous=dedup.get(boundary.index);
-    if (!previous || (priority[boundary.reason]||0)>(priority[previous.reason]||0)) dedup.set(boundary.index,boundary);
-    else if (previous && boundary.gap_ms && !previous.gap_ms) previous.gap_ms=boundary.gap_ms;
+  const priority={EQUIPMENT_CHANGED:5,SPORT_CHANGED:4,SUB_SPORT_CHANGED:3,PAUSE_OVER_THRESHOLD:2};
+  const orderedBoundaries=boundaries
+    .map((boundary)=>({
+      ...boundary,
+      before_index:Number.isFinite(Number(boundary.before_index))?Number(boundary.before_index):Number(boundary.index)-1,
+      after_index:Number.isFinite(Number(boundary.after_index))?Number(boundary.after_index):Number(boundary.index)
+    }))
+    .filter((boundary)=>boundary.before_index>=1 && boundary.after_index<=points.length-2 && boundary.after_index>boundary.before_index)
+    .sort((a,b)=>a.after_index-b.after_index || b.before_index-a.before_index);
+
+  const dedup=[];
+  for (const boundary of orderedBoundaries) {
+    const previous=dedup.at(-1);
+    if (previous && boundary.before_index<=previous.after_index+2) {
+      if ((priority[boundary.reason]||0)>(priority[previous.reason]||0)) {
+        boundary.gap_ms=Math.max(Number(boundary.gap_ms)||0,Number(previous.gap_ms)||0)||null;
+        dedup[dedup.length-1]=boundary;
+      } else {
+        previous.gap_ms=Math.max(Number(previous.gap_ms)||0,Number(boundary.gap_ms)||0)||previous.gap_ms;
+        previous.before_index=Math.min(previous.before_index,boundary.before_index);
+        previous.after_index=Math.max(previous.after_index,boundary.after_index);
+        previous.index=previous.after_index;
+      }
+      continue;
+    }
+    boundary.index=boundary.after_index;
+    dedup.push(boundary);
   }
-  return [...dedup.values()].sort((a,b)=>a.index-b.index);
+  return dedup;
 }
 
 function sessionForTime(sessions,timeMs,fallback={}) {
@@ -8038,17 +8175,19 @@ function automaticSplitPartsFromRawRoute(rawRoute, sourceActivity, sessions=[]) 
   const ranges=[];
   let start=0;
   for (const boundary of boundaries) {
-    const end=boundary.index-1;
+    const end=Math.max(start,Number(boundary.before_index));
     if (end-start+1>=2) ranges.push({start,end});
-    start=boundary.index;
+    start=Math.max(end+1,Number(boundary.after_index));
   }
   if (points.length-start>=2) ranges.push({start,end:points.length-1});
   if (ranges.length<2) return [];
 
-  const totalDuration=Math.max(1,numberOrZero(sourceActivity.elapsed_time_ms));
-  return ranges.map((range,index)=>{
-    const partPoints=points.slice(range.start,range.end+1);
-    const stats=splitPartStats(partPoints);
+  const prepared=ranges.map((range)=>({
+    range,
+    partPoints:points.slice(range.start,range.end+1)
+  })).map((item)=>({...item,stats:splitPartStats(item.partPoints)}));
+  const totalDuration=Math.max(1,prepared.reduce((sum,item)=>sum+Math.max(0,numberOrZero(item.stats?.elapsed_time_ms)),0));
+  return prepared.map(({range,partPoints,stats},index)=>{
     const session=sessionForTime(sessions,stats?.start_time_ms,sourceActivity);
     const id=makeWebImportedActivityId(stats.start_time_ms)+(index+1);
     const child=buildSplitChild(
@@ -8089,7 +8228,8 @@ function splitRouteDocument(points) {
     distance_m:points.map((p)=>Math.max(0,numberOrZero(p.distanceMeters)-firstDistance)),
     time_ms:points.map((p)=>Number.isFinite(Number(p.timeMs))?Number(p.timeMs):null),
     hr_bpm:points.map((p)=>Number.isFinite(Number(p.heartRateBpm))?Number(p.heartRateBpm):null),
-    speed_mps:points.map((p)=>Number.isFinite(Number(p.speedMps))?Number(p.speedMps):null),
+    speed_mps:points.map((p)=>splitFiniteNumber(p.speedMps)),
+    moving:points.map((p)=>typeof p.moving==="boolean"?p.moving:null),
     equipment_key:points.map((p)=>p?.equipmentKey==null?null:String(p.equipmentKey)),
     gap_sec_per_km:points.map((p)=>Number.isFinite(Number(p.gapSecondsPerKm))?Number(p.gapSecondsPerKm):null),
     source_point_count:points.length,

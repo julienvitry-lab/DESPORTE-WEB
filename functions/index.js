@@ -17,6 +17,8 @@ const WEBSTRAVA_DUPLICATE_TIME_WINDOW_MS = 2 * 60 * 1000;
 // CI héritage WEB043 : const WEBSPLIT_VERSION = "WEBSPLIT002"
 const WEBSPLIT_VERSION = "WEBSPLIT003";
 const WEBSPLIT_AUTO_GAP_MS = 15 * 60 * 1000;
+const WEBSPLIT_INACTIVE_SPEED_MPS = 0.30;
+const WEBSPLIT_INACTIVE_MERGE_MS = 2 * 60 * 1000;
 const STRAVA_API_BASE = "https://www.strava.com/api/v3";
 const STRAVA_API_FALLBACK_BASE = "https://api-v3.strava.com";
 const STRAVA_PUSH_SUBSCRIPTIONS_URL = "https://www.strava.com/api/v3/push_subscriptions";
@@ -388,11 +390,12 @@ function normalizeStravaDetailServer(payload) {
   const hr = Array.isArray(streams.heartrate?.data) ? streams.heartrate.data : [];
   const speed = Array.isArray(streams.velocity_smooth?.data) ? streams.velocity_smooth.data : [];
   const cadence = Array.isArray(streams.cadence?.data) ? streams.cadence.data : [];
+  const moving = Array.isArray(streams.moving?.data) ? streams.moving.data : [];
 
   const startMs = stravaStartMs(a);
-  const count = Math.max(latlng.length, time.length, distance.length, altitude.length, hr.length, speed.length, cadence.length);
+  const count = Math.max(latlng.length, time.length, distance.length, altitude.length, hr.length, speed.length, cadence.length, moving.length);
   const route = {
-    lat:[], lon:[], alt_m:[], distance_m:[], time_ms:[], hr_bpm:[], speed_mps:[], cadence:[],
+    lat:[], lon:[], alt_m:[], distance_m:[], time_ms:[], hr_bpm:[], speed_mps:[], cadence:[], moving:[],
     source_point_count:count,
     web_preview_point_count:count,
     route_format:WEBSTRAVA_VERSION
@@ -402,12 +405,14 @@ function normalizeStravaDetailServer(payload) {
     const ll = latlng[index];
     route.lat.push(Array.isArray(ll) && Number.isFinite(Number(ll[0])) ? Number(ll[0]) : null);
     route.lon.push(Array.isArray(ll) && Number.isFinite(Number(ll[1])) ? Number(ll[1]) : null);
-    route.alt_m.push(Number.isFinite(Number(altitude[index])) ? Number(altitude[index]) : null);
-    route.distance_m.push(Number.isFinite(Number(distance[index])) ? Number(distance[index]) : null);
-    route.time_ms.push(Number.isFinite(Number(time[index])) && Number.isFinite(startMs) ? startMs + Number(time[index]) * 1000 : null);
-    route.hr_bpm.push(Number.isFinite(Number(hr[index])) ? Number(hr[index]) : null);
-    route.speed_mps.push(Number.isFinite(Number(speed[index])) ? Number(speed[index]) : null);
-    route.cadence.push(Number.isFinite(Number(cadence[index])) ? Number(cadence[index]) : null);
+    route.alt_m.push(serverFiniteNumber(altitude[index]));
+    route.distance_m.push(serverFiniteNumber(distance[index]));
+    const relativeTime = serverFiniteNumber(time[index]);
+    route.time_ms.push(relativeTime != null && Number.isFinite(startMs) ? startMs + relativeTime * 1000 : null);
+    route.hr_bpm.push(serverFiniteNumber(hr[index]));
+    route.speed_mps.push(serverFiniteNumber(speed[index]));
+    route.cadence.push(serverFiniteNumber(cadence[index]));
+    route.moving.push(typeof moving[index] === "boolean" ? moving[index] : null);
   }
 
   const treadmill = isTreadmillActivity(a);
@@ -458,14 +463,15 @@ function serverRouteCount(route) {
     route?.time_ms?.length || 0,
     route?.hr_bpm?.length || 0,
     route?.speed_mps?.length || 0,
-    route?.cadence?.length || 0
+    route?.cadence?.length || 0,
+    route?.moving?.length || 0
   );
 }
 
 function serverSliceRoute(route, startIndex, endIndex) {
   const start = Math.max(0, Number(startIndex) || 0);
   const end = Math.max(start, Number(endIndex) || start);
-  const fields = ["lat", "lon", "alt_m", "distance_m", "time_ms", "hr_bpm", "speed_mps", "cadence"];
+  const fields = ["lat", "lon", "alt_m", "distance_m", "time_ms", "hr_bpm", "speed_mps", "cadence", "moving"];
   const sliced = {};
   for (const field of fields) {
     const source = Array.isArray(route?.[field]) ? route[field] : [];
@@ -541,19 +547,75 @@ function serverRouteStats(route) {
   };
 }
 
+function serverFiniteNumber(value) {
+  if (value==null || value==="") return null;
+  const number=Number(value);
+  return Number.isFinite(number)?number:null;
+}
+
 function detectServerPauseBoundaries(route) {
-  const times = Array.isArray(route?.time_ms) ? route.time_ms : [];
-  const boundaries = [];
-  for (let index = 1; index < times.length; index++) {
-    const previous = Number(times[index - 1]);
-    const current = Number(times[index]);
-    if (!Number.isFinite(previous) || !Number.isFinite(current)) continue;
-    const gap = current - previous;
-    if (gap > WEBSPLIT_AUTO_GAP_MS) {
-      boundaries.push({index, reason:"PAUSE_OVER_THRESHOLD", gap_ms:gap});
+  const count=serverRouteCount(route);
+  const times=Array.isArray(route?.time_ms)?route.time_ms:[];
+  const speeds=Array.isArray(route?.speed_mps)?route.speed_mps:[];
+  const moving=Array.isArray(route?.moving)?route.moving:[];
+  const boundaries=[];
+
+  for (let index=1;index<count;index++) {
+    const previous=serverFiniteNumber(times[index-1]);
+    const current=serverFiniteNumber(times[index]);
+    if (previous!=null && current!=null && current-previous>WEBSPLIT_AUTO_GAP_MS) {
+      boundaries.push({index,before_index:index-1,after_index:index,reason:"PAUSE_OVER_THRESHOLD",gap_ms:current-previous,gap_kind:"TIMESTAMP_JUMP"});
     }
   }
-  return boundaries;
+
+  const signal=(index)=>{
+    if (typeof moving[index]==="boolean") return moving[index];
+    const speed=serverFiniteNumber(speeds[index]);
+    return speed==null?null:speed>WEBSPLIT_INACTIVE_SPEED_MPS;
+  };
+  const coverage=count?Array.from({length:count},(_,index)=>signal(index)).filter((value)=>value!=null).length/count:0;
+  if (coverage>=0.30) {
+    let start=-1,end=-1,before=-1;
+    const closeRun=()=>{
+      if (start>=0 && end>=start) {
+        const after=end+1;
+        const t0=serverFiniteNumber(times[before]);
+        const t1=serverFiniteNumber(times[after]);
+        if (before>=1 && after<=count-2 && t0!=null && t1!=null && t1-t0>WEBSPLIT_AUTO_GAP_MS) {
+          boundaries.push({index:after,before_index:before,after_index:after,reason:"PAUSE_OVER_THRESHOLD",gap_ms:t1-t0,gap_kind:"INACTIVE_SIGNAL"});
+        }
+      }
+      start=end=before=-1;
+    };
+    for (let index=1;index<count-1;index++) {
+      const state=signal(index);
+      if (state===false) {
+        if (start<0) { start=index; before=index-1; }
+        end=index;
+        continue;
+      }
+      if (state===true && start>=0) {
+        const lastIdle=serverFiniteNumber(times[end]);
+        const current=serverFiniteNumber(times[index]);
+        if (lastIdle!=null && current!=null && current-lastIdle<=WEBSPLIT_INACTIVE_MERGE_MS) continue;
+        closeRun();
+      }
+    }
+    closeRun();
+  }
+
+  boundaries.sort((a,b)=>a.after_index-b.after_index);
+  const dedup=[];
+  for (const boundary of boundaries) {
+    const previous=dedup.at(-1);
+    if (previous && boundary.before_index<=previous.after_index+2) {
+      previous.before_index=Math.min(previous.before_index,boundary.before_index);
+      previous.after_index=Math.max(previous.after_index,boundary.after_index);
+      previous.index=previous.after_index;
+      previous.gap_ms=Math.max(Number(previous.gap_ms)||0,Number(boundary.gap_ms)||0)||null;
+    } else dedup.push({...boundary,index:boundary.after_index});
+  }
+  return dedup;
 }
 
 function serverAutoSplitNormalized(normalized) {
@@ -571,19 +633,21 @@ function serverAutoSplitNormalized(normalized) {
   const ranges = [];
   let start = 0;
   for (const boundary of boundaries) {
-    const end = boundary.index - 1;
+    const end = Math.max(start, Number(boundary.before_index));
     if (end - start + 1 >= 2) ranges.push({start, end, reason:boundary.reason, gap_ms:boundary.gap_ms});
-    start = boundary.index;
+    start = Math.max(end + 1, Number(boundary.after_index));
   }
   if (count - start >= 2) ranges.push({start, end:count - 1, reason:boundaries.at(-1)?.reason || "PAUSE_OVER_THRESHOLD"});
   if (ranges.length < 2) return [{activity, route}];
 
-  const totalElapsed = numberOrZero(activity.elapsed_time_ms);
-  const parts = [];
-  for (let index = 0; index < ranges.length; index++) {
-    const range = ranges[index];
+  const prepared = ranges.map((range) => {
     const childRoute = serverSliceRoute(route, range.start, range.end);
-    const stats = serverRouteStats(childRoute);
+    return {range, childRoute, stats:serverRouteStats(childRoute)};
+  });
+  const totalElapsed = Math.max(1, prepared.reduce((sum, item) => sum + Math.max(0, numberOrZero(item.stats?.elapsed_time_ms)), 0));
+  const parts = [];
+  for (let index = 0; index < prepared.length; index++) {
+    const {range, childRoute, stats} = prepared[index];
     if (!stats || !Number.isFinite(Number(stats.start_time_ms))) continue;
 
     const child = {
@@ -872,7 +936,7 @@ async function fetchStravaActivityDetail(uid, id) {
   try {
     streams = await stravaGet(
       uid,
-      `/activities/${id}/streams?keys=time,distance,latlng,altitude,heartrate,velocity_smooth,cadence&key_by_type=true`
+      `/activities/${id}/streams?keys=time,distance,latlng,altitude,heartrate,velocity_smooth,cadence,moving&key_by_type=true`
     );
   } catch (error) {
     console.warn("WEBSTRAVA003 streams unavailable", id, error?.message || error);
