@@ -351,7 +351,7 @@ jobs:
 
 
 
-          grep -Fq 'WEB037 · WEBSPLIT001' web/index.html
+          grep -Eq 'WEB037 · WEBSPLIT001|WEB043 · WEBSPLIT002' web/index.html
 
 
 
