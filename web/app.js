@@ -234,6 +234,8 @@ let webStravaAutoSyncTimer = null;
 let webStravaAutoSyncPromise = null;
 let webStravaAutoHooksWired = false;
 let webStravaLastAutoAttemptMs = 0;
+let webStravaServerAutomatic = false;
+let webStravaServerSubscriptionId = null;
 const WEB_STRAVA_AUTO_INTERVAL_MS = 5 * 60 * 1000;
 const WEB_STRAVA_AUTO_MIN_GAP_MS = 60 * 1000;
 const WEB_STRAVA_AUTO_INITIAL_LOOKBACK_DAYS = 30;
@@ -6213,7 +6215,7 @@ async function testWebStravaBackend() {
     const status=await webStravaFetch("health");
     ui.webStravaStatus.textContent=
       `Backend Strava opérationnel · ${status?.region || "Firebase Functions"} · configuration ${status?.configured ? "prête" : "incomplète"}.`;
-    setMessage("WEBSTRAVA002 · backend joignable.","success");
+    setMessage(`WEBSTRAVA003 · backend ${status?.server_sync_version || "Strava"} joignable.`,"success");
   } catch (error) {
     ui.webStravaStatus.textContent=
       `Backend Strava indisponible : ${error?.message || error}`;
@@ -6228,14 +6230,30 @@ async function refreshWebStravaStatus(options={}) {
     const status=await webStravaFetch("status");
     webStravaConnected=Boolean(status?.connected);
     webStravaAthleteProfile=status?.athlete || null;
+    webStravaServerAutomatic=Boolean(status?.webhook?.active);
+    webStravaServerSubscriptionId=status?.webhook?.subscription_id || null;
     renderWebStravaAthlete();
     if (webStravaConnected) {
-      ui.webStravaStatus.textContent=
-        `Strava connecté${status?.scope ? ` · ${status.scope}` : ""} · synchronisation automatique active.`;
+      const scope=status?.scope ? ` · ${status.scope}` : "";
+      if (webStravaServerAutomatic) {
+        ui.webStravaStatus.textContent=
+          `Strava connecté${scope} · synchronisation serveur automatique active`+
+          (webStravaServerSubscriptionId ? ` · webhook #${webStravaServerSubscriptionId}` : "")+".";
+      } else {
+        ui.webStravaStatus.textContent=
+          `Strava connecté${scope} · serveur automatique indisponible`+
+          (status?.webhook?.error ? ` · ${status.webhook.error}` : "")+
+          " · rattrapage navigateur actif.";
+      }
+
+      // Un seul rattrapage navigateur à l'ouverture couvre les activités créées
+      // juste avant l'activation initiale du webhook. Ensuite le serveur prend la main.
       if (options.autoSync) window.setTimeout(()=>{
-        void autoSyncWebStrava({reason:"status"});
+        void autoSyncWebStrava({reason:"status",force:true});
       },0);
     } else {
+      webStravaServerAutomatic=false;
+      webStravaServerSubscriptionId=null;
       ui.webStravaStatus.textContent=
         status?.configured===false
           ? "Backend présent mais STRAVA_CLIENT_ID / STRAVA_CLIENT_SECRET ne sont pas encore configurés."
@@ -6244,6 +6262,8 @@ async function refreshWebStravaStatus(options={}) {
   } catch (error) {
     webStravaConnected=false;
     webStravaAthleteProfile=null;
+    webStravaServerAutomatic=false;
+    webStravaServerSubscriptionId=null;
     ui.webStravaStatus.textContent=
       `Backend Strava indisponible : ${error?.message || error}`;
   }
@@ -6325,6 +6345,8 @@ async function disconnectWebStrava() {
     await webStravaFetch("disconnect",{method:"POST"});
     webStravaConnected=false;
     webStravaAthleteProfile=null;
+    webStravaServerAutomatic=false;
+    webStravaServerSubscriptionId=null;
     webStravaCandidates=[];
     renderWebStravaAthlete();
     ui.webStravaStatus.textContent="Strava déconnecté.";
@@ -6528,7 +6550,9 @@ function saveWebStravaAutoSuccessMs(value) {
 
 function startWebStravaAutoSync() {
   stopWebStravaAutoSync();
-  if (!currentUser) return;
+  if (!currentUser || webStravaServerAutomatic) return;
+  // WEBSTRAVA003 : le polling navigateur n'est plus le moteur principal.
+  // Il reste uniquement comme filet de sécurité si le webhook serveur est absent.
   webStravaAutoSyncTimer=window.setInterval(()=>{
     void autoSyncWebStrava({reason:"timer"});
   },WEB_STRAVA_AUTO_INTERVAL_MS);
@@ -6590,7 +6614,7 @@ async function autoSyncWebStrava(options={}) {
           imported++;
         } catch (error) {
           failed++;
-          console.error("WEBSTRAVA002 auto import",summary?.id,error);
+          console.error("WEBSTRAVA003 browser fallback import",summary?.id,error);
         }
       }
 
@@ -6607,14 +6631,14 @@ async function autoSyncWebStrava(options={}) {
 
       if (imported>0) {
         setMessage(
-          `WEBSTRAVA002 · ${imported} nouvelle(s) activité(s) Strava importée(s) automatiquement.`,
+          `WEBSTRAVA003 · ${imported} nouvelle(s) activité(s) rattrapée(s) par le navigateur.`,
           failed?"info":"success"
         );
       }
 
       return {imported,skipped,failed,reason:options.reason || "auto"};
     } catch (error) {
-      console.error("WEBSTRAVA002 auto sync",error);
+      console.error("WEBSTRAVA003 browser fallback sync",error);
       ui.webStravaStatus.textContent=
         `Synchronisation Strava automatique impossible : ${error?.message || error}`;
       return {imported,skipped,failed:failed+1,error};

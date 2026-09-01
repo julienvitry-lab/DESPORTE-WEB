@@ -10,7 +10,7 @@ command -v firebase >/dev/null 2>&1 || {
   exit 1
 }
 
-echo "=== WEB040 · backend Strava ==="
+echo "=== WEB042 · WEBSTRAVA003 · backend Strava serveur ==="
 echo "Projet Firebase : $PROJECT_ID"
 
 firebase use "$PROJECT_ID"
@@ -65,16 +65,23 @@ echo "=== Installation des dépendances ==="
 )
 
 echo
-echo "=== Déploiement stravaBridge ==="
+echo "=== Déploiement WEBSTRAVA003 : bridge + webhook + processeur ==="
 firebase deploy \
   --project "$PROJECT_ID" \
   --config /tmp/firebase-strava.json \
-  --only functions:stravaBridge
+  --only functions:stravaBridge,functions:stravaWebhook,functions:stravaWebhookProcessor
 
 echo
-echo "=== BACKEND STRAVA DEPLOYE ==="
+echo "=== WEBSTRAVA003 DEPLOYE ==="
 echo "Backend :"
 echo "  https://${REGION}-${PROJECT_ID}.cloudfunctions.net/stravaBridge"
 echo
 echo "Callback domain Strava :"
 echo "  $CALLBACK_DOMAIN"
+echo
+echo "Webhook Strava :"
+echo "  https://${REGION}-${PROJECT_ID}.cloudfunctions.net/stravaWebhook"
+echo
+echo "IMPORTANT : ouvrez SPORT Web une fois après ce déploiement."
+echo "Le contrôle Strava enregistrera automatiquement la subscription webhook."
+echo "Après cette activation initiale, le navigateur peut être fermé."
