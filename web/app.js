@@ -7977,10 +7977,12 @@ function splitCalories(source,partDuration,totalDuration) {
 
 function buildSplitChild(source,stats,id,title,partNumber,totalDuration) {
   const calories=splitCalories(source,stats.elapsed_time_ms,totalDuration);
+  const sourceData={...source};
+  delete sourceData.__docId;
   return {
-    ...source,
+    ...sourceData,
     id,
-    __docId:undefined,
+
     custom_title:String(title||"").trim(),
     start_time_ms:stats.start_time_ms,
     elapsed_time_ms:stats.elapsed_time_ms,
