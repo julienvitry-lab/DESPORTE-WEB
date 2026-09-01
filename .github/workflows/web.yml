@@ -1,4 +1,4 @@
-name: Publier SPORT Web · WEB041
+name: Publier SPORT Web · WEB042
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - "firebase.functions.json"
       - "scripts/deploy_strava_backend.sh"
       - ".github/workflows/web.yml"
-      - "docs/releases/WEB041.md"
+      - "docs/releases/WEB042.md"
   workflow_dispatch:
 
 permissions:
@@ -32,10 +32,10 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v6
 
-      - name: Valider WEB041
+      - name: Valider WEB042
         shell: bash
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           test -f web/index.html
           test -f web/styles.css
           test -f web/app.js
@@ -583,7 +583,7 @@ jobs:
 
 
 
-          grep -Fq 'WEB041 · WEBSTRAVA002' web/index.html
+          grep -Fq 'WEB042 · WEBSTRAVA003' web/index.html
 
 
 
@@ -734,13 +734,34 @@ jobs:
 
 
 
-          grep -Fq 'WEB041 · WEBSTRAVA002' web/index.html
+          grep -Fq 'WEB042 · WEBSTRAVA003' web/index.html
           grep -Fq 'function autoSyncWebStrava' web/app.js
           grep -Fq 'function startWebStravaAutoSync' web/app.js
           grep -Fq 'existingActivityForStravaAuto' web/app.js
           grep -Fq 'WEB_STRAVA_AUTO_INTERVAL_MS' web/app.js
           grep -Fq 'refreshWebStravaStatus({autoSync:true})' web/app.js
           grep -Fq 'Synchronisation Strava automatique' web/app.js
+
+          # WEB042 · WEBSTRAVA003 : serveur autonome Strava -> SPORT.
+          test -f scripts/deploy_strava_backend.sh
+          bash -n scripts/deploy_strava_backend.sh
+          node --check functions/index.js
+          node --check web/app.js
+          grep -Fq 'exports.stravaWebhook = onRequest' functions/index.js
+          grep -Fq 'exports.stravaWebhookProcessor = onDocumentCreated' functions/index.js
+          grep -Fq 'strava_webhook_events' functions/index.js
+          grep -Fq 'ensureWebhookSubscription' functions/index.js
+          grep -Fq 'WEBSTRAVA003_SERVER' functions/index.js
+          grep -Fq 'normalizeStravaDetailServer' functions/index.js
+          grep -Fq 'KINOMAP_STRAVA_WEB' functions/index.js
+          grep -Fq 'WEBSTRAVA003-TREADMILL12' functions/index.js
+          grep -Fq 'equipment_mappings' functions/index.js
+          grep -Fq 'activity_routes' functions/index.js
+          grep -Fq 'strava_athletes' functions/index.js
+          grep -Fq 'webStravaServerAutomatic' web/app.js
+          grep -Fq 'synchronisation serveur automatique active' web/app.js
+          grep -Fq 'webStravaServerSubscriptionId' web/app.js
+          grep -Fq 'WEBSTRAVA003 browser fallback' web/app.js
 
           ! grep -Fqi 'client_secret:' web/app.js
 
@@ -752,7 +773,7 @@ jobs:
 
 
 
-          echo "WEB041 : WEBSTRAVA002 + WEBDRIVE001 + WEBFILES001 + WEBSPLIT001 + WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
+          echo "WEB042 : WEBSTRAVA003 + WEBDRIVE001 + WEBFILES001 + WEBSPLIT001 + WEBMANUAL001 + WEBIMPORT001 + WEBUX004 + WEBUX003 + WEBUX002 + WEBUX001 + WEBCARTO011 + WEBCARTO010 + WEBREPERES002 + WEBANALYSE002 + WEBCARTO009 + WEBREPERES001 + WEBANALYSE001 + WEBCARTO008 + WEBCARTO007 + WEBCARTO006 + WEBCARTO005 + WEBCARTO004 + WEBCARTO003 + WEBCARTO002 + SYNCHEALTH001 validés."
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
@@ -762,6 +783,6 @@ jobs:
         with:
           path: "./web"
 
-      - name: Publier SPORT Web · WEB041
+      - name: Publier SPORT Web · WEB042
         id: deployment
         uses: actions/deploy-pages@v4
