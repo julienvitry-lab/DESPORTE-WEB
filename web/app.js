@@ -244,7 +244,7 @@ const WEB_STRAVA_AUTO_OVERLAP_MS = 2 * 24 * 60 * 60 * 1000;
 const WEB_STRAVA_DUPLICATE_TIME_WINDOW_MS = 2 * 60 * 1000;
 const WEB_STRAVA_TREADMILL_SLOPE_PERCENT = 12;
 const WEB_SPLIT_AUTO_GAP_MS = 15 * 60 * 1000;
-const WEB_SPLIT_VERSION = "WEBSPLIT002";
+const WEB_SPLIT_VERSION = "WEBSPLIT003";
 
 
 
@@ -7559,7 +7559,7 @@ async function renderWebFileVault(force=false) {
 }
 
 // -----------------------------------------------------------------------------
-// WEB043 · WEBSPLIT002 — découpe automatique + manuelle + reconstruction
+// WEB044 · WEBSPLIT003 — découpe automatique prioritaire + secours manuel + reconstruction
 // -----------------------------------------------------------------------------
 function splitRouteHasTimeline(route) {
   const points=route?.points || [];
@@ -7577,6 +7577,9 @@ function closeSplitActivityPanel() {
 }
 
 function normalizeSplitRoute(data) {
+  const equipmentSource=Array.isArray(data?.equipment_key)?data.equipment_key
+    :Array.isArray(data?.gear_id)?data.gear_id
+    :Array.isArray(data?.equipment_name)?data.equipment_name:[];
   const fields = {
     lat:Array.isArray(data?.lat)?data.lat:[],
     lon:Array.isArray(data?.lon)?data.lon:[],
@@ -7584,12 +7587,14 @@ function normalizeSplitRoute(data) {
     distance:Array.isArray(data?.distance_m)?data.distance_m:[],
     time:Array.isArray(data?.time_ms)?data.time_ms:Array.isArray(data?.timestamp_ms)?data.timestamp_ms:[],
     hr:Array.isArray(data?.hr_bpm)?data.hr_bpm:[],
-    speed:Array.isArray(data?.speed_mps)?data.speed_mps:[]
+    speed:Array.isArray(data?.speed_mps)?data.speed_mps:[],
+    equipment:equipmentSource
   };
   const count=Math.max(...Object.values(fields).map((values)=>values.length),0);
   const points=[];
   for (let index=0;index<count;index++) {
     const lat=Number(fields.lat[index]),lon=Number(fields.lon[index]);
+    const equipmentRaw=fields.equipment[index];
     points.push({
       latitude:Number.isFinite(lat)?lat:null,
       longitude:Number.isFinite(lon)?lon:null,
@@ -7598,6 +7603,7 @@ function normalizeSplitRoute(data) {
       timeMs:Number.isFinite(Number(fields.time[index]))?Number(fields.time[index]):null,
       heartRateBpm:Number.isFinite(Number(fields.hr[index]))?Number(fields.hr[index]):null,
       speedMps:Number.isFinite(Number(fields.speed[index]))?Number(fields.speed[index]):null,
+      equipmentKey:equipmentRaw==null?null:String(equipmentRaw).trim() || null,
       sourceIndex:index
     });
   }
@@ -7611,7 +7617,7 @@ async function persistRecoveredSplitRoute(activity, rawRoute) {
   try {
     await setDoc(doc(db,ROOT,currentUser.uid,"activity_routes",key),materialized,{merge:true});
   } catch (error) {
-    console.warn("WEBSPLIT002 persist recovered route",error);
+    console.warn("WEBSPLIT003 persist recovered route",error);
   }
 }
 
@@ -7633,7 +7639,7 @@ async function recoverSplitRouteForActivity(activity) {
         return recovered;
       }
     } catch (error) {
-      console.warn("WEBSPLIT002 Strava reconstruction",error);
+      console.warn("WEBSPLIT003 Strava reconstruction",error);
     }
   }
 
@@ -7671,13 +7677,18 @@ async function openSplitActivityPanel() {
   splitActivitySource=activity;
   ui.splitActivityPanel.classList.remove("hidden");
   ui.splitActivityWorkspace.classList.add("hidden");
-  ui.splitActivityStatus.textContent="Lecture / reconstruction du tracé et de la chronologie…";
+  ui.splitActivityStatus.textContent="WEBSPLIT003 · recherche des ruptures automatiques…";
   ui.splitActivityStatus.className="split-activity-status pending";
   ui.splitActivityPanel.scrollIntoView({behavior:"smooth",block:"start"});
 
   try {
-    let route=activeRoute && splitRouteHasTimeline(activeRoute) ? activeRoute : null;
-    if (!route || route.points.length<2) route=await recoverSplitRouteForActivity(activity);
+    let route=null;
+    try {
+      route=await recoverSplitRouteForActivity(activity);
+    } catch (recoveryError) {
+      if (activeRoute && splitRouteHasTimeline(activeRoute)) route=activeRoute;
+      else throw recoveryError;
+    }
 
     if (!route?.points?.length || route.points.length<4) {
       throw new Error("La chronologie ne contient pas assez de points pour être découpée.");
@@ -7688,28 +7699,38 @@ async function openSplitActivityPanel() {
 
     splitActivityRoute=route;
     splitActivitySessions=Array.isArray(route.sessions)?route.sessions:[];
+    const rawRoute=splitRouteDocument(route.points);
+    const automaticParts=automaticSplitPartsFromRawRoute(rawRoute,activity,splitActivitySessions);
     const automaticBoundaries=detectAutomaticSplitBoundariesFromPoints(route.points,splitActivitySessions);
-    if (ui.splitActivityAutoButton) {
-      ui.splitActivityAutoButton.disabled=automaticBoundaries.length===0;
-      ui.splitActivityAutoButton.textContent=automaticBoundaries.length
-        ? `Découper automatiquement · ${automaticBoundaries.length+1} parties`
-        : "Aucune rupture automatique détectée";
+
+    ui.splitActivityWorkspace.classList.remove("hidden");
+
+    if (automaticParts.length>=2 && automaticBoundaries.length) {
+      setSplitManualControlsVisible(false);
+      if (ui.splitActivityAutoButton) {
+        ui.splitActivityAutoButton.disabled=false;
+        ui.splitActivityAutoButton.hidden=false;
+        ui.splitActivityAutoButton.textContent=`Appliquer la découpe automatique · ${automaticParts.length} parties`;
+      }
+      ui.splitActivityStatus.textContent=
+        `WEBSPLIT003 · ${automaticBoundaries.length} rupture(s) détectée(s) · ${automaticParts.length} parties · aucune manipulation du curseur nécessaire.`;
+      ui.splitActivityStatus.className="split-activity-status success";
+      renderAutomaticSplitPreview(automaticParts,automaticBoundaries);
+      return;
     }
-    if (automaticBoundaries.length) {
-      const first=automaticBoundaries[0].index;
-      const total=Math.max(1,numberOrZero(route.points.at(-1)?.distanceMeters)-numberOrZero(route.points[0]?.distanceMeters));
-      const at=Math.max(0,numberOrZero(route.points[first]?.distanceMeters)-numberOrZero(route.points[0]?.distanceMeters));
-      ui.splitActivityRange.value=String(Math.max(5,Math.min(95,at/total*100)));
-    } else {
-      ui.splitActivityRange.value="50";
-    }
+
+    setSplitManualControlsVisible(true);
+    ui.splitActivityRange.value="50";
     ui.splitActivityTitleA.value=activity.custom_title ? `${activity.custom_title} · 1` : `${sportName(activity.sport)} · partie 1`;
     ui.splitActivityTitleB.value=activity.custom_title ? `${activity.custom_title} · 2` : `${sportName(activity.sport)} · partie 2`;
-    ui.splitActivityWorkspace.classList.remove("hidden");
-    ui.splitActivityStatus.textContent=automaticBoundaries.length
-      ? `${formatNumber(route.points.length)} points · ${automaticBoundaries.length} rupture(s) automatique(s) détectée(s)`
-      : `${formatNumber(route.points.length)} points détaillés · aucune pause > 15 min détectée`;
-    ui.splitActivityStatus.className="split-activity-status success";
+    if (ui.splitActivityAutoButton) {
+      ui.splitActivityAutoButton.disabled=true;
+      ui.splitActivityAutoButton.hidden=true;
+      ui.splitActivityAutoButton.textContent="Aucune rupture automatique détectée";
+    }
+    ui.splitActivityStatus.textContent=
+      `WEBSPLIT003 · ${formatNumber(route.points.length)} points · aucun GAP > 15 min, changement de sport/sous-sport ou changement de matériel détecté · découpe manuelle disponible.`;
+    ui.splitActivityStatus.className="split-activity-status muted";
     renderSplitActivityPreview();
   } catch (error) {
     console.error(error);
@@ -7837,8 +7858,98 @@ function renderSplitActivityPreview() {
 }
 
 
+function splitEquipmentKey(value) {
+  if (value==null) return "";
+  if (typeof value==="object") {
+    for (const key of ["equipment_id","gear_id","equipment_name","gear_name","equipment","gear"]) {
+      const nested=value?.[key];
+      if (nested!=null && String(nested).trim()) return String(nested).trim().toLowerCase();
+    }
+    return "";
+  }
+  return String(value).trim().toLowerCase();
+}
+
+function splitSessionEquipmentKey(session) {
+  if (!session || typeof session!=="object") return "";
+  for (const key of ["equipment_id","gear_id","equipment_name","gear_name","equipment","gear"]) {
+    const value=session[key];
+    if (value!=null && String(value).trim()) return splitEquipmentKey(value);
+  }
+  return "";
+}
+
+function splitSessionEquipmentName(session) {
+  if (!session || typeof session!=="object") return "";
+  for (const key of ["equipment_name","gear_name","equipment"]) {
+    const value=session[key];
+    if (value!=null && String(value).trim()) return String(value).trim();
+  }
+  return "";
+}
+
+function splitBoundaryReasonLabel(reason) {
+  if (reason==="PAUSE_OVER_THRESHOLD") return "GAP > 15 min";
+  if (reason==="SPORT_CHANGED") return "changement de sport";
+  if (reason==="SUB_SPORT_CHANGED") return "changement de sous-sport";
+  if (reason==="EQUIPMENT_CHANGED") return "changement de matériel";
+  return String(reason || "rupture automatique");
+}
+
+function formatSplitGap(ms) {
+  const value=Number(ms);
+  return Number.isFinite(value) && value>0 ? formatDuration(value) : "";
+}
+
+function setSplitManualControlsVisible(visible) {
+  const range=ui.splitActivityRange?.closest(".split-range-label");
+  const options=ui.splitActivityTitleA?.closest(".split-activity-options");
+  if (range) range.classList.toggle("hidden",!visible);
+  if (options) options.classList.toggle("hidden",!visible);
+  if (ui.splitActivityCommitButton) ui.splitActivityCommitButton.hidden=!visible;
+}
+
+function renderAutomaticSplitProfile(route,boundaries) {
+  if (!ui.splitProfileSvg) return;
+  const points=route?.points || [];
+  if (points.length<2) { ui.splitProfileSvg.innerHTML=""; return; }
+  const width=1000,height=220,padX=20,padY=18;
+  const alts=points.map((p)=>Number(p.altitudeMeters)).filter(Number.isFinite);
+  if (!alts.length) {
+    ui.splitProfileSvg.innerHTML='<text x="20" y="40" class="metric-chart-label">Altitude indisponible</text>';
+    return;
+  }
+  const minAlt=Math.min(...alts),maxAlt=Math.max(...alts),span=Math.max(1,maxAlt-minAlt);
+  const firstD=numberOrZero(points[0].distanceMeters),lastD=numberOrZero(points.at(-1).distanceMeters);
+  const total=Math.max(1,lastD-firstD);
+  const x=(p)=>padX+((numberOrZero(p.distanceMeters)-firstD)/total)*(width-padX*2);
+  const y=(p)=>padY+((maxAlt-numberOrZero(p.altitudeMeters))/span)*(height-padY*2);
+  const poly=points.filter((p)=>Number.isFinite(Number(p.altitudeMeters)))
+    .map((p)=>`${x(p).toFixed(1)},${y(p).toFixed(1)}`).join(" ");
+  const cuts=(boundaries||[]).map((boundary,index)=>{
+    const point=points[Math.max(0,Math.min(points.length-1,Number(boundary.index)||0))];
+    const cutX=x(point);
+    return `<line x1="${cutX}" y1="0" x2="${cutX}" y2="${height}" class="split-cut-line"></line>`+
+      `<text x="${Math.min(width-150,cutX+8)}" y="${24+(index%3)*18}" class="metric-chart-label">${escapeHtml(splitBoundaryReasonLabel(boundary.reason))}</text>`;
+  }).join("");
+  ui.splitProfileSvg.innerHTML=`<polyline points="${poly}" class="split-profile-line"></polyline>${cuts}`;
+}
+
+function renderAutomaticSplitPreview(parts,boundaries) {
+  renderAutomaticSplitProfile(splitActivityRoute,boundaries);
+  const cards=parts.map((item,index)=>{
+    const stats=splitPartStats(normalizeSplitRoute(item.route).points);
+    return splitPreviewCard(`Partie ${index+1}`,stats);
+  }).join("");
+  const breaks=(boundaries||[]).map((boundary,index)=>{
+    const gap=boundary.reason==="PAUSE_OVER_THRESHOLD" && boundary.gap_ms ? ` · ${escapeHtml(formatSplitGap(boundary.gap_ms))}` : "";
+    return `<article class="split-preview-card"><strong>Rupture ${index+1}</strong><div><span><small>Cause</small><b>${escapeHtml(splitBoundaryReasonLabel(boundary.reason))}${gap}</b></span></div></article>`;
+  }).join("");
+  ui.splitActivityPreview.innerHTML=cards+breaks;
+}
+
 function sliceWebRouteData(route,startIndex,endIndex) {
-  const fields=["lat","lon","alt_m","distance_m","time_ms","hr_bpm","speed_mps","cadence","gap_sec_per_km"];
+  const fields=["lat","lon","alt_m","distance_m","time_ms","hr_bpm","speed_mps","cadence","gap_sec_per_km","equipment_key"];
   const result={};
   for (const field of fields) {
     const values=Array.isArray(route?.[field])?route[field]:[];
@@ -7862,6 +7973,11 @@ function detectAutomaticSplitBoundariesFromPoints(points, sessions=[]) {
     if (Number.isFinite(previous)&&Number.isFinite(current)&&current-previous>WEB_SPLIT_AUTO_GAP_MS) {
       boundaries.push({index,reason:"PAUSE_OVER_THRESHOLD",gap_ms:current-previous});
     }
+    const previousEquipment=splitEquipmentKey(points[index-1]?.equipmentKey ?? points[index-1]?.equipment_key);
+    const currentEquipment=splitEquipmentKey(points[index]?.equipmentKey ?? points[index]?.equipment_key);
+    if (previousEquipment && currentEquipment && previousEquipment!==currentEquipment) {
+      boundaries.push({index,reason:"EQUIPMENT_CHANGED",equipment_before:previousEquipment,equipment_after:currentEquipment});
+    }
   }
 
   const ordered=(Array.isArray(sessions)?sessions:[])
@@ -7871,7 +7987,11 @@ function detectAutomaticSplitBoundariesFromPoints(points, sessions=[]) {
     const previous=ordered[index-1],current=ordered[index];
     const sportChanged=Number(previous.sport)!==Number(current.sport);
     const subChanged=!sportChanged && Number(previous.sub_sport)!==Number(current.sub_sport);
-    if (!sportChanged&&!subChanged) continue;
+    const previousEquipment=splitSessionEquipmentKey(previous);
+    const currentEquipment=splitSessionEquipmentKey(current);
+    const equipmentChanged=Boolean(previousEquipment && currentEquipment && previousEquipment!==currentEquipment);
+    if (!sportChanged&&!subChanged&&!equipmentChanged) continue;
+
     const boundaryTime=Number(current.start_time_ms);
     let best=-1,bestDelta=Infinity;
     for (let pointIndex=1;pointIndex<points.length;pointIndex++) {
@@ -7880,14 +8000,19 @@ function detectAutomaticSplitBoundariesFromPoints(points, sessions=[]) {
       const delta=Math.abs(t-boundaryTime);
       if (delta<bestDelta) { best=pointIndex; bestDelta=delta; }
     }
-    if (best>0) boundaries.push({index:best,reason:sportChanged?"SPORT_CHANGED":"SUB_SPORT_CHANGED",session:current});
+    if (best>0) {
+      const reason=equipmentChanged?"EQUIPMENT_CHANGED":sportChanged?"SPORT_CHANGED":"SUB_SPORT_CHANGED";
+      boundaries.push({index:best,reason,session:current,equipment_before:previousEquipment||null,equipment_after:currentEquipment||null});
+    }
   }
 
+  const priority={EQUIPMENT_CHANGED:4,SPORT_CHANGED:3,SUB_SPORT_CHANGED:2,PAUSE_OVER_THRESHOLD:1};
   const dedup=new Map();
   for (const boundary of boundaries) {
     if (boundary.index<2 || boundary.index>points.length-2) continue;
     const previous=dedup.get(boundary.index);
-    if (!previous || previous.reason==="PAUSE_OVER_THRESHOLD") dedup.set(boundary.index,boundary);
+    if (!previous || (priority[boundary.reason]||0)>(priority[previous.reason]||0)) dedup.set(boundary.index,boundary);
+    else if (previous && boundary.gap_ms && !previous.gap_ms) previous.gap_ms=boundary.gap_ms;
   }
   return [...dedup.values()].sort((a,b)=>a.index-b.index);
 }
@@ -7914,10 +8039,10 @@ function automaticSplitPartsFromRawRoute(rawRoute, sourceActivity, sessions=[]) 
   let start=0;
   for (const boundary of boundaries) {
     const end=boundary.index-1;
-    if (end-start+1>=2) ranges.push({start,end,boundary});
+    if (end-start+1>=2) ranges.push({start,end});
     start=boundary.index;
   }
-  if (points.length-start>=2) ranges.push({start,end:points.length-1,boundary:boundaries.at(-1)});
+  if (points.length-start>=2) ranges.push({start,end:points.length-1});
   if (ranges.length<2) return [];
 
   const totalDuration=Math.max(1,numberOrZero(sourceActivity.elapsed_time_ms));
@@ -7936,14 +8061,17 @@ function automaticSplitPartsFromRawRoute(rawRoute, sourceActivity, sessions=[]) 
     );
     child.sport=Number.isFinite(Number(session.sport))?Number(session.sport):Number(sourceActivity.sport)||0;
     child.sub_sport=Number.isFinite(Number(session.sub_sport))?Number(session.sub_sport):Number(sourceActivity.sub_sport)||0;
+    const explicitEquipment=splitSessionEquipmentName(session);
+    if (explicitEquipment) child.equipment_name=explicitEquipment;
+    else applyAutomaticEquipmentMappingToDraft(child);
     child.gps_point_count=partPoints.filter((point)=>Number.isFinite(Number(point.latitude))&&Number.isFinite(Number(point.longitude))).length;
     child.record_count=partPoints.length;
     child.import_source=sourceActivity.import_source;
     child.import_profile=`${sourceActivity.import_profile || "WEB"}_${WEB_SPLIT_VERSION}`;
-    child.split_reason=range.boundary?.reason || "PAUSE_OVER_THRESHOLD";
-    child.split_gap_ms=Number(range.boundary?.gap_ms || 0) || null;
+    const entryBoundary=index>0 ? boundaries[index-1] : null;
+    child.split_reason=entryBoundary?.reason || "SOURCE_START";
+    child.split_gap_ms=Number(entryBoundary?.gap_ms || 0) || null;
     child.split_total=ranges.length;
-    applyAutomaticEquipmentMappingToDraft(child);
     const route=sliceWebRouteData(rawRoute,range.start,range.end);
     route.split_part=index+1;
     route.split_total=ranges.length;
@@ -7962,6 +8090,7 @@ function splitRouteDocument(points) {
     time_ms:points.map((p)=>Number.isFinite(Number(p.timeMs))?Number(p.timeMs):null),
     hr_bpm:points.map((p)=>Number.isFinite(Number(p.heartRateBpm))?Number(p.heartRateBpm):null),
     speed_mps:points.map((p)=>Number.isFinite(Number(p.speedMps))?Number(p.speedMps):null),
+    equipment_key:points.map((p)=>p?.equipmentKey==null?null:String(p.equipmentKey)),
     gap_sec_per_km:points.map((p)=>Number.isFinite(Number(p.gapSecondsPerKm))?Number(p.gapSecondsPerKm):null),
     source_point_count:points.length,
     web_preview_point_count:points.length,
@@ -8011,24 +8140,24 @@ async function commitAutomaticSplitActivity() {
   if (splitActivitySaving || !splitActivitySource || !splitActivityRoute) return;
   const source=splitActivitySource;
   const rawRoute=splitRouteDocument(splitActivityRoute.points);
+  const boundaries=detectAutomaticSplitBoundariesFromPoints(splitActivityRoute.points,splitActivitySessions);
   const parts=automaticSplitPartsFromRawRoute(rawRoute,source,splitActivitySessions);
-  if (parts.length<2) {
-    setMessage("WEBSPLIT002 · aucune pause > 15 min ni changement de sport détecté.","info");
+  if (parts.length<2 || !boundaries.length) {
+    setMessage("WEBSPLIT003 · aucune rupture automatique détectée.","info");
     return;
   }
 
-  const reasons=[...new Set(parts.map((item)=>item.child.split_reason).filter(Boolean))]
-    .map((reason)=>reason==="PAUSE_OVER_THRESHOLD"?"pause > 15 min":reason==="SPORT_CHANGED"?"changement de sport":"changement de sous-sport");
+  const reasons=[...new Set(boundaries.map((item)=>splitBoundaryReasonLabel(item.reason)))];
   const ok=window.confirm(
-    `WEBSPLIT002 a détecté ${parts.length} parties (${reasons.join(", ")}).\n\n`+
-    `Créer les ${parts.length} activités et placer l’activité source dans la corbeille ?`
+    `WEBSPLIT003 a détecté ${parts.length} parties (${reasons.join(", ")}).\n\n`+
+    `Les points de coupure sont déjà calculés automatiquement. Créer les ${parts.length} activités et placer l’activité source dans la corbeille ?`
   );
   if (!ok) return;
 
   splitActivitySaving=true;
   ui.splitActivityAutoButton.disabled=true;
   ui.splitActivityCommitButton.disabled=true;
-  ui.splitActivityStatus.textContent="Découpe automatique en cours…";
+  ui.splitActivityStatus.textContent="WEBSPLIT003 · découpe automatique en cours…";
   ui.splitActivityStatus.className="split-activity-status pending";
 
   try {
@@ -8072,9 +8201,9 @@ async function commitAutomaticSplitActivity() {
     await loadWebDashboard();
     closeSplitActivityPanel();
     showCatalog(false);
-    setMessage(`WEBSPLIT002 · ${parts.length} activités créées automatiquement · source placée dans la corbeille.`,"success");
+    setMessage(`WEBSPLIT003 · ${parts.length} activités créées automatiquement · source placée dans la corbeille.`,"success");
   } catch (error) {
-    console.error("WEBSPLIT002 automatic split",error);
+    console.error("WEBSPLIT003 automatic split",error);
     ui.splitActivityStatus.textContent=`Découpe automatique impossible : ${error?.message||error}`;
     ui.splitActivityStatus.className="split-activity-status error";
   } finally {
@@ -8091,7 +8220,7 @@ async function commitSplitActivity() {
 
   const durationA=parts.statsA.elapsed_time_ms,durationB=parts.statsB.elapsed_time_ms;
   if (!Number.isFinite(durationA)||!Number.isFinite(durationB)||durationA<=0||durationB<=0) {
-    setMessage("WEBSPLIT002 · chronologie insuffisante pour créer des activités fiables.","error");
+    setMessage("WEBSPLIT003 · chronologie insuffisante pour créer des activités fiables.","error");
     return;
   }
 
@@ -8808,7 +8937,7 @@ function decimateFitRecords(records,maxPoints=800) {
 }
 
 function buildWebImportRoute(parsed) {
-  // WEBSPLIT002 conserve aussi les points sans GPS : la chronologie doit rester
+  // WEBSPLIT003 conserve aussi les points sans GPS : la chronologie doit rester
   // exploitable pour les tapis et les fichiers multisports. La carte ignorera
   // naturellement les coordonnées absentes.
   const source=Array.isArray(parsed.records)?parsed.records:[];
@@ -8985,7 +9114,7 @@ function renderWebImportCandidates() {
         <span><small>Calories</small><strong>${escapeHtml(calories)}</strong></span>
         <span><small>GPS</small><strong>${formatNumber(c.parsed.gps.length)}</strong></span>
       </div>
-      ${Array.isArray(c.autoSplitParts)&&c.autoSplitParts.length>1?`<div class="web-import-duplicate-warning"><span class="pill ok">${WEB_SPLIT_VERSION}</span><strong>Découpe automatique : ${c.autoSplitParts.length} activités</strong><small>Pause &gt; 15 min et/ou changement de sport / sous-sport détecté dans le FIT.</small></div>`:""}
+      ${Array.isArray(c.autoSplitParts)&&c.autoSplitParts.length>1?`<div class="web-import-duplicate-warning"><span class="pill ok">${WEB_SPLIT_VERSION}</span><strong>Découpe automatique : ${c.autoSplitParts.length} activités</strong><small>GAP &gt; 15 min et/ou changement de sport, sous-sport ou matériel détecté dans la source.</small></div>`:""}
       ${c.duplicate?`<div class="web-import-duplicate-warning"><span class="pill warning">${c.duplicate.kind==="exact"?"Doublon":"À vérifier"}</span><strong>${escapeHtml(c.duplicate.label)}</strong><small>Cochez la ligne uniquement si vous souhaitez réellement importer ce fichier malgré l’alerte.</small></div>`:""}`;
 
     const checkbox=card.querySelector('input[type="checkbox"]');
