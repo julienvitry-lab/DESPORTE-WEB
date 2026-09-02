@@ -1,0 +1,300 @@
+name: WEB045 - WEBACTIVITY001 navigateur
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Appliquer WEB045 WEBACTIVITY001
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require('fs');
+
+          const appFile = 'web/app.js';
+          const indexFile = 'web/index.html';
+          let app = fs.readFileSync(appFile, 'utf8');
+          let html = fs.readFileSync(indexFile, 'utf8');
+
+          function fail(message, code) {
+            console.error('ERREUR : ' + message);
+            process.exit(code);
+          }
+
+          // 1. ACTIVITES : supprimer l'eyebrow HISTORIQUE.
+          if (app.includes('activities: { title: "Activités", eyebrow: "HISTORIQUE"')) {
+            app = app.replace(
+              'activities: { title: "Activités", eyebrow: "HISTORIQUE"',
+              'activities: { title: "Activités", eyebrow: ""'
+            );
+          } else if (!app.includes('activities: { title: "Activités", eyebrow: ""')) {
+            fail('configuration UX Activités/HISTORIQUE introuvable', 20);
+          }
+
+          // 2. Bandeau WEB018 de recalcul des records : logique conservée, message visuel retiré.
+          const recordsMessagePattern = /\n\s*setMessage\(\s*["']WEB018 · les records distance, durée et D\+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette\.["']\s*,\s*["']success["']\s*\);/m;
+          if (recordsMessagePattern.test(app)) {
+            app = app.replace(
+              recordsMessagePattern,
+              "\n    // WEB045 · résultat technique volontairement silencieux dans l'interface."
+            );
+          }
+
+          // 3. Répertoire : filtres/tri dans un bandeau déroulant fermé par défaut.
+          const upgradeFunction = `
+          // -----------------------------------------------------------------------------
+          // WEB045 · WEBACTIVITY001 — interface compacte du répertoire
+          // -----------------------------------------------------------------------------
+          function upgradeActivityDirectoryUi() {
+            const filters = document.querySelector("#activityDirectorySection .filters");
+            if (filters && !filters.closest("details.activity-filters-disclosure")) {
+              const details = document.createElement("details");
+              details.className = "activity-filters-disclosure";
+              const summary = document.createElement("summary");
+              summary.innerHTML = '<span>Tri des activités</span><small>Recherche, sport, année, matériel, repères…</small>';
+              filters.parentNode.insertBefore(details, filters);
+              details.append(summary, filters);
+            }
+          }
+          `;
+
+          if (!app.includes('function upgradeActivityDirectoryUi()')) {
+            const marker = 'function uxPageConfig() {';
+            const pos = app.indexOf(marker);
+            if (pos < 0) fail('point insertion upgradeActivityDirectoryUi introuvable', 21);
+            app = app.slice(0, pos) + upgradeFunction + '\n' + app.slice(pos);
+          }
+
+          if (!app.includes('upgradeActivityDirectoryUi();')) {
+            const initMarker = 'initializeWebStravaModule();';
+            const pos = app.indexOf(initMarker);
+            if (pos < 0) fail('initialisation Web Strava introuvable', 22);
+            const insertAt = pos + initMarker.length;
+            app = app.slice(0, insertAt) + '\nupgradeActivityDirectoryUi();' + app.slice(insertAt);
+          }
+
+          // 4. Cartes activités : icône sport + date/heure, sans titre ni sport répété.
+          const mainStart = app.indexOf('function activityMain(activity) {');
+          const datumStart = app.indexOf('function datum(', mainStart);
+          if (mainStart < 0 || datumStart < 0) fail('fonction activityMain/datum introuvable', 23);
+
+          const replacement = `function activitySportIcon(activity) {
+            const code = Number(activity?.sport);
+            if (code === 1) return "🏃";
+            if (code === 2) return "🚴";
+            if (code === 5) return "🏊";
+            if (code === 11) return "🚶";
+            if (code === 17) return "🥾";
+            return "●";
+          }
+
+          function formatActivityStart(value) {
+            const date = dateFromMs(value);
+            if (!date) return "Date inconnue";
+            const day = new Intl.DateTimeFormat("fr-FR", {
+              day: "2-digit", month: "2-digit", year: "numeric"
+            }).format(date);
+            const time = new Intl.DateTimeFormat("fr-FR", {
+              hour: "2-digit", minute: "2-digit"
+            }).format(date);
+            return \`\${day} · \${time}\`;
+          }
+
+          function activityMain(activity) {
+            const cell = document.createElement("div");
+            cell.className = "activity-main activity-main-web045";
+
+            const icon = document.createElement("span");
+            icon.className = "activity-sport-icon";
+            icon.textContent = activitySportIcon(activity);
+            icon.setAttribute("aria-label", sportName(activity.sport));
+            icon.title = sportName(activity.sport);
+
+            const date = document.createElement("span");
+            date.className = "activity-start-date";
+            date.textContent = formatActivityStart(activity.start_time_ms);
+
+            cell.append(icon, date);
+            return cell;
+          }
+
+          `;
+
+          app = app.slice(0, mainStart) + replacement + app.slice(datumStart);
+
+          // 5. Version visible + cache-bust.
+          if (!html.includes('WEB045 · WEBACTIVITY001')) {
+            const versionMarker = 'WEB044 · WEBSPLIT003';
+            if (html.includes(versionMarker)) {
+              html = html.replace(versionMarker, 'WEB045 · WEBACTIVITY001 · ' + versionMarker);
+            } else {
+              html = html.replace('</head>', '  <!-- WEB045 · WEBACTIVITY001 -->\n</head>');
+            }
+          }
+
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB045-WEBACTIVITY001"'
+          );
+
+          // 6. CSS WEB045.
+          const cssBlock = `
+          <style id="web045-activity-ui">
+            /* WEB045 · WEBACTIVITY001 */
+            #identityLine { display: none !important; }
+            #uxHeroEyebrow:empty { display: none !important; }
+            #detailTitle { display: none !important; }
+
+            .activity-filters-disclosure {
+              margin: 14px 0 18px;
+              border: 1px solid rgba(128,128,128,.28);
+              border-radius: 16px;
+              background: rgba(128,128,128,.035);
+              overflow: hidden;
+            }
+            .activity-filters-disclosure > summary {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 16px;
+              cursor: pointer;
+              padding: 12px 16px;
+              font-weight: 700;
+              list-style: none;
+              user-select: none;
+            }
+            .activity-filters-disclosure > summary::-webkit-details-marker { display: none; }
+            .activity-filters-disclosure > summary::after {
+              content: "⌄";
+              font-size: 1.25rem;
+              line-height: 1;
+              transition: transform .15s ease;
+            }
+            .activity-filters-disclosure[open] > summary::after { transform: rotate(180deg); }
+            .activity-filters-disclosure > summary small {
+              margin-left: auto;
+              font-weight: 400;
+              opacity: .72;
+            }
+            .activity-filters-disclosure > .filters {
+              margin: 0 !important;
+              padding: 8px 16px 16px;
+            }
+
+            .activity-main-web045 {
+              display: flex !important;
+              flex-direction: row !important;
+              align-items: center !important;
+              gap: 13px !important;
+              min-width: 180px;
+            }
+            .activity-sport-icon {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              flex: 0 0 42px;
+              width: 42px;
+              height: 42px;
+              font-size: 30px;
+              line-height: 1;
+            }
+            .activity-start-date {
+              display: block;
+              white-space: nowrap;
+              font-weight: 600;
+              line-height: 1.25;
+            }
+
+            #detailView .detail-toolbar {
+              position: sticky !important;
+              top: 0 !important;
+              z-index: 120 !important;
+              backdrop-filter: blur(14px);
+              -webkit-backdrop-filter: blur(14px);
+              background: color-mix(in srgb, #0d120f 92%, transparent);
+              box-shadow: 0 10px 24px rgba(0,0,0,.18);
+            }
+
+            @media (max-width: 850px) {
+              .activity-filters-disclosure > summary small { display: none; }
+              .activity-sport-icon { flex-basis: 34px; width: 34px; height: 34px; font-size: 25px; }
+              .activity-start-date { white-space: normal; }
+            }
+          </style>`;
+
+          if (!html.includes('id="web045-activity-ui"')) {
+            const headEnd = html.indexOf('</head>');
+            if (headEnd < 0) fail('</head> introuvable', 24);
+            html = html.slice(0, headEnd) + cssBlock + '\n' + html.slice(headEnd);
+          }
+
+          fs.writeFileSync(appFile, app, 'utf8');
+          fs.writeFileSync(indexFile, html, 'utf8');
+          console.log('OK : WEB045 · WEBACTIVITY001 appliqué.');
+          NODE
+
+      - name: Créer la note de version
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/releases
+          cat > docs/releases/WEB045.md <<'EOF'
+          # WEB045 · WEBACTIVITY001
+
+          Refonte légère de l'onglet Activités :
+          - suppression des mentions techniques HISTORIQUE / projet et du bandeau WEB018 de recalcul records ;
+          - filtres/tri repliés dans un bandeau déroulant ;
+          - cartes activité sans titre ni libellé sport redondant, avec icône sport + date/heure ;
+          - titre personnalisé masqué dans la fiche activité ;
+          - barre de navigation de fiche activité ancrée pendant le défilement.
+
+          Aucune modification Firestore, Strava ou WEBSPLIT.
+          EOF
+
+      - name: Vérifier WEB045
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          grep -Fq 'WEB045 · WEBACTIVITY001' web/index.html
+          grep -Fq 'function upgradeActivityDirectoryUi()' web/app.js
+          grep -Fq 'Tri des activités' web/app.js
+          grep -Fq 'function activitySportIcon(activity)' web/app.js
+          grep -Fq 'formatActivityStart(activity.start_time_ms)' web/app.js
+          grep -Fq '#identityLine { display: none !important; }' web/index.html
+          grep -Fq '#detailTitle { display: none !important; }' web/index.html
+          grep -Fq 'position: sticky !important;' web/index.html
+          grep -Fq 'app.js?v=WEB045-WEBACTIVITY001' web/index.html
+          if grep -Fq 'WEB018 · les records distance, durée et D+ ont été recalculés' web/app.js; then
+            echo 'ERREUR : ancien bandeau WEB018 encore présent'
+            exit 1
+          fi
+          git diff --check
+          echo 'WEB045 vérifié.'
+
+      - name: Commit et push WEB045
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/app.js web/index.html docs/releases/WEB045.md
+          if git diff --cached --quiet; then
+            echo 'WEB045 déjà appliqué : aucun nouveau commit.'
+            exit 0
+          fi
+          git commit -m "WEB045 WEBACTIVITY001 simplifie interface activites"
+          git push origin HEAD:main
