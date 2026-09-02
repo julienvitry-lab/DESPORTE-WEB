@@ -284,6 +284,8 @@ initUxNavigation();
 initializeWebStravaModule();
 upgradeActivityDirectoryUi();
 upgradeActivityUiWeb046();
+upgradeActivityDetailUiWeb047();
+installActivityDetailStickyObserverWeb047();
 
 
 // -----------------------------------------------------------------------------
@@ -336,6 +338,152 @@ function upgradeActivityUiWeb046() {
 
   const oldInterop = document.querySelector(".hero-actions .interop-badge");
   if (oldInterop) oldInterop.remove();
+}
+
+
+function upgradeActivityDetailUiWeb047() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return;
+
+  // WEB046 plaçait navigation + résumé dans la même pile.
+  // WEB047 les sépare.
+  const oldStack = detail.querySelector(":scope > .detail-sticky-stack");
+
+  if (oldStack) {
+    const toolbar =
+      oldStack.querySelector(":scope > .detail-toolbar");
+
+    const hero =
+      oldStack.querySelector(":scope > .detail-hero-two-lines");
+
+    if (toolbar) {
+      oldStack.insertAdjacentElement("beforebegin", toolbar);
+    }
+
+    if (hero) {
+      if (toolbar) {
+        toolbar.insertAdjacentElement("afterend", hero);
+      } else {
+        oldStack.insertAdjacentElement("beforebegin", hero);
+      }
+    }
+
+    if (!oldStack.children.length) {
+      oldStack.remove();
+    } else {
+      oldStack.classList.add("hidden");
+    }
+  }
+
+  const toolbar =
+    detail.querySelector(":scope > .detail-toolbar");
+
+  const hero =
+    detail.querySelector(":scope > .detail-hero-two-lines");
+
+  if (!toolbar || !hero) return;
+
+  toolbar.classList.add("detail-toolbar-web047");
+  hero.classList.add("detail-hero-web047");
+
+  syncActivityDetailStickyOffsetsWeb047();
+}
+
+
+function syncActivityDetailStickyOffsetsWeb047() {
+  const detail = document.getElementById("detailView");
+
+  if (!detail ||
+      detail.classList.contains("hidden")) return;
+
+  const toolbar =
+    detail.querySelector(":scope > .detail-toolbar");
+
+  const hero =
+    detail.querySelector(":scope > .detail-hero-two-lines");
+
+  if (!toolbar || !hero) return;
+
+  const topbar = document.querySelector(".topbar");
+  const primary = document.getElementById("uxPrimaryNav");
+
+  let top = 0;
+
+  for (const element of [topbar, primary]) {
+    if (!element) continue;
+
+    const style = getComputedStyle(element);
+
+    if (style.display === "none" ||
+        style.visibility === "hidden") continue;
+
+    top += Math.ceil(
+      element.getBoundingClientRect().height
+    );
+  }
+
+  toolbar.style.setProperty(
+    "--web047-toolbar-top",
+    top + "px"
+  );
+
+  const toolbarHeight =
+    Math.ceil(toolbar.getBoundingClientRect().height);
+
+  hero.style.setProperty(
+    "--web047-hero-top",
+    (top + toolbarHeight + 6) + "px"
+  );
+}
+
+
+function installActivityDetailStickyObserverWeb047() {
+  if (window.__web047DetailObserverInstalled) return;
+
+  window.__web047DetailObserverInstalled = true;
+
+  const detail = document.getElementById("detailView");
+  const toolbar =
+    detail?.querySelector(".detail-toolbar");
+
+  const topbar =
+    document.querySelector(".topbar");
+
+  const primary =
+    document.getElementById("uxPrimaryNav");
+
+  const refresh = () =>
+    requestAnimationFrame(() => {
+      upgradeActivityDetailUiWeb047();
+      syncActivityDetailStickyOffsetsWeb047();
+    });
+
+  window.addEventListener(
+    "resize",
+    refresh,
+    { passive: true }
+  );
+
+  if ("ResizeObserver" in window) {
+    const ro = new ResizeObserver(refresh);
+
+    [toolbar, topbar, primary]
+      .filter(Boolean)
+      .forEach(el => ro.observe(el));
+
+    window.__web047ResizeObserver = ro;
+  }
+
+  if (detail && "MutationObserver" in window) {
+    const mo = new MutationObserver(refresh);
+
+    mo.observe(detail, {
+      attributes: true,
+      attributeFilter: ["class"]
+    });
+
+    window.__web047MutationObserver = mo;
+  }
 }
 
 function uxPageConfig() {

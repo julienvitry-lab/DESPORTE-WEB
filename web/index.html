@@ -207,6 +207,352 @@
     #detailView .detail-summary-row { grid-template-columns: repeat(2,minmax(120px,1fr)) !important; }
   }
 </style>
+
+<style id="web047-activity-detail-ui">
+
+/* ==========================================================
+   WEB047 · WEBACTIVITY003
+   DETAIL ACTIVITE REELLEMENT SUR DEUX LIGNES
+   ========================================================== */
+
+
+/* Neutralise l'ancienne pile commune de WEB046 */
+#detailView > .detail-sticky-stack {
+  position: static !important;
+  display: contents !important;
+  padding: 0 !important;
+  background: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+
+/* ----------------------------------------------------------
+   BANDEAU NAVIGATION
+   ---------------------------------------------------------- */
+
+#detailView > .detail-toolbar,
+#detailView .detail-toolbar-web047 {
+
+  position: sticky !important;
+
+  top: var(
+    --web047-toolbar-top,
+    144px
+  ) !important;
+
+  z-index: 4300 !important;
+
+  margin: 0 0 6px !important;
+
+  background:
+    rgba(9,13,10,.985) !important;
+
+  backdrop-filter:
+    blur(14px) !important;
+
+  -webkit-backdrop-filter:
+    blur(14px) !important;
+
+  box-shadow:
+    0 8px 18px rgba(0,0,0,.20)
+    !important;
+}
+
+
+/* ----------------------------------------------------------
+   RESUME STICKY SOUS LE BANDEAU
+   ---------------------------------------------------------- */
+
+#detailView > .detail-hero-two-lines,
+#detailView .detail-hero-web047 {
+
+  position: sticky !important;
+
+  top: var(
+    --web047-hero-top,
+    218px
+  ) !important;
+
+  z-index: 4250 !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+
+  align-items: stretch !important;
+
+  width: 100% !important;
+  max-width: none !important;
+
+  box-sizing: border-box !important;
+
+  gap: 8px !important;
+
+  padding: 10px 12px !important;
+
+  margin: 0 0 14px !important;
+
+  background:
+    rgba(14,20,15,.985) !important;
+
+  backdrop-filter:
+    blur(14px) !important;
+
+  -webkit-backdrop-filter:
+    blur(14px) !important;
+
+  box-shadow:
+    0 10px 22px rgba(0,0,0,.20)
+    !important;
+}
+
+
+/* ==========================================================
+   LIGNE 1
+   SPORT | DATE | DISTANCE | DUREE | D+ | ALLURE | FC
+   ========================================================== */
+
+#detailView
+.detail-hero-two-lines
+> .detail-summary-row {
+
+  display: grid !important;
+
+  grid-template-columns:
+    minmax(105px,.62fr)
+    minmax(170px,.82fr)
+    minmax(0,4.8fr)
+    !important;
+
+  align-items: stretch !important;
+
+  width: 100% !important;
+  max-width: none !important;
+
+  min-width: 0 !important;
+
+  gap: 8px !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+
+#detailView
+.detail-summary-row
+> #detailSportLine,
+
+#detailView
+.detail-summary-row
+> #detailDateLine {
+
+  display: flex !important;
+
+  align-items: center !important;
+  justify-content: center !important;
+
+  width: 100% !important;
+
+  min-width: 0 !important;
+
+  box-sizing: border-box !important;
+
+  margin: 0 !important;
+}
+
+
+/* Les 5 statistiques prennent TOUT l'espace restant */
+
+#detailView
+.detail-summary-row
+> #detailHeroMetrics,
+
+#detailView
+.detail-hero-metrics-row {
+
+  display: grid !important;
+
+  grid-template-columns:
+    repeat(5,minmax(0,1fr))
+    !important;
+
+  align-items: stretch !important;
+
+  width: 100% !important;
+  max-width: none !important;
+
+  min-width: 0 !important;
+
+  gap: 8px !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+
+#detailView
+#detailHeroMetrics
+> .hero-metric {
+
+  width: 100% !important;
+
+  min-width: 0 !important;
+
+  box-sizing: border-box !important;
+
+  margin: 0 !important;
+}
+
+
+/* ==========================================================
+   LIGNE 2
+   MATERIEL | REPERES
+   ========================================================== */
+
+#detailView
+.detail-hero-two-lines
+> .detail-controls-row {
+
+  display: grid !important;
+
+  grid-template-columns:
+    minmax(300px,.9fr)
+    minmax(0,2.4fr)
+    !important;
+
+  align-items: end !important;
+
+  width: 100% !important;
+  max-width: none !important;
+
+  min-width: 0 !important;
+
+  gap: 14px !important;
+
+  margin: 0 !important;
+
+  padding: 0 !important;
+}
+
+
+#detailView
+.detail-controls-row
+> .detail-quick-equipment,
+
+#detailView
+.detail-controls-row
+> .detail-quick-landmarks {
+
+  display: block !important;
+
+  width: 100% !important;
+  max-width: none !important;
+
+  min-width: 0 !important;
+
+  margin: 0 !important;
+}
+
+
+#detailView
+.detail-quick-equipment
+select {
+
+  width: 100% !important;
+
+  max-width: none !important;
+}
+
+
+#detailView
+.detail-quick-landmarks
+.quick-landmark-buttons {
+
+  display: flex !important;
+
+  flex-wrap: wrap !important;
+
+  align-items: center !important;
+
+  gap: 8px !important;
+
+  width: 100% !important;
+
+  max-width: none !important;
+}
+
+
+/* Information technique inutile dans le résumé */
+#detailView
+.detail-controls-row
+> .detail-data-quality {
+
+  display: none !important;
+}
+
+
+/* ----------------------------------------------------------
+   Responsive
+   ---------------------------------------------------------- */
+
+@media (max-width: 1150px) {
+
+  #detailView
+  .detail-summary-row
+  > #detailHeroMetrics {
+
+    grid-template-columns:
+      repeat(5,minmax(78px,1fr))
+      !important;
+  }
+}
+
+
+@media (max-width: 850px) {
+
+  #detailView
+  > .detail-hero-two-lines,
+
+  #detailView
+  .detail-hero-web047 {
+
+    position: relative !important;
+
+    top: auto !important;
+  }
+
+  #detailView
+  .detail-hero-two-lines
+  > .detail-summary-row {
+
+    grid-template-columns:
+      repeat(2,minmax(0,1fr))
+      !important;
+  }
+
+  #detailView
+  .detail-summary-row
+  > #detailHeroMetrics {
+
+    grid-column:
+      1 / -1 !important;
+
+    grid-template-columns:
+      repeat(2,minmax(0,1fr))
+      !important;
+  }
+
+  #detailView
+  .detail-hero-two-lines
+  > .detail-controls-row {
+
+    grid-template-columns:
+      1fr !important;
+  }
+}
+
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -1615,7 +1961,7 @@
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB046-WEBACTIVITY002"></script>
+  <script type="module" src="./app.js?v=WEB047-WEBACTIVITY003"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
