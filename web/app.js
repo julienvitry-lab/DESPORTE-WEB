@@ -282,11 +282,28 @@ let profileComparisonClearer = null;
 wireEvents();
 initUxNavigation();
 initializeWebStravaModule();
+upgradeActivityDirectoryUi();
+
+
+// -----------------------------------------------------------------------------
+// WEB045 · WEBACTIVITY001 — interface compacte du répertoire
+// -----------------------------------------------------------------------------
+function upgradeActivityDirectoryUi() {
+  const filters = document.querySelector("#activityDirectorySection .filters");
+  if (filters && !filters.closest("details.activity-filters-disclosure")) {
+    const details = document.createElement("details");
+    details.className = "activity-filters-disclosure";
+    const summary = document.createElement("summary");
+    summary.innerHTML = '<span>Tri des activités</span><small>Recherche, sport, année, matériel, repères…</small>';
+    filters.parentNode.insertBefore(details, filters);
+    details.append(summary, filters);
+  }
+}
 
 function uxPageConfig() {
   return {
     home: { title: "Accueil", eyebrow: "VUE D’ENSEMBLE", subs: [] },
-    activities: { title: "Activités", eyebrow: "HISTORIQUE", subs: [["directory","Répertoire"],["trash","Corbeille"]] },
+    activities: { title: "Activités", eyebrow: "", subs: [["directory","Répertoire"],["trash","Corbeille"]] },
     analysis: { title: "Analyse", eyebrow: "PROGRESSION & REPÈRES", subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]] },
     maps: { title: "Cartes", eyebrow: "EXPLORATION", subs: [["routes","Carte globale"],["density","Densité"]] },
     equipment: { title: "Matériel", eyebrow: "ÉQUIPEMENT", subs: [["used","Utilisé"],["all","Tout le matériel"]] },
@@ -2227,17 +2244,43 @@ function renderActivities() {
   }
 }
 
+function activitySportIcon(activity) {
+  const code = Number(activity?.sport);
+  if (code === 1) return "🏃";
+  if (code === 2) return "🚴";
+  if (code === 5) return "🏊";
+  if (code === 11) return "🚶";
+  if (code === 17) return "🥾";
+  return "●";
+}
+
+function formatActivityStart(value) {
+  const date = dateFromMs(value);
+  if (!date) return "Date inconnue";
+  const day = new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit", month: "2-digit", year: "numeric"
+  }).format(date);
+  const time = new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit", minute: "2-digit"
+  }).format(date);
+  return `${day} · ${time}`;
+}
+
 function activityMain(activity) {
   const cell = document.createElement("div");
-  cell.className = "activity-main";
+  cell.className = "activity-main activity-main-web045";
 
-  const strong = document.createElement("strong");
-  strong.textContent = activity.custom_title || sportName(activity.sport);
+  const icon = document.createElement("span");
+  icon.className = "activity-sport-icon";
+  icon.textContent = activitySportIcon(activity);
+  icon.setAttribute("aria-label", sportName(activity.sport));
+  icon.title = sportName(activity.sport);
 
-  const span = document.createElement("span");
-  span.textContent = `${formatDate(activity.start_time_ms)} · ${sportName(activity.sport)}`;
+  const date = document.createElement("span");
+  date.className = "activity-start-date";
+  date.textContent = formatActivityStart(activity.start_time_ms);
 
-  cell.append(strong, span);
+  cell.append(icon, date);
   return cell;
 }
 
@@ -5852,10 +5895,7 @@ async function rebuildRecordsFromFirestore() {
     if (current) renderLinkedRecords(current);
 
     setRecordsManagerStatus("Records recalculés et synchronisés", "ok");
-    setMessage(
-      "WEB018 · les records distance, durée et D+ ont été recalculés depuis les activités puis propagés vers téléphone et tablette.",
-      "success"
-    );
+    // WEB045 · résultat technique volontairement silencieux dans l'interface.
   } catch (error) {
     console.error(error);
     setRecordsManagerStatus("Recalcul impossible", "error");

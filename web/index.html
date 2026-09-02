@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB044 · WEBSPLIT003 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa">
+  <meta name="description" content="SPORT Web · WEB045 · WEBACTIVITY001 · WEB044 · WEBSPLIT003 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa">
   <title>SPORT Web · WEB044</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,6 +12,89 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="./styles.css">
   <!-- CI héritage WEB043 : WEB043 · WEBSPLIT002 -->
+
+<style id="web045-activity-ui">
+  /* WEB045 · WEBACTIVITY001 */
+  #identityLine { display: none !important; }
+  #uxHeroEyebrow:empty { display: none !important; }
+  #detailTitle { display: none !important; }
+
+  .activity-filters-disclosure {
+    margin: 14px 0 18px;
+    border: 1px solid rgba(128,128,128,.28);
+    border-radius: 16px;
+    background: rgba(128,128,128,.035);
+    overflow: hidden;
+  }
+  .activity-filters-disclosure > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    cursor: pointer;
+    padding: 12px 16px;
+    font-weight: 700;
+    list-style: none;
+    user-select: none;
+  }
+  .activity-filters-disclosure > summary::-webkit-details-marker { display: none; }
+  .activity-filters-disclosure > summary::after {
+    content: "⌄";
+    font-size: 1.25rem;
+    line-height: 1;
+    transition: transform .15s ease;
+  }
+  .activity-filters-disclosure[open] > summary::after { transform: rotate(180deg); }
+  .activity-filters-disclosure > summary small {
+    margin-left: auto;
+    font-weight: 400;
+    opacity: .72;
+  }
+  .activity-filters-disclosure > .filters {
+    margin: 0 !important;
+    padding: 8px 16px 16px;
+  }
+
+  .activity-main-web045 {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 13px !important;
+    min-width: 180px;
+  }
+  .activity-sport-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    font-size: 30px;
+    line-height: 1;
+  }
+  .activity-start-date {
+    display: block;
+    white-space: nowrap;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  #detailView .detail-toolbar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 120 !important;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    background: color-mix(in srgb, #0d120f 92%, transparent);
+    box-shadow: 0 10px 24px rgba(0,0,0,.18);
+  }
+
+  @media (max-width: 850px) {
+    .activity-filters-disclosure > summary small { display: none; }
+    .activity-sport-icon { flex-basis: 34px; width: 34px; height: 34px; font-size: 25px; }
+    .activity-start-date { white-space: normal; }
+  }
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -1419,7 +1502,7 @@
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB044-WEBSPLIT003-FIX2"></script>
+  <script type="module" src="./app.js?v=WEB045-WEBACTIVITY001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
