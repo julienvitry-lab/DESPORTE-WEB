@@ -2266,6 +2266,28 @@ function formatActivityStart(value) {
   return `${day} · ${time}`;
 }
 
+function activitySportIcon(activity) {
+  const code = Number(activity?.sport);
+  if (code === 1) return "🏃";
+  if (code === 2) return "🚴";
+  if (code === 5) return "🏊";
+  if (code === 11) return "🚶";
+  if (code === 17) return "🥾";
+  return "●";
+}
+
+function formatActivityStart(value) {
+  const date = dateFromMs(value);
+  if (!date) return "Date inconnue";
+  const day = new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit", month: "2-digit", year: "numeric"
+  }).format(date);
+  const time = new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit", minute: "2-digit"
+  }).format(date);
+  return `${day} · ${time}`;
+}
+
 function activityMain(activity) {
   const cell = document.createElement("div");
   cell.className = "activity-main activity-main-web045";
