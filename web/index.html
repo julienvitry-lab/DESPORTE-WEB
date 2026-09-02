@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090b0a">
-  <meta name="description" content="SPORT Web · WEB045 · WEBACTIVITY001 · WEB044 · WEBSPLIT003 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa">
+  <meta name="description" content="SPORT Web · WEB046 · WEBACTIVITY002 · WEB045 · WEBACTIVITY001 · WEB044 · WEBSPLIT003 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa">
   <title>SPORT Web · WEB044</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -95,6 +95,118 @@
     .activity-start-date { white-space: normal; }
   }
 </style>
+
+<style id="web046-activity-ui">
+  /* WEB046 · WEBACTIVITY002 */
+  body.ux-activities-page #catalogView > .hero { display: none !important; }
+  .hero-actions .interop-badge, #personalSyncStatus { display: none !important; }
+
+  #activityDirectorySection { padding-top: 12px; }
+  #activityDirectorySection > .panel-title-row { display: none !important; }
+  .activity-directory-footer .muted { display: none !important; }
+  .directory-load-actions-bottom {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(128,128,128,.18);
+  }
+
+  .activity-card {
+    grid-template-columns: 68px minmax(170px,.95fr) repeat(5,minmax(88px,.62fr)) !important;
+    align-items: stretch !important;
+    gap: 11px !important;
+    min-height: 88px;
+  }
+  .activity-main-web046 {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 0 !important;
+  }
+  .activity-sport-icon-web046 {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 58px !important;
+    height: 58px !important;
+    color: var(--green);
+  }
+  .activity-sport-icon-web046 svg {
+    width: 50px;
+    height: 50px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .activity-icon-fallback { font-size: 34px; line-height: 1; }
+  .activity-card .datum {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .activity-card .datum strong { font-size: 15px; }
+  .activity-card .datum span { margin-top: 5px; }
+  .activity-start-datum strong { font-size: 14px !important; }
+
+  .detail-sticky-stack {
+    position: sticky;
+    top: 82px;
+    z-index: 3200;
+    display: grid;
+    gap: 6px;
+    padding: 7px 0 8px;
+    background: linear-gradient(to bottom, rgba(9,11,10,.98) 88%, rgba(9,11,10,.88));
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+  #detailView .detail-sticky-stack .detail-toolbar {
+    position: static !important;
+    top: auto !important;
+    z-index: auto !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+  #detailView .detail-sticky-stack .detail-hero-two-lines {
+    margin-top: 0 !important;
+    padding: 10px 14px !important;
+    gap: 8px !important;
+  }
+  #detailView .detail-summary-row {
+    grid-template-columns: auto auto repeat(5,minmax(92px,1fr)) !important;
+    gap: 7px !important;
+  }
+  #detailView .detail-controls-row {
+    grid-template-columns: minmax(260px,.8fr) minmax(520px,1.7fr) !important;
+    gap: 12px !important;
+    align-items: end !important;
+    padding-top: 8px !important;
+  }
+  #detailView .detail-data-quality { display: none !important; }
+  #detailView .detail-quick-equipment,
+  #detailView .detail-quick-landmarks { min-width: 0; }
+
+  @media (max-width: 1050px) {
+    .activity-card {
+      grid-template-columns: 60px minmax(150px,1fr) repeat(3,minmax(82px,.7fr)) !important;
+    }
+    .activity-card .hide-md { display: none !important; }
+    .detail-sticky-stack { top: 76px; }
+    #detailView .detail-summary-row { grid-template-columns: repeat(4,minmax(105px,1fr)) !important; }
+    #detailView .detail-controls-row { grid-template-columns: 1fr !important; }
+  }
+  @media (max-width: 760px) {
+    .activity-card { grid-template-columns: 54px minmax(150px,1fr) 90px !important; }
+    .activity-sport-icon-web046 { width: 48px !important; height: 48px !important; }
+    .activity-sport-icon-web046 svg { width: 42px; height: 42px; }
+    .activity-card .hide-sm { display: none !important; }
+    .detail-sticky-stack { top: 70px; }
+    #detailView .detail-summary-row { grid-template-columns: repeat(2,minmax(120px,1fr)) !important; }
+  }
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -112,6 +224,7 @@
           <option value="contrast">Contraste</option>
         </select>
       </label>
+      <span id="interopCompactStatus" class="pill ok hidden">Intéropérabilité OK</span>
       <span id="authState" class="pill neutral">Non connecté</span>
       <button id="loginButton" class="primary">Se connecter avec Google</button>
       <button id="logoutButton" class="secondary hidden">Déconnexion</button>
@@ -1502,7 +1615,7 @@
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB045-WEBACTIVITY001"></script>
+  <script type="module" src="./app.js?v=WEB046-WEBACTIVITY002"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

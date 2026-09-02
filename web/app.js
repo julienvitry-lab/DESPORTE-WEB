@@ -283,6 +283,7 @@ wireEvents();
 initUxNavigation();
 initializeWebStravaModule();
 upgradeActivityDirectoryUi();
+upgradeActivityUiWeb046();
 
 
 // -----------------------------------------------------------------------------
@@ -298,6 +299,43 @@ function upgradeActivityDirectoryUi() {
     filters.parentNode.insertBefore(details, filters);
     details.append(summary, filters);
   }
+}
+
+
+// -----------------------------------------------------------------------------
+// WEB046 · WEBACTIVITY002 — dépouillement Activités + détail sticky
+// -----------------------------------------------------------------------------
+function upgradeActivityUiWeb046() {
+  const directory = document.getElementById("activityDirectorySection");
+  if (directory) {
+    const header = directory.querySelector(":scope > .panel-title-row");
+    const activityList = document.getElementById("activityList");
+    if (header && activityList && !directory.querySelector(".directory-load-actions-bottom")) {
+      const actions = header.querySelector(".panel-actions");
+      if (actions) {
+        const bottom = document.createElement("div");
+        bottom.className = "directory-load-actions-bottom";
+        bottom.append(...Array.from(actions.children));
+        activityList.insertAdjacentElement("afterend", bottom);
+      }
+      header.remove();
+    }
+  }
+
+  const detail = document.getElementById("detailView");
+  if (detail && !detail.querySelector(":scope > .detail-sticky-stack")) {
+    const toolbar = detail.querySelector(":scope > .detail-toolbar");
+    const hero = detail.querySelector(":scope > .detail-hero-two-lines");
+    if (toolbar && hero) {
+      const stack = document.createElement("div");
+      stack.className = "detail-sticky-stack";
+      toolbar.insertAdjacentElement("beforebegin", stack);
+      stack.append(toolbar, hero);
+    }
+  }
+
+  const oldInterop = document.querySelector(".hero-actions .interop-badge");
+  if (oldInterop) oldInterop.remove();
 }
 
 function uxPageConfig() {
@@ -373,6 +411,7 @@ function navigateUx(page, subpage = null, options = {}) {
 
   uxCurrentPage = page;
   uxCurrentSubpage = sub;
+  document.body.classList.toggle("ux-activities-page", page === "activities");
 
   if (!ui.detailView.classList.contains("hidden")) showCatalog(false);
 
@@ -749,6 +788,7 @@ onAuthStateChanged(auth, async (user) => {
     renderWebStravaState();
     ui.authState.textContent = "Non connecté";
     ui.authState.className = "pill neutral auth-pill";
+    document.getElementById("interopCompactStatus")?.classList.add("hidden");
     ui.loginButton.classList.remove("hidden");
     ui.logoutButton.classList.add("hidden");
     ui.dashboard.classList.add("hidden");
@@ -2214,6 +2254,7 @@ function renderActivities() {
     button.addEventListener("click", () => showActivity(activity));
 
     button.appendChild(activityMain(activity));
+    button.appendChild(datum("Départ", formatActivityStart(activity.start_time_ms), "activity-start-datum"));
     button.appendChild(datum("Distance", formatDistance(activity.distance_m)));
     button.appendChild(datum("D+", formatMeters(activity.ascent_m), "hide-sm"));
     button.appendChild(datum("Durée", formatDuration(activity.elapsed_time_ms), "hide-sm"));
@@ -2244,41 +2285,22 @@ function renderActivities() {
   }
 }
 
-function activitySportIcon(activity) {
+function activitySportIconMarkup(activity) {
   const code = Number(activity?.sport);
-  if (code === 1) return "🏃";
-  if (code === 2) return "🚴";
-  if (code === 5) return "🏊";
-  if (code === 11) return "🚶";
-  if (code === 17) return "🥾";
-  return "●";
+  if (code === 1) {
+    return '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="30" cy="7.5" r="4.2"></circle><path d="M25 15l-8 8 7 5 4-8 8 5"></path><path d="M23.5 28L15 42"></path><path d="M24.5 28L35 40"></path><path d="M17 23l-8 5"></path></svg>';
+  }
+  if (code === 2) {
+    return '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="12" cy="35" r="8"></circle><circle cx="36" cy="35" r="8"></circle><path d="M12 35l9-16h8l7 16"></path><path d="M21 19l8 16"></path><path d="M18 27h14"></path><path d="M20 15h7"></path></svg>';
+  }
+  if (code === 5) return '<span class="activity-icon-fallback">🏊</span>';
+  if (code === 11 || code === 17) return '<span class="activity-icon-fallback">🥾</span>';
+  return '<span class="activity-icon-fallback">●</span>';
 }
 
 function formatActivityStart(value) {
   const date = dateFromMs(value);
-  if (!date) return "Date inconnue";
-  const day = new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit", month: "2-digit", year: "numeric"
-  }).format(date);
-  const time = new Intl.DateTimeFormat("fr-FR", {
-    hour: "2-digit", minute: "2-digit"
-  }).format(date);
-  return `${day} · ${time}`;
-}
-
-function activitySportIcon(activity) {
-  const code = Number(activity?.sport);
-  if (code === 1) return "🏃";
-  if (code === 2) return "🚴";
-  if (code === 5) return "🏊";
-  if (code === 11) return "🚶";
-  if (code === 17) return "🥾";
-  return "●";
-}
-
-function formatActivityStart(value) {
-  const date = dateFromMs(value);
-  if (!date) return "Date inconnue";
+  if (!date) return "—";
   const day = new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit", month: "2-digit", year: "numeric"
   }).format(date);
@@ -2290,19 +2312,15 @@ function formatActivityStart(value) {
 
 function activityMain(activity) {
   const cell = document.createElement("div");
-  cell.className = "activity-main activity-main-web045";
+  cell.className = "activity-main activity-main-web046";
 
   const icon = document.createElement("span");
-  icon.className = "activity-sport-icon";
-  icon.textContent = activitySportIcon(activity);
+  icon.className = "activity-sport-icon activity-sport-icon-web046";
+  icon.innerHTML = activitySportIconMarkup(activity);
   icon.setAttribute("aria-label", sportName(activity.sport));
   icon.title = sportName(activity.sport);
 
-  const date = document.createElement("span");
-  date.className = "activity-start-date";
-  date.textContent = formatActivityStart(activity.start_time_ms);
-
-  cell.append(icon, date);
+  cell.append(icon);
   return cell;
 }
 
@@ -11754,6 +11772,28 @@ function handleError(error, prefix) {
 }
 
 function setMessage(text, type) {
+  const interopBadge = document.getElementById("interopCompactStatus");
+  const message = String(text || "");
+  const isInteropMessage = /WEB018.*(?:Interop|interopérabilité)/i.test(message);
+  const isInteropSuccess = type === "success" && /interopérabilité.*active/i.test(message);
+
+  if (isInteropSuccess) {
+    if (interopBadge) {
+      interopBadge.textContent = "Intéropérabilité OK";
+      interopBadge.className = "pill ok";
+    }
+    ui.messageBox.textContent = "";
+    ui.messageBox.className = "message success hidden";
+    return;
+  }
+
+  if (isInteropMessage && type !== "error") {
+    if (interopBadge && !currentUser) interopBadge.classList.add("hidden");
+    ui.messageBox.textContent = "";
+    ui.messageBox.className = `message ${type} hidden`;
+    return;
+  }
+
   ui.messageBox.textContent = text;
   ui.messageBox.className = `message ${type}`;
 }
