@@ -6897,7 +6897,7 @@ function renderEquipmentMappingPanel() {
   }
 }
 
-async async function addEquipmentMappingRule() {
+async function addEquipmentMappingRule() {
   if (!currentUser) return;
 
   syncEquipmentMappingLegacyFieldsWeb050();
