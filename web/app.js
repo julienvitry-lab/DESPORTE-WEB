@@ -2750,11 +2750,11 @@ function activitySportIconMarkup(sportInput) {
   );
 
   if (sportValue === 1) {
-    return '<img class="sport-icon-c1v1 sport-icon-c1" src="./assets/icons/sport-running-c1.svg" alt="" aria-hidden="true">';
+    return '<img class="sport-icon-c1v1 sport-icon-c1" src="./assets/icons/sport-running-c1-exact.png" alt="" aria-hidden="true">';
   }
 
   if (sportValue === 2) {
-    return '<img class="sport-icon-c1v1 sport-icon-v1" src="./assets/icons/sport-bike-v1.svg" alt="" aria-hidden="true">';
+    return '<img class="sport-icon-c1v1 sport-icon-v1" src="./assets/icons/sport-bike-v1-exact.png" alt="" aria-hidden="true">';
   }
 
   return activitySportIconMarkupLegacy(sportInput);
