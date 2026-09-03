@@ -2720,7 +2720,7 @@ function renderActivities() {
   queueMicrotask(() => applyWeb049UiContract());
 }
 
-function activitySportIconMarkup(activity) {
+function activitySportIconMarkupLegacy(activity) {
   const code = Number(activity?.sport);
 
   if (code === 1 || code === 6) {
@@ -2741,6 +2741,25 @@ function activitySportIconMarkup(activity) {
 
   return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="16"></circle></svg>';
 }
+
+function activitySportIconMarkup(sportInput) {
+  const sportValue = Number(
+    sportInput && typeof sportInput === "object"
+      ? (sportInput.sport ?? sportInput.sport_id ?? sportInput.sportId)
+      : sportInput
+  );
+
+  if (sportValue === 1) {
+    return '<img class="sport-icon-c1v1 sport-icon-c1" src="./assets/icons/sport-running-c1.svg" alt="" aria-hidden="true">';
+  }
+
+  if (sportValue === 2) {
+    return '<img class="sport-icon-c1v1 sport-icon-v1" src="./assets/icons/sport-bike-v1.svg" alt="" aria-hidden="true">';
+  }
+
+  return activitySportIconMarkupLegacy(sportInput);
+}
+
 
 function formatActivityDate(value) {
   const date = dateFromMs(value);
