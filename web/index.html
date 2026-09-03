@@ -1127,6 +1127,120 @@ select {
 </style>
   <!-- WEB049-HOSTING002 · WEBAUTH001 · Firebase Auth redirect -->
   <!-- WEB049-HOSTING003 · WEBPERF001 · suppression MutationObserver UI -->
+
+<style id="webequipmap002-css">
+  .equipment-map-editor-web050 {
+    margin-top: 14px;
+    padding: 16px;
+    border: 1px solid rgba(160,255,40,.23);
+    border-radius: 16px;
+    background: rgba(145,255,25,.035);
+  }
+
+  .equipment-map-editor-title-web050,
+  .equipment-map-subtitle-web050 {
+    font-size: 1.02rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+
+  .equipment-map-subtitle-web050 {
+    margin-top: 20px;
+  }
+
+  .equipment-map-editor-grid-web050 {
+    display: grid;
+    grid-template-columns: 1fr 1.25fr 1.25fr;
+    gap: 12px;
+    align-items: end;
+  }
+
+  .equipment-map-editor-grid-web050 label {
+    display: grid;
+    gap: 6px;
+  }
+
+  .equipment-map-editor-grid-web050 select {
+    width: 100%;
+  }
+
+  .equipment-map-editor-footer-web050 {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    margin-top: 14px;
+  }
+
+  .equipment-map-legacy-web050 {
+    display: none !important;
+  }
+
+  .equipment-map-rule-web050 {
+    display: grid;
+    grid-template-columns: minmax(240px,1fr) auto auto;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    border: 1px solid rgba(128,128,128,.2);
+    border-radius: 14px;
+  }
+
+  .equipment-map-rule-main-web050 {
+    display: grid;
+    gap: 4px;
+  }
+
+  .equipment-map-rule-main-web050 span {
+    opacity: .72;
+    font-size: .88rem;
+  }
+
+  .equipment-map-rule-actions-web050 {
+    display: flex;
+    gap: 8px;
+  }
+
+  .equipment-map-unmatched-row-web050 {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: center;
+    padding: 11px 14px;
+    margin-bottom: 8px;
+    border: 1px solid rgba(128,128,128,.18);
+    border-radius: 14px;
+  }
+
+  .equipment-map-unmatched-row-web050 > div {
+    display: grid;
+    gap: 3px;
+  }
+
+  .equipment-map-unmatched-row-web050 span,
+  .equipment-map-empty-web050 {
+    opacity: .7;
+    font-size: .88rem;
+  }
+
+  @media (max-width: 900px) {
+    .equipment-map-editor-grid-web050 {
+      grid-template-columns: 1fr;
+    }
+
+    .equipment-map-editor-footer-web050,
+    .equipment-map-unmatched-row-web050 {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .equipment-map-rule-web050 {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+  <!-- WEB050 · WEBEQUIPMAP002 · éditeur de correspondances matériel -->
 </head>
 <body>
   <header class="topbar">
@@ -1374,61 +1488,77 @@ select {
           </details>
         </section>
 
-        <section id="equipmentMappingSection" class="panel equipment-manager-panel hidden">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">WEB041 · WEBEQUIPMAP001</p>
-              <h2>Correspondances automatiques de matériel</h2>
-              <p class="muted">Associe une source d’import + un sport + un sous-sport à un matériel. La règle est appliquée aux nouveaux imports et peut être propagée à l’historique sans écraser les choix manuels.</p>
-            </div>
-          </div>
 
-          <div class="equipment-editor">
-            <div class="equipment-form-grid">
-              <label>
-                <span>Source d’import</span>
-                <input id="equipmentMappingSource" list="equipmentMappingSourceList" value="KINOMAP_STRAVA_WEB" spellcheck="false">
-                <datalist id="equipmentMappingSourceList">
-                  <option value="KINOMAP_STRAVA_WEB">Kinomap via Strava</option>
-                  <option value="STRAVA_WEB">Strava Web</option>
-                  <option value="WEB_MANUAL_FIT">FIT importé sur le Web</option>
-                  <option value="WEB_MANUAL">Ajout manuel Web</option>
-                  <option value="WEB_SPLIT">Découpe Web</option>
-                </datalist>
-              </label>
-              <label>
-                <span>Sport</span>
-                <select id="equipmentMappingSport">
-                  <option value="1">Course à pied</option>
-                  <option value="2">Vélo</option>
-                  <option value="5">Natation</option>
-                  <option value="11">Marche</option>
-                  <option value="17">Randonnée</option>
-                  <option value="0">Autre</option>
-                </select>
-              </label>
-              <label>
-                <span>Sous-sport</span>
-                <input id="equipmentMappingSubSport" type="number" min="0" step="1" value="21">
-              </label>
-              <label>
-                <span>Matériel SPORT</span>
-                <select id="equipmentMappingEquipment">
-                  <option value="">Choisir un matériel…</option>
-                </select>
-              </label>
-            </div>
-            <div class="equipment-editor-footer">
-              <span id="equipmentMappingStatus" class="muted">Chargement des correspondances…</span>
-              <div class="panel-actions">
-                <button id="equipmentMappingAddButton" class="primary" type="button">Enregistrer la correspondance</button>
-                <button id="equipmentMappingApplyButton" class="secondary" type="button">Appliquer à l’historique</button>
-              </div>
-            </div>
-          </div>
+<section id="equipmentMappingSection" class="panel equipment-manager-panel hidden">
+  <div class="equipment-map-header-web050">
+    <div>
+      <h2>Correspondances automatiques de matériel</h2>
+      <p class="muted">
+        Associe un type d’activité à un matériel. Une règle spécifique à une source est prioritaire sur une règle générale.
+        Les choix manuels restent toujours prioritaires.
+      </p>
+    </div>
+  </div>
 
-          <div id="equipmentMappingList" class="equipment-manager-list"></div>
-        </section>
+  <div class="equipment-map-editor-web050">
+    <div class="equipment-map-editor-title-web050">Ajouter une correspondance</div>
+
+    <div class="equipment-map-editor-grid-web050">
+      <label>
+        Source
+        <select id="equipmentMappingSourceChoice">
+          <option value="*">Toutes les sources</option>
+        </select>
+      </label>
+
+      <label>
+        Type d’activité
+        <select id="equipmentMappingActivityChoice">
+          <option value="">Choisir un type d’activité…</option>
+        </select>
+      </label>
+
+      <label>
+        Matériel
+        <select id="equipmentMappingEquipment">
+          <option value="">Choisir un matériel…</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="equipment-map-legacy-web050" aria-hidden="true">
+      <input id="equipmentMappingSource" value="*" tabindex="-1">
+      <select id="equipmentMappingSport" tabindex="-1">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+      </select>
+      <input id="equipmentMappingSubSport" type="number" value="0" tabindex="-1">
+    </div>
+
+    <div class="equipment-map-editor-footer-web050">
+      <span id="equipmentMappingStatus" class="muted">Chargement des correspondances…</span>
+      <div class="panel-actions">
+        <button id="equipmentMappingAddButton" class="primary" type="button">
+          Enregistrer la correspondance
+        </button>
+        <button id="equipmentMappingApplyButton" class="secondary" type="button">
+          Appliquer à l’historique
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="equipment-map-subtitle-web050">Règles actives</div>
+  <div id="equipmentMappingList" class="equipment-manager-list"></div>
+
+  <div class="equipment-map-subtitle-web050">Activités sans correspondance</div>
+  <div id="equipmentMappingUnmatched" class="equipment-map-unmatched-web050"></div>
+</section>
 
         <section id="webFilesSection" class="panel web-files-panel hidden">
           <div class="panel-title-row">
@@ -2535,7 +2665,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB049-HOSTING003-WEBPERF001"></script>
+  <script type="module" src="./app.js?v=WEB050-WEBEQUIPMAP002"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

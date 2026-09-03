@@ -286,6 +286,7 @@ void completeGoogleRedirectWebAuth001();
 initUxNavigation();
 initializeWebStravaModule();
 installWeb049UiContract();
+installEquipmentMappingEditorWeb050();
 upgradeActivityDirectoryUi();
 upgradeActivityUiWeb046();
 upgradeActivityDetailUiWeb047();
@@ -6496,6 +6497,267 @@ function markerSummary(activity) {
 // sub_sport -> equipment_name. Les choix manuels (equipment_manual=1) restent
 // prioritaires et ne sont jamais écrasés.
 // -----------------------------------------------------------------------------
+
+const EQUIPMENT_MAPPING_ALL_SOURCES = "*";
+
+function equipmentMappingIsAllSources(value) {
+  return String(value || "").trim().toUpperCase() === EQUIPMENT_MAPPING_ALL_SOURCES;
+}
+
+function equipmentMappingActivityKey(sport, subSport) {
+  return `${Number(sport) || 0}|${Number(subSport) || 0}`;
+}
+
+function equipmentMappingActivityLabel(sport, subSport) {
+  const sportLabel = sportName(Number(sport) || 0);
+  const subLabel = subSportName(Number(subSport) || 0);
+  const sub = Number(subSport) || 0;
+
+  if (!sub || !subLabel || subLabel === "—" || subLabel === "Aucun") return sportLabel;
+  return `${subLabel} · ${sportLabel}`;
+}
+
+function equipmentMappingObservedActivities() {
+  const map = new Map();
+
+  for (const activity of activities.filter((item) => item && item.deleted_at_ms == null)) {
+    const sport = Number(activity.sport) || 0;
+    const subSport = Number(activity.sub_sport) || 0;
+    const key = equipmentMappingActivityKey(sport, subSport);
+
+    if (!map.has(key)) {
+      map.set(key, {
+        sport,
+        sub_sport: subSport,
+        label: equipmentMappingActivityLabel(sport, subSport),
+        count: 0
+      });
+    }
+
+    map.get(key).count += 1;
+  }
+
+  return [...map.values()].sort((a, b) =>
+    String(a.label).localeCompare(String(b.label), "fr", { sensitivity: "base" })
+  );
+}
+
+function equipmentMappingObservedSources() {
+  const values = new Set();
+
+  for (const activity of activities.filter((item) => item && item.deleted_at_ms == null)) {
+    const source = String(activity.import_source || "").trim().toUpperCase();
+    if (source) values.add(source);
+  }
+
+  for (const rule of equipmentMappingRows) {
+    const source = String(rule.import_source || "").trim().toUpperCase();
+    if (source && !equipmentMappingIsAllSources(source)) values.add(source);
+  }
+
+  return [...values].sort((a, b) =>
+    equipmentMappingSourceLabel(a).localeCompare(
+      equipmentMappingSourceLabel(b),
+      "fr",
+      { sensitivity: "base" }
+    )
+  );
+}
+
+function rebuildEquipmentMappingSourceSelectWeb050() {
+  const select = document.getElementById("equipmentMappingSourceChoice");
+  if (!select) return;
+
+  const current = select.value || EQUIPMENT_MAPPING_ALL_SOURCES;
+  select.innerHTML = "";
+
+  const all = document.createElement("option");
+  all.value = EQUIPMENT_MAPPING_ALL_SOURCES;
+  all.textContent = "Toutes les sources";
+  select.appendChild(all);
+
+  for (const source of equipmentMappingObservedSources()) {
+    const option = document.createElement("option");
+    option.value = source;
+    option.textContent = equipmentMappingSourceLabel(source);
+    select.appendChild(option);
+  }
+
+  select.value = [...select.options].some((option) => option.value === current)
+    ? current
+    : EQUIPMENT_MAPPING_ALL_SOURCES;
+}
+
+function rebuildEquipmentMappingActivitySelectWeb050() {
+  const select = document.getElementById("equipmentMappingActivityChoice");
+  if (!select) return;
+
+  const current = select.value;
+  select.innerHTML = '<option value="">Choisir un type d’activité…</option>';
+
+  const observed = equipmentMappingObservedActivities();
+
+  for (const item of observed) {
+    const option = document.createElement("option");
+    option.value = equipmentMappingActivityKey(item.sport, item.sub_sport);
+    option.textContent = `${item.label} · ${item.count} activité(s)`;
+    option.dataset.sport = String(item.sport);
+    option.dataset.subSport = String(item.sub_sport);
+    select.appendChild(option);
+  }
+
+  if ([...select.options].some((option) => option.value === current)) {
+    select.value = current;
+  }
+}
+
+function syncEquipmentMappingLegacyFieldsWeb050() {
+  const sourceSelect = document.getElementById("equipmentMappingSourceChoice");
+  const activitySelect = document.getElementById("equipmentMappingActivityChoice");
+
+  if (sourceSelect && ui.equipmentMappingSource) {
+    ui.equipmentMappingSource.value = sourceSelect.value || EQUIPMENT_MAPPING_ALL_SOURCES;
+  }
+
+  if (activitySelect?.value) {
+    const [sport, subSport] = activitySelect.value.split("|").map(Number);
+    if (ui.equipmentMappingSport) ui.equipmentMappingSport.value = String(sport || 0);
+    if (ui.equipmentMappingSubSport) ui.equipmentMappingSubSport.value = String(subSport || 0);
+  }
+}
+
+function equipmentMappingRuleScopeLabel(rule) {
+  return equipmentMappingIsAllSources(rule.import_source)
+    ? "Générale"
+    : "Spécifique";
+}
+
+function equipmentMappingUnmatchedGroups() {
+  const groups = new Map();
+
+  for (const activity of activities.filter((item) => item && item.deleted_at_ms == null)) {
+    if (Number(activity.equipment_manual) === 1) continue;
+    if (resolveAutomaticEquipmentMapping(activity)) continue;
+
+    const sport = Number(activity.sport) || 0;
+    const subSport = Number(activity.sub_sport) || 0;
+    const key = equipmentMappingActivityKey(sport, subSport);
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        sport,
+        sub_sport: subSport,
+        count: 0,
+        label: equipmentMappingActivityLabel(sport, subSport)
+      });
+    }
+
+    groups.get(key).count += 1;
+  }
+
+  return [...groups.values()]
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "fr"));
+}
+
+function renderEquipmentMappingUnmatchedWeb050() {
+  const host = document.getElementById("equipmentMappingUnmatched");
+  if (!host) return;
+
+  const groups = equipmentMappingUnmatchedGroups();
+  host.innerHTML = "";
+
+  if (!groups.length) {
+    host.innerHTML =
+      '<div class="equipment-map-empty-web050">Toutes les activités chargées sont couvertes par une règle ou un choix manuel.</div>';
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  for (const group of groups) {
+    const row = document.createElement("div");
+    row.className = "equipment-map-unmatched-row-web050";
+
+    const text = document.createElement("div");
+    text.innerHTML =
+      `<strong>${group.label}</strong><span>${group.count} activité(s) sans règle</span>`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = "Créer la règle";
+    button.addEventListener("click", () => {
+      const select = document.getElementById("equipmentMappingActivityChoice");
+      if (select) {
+        select.value = equipmentMappingActivityKey(group.sport, group.sub_sport);
+        select.dispatchEvent(new Event("change"));
+        select.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+
+    row.append(text, button);
+    fragment.appendChild(row);
+  }
+
+  host.appendChild(fragment);
+}
+
+function editEquipmentMappingRuleWeb050(rule) {
+  const sourceSelect = document.getElementById("equipmentMappingSourceChoice");
+  const activitySelect = document.getElementById("equipmentMappingActivityChoice");
+
+  if (sourceSelect) {
+    const source = String(rule.import_source || "").trim().toUpperCase() || EQUIPMENT_MAPPING_ALL_SOURCES;
+
+    if (![...sourceSelect.options].some((option) => option.value === source) && !equipmentMappingIsAllSources(source)) {
+      const option = document.createElement("option");
+      option.value = source;
+      option.textContent = equipmentMappingSourceLabel(source);
+      sourceSelect.appendChild(option);
+    }
+
+    sourceSelect.value = source;
+  }
+
+  if (activitySelect) {
+    const key = equipmentMappingActivityKey(rule.sport, rule.sub_sport);
+
+    if (![...activitySelect.options].some((option) => option.value === key)) {
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = equipmentMappingActivityLabel(rule.sport, rule.sub_sport);
+      activitySelect.appendChild(option);
+    }
+
+    activitySelect.value = key;
+  }
+
+  if (ui.equipmentMappingEquipment) {
+    ui.equipmentMappingEquipment.value = String(rule.equipment_name || "");
+  }
+
+  syncEquipmentMappingLegacyFieldsWeb050();
+
+  const add = ui.equipmentMappingAddButton;
+  if (add) add.textContent = "Mettre à jour la correspondance";
+}
+
+function installEquipmentMappingEditorWeb050() {
+  if (window.__web050EquipmentMapInstalled) return;
+  window.__web050EquipmentMapInstalled = true;
+
+  const sourceSelect = document.getElementById("equipmentMappingSourceChoice");
+  const activitySelect = document.getElementById("equipmentMappingActivityChoice");
+
+  sourceSelect?.addEventListener("change", syncEquipmentMappingLegacyFieldsWeb050);
+  activitySelect?.addEventListener("change", syncEquipmentMappingLegacyFieldsWeb050);
+
+  rebuildEquipmentMappingSourceSelectWeb050();
+  rebuildEquipmentMappingActivitySelectWeb050();
+  syncEquipmentMappingLegacyFieldsWeb050();
+}
+
+
 function equipmentMappingKey(source,sport,subSport) {
   return `${String(source || "").trim().toUpperCase()}|${Number(sport)||0}|${Number(subSport)||0}`;
 }
@@ -6535,12 +6797,26 @@ function rebuildEquipmentMappingEquipmentSelect() {
 }
 
 function resolveAutomaticEquipmentMapping(activity) {
-  if (!activity || numberOrZero(activity.equipment_manual)===1) return null;
-  const key=equipmentMappingKey(activity.import_source,activity.sport,activity.sub_sport);
-  const matches=equipmentMappingRows
-    .filter((rule)=>rule.enabled!==false && equipmentMappingKey(rule.import_source,rule.sport,rule.sub_sport)===key)
-    .sort((a,b)=>numberOrZero(b.updated_at_ms)-numberOrZero(a.updated_at_ms));
-  return matches[0] || null;
+  if (!activity) return null;
+
+  const source = String(activity.import_source || "").trim().toUpperCase();
+  const sport = Number(activity.sport) || 0;
+  const subSport = Number(activity.sub_sport) || 0;
+
+  const exactKey = equipmentMappingKey(source, sport, subSport);
+  const generalKey = equipmentMappingKey(EQUIPMENT_MAPPING_ALL_SOURCES, sport, subSport);
+
+  const enabled = equipmentMappingRows.filter((rule) => rule.enabled !== false);
+
+  const exact = enabled.find((rule) =>
+    equipmentMappingKey(rule.import_source, rule.sport, rule.sub_sport) === exactKey
+  );
+
+  if (exact) return exact;
+
+  return enabled.find((rule) =>
+    equipmentMappingKey(rule.import_source, rule.sport, rule.sub_sport) === generalKey
+  ) || null;
 }
 
 function applyAutomaticEquipmentMappingToDraft(activity) {
@@ -6559,110 +6835,175 @@ function applyAutomaticEquipmentMappingToDraft(activity) {
 
 function renderEquipmentMappingPanel() {
   if (!ui.equipmentMappingSection) return;
+
   rebuildEquipmentMappingEquipmentSelect();
+  rebuildEquipmentMappingSourceSelectWeb050();
+  rebuildEquipmentMappingActivitySelectWeb050();
+  syncEquipmentMappingLegacyFieldsWeb050();
+
   if (!ui.equipmentMappingList || !ui.equipmentMappingStatus) return;
 
-  const rows=equipmentMappingRows.slice().sort((a,b)=>{
-    const source=String(a.import_source || "").localeCompare(String(b.import_source || ""),"fr",{sensitivity:"base"});
-    if (source!==0) return source;
-    const sport=numberOrZero(a.sport)-numberOrZero(b.sport);
-    if (sport!==0) return sport;
-    return numberOrZero(a.sub_sport)-numberOrZero(b.sub_sport);
+  const rows = equipmentMappingRows.slice().sort((a,b) => {
+    const generalA = equipmentMappingIsAllSources(a.import_source) ? 1 : 0;
+    const generalB = equipmentMappingIsAllSources(b.import_source) ? 1 : 0;
+    if (generalA !== generalB) return generalA - generalB;
+
+    const activityCmp = equipmentMappingActivityLabel(a.sport, a.sub_sport)
+      .localeCompare(equipmentMappingActivityLabel(b.sport, b.sub_sport), "fr");
+    if (activityCmp) return activityCmp;
+
+    return equipmentMappingSourceLabel(a.import_source)
+      .localeCompare(equipmentMappingSourceLabel(b.import_source), "fr");
   });
 
-  ui.equipmentMappingStatus.textContent=rows.length
-    ? `${rows.length} correspondance(s) active(s) · les choix manuels restent prioritaires.`
-    : "Aucune correspondance configurée.";
-  ui.equipmentMappingList.innerHTML="";
+  ui.equipmentMappingStatus.textContent = rows.length
+    ? `${rows.length} correspondance(s) active(s) · choix manuel > règle spécifique > règle générale.`
+    : "Aucune correspondance automatique.";
+
+  ui.equipmentMappingList.innerHTML = "";
 
   if (!rows.length) {
-    const empty=document.createElement("div");
-    empty.className="empty";
-    empty.textContent="Ajoutez une règle, par exemple Kinomap via Strava + Course + sous-sport 21 → vos chaussures de tapis.";
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Aucune règle. Utilise « Ajouter une correspondance » ci-dessus.";
     ui.equipmentMappingList.appendChild(empty);
-    return;
+  } else {
+    const fragment = document.createDocumentFragment();
+
+    for (const rule of rows) {
+      const card = document.createElement("div");
+      card.className = "equipment-map-rule-web050";
+
+      const main = document.createElement("div");
+      main.className = "equipment-map-rule-main-web050";
+
+      const title = document.createElement("strong");
+      title.textContent = String(rule.equipment_name || "Matériel non défini");
+
+      const meta = document.createElement("span");
+      const sourceLabel = equipmentMappingIsAllSources(rule.import_source)
+        ? "Toutes les sources"
+        : equipmentMappingSourceLabel(rule.import_source);
+
+      meta.textContent =
+        `${equipmentMappingActivityLabel(rule.sport, rule.sub_sport)} · ${sourceLabel}`;
+
+      main.append(title, meta);
+
+      const badges = document.createElement("div");
+      badges.className = "equipment-map-rule-badges-web050";
+
+      const scope = document.createElement("span");
+      scope.className = "pill neutral";
+      scope.textContent = equipmentMappingRuleScopeLabel(rule);
+
+      badges.append(scope);
+
+      const actions = document.createElement("div");
+      actions.className = "equipment-map-rule-actions-web050";
+
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary";
+      edit.textContent = "Modifier";
+      edit.addEventListener("click", () => editEquipmentMappingRuleWeb050(rule));
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "secondary";
+      remove.textContent = "Supprimer";
+      remove.addEventListener("click", () => { void deleteEquipmentMappingRule(rule); });
+
+      actions.append(edit, remove);
+      card.append(main, badges, actions);
+      fragment.appendChild(card);
+    }
+
+    ui.equipmentMappingList.appendChild(fragment);
   }
 
-  const fragment=document.createDocumentFragment();
-  for (const rule of rows) {
-    const card=document.createElement("article");
-    card.className="equipment-manager-card";
+  renderEquipmentMappingUnmatchedWeb050();
 
-    const main=document.createElement("div");
-    main.className="equipment-manager-main";
-    const title=document.createElement("strong");
-    title.textContent=String(rule.equipment_name || "Matériel non défini");
-    const meta=document.createElement("span");
-    meta.textContent=`${equipmentMappingSourceLabel(rule.import_source)} · ${sportName(numberOrZero(rule.sport))} · ${subSportName(numberOrZero(rule.sub_sport))}`;
-    main.append(title,meta);
-
-    const usage=document.createElement("div");
-    usage.className="equipment-manager-usage";
-    usage.append(
-      equipmentUsageDatum("Source",String(rule.import_source || "—")),
-      equipmentUsageDatum("Sport",sportName(numberOrZero(rule.sport))),
-      equipmentUsageDatum("Sous-sport",subSportName(numberOrZero(rule.sub_sport)))
-    );
-
-    const actions=document.createElement("div");
-    actions.className="equipment-manager-card-actions";
-    const remove=document.createElement("button");
-    remove.type="button";
-    remove.className="secondary";
-    remove.textContent="Supprimer";
-    remove.addEventListener("click",()=>{ void deleteEquipmentMappingRule(rule); });
-    actions.appendChild(remove);
-
-    card.append(main,usage,actions);
-    fragment.appendChild(card);
+  if (ui.equipmentMappingAddButton) {
+    ui.equipmentMappingAddButton.textContent = "Enregistrer la correspondance";
   }
-  ui.equipmentMappingList.appendChild(fragment);
 }
 
-async function addEquipmentMappingRule() {
+async async function addEquipmentMappingRule() {
   if (!currentUser) return;
-  const source=String(ui.equipmentMappingSource?.value || "").trim().toUpperCase();
-  const sport=Number(ui.equipmentMappingSport?.value || 0);
-  const subSport=Number(ui.equipmentMappingSubSport?.value || 0);
-  const equipmentName=String(ui.equipmentMappingEquipment?.value || "").trim();
+
+  syncEquipmentMappingLegacyFieldsWeb050();
+
+  const source = String(
+    document.getElementById("equipmentMappingSourceChoice")?.value ||
+    ui.equipmentMappingSource?.value ||
+    EQUIPMENT_MAPPING_ALL_SOURCES
+  ).trim().toUpperCase();
+
+  const activityValue = String(
+    document.getElementById("equipmentMappingActivityChoice")?.value || ""
+  );
+
+  let sport = Number(ui.equipmentMappingSport?.value || 0);
+  let subSport = Number(ui.equipmentMappingSubSport?.value || 0);
+
+  if (activityValue.includes("|")) {
+    [sport, subSport] = activityValue.split("|").map(Number);
+  }
+
+  const equipmentName = String(ui.equipmentMappingEquipment?.value || "").trim();
 
   if (!source) {
-    setMessage("WEBEQUIPMAP001 · source d’import obligatoire.","error");
-    return;
-  }
-  if (!Number.isFinite(sport) || sport<0 || !Number.isFinite(subSport) || subSport<0) {
-    setMessage("WEBEQUIPMAP001 · sport / sous-sport invalides.","error");
-    return;
-  }
-  if (!equipmentName) {
-    setMessage("WEBEQUIPMAP001 · choisissez un matériel.","error");
+    setMessage("WEBEQUIPMAP002 · choisis une source ou Toutes les sources.", "error");
     return;
   }
 
-  const tuple=equipmentMappingKey(source,sport,subSport);
-  const existing=equipmentMappingRows.find((rule)=>equipmentMappingKey(rule.import_source,rule.sport,rule.sub_sport)===tuple);
-  const ref=existing?.__docId
-    ? doc(db,ROOT,currentUser.uid,"equipment_mappings",existing.__docId)
+  if (!Number.isFinite(sport) || sport < 0 || !Number.isFinite(subSport) || subSport < 0) {
+    setMessage("WEBEQUIPMAP002 · type d’activité invalide.", "error");
+    return;
+  }
+
+  if (!equipmentName) {
+    setMessage("WEBEQUIPMAP002 · choisis un matériel.", "error");
+    return;
+  }
+
+  const tuple = equipmentMappingKey(source, sport, subSport);
+  const existing = equipmentMappingRows.find((rule) =>
+    equipmentMappingKey(rule.import_source, rule.sport, rule.sub_sport) === tuple
+  );
+
+  const ref = existing
+    ? doc(db, ROOT, currentUser.uid, "equipment_mappings", existing.__docId)
     : doc(userCollection("equipment_mappings"));
-  const now=Date.now();
-  const row={
-    import_source:source,
+
+  const row = {
+    import_source: source,
     sport,
-    sub_sport:subSport,
-    equipment_name:equipmentName,
-    enabled:true,
-    created_at_ms:existing?.created_at_ms || now,
-    updated_at_ms:now
+    sub_sport: subSport,
+    equipment_name: equipmentName,
+    enabled: true,
+    mapping_version: "WEBEQUIPMAP002",
+    updated_at_ms: Date.now()
   };
 
-  const batch=writeBatch(db);
-  batch.set(ref,{...row,__sportKey:ref.id},{merge:true});
+  const batch = writeBatch(db);
+  batch.set(ref, row, { merge: true });
   await batch.commit();
 
-  if (existing) Object.assign(existing,row,{__docId:ref.id});
-  else equipmentMappingRows.push({...row,__docId:ref.id});
+  if (existing) Object.assign(existing, row);
+  else equipmentMappingRows.push({ ...row, __docId: ref.id });
+
   renderEquipmentMappingPanel();
-  setMessage(`WEBEQUIPMAP001 · correspondance enregistrée : ${equipmentMappingSourceLabel(source)} → ${equipmentName}.`,"success");
+
+  const scope = equipmentMappingIsAllSources(source)
+    ? "Toutes les sources"
+    : equipmentMappingSourceLabel(source);
+
+  setMessage(
+    `WEBEQUIPMAP002 · ${equipmentMappingActivityLabel(sport, subSport)} → ${equipmentName} (${scope}).`,
+    "success"
+  );
 }
 
 async function deleteEquipmentMappingRule(rule) {
