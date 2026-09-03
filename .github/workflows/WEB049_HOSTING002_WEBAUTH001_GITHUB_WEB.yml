@@ -1,0 +1,249 @@
+name: WEB049-HOSTING002 - WEBAUTH001 redirect Google
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Pré-contrôles
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          grep -Fq 'authDomain: "sport-505813.firebaseapp.com"' web/app.js
+          grep -Fq 'signInWithPopup' web/app.js
+          grep -Fq 'ui.loginButton.addEventListener("click"' web/app.js
+          echo "OK : base Auth actuelle reconnue."
+
+      - name: Appliquer WEBAUTH001
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("fs");
+
+          const appFile = "web/app.js";
+          const indexFile = "web/index.html";
+
+          let app = fs.readFileSync(appFile, "utf8");
+          let html = fs.readFileSync(indexFile, "utf8");
+
+          function fail(message, code = 20) {
+            console.error("ERREUR WEBAUTH001 : " + message);
+            process.exit(code);
+          }
+
+          const authImportOld = `  onAuthStateChanged,
+            signInWithPopup,
+            signOut`;
+
+          const authImportNew = `  onAuthStateChanged,
+            signInWithPopup,
+            signInWithRedirect,
+            getRedirectResult,
+            signOut`;
+
+          if (app.includes(authImportOld) && !app.includes("signInWithRedirect,")) {
+            app = app.replace(authImportOld, authImportNew);
+          }
+
+          if (!app.includes("signInWithRedirect") || !app.includes("getRedirectResult")) {
+            fail("imports signInWithRedirect/getRedirectResult absents");
+          }
+
+          app = app.replace(
+            /authDomain:\s*"sport-505813\.firebaseapp\.com"/,
+            'authDomain: "sport-505813.web.app"'
+          );
+
+          if (!app.includes('authDomain: "sport-505813.web.app"')) {
+            fail("authDomain web.app non appliqué");
+          }
+
+          const loginRegex = /ui\.loginButton\.addEventListener\("click",\s*async\s*\(\)\s*=>\s*\{\s*setMessage\("Connexion Google…",\s*"info"\);\s*try\s*\{\s*await signInWithPopup\(auth,\s*provider\);\s*\}\s*catch\s*\(error\)\s*\{\s*handleError\(error,\s*"Connexion Google impossible"\);\s*\}\s*\}\);/m;
+
+          const loginReplacement = `ui.loginButton.addEventListener("click", async () => {
+              setMessage("Redirection vers Google…", "info");
+              ui.loginButton.disabled = true;
+
+              try {
+                sessionStorage.setItem("sport_web_auth_redirect_pending", "1");
+                await signInWithRedirect(auth, provider);
+              } catch (error) {
+                sessionStorage.removeItem("sport_web_auth_redirect_pending");
+                ui.loginButton.disabled = false;
+                handleError(error, "Connexion Google impossible");
+              }
+            });`;
+
+          if (loginRegex.test(app)) {
+            app = app.replace(loginRegex, loginReplacement);
+          } else if (!app.includes('sessionStorage.setItem("sport_web_auth_redirect_pending", "1")')) {
+            fail("gestionnaire login popup attendu introuvable");
+          }
+
+          const redirectModule = `
+          async function completeGoogleRedirectWebAuth001() {
+            const pending =
+              sessionStorage.getItem("sport_web_auth_redirect_pending") === "1";
+
+            try {
+              const result = await getRedirectResult(auth);
+
+              if (result?.user) {
+                sessionStorage.removeItem("sport_web_auth_redirect_pending");
+                setMessage("Connexion Google réussie.", "success");
+              } else if (pending) {
+                sessionStorage.removeItem("sport_web_auth_redirect_pending");
+                setMessage("Retour Google reçu. Vérification de la session…", "info");
+              }
+            } catch (error) {
+              sessionStorage.removeItem("sport_web_auth_redirect_pending");
+              if (ui.loginButton) ui.loginButton.disabled = false;
+              handleError(error, "Retour de connexion Google impossible");
+            }
+          }
+          `;
+
+          if (!app.includes("function completeGoogleRedirectWebAuth001()")) {
+            const marker = "function wireEvents() {";
+            const pos = app.indexOf(marker);
+            if (pos < 0) fail("wireEvents introuvable");
+            app = app.slice(0, pos) + redirectModule + "\n" + app.slice(pos);
+          }
+
+          if (!app.includes("void completeGoogleRedirectWebAuth001();")) {
+            const marker = "wireEvents();";
+            const pos = app.indexOf(marker);
+            if (pos < 0) fail("appel wireEvents introuvable");
+            const insertAt = pos + marker.length;
+            app = app.slice(0, insertAt) + "\nvoid completeGoogleRedirectWebAuth001();" + app.slice(insertAt);
+          }
+
+          const authSuccessNeedle = '  ui.authState.textContent = "Firebase connecté";';
+          if (app.includes(authSuccessNeedle) &&
+              !app.includes('sessionStorage.removeItem("sport_web_auth_redirect_pending");\n  ui.authState.textContent = "Firebase connecté";')) {
+            app = app.replace(
+              authSuccessNeedle,
+              '  sessionStorage.removeItem("sport_web_auth_redirect_pending");\n' +
+              '  if (ui.loginButton) ui.loginButton.disabled = false;\n' +
+              authSuccessNeedle
+            );
+          }
+
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB049-HOSTING002-WEBAUTH001"'
+          );
+
+          if (!html.includes("WEB049-HOSTING002-WEBAUTH001")) {
+            fail("cache-bust non appliqué");
+          }
+
+          if (!html.includes("WEB049-HOSTING002 · WEBAUTH001")) {
+            html = html.replace(
+              "</head>",
+              '  <!-- WEB049-HOSTING002 · WEBAUTH001 · Firebase Auth redirect -->\n</head>'
+            );
+          }
+
+          fs.writeFileSync(appFile, app, "utf8");
+          fs.writeFileSync(indexFile, html, "utf8");
+
+          console.log("OK : WEB049-HOSTING002 · WEBAUTH001 appliqué.");
+          NODE
+
+      - name: Installer validation WEBAUTH001
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p scripts/webauth001 docs/releases
+          cat > scripts/webauth001/validate_webauth001.mjs <<'NODE'
+          import fs from "node:fs";
+
+          const app = fs.readFileSync("web/app.js","utf8");
+          const html = fs.readFileSync("web/index.html","utf8");
+
+          function req(token, label) {
+            if (!app.includes(token) && !html.includes(token)) {
+              console.error("ECHEC :", label);
+              process.exit(20);
+            }
+          }
+
+          req('signInWithRedirect,', "import signInWithRedirect");
+          req('getRedirectResult,', "import getRedirectResult");
+          req('authDomain: "sport-505813.web.app"', "authDomain web.app");
+          req('await signInWithRedirect(auth, provider);', "login redirect");
+          req('function completeGoogleRedirectWebAuth001()', "traitement retour redirect");
+          req('await getRedirectResult(auth);', "getRedirectResult");
+          req('sport_web_auth_redirect_pending', "état session redirect");
+          req('app.js?v=WEB049-HOSTING002-WEBAUTH001', "cache-bust");
+
+          if (!app.includes("signInWithPopup(auth,driveProvider)")) {
+            console.error("ECHEC : popup Google Drive supprimé");
+            process.exit(21);
+          }
+
+          const wireStart = app.indexOf("function wireEvents()");
+          const driveStart = app.indexOf("signInWithPopup(auth,driveProvider)");
+          const wireBlock = app.slice(wireStart, driveStart > wireStart ? driveStart : wireStart + 2500);
+
+          if (wireBlock.includes("signInWithPopup(auth, provider)")) {
+            console.error("ECHEC : login principal utilise encore signInWithPopup");
+            process.exit(22);
+          }
+
+          console.log("WEBAUTH001 : contrat Auth redirect validé.");
+          NODE
+
+          cat > docs/releases/WEB049-HOSTING002-WEBAUTH001.md <<'EOF'
+          # WEB049-HOSTING002 · WEBAUTH001
+
+          Authentification Google principale basculée de popup vers redirection.
+
+          - domaine officiel : https://sport-505813.web.app
+          - authDomain aligné sur sport-505813.web.app
+          - signInWithRedirect pour le bouton principal
+          - getRedirectResult au retour
+          - état de redirection stocké en session
+          - popup Google Drive existant conservé
+          EOF
+
+      - name: Validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          node scripts/webauth001/validate_webauth001.mjs
+          git diff --check
+          echo
+          echo "WEBAUTH001"
+          echo "NODE CHECK          : OK"
+          echo "AUTHDOMAIN WEB.APP  : OK"
+          echo "LOGIN REDIRECT      : OK"
+          echo "GET REDIRECT RESULT : OK"
+          echo "POPUP DRIVE CONSERVE: OK"
+          echo "CACHE BUST          : OK"
+
+      - name: Commit et push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/app.js web/index.html scripts/webauth001/validate_webauth001.mjs docs/releases/WEB049-HOSTING002-WEBAUTH001.md
+          git commit -m "WEB049-HOSTING002 WEBAUTH001 auth Google par redirection"
+          git push origin HEAD:main
