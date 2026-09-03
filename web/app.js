@@ -280,6 +280,9 @@ let profileComparisonRenderer = null;
 let profileComparisonClearer = null;
 
 wireEvents();
+/* WEB054_SUBSPORT_FILTER_BOOT */
+queueMicrotask(() => installActivitySubSportFilterWeb054());
+
 /* WEB051_UNIFIED_CONNECTION_TIMER · affichage uniquement */
 renderUnifiedConnectionBadgeWeb051();
 setInterval(renderUnifiedConnectionBadgeWeb051, 5000);
@@ -1294,6 +1297,8 @@ async function reloadAll() {
   } catch (error) {
     handleError(error, "Lecture Firestore impossible");
   }
+
+  queueMicrotask(() => { refreshActivitySubSportFilterWeb054(); applyActivitySubSportFilterWeb054(); });
 }
 
 async function loadPersonalSyncData() {
@@ -2803,6 +2808,170 @@ function formatActivityTimeWeb049(value) {
   }).format(date);
 }
 
+
+function activitySubSportValueWeb054(activity) {
+  if (!activity || typeof activity !== "object") return "-1";
+
+  const keys = [
+    "sub_sport",
+    "subSport",
+    "sub_sport_id",
+    "subSportId",
+    "fit_sub_sport",
+    "fitSubSport"
+  ];
+
+  let raw;
+
+  for (const key of keys) {
+    if (activity[key] !== undefined && activity[key] !== null && activity[key] !== "") {
+      raw = activity[key];
+      break;
+    }
+  }
+
+  if (raw === undefined || raw === null || raw === "") return "-1";
+
+  const number = Number(raw);
+  if (Number.isFinite(number)) return String(Math.trunc(number));
+
+  return String(raw).trim() || "-1";
+}
+
+function activitySubSportSortWeb054(a, b) {
+  const na = Number(a);
+  const nb = Number(b);
+  const fa = Number.isFinite(na);
+  const fb = Number.isFinite(nb);
+
+  if (fa && fb) return na - nb;
+  if (fa) return -1;
+  if (fb) return 1;
+
+  return String(a).localeCompare(String(b), "fr", { numeric: true });
+}
+
+function activitySubSportLabelWeb054(value, count) {
+  const suffix = Number(count) > 0 ? ` · ${count} activité(s)` : "";
+
+  if (String(value) === "-1") {
+    return `Sous-sport -1 · non renseigné${suffix}`;
+  }
+
+  return `Sous-sport ${value}${suffix}`;
+}
+
+function refreshActivitySubSportFilterWeb054() {
+  const select = document.getElementById("activitySubSportFilterWeb054");
+  if (!select) return;
+
+  const current = select.value;
+  const source = Array.isArray(filteredActivities) ? filteredActivities : [];
+  const counts = new Map();
+
+  for (const activity of source) {
+    const value = activitySubSportValueWeb054(activity);
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+
+  const options = [...counts.keys()].sort(activitySubSportSortWeb054);
+
+  select.innerHTML = '<option value="">Tous les sous-sports</option>';
+
+  for (const value of options) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = activitySubSportLabelWeb054(value, counts.get(value));
+    select.appendChild(option);
+  }
+
+  if ([...select.options].some((option) => option.value === current)) {
+    select.value = current;
+  }
+
+  updateActivitySubSportFilterStatusWeb054();
+}
+
+function updateActivitySubSportFilterStatusWeb054() {
+  const select = document.getElementById("activitySubSportFilterWeb054");
+  const status = document.getElementById("activitySubSportFilterStatusWeb054");
+  if (!select || !status) return;
+
+  if (!select.value) {
+    status.textContent = "Valeur FIT/Garmin brute";
+    return;
+  }
+
+  const visible = document.querySelectorAll(
+    '#activityList [data-sub-sport-web054]:not(.web054-sub-sport-hidden)'
+  ).length;
+
+  status.textContent =
+    `Filtre actif : sub_sport = ${select.value} · ${visible} ligne(s) visible(s)`;
+}
+
+function applyActivitySubSportFilterWeb054() {
+  const select = document.getElementById("activitySubSportFilterWeb054");
+  if (!select) return;
+
+  const selected = select.value;
+
+  document.querySelectorAll('#activityList [data-sub-sport-web054]').forEach((row) => {
+    const mismatch = Boolean(selected) && row.dataset.subSportWeb054 !== selected;
+    row.classList.toggle("web054-sub-sport-hidden", mismatch);
+  });
+
+  updateActivitySubSportFilterStatusWeb054();
+}
+
+function loadAllActivitiesForSubSportWeb054() {
+  const select = document.getElementById("activitySubSportFilterWeb054");
+  if (!select?.value) return;
+
+  const loadAllButton = [...document.querySelectorAll("button")].find((button) =>
+    /charger tout/i.test(String(button.textContent || "").trim())
+  );
+
+  if (loadAllButton && !loadAllButton.disabled) {
+    loadAllButton.click();
+  }
+
+  setTimeout(applyActivitySubSportFilterWeb054, 50);
+  setTimeout(applyActivitySubSportFilterWeb054, 250);
+  setTimeout(applyActivitySubSportFilterWeb054, 700);
+}
+
+function installActivitySubSportFilterWeb054() {
+  const select = document.getElementById("activitySubSportFilterWeb054");
+  if (!select || select.dataset.web054Installed === "1") return;
+
+  select.dataset.web054Installed = "1";
+
+  select.addEventListener("change", () => {
+    loadAllActivitiesForSubSportWeb054();
+    applyActivitySubSportFilterWeb054();
+  });
+
+  const filterPanel =
+    document.getElementById("activityDirectorySection") ||
+    select.closest("section") ||
+    select.closest("form");
+
+  filterPanel?.addEventListener("change", (event) => {
+    if (event.target === select) return;
+
+    if (select.value) {
+      setTimeout(() => {
+        loadAllActivitiesForSubSportWeb054();
+        applyActivitySubSportFilterWeb054();
+      }, 0);
+    }
+  });
+
+  refreshActivitySubSportFilterWeb054();
+  applyActivitySubSportFilterWeb054();
+}
+
 function activityMain(activity) {
   const cell = document.createElement("div");
   cell.className = "activity-main activity-main-web049";
@@ -2815,6 +2984,15 @@ function activityMain(activity) {
 
   cell.append(icon);
   return cell;
+
+  cell.dataset.subSportWeb054 = activitySubSportValueWeb054(activity);
+
+  const web054SubSportFilter = document.getElementById("activitySubSportFilterWeb054");
+  if (web054SubSportFilter?.value &&
+      cell.dataset.subSportWeb054 !== web054SubSportFilter.value) {
+    cell.classList.add("web054-sub-sport-hidden");
+  }
+
 }
 
 function datum(label, value, extraClass = "") {

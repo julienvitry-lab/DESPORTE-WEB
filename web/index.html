@@ -1547,6 +1547,27 @@ select {
   }
 </style>
 
+
+<style id="web054-subsport001-css">
+  .web054-sub-sport-field {
+    display: grid !important;
+    gap: 6px !important;
+    min-width: 220px !important;
+  }
+
+  #activitySubSportFilterWeb054 {
+    width: 100% !important;
+  }
+
+  #activitySubSportFilterStatusWeb054 {
+    line-height: 1.15 !important;
+  }
+
+  .web054-sub-sport-hidden {
+    display: none !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -2490,6 +2511,13 @@ select {
                 <option value="">Tous</option>
               </select>
             </label>
+<label class="web054-sub-sport-field">
+  <span>Sous-sport</span>
+  <select id="activitySubSportFilterWeb054">
+    <option value="">Tous</option>
+  </select>
+  <small id="activitySubSportFilterStatusWeb054" class="muted">Valeur FIT/Garmin brute</small>
+</label>
 
             <label>
               Année
@@ -2983,7 +3011,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB053-WEBEQUIPMAP003"></script>
+  <script type="module" src="./app.js?v=WEB054-WEBSUBSPORT001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
