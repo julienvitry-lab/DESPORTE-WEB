@@ -1,0 +1,341 @@
+name: WEB049-HOSTING003 - WEBPERF001 supprime boucles UI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Pré-contrôles
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          grep -Fq 'installInterfaceGuardWeb048();' web/app.js
+          grep -Fq 'installWeb049UiContract();' web/app.js
+          grep -Fq 'new MutationObserver' web/app.js
+          grep -Fq 'await signInWithRedirect(auth, provider);' web/app.js
+          echo "OK : base actuelle reconnue."
+
+      - name: Appliquer WEBPERF001
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("fs");
+
+          const appFile = "web/app.js";
+          const indexFile = "web/index.html";
+
+          let app = fs.readFileSync(appFile, "utf8");
+          let html = fs.readFileSync(indexFile, "utf8");
+
+          function fail(message, code = 20) {
+            console.error("ERREUR WEBPERF001 : " + message);
+            process.exit(code);
+          }
+
+          function replaceFunction(source, name, replacement) {
+            const marker = `function ${name}(`;
+            const start = source.indexOf(marker);
+            if (start < 0) fail(`${name} introuvable`);
+
+            const brace = source.indexOf("{", start);
+            if (brace < 0) fail(`${name} : accolade ouvrante introuvable`);
+
+            let depth = 0;
+            let quote = null;
+            let escape = false;
+
+            for (let i = brace; i < source.length; i++) {
+              const ch = source[i];
+
+              if (quote) {
+                if (escape) escape = false;
+                else if (ch === "\\") escape = true;
+                else if (ch === quote) quote = null;
+                continue;
+              }
+
+              if (ch === '"' || ch === "'" || ch === "`") {
+                quote = ch;
+                continue;
+              }
+
+              if (ch === "{") depth++;
+              if (ch === "}") {
+                depth--;
+                if (depth === 0) {
+                  return source.slice(0, start) + replacement + source.slice(i + 1);
+                }
+              }
+            }
+
+            fail(`${name} : fin de fonction introuvable`);
+          }
+
+          const web048Installer = `function installInterfaceGuardWeb048() {
+            if (window.__web048GuardInstalled) return;
+            window.__web048GuardInstalled = true;
+            restoreInterfaceWeb048();
+          }`;
+
+          app = replaceFunction(app, "installInterfaceGuardWeb048", web048Installer);
+
+          const web049Installer = `function installWeb049UiContract() {
+            if (window.__web049UiInstalled) return;
+            window.__web049UiInstalled = true;
+
+            const refresh = () => requestAnimationFrame(() => {
+              applyWeb049UiContract();
+              syncWeb049StickyOffsets();
+            });
+
+            refresh();
+            window.addEventListener("resize", refresh, { passive: true });
+
+            if ("ResizeObserver" in window) {
+              const resizeObserver = new ResizeObserver(refresh);
+
+              [
+                document.querySelector(".topbar"),
+                document.getElementById("uxPrimaryNav"),
+                document.getElementById("uxSecondaryNav"),
+                document.querySelector("#detailView > .detail-toolbar")
+              ].filter(Boolean).forEach((node) => resizeObserver.observe(node));
+
+              window.__web049ResizeObserver = resizeObserver;
+            }
+          }`;
+
+          app = replaceFunction(app, "installWeb049UiContract", web049Installer);
+
+          const web047Installer = `function installActivityDetailStickyObserverWeb047() {
+            if (window.__web047DetailObserverInstalled) return;
+            window.__web047DetailObserverInstalled = true;
+
+            const refresh = () => requestAnimationFrame(() => {
+              upgradeActivityDetailUiWeb047();
+              syncActivityDetailStickyOffsetsWeb047();
+              if (typeof applyWeb049UiContract === "function") {
+                applyWeb049UiContract();
+                syncWeb049StickyOffsets();
+              }
+            });
+
+            window.addEventListener("resize", refresh, { passive: true });
+
+            if ("ResizeObserver" in window) {
+              const ro = new ResizeObserver(refresh);
+
+              [
+                document.querySelector(".topbar"),
+                document.getElementById("uxPrimaryNav"),
+                document.getElementById("uxSecondaryNav"),
+                document.querySelector("#detailView > .detail-toolbar")
+              ].filter(Boolean).forEach((el) => ro.observe(el));
+
+              window.__web047ResizeObserver = ro;
+            }
+          }`;
+
+          app = replaceFunction(app, "installActivityDetailStickyObserverWeb047", web047Installer);
+
+          app = app.replace(/\n\s*queueMicrotask\(\(\)\s*=>\s*restoreInterfaceWeb048\(\)\);/g, "");
+          app = app.replace(/\n\s*installInterfaceGuardWeb048\(\);/g, "");
+
+          if (!app.includes("installWeb049UiContract();")) {
+            const marker = "initializeWebStravaModule();";
+            const pos = app.indexOf(marker);
+            if (pos < 0) fail("initializeWebStravaModule introuvable");
+            app = app.slice(0, pos + marker.length) + "\ninstallWeb049UiContract();" + app.slice(pos + marker.length);
+          }
+
+          const showActivityNeedle = `  renderDetail(activity);
+            window.scrollTo({ top: 0, behavior: "auto" });`;
+
+          const showActivityReplacement = `  renderDetail(activity);
+
+            queueMicrotask(() => {
+              upgradeActivityDetailUiWeb047();
+              applyWeb049UiContract();
+              syncActivityDetailStickyOffsetsWeb047();
+              syncWeb049StickyOffsets();
+            });
+
+            window.scrollTo({ top: 0, behavior: "auto" });`;
+
+          if (app.includes(showActivityNeedle)) {
+            app = app.replace(showActivityNeedle, showActivityReplacement);
+          } else if (!app.includes("syncWeb049StickyOffsets();\n  });\n\n  window.scrollTo")) {
+            fail("showActivity : point d'insertion introuvable");
+          }
+
+          const dashboardNeedle = `  ui.dashboard.classList.remove("hidden");
+            ui.uxPrimaryNav?.classList.remove("hidden");
+            navigateUx(uxCurrentPage, uxCurrentSubpage, {keepScroll:true});`;
+
+          const dashboardReplacement = `  ui.dashboard.classList.remove("hidden");
+            ui.uxPrimaryNav?.classList.remove("hidden");
+            navigateUx(uxCurrentPage, uxCurrentSubpage, {keepScroll:true});
+            queueMicrotask(() => applyWeb049UiContract());`;
+
+          if (app.includes(dashboardNeedle)) {
+            app = app.replace(dashboardNeedle, dashboardReplacement);
+          }
+
+          const renderEndNeedle = `    footer.append(info,more);
+              ui.activityList.appendChild(footer);
+            }
+          }`;
+
+          const renderEndReplacement = `    footer.append(info,more);
+              ui.activityList.appendChild(footer);
+            }
+
+            queueMicrotask(() => applyWeb049UiContract());
+          }`;
+
+          if (app.includes(renderEndNeedle)) {
+            app = app.replace(renderEndNeedle, renderEndReplacement);
+          }
+
+          const emptyNeedle = `    empty.textContent = "Aucune activité parmi les données actuellement chargées.";
+              ui.activityList.appendChild(empty);
+              return;`;
+
+          const emptyReplacement = `    empty.textContent = "Aucune activité parmi les données actuellement chargées.";
+              ui.activityList.appendChild(empty);
+              queueMicrotask(() => applyWeb049UiContract());
+              return;`;
+
+          if (app.includes(emptyNeedle)) {
+            app = app.replace(emptyNeedle, emptyReplacement);
+          }
+
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB049-HOSTING003-WEBPERF001"'
+          );
+
+          if (!html.includes("WEB049-HOSTING003 · WEBPERF001")) {
+            html = html.replace(
+              "</head>",
+              '  <!-- WEB049-HOSTING003 · WEBPERF001 · suppression MutationObserver UI -->\n</head>'
+            );
+          }
+
+          fs.writeFileSync(appFile, app, "utf8");
+          fs.writeFileSync(indexFile, html, "utf8");
+
+          console.log("OK : WEB049-HOSTING003 · WEBPERF001 appliqué.");
+          NODE
+
+      - name: Installer validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p scripts/webperf001 docs/releases
+
+          cat > scripts/webperf001/validate_webperf001.mjs <<'NODE'
+          import fs from "node:fs";
+
+          const app = fs.readFileSync("web/app.js","utf8");
+          const html = fs.readFileSync("web/index.html","utf8");
+
+          const mutationCount = (app.match(/new MutationObserver/g) || []).length;
+
+          if (mutationCount !== 0) {
+            console.error("ECHEC : MutationObserver restants =", mutationCount);
+            process.exit(20);
+          }
+
+          if (app.includes("queueMicrotask(() => restoreInterfaceWeb048());")) {
+            console.error("ECHEC : restoreInterfaceWeb048 encore appelé dans la navigation");
+            process.exit(21);
+          }
+
+          if (!app.includes("installWeb049UiContract();")) {
+            console.error("ECHEC : installWeb049UiContract absent");
+            process.exit(22);
+          }
+
+          if (!app.includes("queueMicrotask(() => applyWeb049UiContract());")) {
+            console.error("ECHEC : appels déterministes WEB049 absents");
+            process.exit(23);
+          }
+
+          if (!app.includes('await signInWithRedirect(auth, provider);')) {
+            console.error("ECHEC : WEBAUTH001 perdu");
+            process.exit(24);
+          }
+
+          if (!app.includes('authDomain: "sport-505813.web.app"')) {
+            console.error("ECHEC : authDomain web.app perdu");
+            process.exit(25);
+          }
+
+          if (!html.includes("app.js?v=WEB049-HOSTING003-WEBPERF001")) {
+            console.error("ECHEC : cache bust WEBPERF001 absent");
+            process.exit(26);
+          }
+
+          console.log("WEBPERF001 : 0 MutationObserver et WEBAUTH001 conservé.");
+          NODE
+
+          cat > docs/releases/WEB049-HOSTING003-WEBPERF001.md <<'EOF'
+          # WEB049-HOSTING003 · WEBPERF001
+
+          Suppression des MutationObserver UI introduits par WEB047/048/049.
+
+          - aucun MutationObserver global
+          - appels WEB049 déterministes après navigation, rendu et ouverture détail
+          - ResizeObserver conservé uniquement pour recalculer les offsets sticky
+          - WEBAUTH001 conservé
+          - authDomain sport-505813.web.app conservé
+
+          Objectif : supprimer les boucles de rendu et la charge CPU anormale.
+          EOF
+
+      - name: Validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          node scripts/webperf001/validate_webperf001.mjs
+          git diff --check
+
+          echo
+          echo "WEBPERF001"
+          echo "MUTATION OBSERVERS : 0"
+          echo "WEB048 GLOBAL      : DESACTIVE"
+          echo "WEB049 DETERMINISTE: OK"
+          echo "WEBAUTH001         : CONSERVE"
+          echo "NODE CHECK         : OK"
+
+      - name: Commit et push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            web/app.js \
+            web/index.html \
+            scripts/webperf001/validate_webperf001.mjs \
+            docs/releases/WEB049-HOSTING003-WEBPERF001.md
+
+          git commit -m "WEB049-HOSTING003 WEBPERF001 supprime boucles MutationObserver UI"
+          git push origin HEAD:main
