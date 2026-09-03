@@ -1241,69 +1241,6 @@ select {
   }
 </style>
   <!-- WEB050 · WEBEQUIPMAP002 · éditeur de correspondances matériel -->
-
-<style id="web051-fix1-css">
-  #interopCompactStatus,
-  #web049InteropStatus,
-  .hero-actions .interop-badge,
-  #personalSyncStatus {
-    display: none !important;
-  }
-
-  .connection-status-web051 {
-    min-width: 112px;
-    justify-content: center;
-    text-align: center;
-    color: #fff !important;
-    font-weight: 700;
-  }
-
-  .connection-status-web051.connected {
-    background: #177245 !important;
-    border-color: #31a768 !important;
-    color: #fff !important;
-  }
-
-  .connection-status-web051.disconnected {
-    background: #a52828 !important;
-    border-color: #d64a4a !important;
-    color: #fff !important;
-  }
-
-  .appearance-settings-web051 {
-    max-width: 560px;
-  }
-
-  .appearance-settings-web051 .appearance-picker {
-    display: grid !important;
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .appearance-settings-web051 select {
-    width: 100%;
-  }
-
-  body[data-ux-page="home"] #catalogView > .hero {
-    display: none !important;
-  }
-
-  body[data-ux-page="home"] #webDashboardSection .eyebrow {
-    display: none !important;
-  }
-
-  #refreshButton {
-    display: none !important;
-  }
-
-  .activity-sport-icon-web049 svg,
-  .detail-sport-svg-web049 svg {
-    stroke-width: 2.8 !important;
-    stroke-linecap: round !important;
-    stroke-linejoin: round !important;
-  }
-</style>
-  <!-- WEB051-FIX1 · auth safe -->
 </head>
 <body>
   <header class="topbar">
@@ -1312,7 +1249,16 @@ select {
       <div class="version">WEB044 · WEBSPLIT003-FIX2 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
-<span id="interopCompactStatus" class="pill ok hidden">Intéropérabilité OK</span>
+      <label class="appearance-picker" title="Changer l’apparence">
+        <span>Apparence</span>
+        <select id="appearanceSelect" aria-label="Apparence SPORT Web">
+          <option value="sport">SPORT · Noir / vert</option>
+          <option value="aurum">Aurum Futur · Or nocturne</option>
+          <option value="light">Clair</option>
+          <option value="contrast">Contraste</option>
+        </select>
+      </label>
+      <span id="interopCompactStatus" class="pill ok hidden">Intéropérabilité OK</span>
       <span id="web049InteropStatus" class="pill ok hidden">Intéropérabilité OK</span>
       <span id="authState" class="pill neutral">Non connecté</span>
       <button id="loginButton" class="primary">Se connecter avec Google</button>
@@ -1353,7 +1299,7 @@ select {
         <section id="webDashboardSection" class="panel web-dashboard-panel dashboard002-panel">
           <div class="panel-title-row">
             <div>
-
+              <p class="eyebrow">WEB018 · DASHBOARD002</p>
               <h2>Tableau de bord avancé</h2>
               <p id="webDashboardMeta" class="muted">Calcul des indicateurs Firestore…</p>
             </div>
@@ -1542,27 +1488,6 @@ select {
           </details>
         </section>
 
-
-
-<section id="appearanceSection" class="panel hidden">
-  <div class="panel-title-row">
-    <div>
-      <h2>Apparence</h2>
-      <p class="muted">Choisis l’apparence générale de SPORT Web.</p>
-    </div>
-  </div>
-  <div class="appearance-settings-web051">
-    <label class="appearance-picker" title="Changer l’apparence">
-        <span>Apparence</span>
-        <select id="appearanceSelect" aria-label="Apparence SPORT Web">
-          <option value="sport">SPORT · Noir / vert</option>
-          <option value="aurum">Aurum Futur · Or nocturne</option>
-          <option value="light">Clair</option>
-          <option value="contrast">Contraste</option>
-        </select>
-      </label>
-  </div>
-</section>
 
 <section id="equipmentMappingSection" class="panel equipment-manager-panel hidden">
   <div class="equipment-map-header-web050">
@@ -2740,7 +2665,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB051-FIX1-AUTH-SAFE"></script>
+  <script type="module" src="./app.js?v=WEB050-AUTHRESTORE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
