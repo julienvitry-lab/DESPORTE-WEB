@@ -2781,17 +2781,7 @@ function formatActivityTime(value) {
 }
 
 function activitySportIconMarkupWeb049(activity) {
-  const sport = Number(activity?.sport);
-
-  if (sport === 1 || sport === 6) {
-    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="39" cy="10" r="5"></circle><path d="M33 20l-11 11 9 7 6-11 11 7"></path><path d="M31 38L19 57"></path><path d="M33 38L48 55"></path><path d="M22 30L9 37"></path></svg>';
-  }
-
-  if ([2,3,4].includes(sport)) {
-    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="16" cy="47" r="11"></circle><circle cx="49" cy="47" r="11"></circle><path d="M16 47l12-23h11l10 23"></path><path d="M28 24l11 23"></path><path d="M24 36h19"></path><path d="M27 18h10"></path></svg>';
-  }
-
-  return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="14" r="6"></circle><path d="M31 23l-7 15 9 6"></path><path d="M32 43L22 58"></path><path d="M33 43l12 15"></path></svg>';
+  return activitySportIconMarkup(activity);
 }
 
 function formatActivityDateWeb049(value) {
