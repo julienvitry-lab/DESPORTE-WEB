@@ -283,7 +283,7 @@ wireEvents();
 initUxNavigation();
 initializeWebStravaModule();
 installWeb049UiContract();
-installEquipmentMappingEditorWeb050();
+queueMicrotask(() => installEquipmentMappingEditorWeb050());
 upgradeActivityDirectoryUi();
 upgradeActivityUiWeb046();
 upgradeActivityDetailUiWeb047();
