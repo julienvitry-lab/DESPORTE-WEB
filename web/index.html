@@ -820,6 +820,311 @@ select {
     }
   }
 </style>
+
+<style id="web049-ui-contract">
+  /* WEB049 · WEBUI001 */
+
+  .web049-technical-hidden,
+  .web049-page-hero-hidden,
+  .web049-message-hidden,
+  #detailTitle {
+    display: none !important;
+  }
+
+  #identityLine,
+  .version,
+  .hero-actions .interop-badge {
+    display: none !important;
+  }
+
+  #web049InteropStatus {
+    white-space: nowrap;
+    font-size: .84rem;
+    padding: 6px 10px;
+  }
+
+  /* Filtres Activités */
+  .activity-filters-web049 {
+    margin: 6px 0 14px;
+    border: 1px solid rgba(128,128,128,.22);
+    border-radius: 14px;
+    overflow: hidden;
+    background: rgba(128,128,128,.025);
+  }
+
+  .activity-filters-web049 > summary {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 15px;
+    cursor: pointer;
+    list-style: none;
+    font-weight: 700;
+  }
+
+  .activity-filters-web049 > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .activity-filters-web049 > summary small {
+    margin-left: auto;
+    opacity: .62;
+    font-weight: 400;
+  }
+
+  .activity-filters-web049 > summary::after {
+    content: "⌄";
+    margin-left: 4px;
+    font-size: 1.15rem;
+  }
+
+  .activity-filters-web049[open] > summary::after {
+    transform: rotate(180deg);
+  }
+
+  .activity-filters-web049 > .filters {
+    margin: 0 !important;
+    padding: 8px 14px 14px !important;
+  }
+
+  .directory-load-actions-web049 {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding-top: 12px;
+    margin-top: 10px;
+    border-top: 1px solid rgba(128,128,128,.14);
+  }
+
+  /* Répertoire */
+  #activityList .activity-card {
+    grid-template-columns:
+      82px
+      minmax(112px,.70fr)
+      minmax(84px,.50fr)
+      minmax(100px,.64fr)
+      minmax(82px,.52fr)
+      minmax(110px,.70fr)
+      minmax(140px,.90fr)
+      minmax(110px,.72fr)
+      !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    min-height: 96px !important;
+  }
+
+  #activityList .activity-main-web049 {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  #activityList .activity-sport-icon-web049 {
+    width: 68px !important;
+    height: 68px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: var(--accent, #b6ff2b);
+  }
+
+  #activityList .activity-sport-icon-web049 svg {
+    width: 60px !important;
+    height: 60px !important;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  #activityList .datum {
+    min-width: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+  }
+
+  #activityList .datum strong {
+    font-size: 1.02rem;
+  }
+
+  #activityList .activity-date-datum strong,
+  #activityList .activity-time-datum strong {
+    white-space: nowrap;
+    font-size: .96rem;
+  }
+
+  /* Détail : ligne 1 = sport + date/départ + stats */
+  #detailView > .detail-toolbar,
+  #detailView .detail-toolbar-web049 {
+    position: sticky !important;
+    top: var(--web049-toolbar-top, 130px) !important;
+    z-index: 4300 !important;
+    margin-bottom: 6px !important;
+    background: rgba(9,13,10,.985) !important;
+    backdrop-filter: blur(12px);
+  }
+
+  #detailView > .detail-hero-two-lines,
+  #detailView .detail-hero-web049 {
+    position: sticky !important;
+    top: var(--web049-hero-top, 198px) !important;
+    z-index: 4250 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 8px !important;
+    background: rgba(14,20,15,.985) !important;
+    backdrop-filter: blur(12px);
+  }
+
+  #detailView .detail-hero-two-lines > .detail-summary-row {
+    display: grid !important;
+    grid-template-columns: 82px minmax(210px,1.15fr) minmax(0,4.8fr) !important;
+    width: 100% !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+  }
+
+  #detailView #detailSportLine {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  #detailView .detail-sport-svg-web049 {
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent, #b6ff2b);
+  }
+
+  #detailView .detail-sport-svg-web049 svg {
+    width: 56px;
+    height: 56px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  #detailView #detailDateLine {
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: 7px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  #detailView .detail-start-stat-web049 {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    border: 1px solid rgba(128,128,128,.22);
+    border-radius: 12px;
+    background: rgba(128,128,128,.035);
+  }
+
+  #detailView .detail-start-stat-web049 strong {
+    white-space: nowrap;
+    font-size: .96rem;
+  }
+
+  #detailView .detail-start-stat-web049 span {
+    margin-top: 3px;
+    opacity: .72;
+    font-size: .76rem;
+  }
+
+  #detailView .detail-summary-row > #detailHeroMetrics {
+    display: grid !important;
+    grid-template-columns: repeat(5,minmax(0,1fr)) !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  /* ligne 2 = matériel + repères */
+  #detailView .detail-hero-two-lines > .detail-controls-row {
+    display: grid !important;
+    grid-template-columns: minmax(300px,.9fr) minmax(0,2.5fr) !important;
+    width: 100% !important;
+    gap: 14px !important;
+    align-items: end !important;
+  }
+
+  #detailView .detail-controls-row > .detail-quick-equipment,
+  #detailView .detail-controls-row > .detail-quick-landmarks {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+  }
+
+  #detailView .detail-quick-equipment select {
+    width: 100% !important;
+  }
+
+  #detailView .detail-quick-landmarks .quick-landmark-buttons {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  #detailView .detail-controls-row > .detail-data-quality {
+    display: none !important;
+  }
+
+  @media (max-width: 1100px) {
+    #activityList .activity-card {
+      grid-template-columns: 70px minmax(106px,.8fr) 80px repeat(3,minmax(84px,.7fr)) !important;
+    }
+
+    #activityList .activity-card .hide-md {
+      display: none !important;
+    }
+  }
+
+  @media (max-width: 780px) {
+    .activity-filters-web049 > summary small {
+      display: none;
+    }
+
+    #activityList .activity-card {
+      grid-template-columns: 60px 108px 74px 94px !important;
+    }
+
+    #activityList .activity-card .hide-sm {
+      display: none !important;
+    }
+
+    #detailView > .detail-hero-two-lines,
+    #detailView .detail-hero-web049 {
+      position: relative !important;
+      top: auto !important;
+    }
+
+    #detailView .detail-hero-two-lines > .detail-summary-row {
+      grid-template-columns: 76px minmax(190px,1fr) !important;
+    }
+
+    #detailView .detail-summary-row > #detailHeroMetrics {
+      grid-column: 1 / -1 !important;
+      grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    }
+
+    #detailView .detail-hero-two-lines > .detail-controls-row {
+      grid-template-columns: 1fr !important;
+    }
+  }
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -838,6 +1143,7 @@ select {
         </select>
       </label>
       <span id="interopCompactStatus" class="pill ok hidden">Intéropérabilité OK</span>
+      <span id="web049InteropStatus" class="pill ok hidden">Intéropérabilité OK</span>
       <span id="authState" class="pill neutral">Non connecté</span>
       <button id="loginButton" class="primary">Se connecter avec Google</button>
       <button id="logoutButton" class="secondary hidden">Déconnexion</button>
@@ -849,8 +1155,7 @@ select {
       <button type="button" class="ux-nav-button active" data-ux-page="home">Accueil</button>
       <button type="button" class="ux-nav-button" data-ux-page="activities">Activités</button>
       <button type="button" class="ux-nav-button" data-ux-page="analysis">Analyse</button>
-      <button type="button" class="ux-nav-button" data-ux-page="maps">Cartes</button>
-      <button type="button" class="ux-nav-button" data-ux-page="equipment">Matériel</button>
+<button type="button" class="ux-nav-button" data-ux-page="equipment">Matériel</button>
       <button type="button" class="ux-nav-button" data-ux-page="more">Plus</button>
     </div>
   </nav>
@@ -2228,7 +2533,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB048-FIX1-NAVIGATEUX"></script>
+  <script type="module" src="./app.js?v=WEB049-WEBUI001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

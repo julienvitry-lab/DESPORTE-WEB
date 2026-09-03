@@ -282,6 +282,7 @@ let profileComparisonClearer = null;
 wireEvents();
 initUxNavigation();
 initializeWebStravaModule();
+installWeb049UiContract();
 upgradeActivityDirectoryUi();
 upgradeActivityUiWeb046();
 upgradeActivityDetailUiWeb047();
@@ -596,11 +597,168 @@ function installInterfaceGuardWeb048() {
 }
 
 
+
+// -----------------------------------------------------------------------------
+// WEB049 · WEBUI001 — contrat d'interface durable
+// -----------------------------------------------------------------------------
+function applyWeb049UiContract() {
+  // Aucun titre d'activité visible.
+  if (ui.detailTitle) {
+    ui.detailTitle.textContent = "";
+    ui.detailTitle.classList.add("hidden");
+  }
+
+  // Une seule information d'interopérabilité, compacte, dans le topbar.
+  const compactInterop = document.getElementById("web049InteropStatus");
+  if (compactInterop) {
+    compactInterop.textContent = "Intéropérabilité OK";
+    compactInterop.classList.toggle("hidden", !currentUser);
+  }
+
+  document.querySelectorAll(".interop-badge").forEach((node) => node.classList.add("hidden"));
+
+  if (ui.identityLine) ui.identityLine.classList.add("hidden");
+  document.querySelectorAll(".version").forEach((node) => node.classList.add("hidden"));
+
+  document.querySelectorAll(".eyebrow").forEach((node) => {
+    if (/^WEB\d+/i.test(String(node.textContent || "").trim())) {
+      node.classList.add("web049-technical-hidden");
+    }
+  });
+
+  // Les héros Activités / Plus répètent le nom de l'onglet.
+  const page = document.body.dataset.uxPage || "";
+  const hero = document.querySelector("#catalogView > .hero");
+  if (hero) hero.classList.toggle("web049-page-hero-hidden", page === "activities" || page === "more");
+
+  // Le message technique central ne doit pas occuper l'écran.
+  if (ui.messageBox) {
+    const text = String(ui.messageBox.textContent || "").trim();
+    const isError = ui.messageBox.classList.contains("error");
+    if (!isError && (/^WEB\d+/i.test(text) || /interopérabilit/i.test(text))) {
+      ui.messageBox.classList.add("web049-message-hidden");
+    } else {
+      ui.messageBox.classList.remove("web049-message-hidden");
+    }
+  }
+
+  // Répertoire : en-tête supprimé, actions de chargement conservées en bas.
+  const directory = document.getElementById("activityDirectorySection");
+  const list = document.getElementById("activityList");
+
+  if (directory && list) {
+    const header = directory.querySelector(":scope > .panel-title-row");
+    if (header) {
+      const actions = header.querySelector(".panel-actions");
+      if (actions && !directory.querySelector(".directory-load-actions-web049")) {
+        const bottom = document.createElement("div");
+        bottom.className = "directory-load-actions-web049";
+        bottom.append(...Array.from(actions.children));
+        list.insertAdjacentElement("afterend", bottom);
+      }
+      header.remove();
+    }
+
+    // Filtres : bandeau déroulant fermé par défaut.
+    const filters = directory.querySelector(":scope > .filters");
+    if (filters && !filters.closest("details.activity-filters-web049")) {
+      const details = document.createElement("details");
+      details.className = "activity-filters-web049";
+
+      const summary = document.createElement("summary");
+      summary.innerHTML = '<span>Tri des activités</span><small>Recherche et filtres</small>';
+
+      filters.parentNode.insertBefore(details, filters);
+      details.append(summary, filters);
+      details.open = false;
+    }
+
+    directory.querySelectorAll(".activity-directory-footer .muted")
+      .forEach((node) => node.classList.add("hidden"));
+  }
+
+  // Ancien onglet Cartes : sécurité supplémentaire en plus de sa suppression HTML.
+  document.querySelectorAll('[data-ux-page="maps"]').forEach((node) => node.remove());
+
+  // Détail : sépare définitivement toolbar et résumé si WEB046 les avait regroupés.
+  const detail = document.getElementById("detailView");
+  if (detail) {
+    const stack = detail.querySelector(":scope > .detail-sticky-stack");
+    if (stack) {
+      const toolbar = stack.querySelector(":scope > .detail-toolbar");
+      const heroBlock = stack.querySelector(":scope > .detail-hero-two-lines");
+
+      if (toolbar) stack.insertAdjacentElement("beforebegin", toolbar);
+      if (heroBlock) {
+        const anchor = toolbar || stack.previousElementSibling;
+        if (anchor) anchor.insertAdjacentElement("afterend", heroBlock);
+        else stack.insertAdjacentElement("beforebegin", heroBlock);
+      }
+
+      if (!stack.children.length) stack.remove();
+      else stack.classList.add("hidden");
+    }
+
+    const toolbar = detail.querySelector(":scope > .detail-toolbar");
+    const heroBlock = detail.querySelector(":scope > .detail-hero-two-lines");
+
+    if (toolbar) toolbar.classList.add("detail-toolbar-web049");
+    if (heroBlock) heroBlock.classList.add("detail-hero-web049");
+
+    syncWeb049StickyOffsets();
+  }
+}
+
+function syncWeb049StickyOffsets() {
+  const detail = document.getElementById("detailView");
+  if (!detail || detail.classList.contains("hidden")) return;
+
+  const toolbar = detail.querySelector(":scope > .detail-toolbar");
+  const hero = detail.querySelector(":scope > .detail-hero-two-lines");
+  if (!toolbar || !hero) return;
+
+  let top = 0;
+  for (const node of [
+    document.querySelector(".topbar"),
+    document.getElementById("uxPrimaryNav"),
+    document.getElementById("uxSecondaryNav")
+  ]) {
+    if (!node) continue;
+    const style = getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden") continue;
+    top += Math.ceil(node.getBoundingClientRect().height);
+  }
+
+  toolbar.style.setProperty("--web049-toolbar-top", top + "px");
+  const toolbarHeight = Math.ceil(toolbar.getBoundingClientRect().height);
+  hero.style.setProperty("--web049-hero-top", (top + toolbarHeight + 6) + "px");
+}
+
+function installWeb049UiContract() {
+  if (window.__web049UiInstalled) return;
+  window.__web049UiInstalled = true;
+
+  const run = () => requestAnimationFrame(() => applyWeb049UiContract());
+
+  run();
+  window.addEventListener("resize", run, { passive: true });
+
+  const observer = new MutationObserver(run);
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class"]
+  });
+  window.__web049Observer = observer;
+}
+
+
 function uxPageConfig() {
   return {
     home: {
       title: "Accueil",
-      eyebrow: "VUE D’ENSEMBLE",
+      eyebrow: "",
       subs: []
     },
     activities: {
@@ -610,17 +768,12 @@ function uxPageConfig() {
     },
     analysis: {
       title: "Analyse",
-      eyebrow: "PROGRESSION & REPÈRES",
+      eyebrow: "",
       subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]]
-    },
-    maps: {
-      title: "Cartes",
-      eyebrow: "EXPLORATION",
-      subs: [["routes","Carte globale"],["density","Densité"]]
     },
     equipment: {
       title: "Matériel",
-      eyebrow: "ÉQUIPEMENT",
+      eyebrow: "",
       subs: [["used","Utilisé"],["all","Tout le matériel"]]
     },
     more: {
@@ -726,12 +879,6 @@ function navigateUx(page, subpage = null, options = {}) {
     if (sub === "landmarks") setUxSectionVisibility([ui.landmarkManagerSection]);
     else if (sub === "records") setUxSectionVisibility([ui.recordsManagerSection]);
     else setUxSectionVisibility([ui.personalSyncSection]);
-  } else if (page === "maps") {
-    setUxSectionVisibility([ui.globalMapSection]);
-    if (ui.globalMapModeSelect) {
-      ui.globalMapModeSelect.value = sub === "density" ? "density" : "routes";
-      markGlobalMapStale();
-    }
   } else if (page === "equipment") {
     setUxSectionVisibility([ui.equipmentManagerSection]);
     if (ui.equipmentManagerStatusFilter) {
@@ -757,12 +904,12 @@ function navigateUx(page, subpage = null, options = {}) {
     } else if (sub === "manual") setUxSectionVisibility([ui.webManualSection]);
     else if (sub === "import") setUxSectionVisibility([ui.webImportSection]);
     else if (sub === "health") setUxSectionVisibility([ui.syncHealthSection]);
-    else if (sub === "data") setUxSectionVisibility([ui.bootstrapMetrics]);
     else if (sub === "landmarks-advanced") setUxSectionVisibility([ui.advancedLandmarksSection]);
     else setUxSectionVisibility([ui.syncCenterSection]);
   }
 
   queueMicrotask(() => restoreInterfaceWeb048());
+  queueMicrotask(() => applyWeb049UiContract());
   if (!options.keepScroll) window.scrollTo({top:0,behavior:"smooth"});
   sessionStorage.setItem("sport_web_ux_page", page);
   sessionStorage.setItem("sport_web_ux_subpage", sub);
@@ -2555,8 +2702,8 @@ function renderActivities() {
     button.addEventListener("click", () => showActivity(activity));
 
     button.appendChild(activityMain(activity));
-    button.appendChild(datum("Date", formatActivityDate(activity.start_time_ms), "activity-date-datum"));
-    button.appendChild(datum("Départ", formatActivityTime(activity.start_time_ms), "activity-time-datum"));
+    button.appendChild(datum("Date", formatActivityDateWeb049(activity.start_time_ms), "activity-date-datum"));
+    button.appendChild(datum("Départ", formatActivityTimeWeb049(activity.start_time_ms), "activity-time-datum"));
     button.appendChild(datum("Distance", formatDistance(activity.distance_m)));
     button.appendChild(datum("D+", formatMeters(activity.ascent_m), "hide-sm"));
     button.appendChild(datum("Durée", formatDuration(activity.elapsed_time_ms), "hide-sm"));
@@ -2628,15 +2775,45 @@ function formatActivityTime(value) {
   }).format(date);
 }
 
+function activitySportIconMarkupWeb049(activity) {
+  const sport = Number(activity?.sport);
+
+  if (sport === 1 || sport === 6) {
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="39" cy="10" r="5"></circle><path d="M33 20l-11 11 9 7 6-11 11 7"></path><path d="M31 38L19 57"></path><path d="M33 38L48 55"></path><path d="M22 30L9 37"></path></svg>';
+  }
+
+  if ([2,3,4].includes(sport)) {
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="16" cy="47" r="11"></circle><circle cx="49" cy="47" r="11"></circle><path d="M16 47l12-23h11l10 23"></path><path d="M28 24l11 23"></path><path d="M24 36h19"></path><path d="M27 18h10"></path></svg>';
+  }
+
+  return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="14" r="6"></circle><path d="M31 23l-7 15 9 6"></path><path d="M32 43L22 58"></path><path d="M33 43l12 15"></path></svg>';
+}
+
+function formatActivityDateWeb049(value) {
+  const date = dateFromMs(value);
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit", month: "2-digit", year: "numeric"
+  }).format(date);
+}
+
+function formatActivityTimeWeb049(value) {
+  const date = dateFromMs(value);
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit", minute: "2-digit"
+  }).format(date);
+}
+
 function activityMain(activity) {
   const cell = document.createElement("div");
-  cell.className = "activity-main activity-main-web048";
+  cell.className = "activity-main activity-main-web049";
 
   const icon = document.createElement("span");
-  icon.className = "activity-sport-icon activity-sport-icon-web048";
-  icon.innerHTML = activitySportIconMarkup(activity);
-  icon.setAttribute("aria-label", sportName(activity.sport));
+  icon.className = "activity-sport-icon-web049";
+  icon.innerHTML = activitySportIconMarkupWeb049(activity);
   icon.title = sportName(activity.sport);
+  icon.setAttribute("aria-label", sportName(activity.sport));
 
   cell.append(icon);
   return cell;
@@ -3193,13 +3370,13 @@ function renderDetail(activity) {
   ui.detailTitle.classList.add("hidden");
 
   ui.detailSportLine.innerHTML =
-    '<span class="detail-sport-svg">' + activitySportIconMarkup(activity) + '</span>';
-  ui.detailSportLine.setAttribute("aria-label", sportLabel);
+    '<span class="detail-sport-svg-web049">' + activitySportIconMarkupWeb049(activity) + '</span>';
   ui.detailSportLine.title = sportLabel;
+  ui.detailSportLine.setAttribute("aria-label", sportLabel);
 
   ui.detailDateLine.innerHTML =
-    '<span class="detail-start-stat"><strong>' + formatActivityDate(activity.start_time_ms) + '</strong><span>Date</span></span>' +
-    '<span class="detail-start-stat"><strong>' + formatActivityTime(activity.start_time_ms) + '</strong><span>Départ</span></span>';
+    '<span class="detail-start-stat-web049"><strong>' + formatActivityDateWeb049(activity.start_time_ms) + '</strong><span>Date</span></span>' +
+    '<span class="detail-start-stat-web049"><strong>' + formatActivityTimeWeb049(activity.start_time_ms) + '</strong><span>Départ</span></span>';
 
   renderHeroMetrics(activity);
   renderSummary(activity);
