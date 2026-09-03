@@ -229,7 +229,6 @@ const WEB_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DEFAULT_STRAVA_BRIDGE_URL = "https://europe-west1-sport-505813.cloudfunctions.net/stravaBridge";
 let webStravaCandidates = [];
 let webStravaConnected = false;
-let web051FirebaseReady = false;
 let webStravaBusy = false;
 let webStravaAthleteProfile = null;
 let webStravaAutoSyncTimer = null;
@@ -1196,8 +1195,6 @@ function wireEvents() {
 }
 
 onAuthStateChanged(auth, async (user) => {
-  web051FirebaseReady = false;
-  renderUnifiedConnectionStatusWeb051();
   currentUser = user || null;
 
   if (!user) {
@@ -1235,8 +1232,6 @@ ui.authState.textContent = "Firebase connecté";
   queueMicrotask(() => applyWeb049UiContract());
   ui.identityLine.textContent = `${user.email || "Compte Google"} · projet sport-505813`;
   await reloadAll();
-    web051FirebaseReady = true;
-    renderUnifiedConnectionStatusWeb051();
   await refreshWebStravaStatus({autoSync:true});
   startWebStravaAutoSync();
   startInteropWatch();
@@ -7120,25 +7115,6 @@ async function webStravaFetch(action,options={}) {
   return payload;
 }
 
-
-function renderUnifiedConnectionStatusWeb051() {
-  if (!ui.authState) return;
-
-  const googleOk = Boolean(currentUser);
-  const firebaseOk = Boolean(web051FirebaseReady);
-  const stravaOk = Boolean(webStravaConnected);
-  const connected = googleOk && firebaseOk && stravaOk;
-
-  ui.authState.textContent = connected ? "Connecté" : "Non connecté";
-  ui.authState.className =
-    connected
-      ? "pill auth-pill web051-connection connected"
-      : "pill auth-pill web051-connection disconnected";
-
-  ui.authState.title =
-    `Google: ${googleOk ? "OK" : "NON"} · Firebase: ${firebaseOk ? "OK" : "NON"} · Strava: ${stravaOk ? "OK" : "NON"}`;
-}
-
 function renderWebStravaState() {
   if (!ui.webStravaBadge) return;
   ui.webStravaBadge.textContent=webStravaConnected ? "Connecté · Auto" : "Non connecté";
@@ -7147,8 +7123,6 @@ function renderWebStravaState() {
   ui.webStravaDisconnectButton.disabled=!webStravaConnected || webStravaBusy;
   ui.webStravaConnectButton.disabled=webStravaBusy;
   renderWebStravaCandidates();
-
-  renderUnifiedConnectionStatusWeb051();
 }
 
 async function testWebStravaBackend() {
