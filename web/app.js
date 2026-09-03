@@ -290,7 +290,6 @@ upgradeActivityDirectoryUi();
 upgradeActivityUiWeb046();
 upgradeActivityDetailUiWeb047();
 installActivityDetailStickyObserverWeb047();
-installInterfaceGuardWeb048();
 
 
 // -----------------------------------------------------------------------------
@@ -444,50 +443,30 @@ function syncActivityDetailStickyOffsetsWeb047() {
 
 function installActivityDetailStickyObserverWeb047() {
   if (window.__web047DetailObserverInstalled) return;
-
   window.__web047DetailObserverInstalled = true;
 
-  const detail = document.getElementById("detailView");
-  const toolbar =
-    detail?.querySelector(".detail-toolbar");
+  const refresh = () => requestAnimationFrame(() => {
+    upgradeActivityDetailUiWeb047();
+    syncActivityDetailStickyOffsetsWeb047();
+    if (typeof applyWeb049UiContract === "function") {
+      applyWeb049UiContract();
+      syncWeb049StickyOffsets();
+    }
+  });
 
-  const topbar =
-    document.querySelector(".topbar");
-
-  const primary =
-    document.getElementById("uxPrimaryNav");
-
-  const refresh = () =>
-    requestAnimationFrame(() => {
-      upgradeActivityDetailUiWeb047();
-      syncActivityDetailStickyOffsetsWeb047();
-    });
-
-  window.addEventListener(
-    "resize",
-    refresh,
-    { passive: true }
-  );
+  window.addEventListener("resize", refresh, { passive: true });
 
   if ("ResizeObserver" in window) {
     const ro = new ResizeObserver(refresh);
 
-    [toolbar, topbar, primary]
-      .filter(Boolean)
-      .forEach(el => ro.observe(el));
+    [
+      document.querySelector(".topbar"),
+      document.getElementById("uxPrimaryNav"),
+      document.getElementById("uxSecondaryNav"),
+      document.querySelector("#detailView > .detail-toolbar")
+    ].filter(Boolean).forEach((el) => ro.observe(el));
 
     window.__web047ResizeObserver = ro;
-  }
-
-  if (detail && "MutationObserver" in window) {
-    const mo = new MutationObserver(refresh);
-
-    mo.observe(detail, {
-      attributes: true,
-      attributeFilter: ["class"]
-    });
-
-    window.__web047MutationObserver = mo;
   }
 }
 
@@ -584,19 +563,7 @@ function restoreInterfaceWeb048() {
 function installInterfaceGuardWeb048() {
   if (window.__web048GuardInstalled) return;
   window.__web048GuardInstalled = true;
-
-  const run = () => requestAnimationFrame(() => restoreInterfaceWeb048());
-
-  run();
-
-  const observer = new MutationObserver(run);
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ["class"]
-  });
-  window.__web048GuardObserver = observer;
+  restoreInterfaceWeb048();
 }
 
 
@@ -741,19 +708,26 @@ function installWeb049UiContract() {
   if (window.__web049UiInstalled) return;
   window.__web049UiInstalled = true;
 
-  const run = () => requestAnimationFrame(() => applyWeb049UiContract());
-
-  run();
-  window.addEventListener("resize", run, { passive: true });
-
-  const observer = new MutationObserver(run);
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ["class"]
+  const refresh = () => requestAnimationFrame(() => {
+    applyWeb049UiContract();
+    syncWeb049StickyOffsets();
   });
-  window.__web049Observer = observer;
+
+  refresh();
+  window.addEventListener("resize", refresh, { passive: true });
+
+  if ("ResizeObserver" in window) {
+    const resizeObserver = new ResizeObserver(refresh);
+
+    [
+      document.querySelector(".topbar"),
+      document.getElementById("uxPrimaryNav"),
+      document.getElementById("uxSecondaryNav"),
+      document.querySelector("#detailView > .detail-toolbar")
+    ].filter(Boolean).forEach((node) => resizeObserver.observe(node));
+
+    window.__web049ResizeObserver = resizeObserver;
+  }
 }
 
 
@@ -910,8 +884,6 @@ function navigateUx(page, subpage = null, options = {}) {
     else if (sub === "landmarks-advanced") setUxSectionVisibility([ui.advancedLandmarksSection]);
     else setUxSectionVisibility([ui.syncCenterSection]);
   }
-
-  queueMicrotask(() => restoreInterfaceWeb048());
   queueMicrotask(() => applyWeb049UiContract());
   if (!options.keepScroll) window.scrollTo({top:0,behavior:"smooth"});
   sessionStorage.setItem("sport_web_ux_page", page);
@@ -1288,6 +1260,7 @@ onAuthStateChanged(auth, async (user) => {
   ui.dashboard.classList.remove("hidden");
   ui.uxPrimaryNav?.classList.remove("hidden");
   navigateUx(uxCurrentPage, uxCurrentSubpage, {keepScroll:true});
+  queueMicrotask(() => applyWeb049UiContract());
   ui.identityLine.textContent = `${user.email || "Compte Google"} · projet sport-505813`;
   await reloadAll();
   await refreshWebStravaStatus({autoSync:true});
@@ -2721,6 +2694,7 @@ function renderActivities() {
     empty.className = "empty";
     empty.textContent = "Aucune activité parmi les données actuellement chargées.";
     ui.activityList.appendChild(empty);
+    queueMicrotask(() => applyWeb049UiContract());
     return;
   }
 
@@ -2764,6 +2738,8 @@ function renderActivities() {
     footer.append(info,more);
     ui.activityList.appendChild(footer);
   }
+
+  queueMicrotask(() => applyWeb049UiContract());
 }
 
 function activitySportIconMarkup(activity) {
@@ -3337,6 +3313,14 @@ function showActivity(activity) {
   closeSplitActivityPanel();
 
   renderDetail(activity);
+
+  queueMicrotask(() => {
+    upgradeActivityDetailUiWeb047();
+    applyWeb049UiContract();
+    syncActivityDetailStickyOffsetsWeb047();
+    syncWeb049StickyOffsets();
+  });
+
   window.scrollTo({ top: 0, behavior: "auto" });
 }
 
