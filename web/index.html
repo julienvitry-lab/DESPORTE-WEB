@@ -1389,6 +1389,44 @@ select {
   }
 </style>
 
+
+<style id="web051-uionly001b-css">
+  .web051-unified-connection {
+    min-width: 108px !important;
+    justify-content: center !important;
+    text-align: center !important;
+    font-weight: 700 !important;
+    color: #fff !important;
+  }
+
+  .web051-unified-connection.connected {
+    background: #177245 !important;
+    border-color: #35a86d !important;
+    color: #fff !important;
+  }
+
+  .web051-unified-connection.disconnected {
+    background: #a52828 !important;
+    border-color: #d84c4c !important;
+    color: #fff !important;
+  }
+
+  .web051-appearance-settings {
+    max-width: 560px;
+  }
+
+  .web051-appearance-settings .appearance-picker {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+  }
+
+  .web051-appearance-settings .appearance-picker select {
+    width: 100% !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -1397,16 +1435,7 @@ select {
       <div class="version">WEB044 · WEBSPLIT003-FIX2 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
-      <label class="appearance-picker" title="Changer l’apparence">
-        <span>Apparence</span>
-        <select id="appearanceSelect" aria-label="Apparence SPORT Web">
-          <option value="sport">SPORT · Noir / vert</option>
-          <option value="aurum">Aurum Futur · Or nocturne</option>
-          <option value="light">Clair</option>
-          <option value="contrast">Contraste</option>
-        </select>
-      </label>
-      <span id="interopCompactStatus" class="pill ok hidden">Intéropérabilité OK</span>
+<span id="interopCompactStatus" class="pill ok hidden">Intéropérabilité OK</span>
       <span id="web049InteropStatus" class="pill ok hidden">Intéropérabilité OK</span>
       <span id="authState" class="pill neutral">Non connecté</span>
       <button id="loginButton" class="primary">Se connecter avec Google</button>
@@ -1636,6 +1665,27 @@ select {
           </details>
         </section>
 
+
+
+<section id="appearanceSection" class="panel hidden">
+  <div class="panel-title-row">
+    <div>
+      <h2>Apparence</h2>
+      <p class="muted">Choisis le thème d’affichage de SPORT Web.</p>
+    </div>
+  </div>
+  <div class="web051-appearance-settings">
+    <label class="appearance-picker" title="Changer l’apparence">
+        <span>Apparence</span>
+        <select id="appearanceSelect" aria-label="Apparence SPORT Web">
+          <option value="sport">SPORT · Noir / vert</option>
+          <option value="aurum">Aurum Futur · Or nocturne</option>
+          <option value="light">Clair</option>
+          <option value="contrast">Contraste</option>
+        </select>
+      </label>
+  </div>
+</section>
 
 <section id="equipmentMappingSection" class="panel equipment-manager-panel hidden">
   <div class="equipment-map-header-web050">
@@ -2813,7 +2863,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB050-TDZFIX001"></script>
+  <script type="module" src="./app.js?v=WEB051-UIONLY001B"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

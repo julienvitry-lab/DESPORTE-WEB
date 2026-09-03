@@ -51,7 +51,7 @@ provider.setCustomParameters({ prompt: "select_account" });
 const ui = Object.fromEntries(
   [
     "authState", "loginButton", "logoutButton", "messageBox", "dashboard",
-    "appearanceSelect", "uxPrimaryNav", "uxSecondaryNav", "uxHeroTitle", "uxHeroEyebrow", "bootstrapMetrics", "activityDirectorySection", "advancedLandmarksSection",
+    "appearanceSelect", "appearanceSection", "uxPrimaryNav", "uxSecondaryNav", "uxHeroTitle", "uxHeroEyebrow", "bootstrapMetrics", "activityDirectorySection", "advancedLandmarksSection",
     "catalogView", "identityLine", "activityCount", "equipmentCount",
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
     "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
@@ -280,6 +280,12 @@ let profileComparisonRenderer = null;
 let profileComparisonClearer = null;
 
 wireEvents();
+/* WEB051_UNIFIED_CONNECTION_TIMER · affichage uniquement */
+renderUnifiedConnectionBadgeWeb051();
+setInterval(renderUnifiedConnectionBadgeWeb051, 5000);
+window.addEventListener("online", renderUnifiedConnectionBadgeWeb051, { passive: true });
+window.addEventListener("offline", renderUnifiedConnectionBadgeWeb051, { passive: true });
+
 initUxNavigation();
 initializeWebStravaModule();
 installWeb049UiContract();
@@ -756,6 +762,7 @@ function uxPageConfig() {
       eyebrow: "",
       subs: [
         ["strava","Strava"],
+        ["appearance","Apparence"],
         ["equipment-map","Matériel auto"],
         ["maps","Cartes"],
         ["files","Fichiers"],
@@ -793,7 +800,7 @@ function managedUxSections() {
     ui.webDashboardSection, ui.activityDirectorySection, ui.trashSection,
     ui.personalSyncSection, ui.landmarkManagerSection, ui.recordsManagerSection,
     ui.globalMapSection, ui.equipmentManagerSection,
-    ui.webStravaSection, ui.equipmentMappingSection, ui.webFilesSection, ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
+    ui.webStravaSection, ui.equipmentMappingSection, ui.appearanceSection, ui.webFilesSection, ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
   ].filter(Boolean);
 }
 
@@ -861,7 +868,9 @@ function navigateUx(page, subpage = null, options = {}) {
       renderEquipmentManager();
     }
   } else if (page === "more") {
-    if (sub === "maps") {
+    if (sub === "appearance") {
+      setUxSectionVisibility([ui.appearanceSection]);
+    } else if (sub === "maps") {
       setUxSectionVisibility([ui.globalMapSection]);
       if (ui.globalMapModeSelect && !["routes","density"].includes(ui.globalMapModeSelect.value)) {
         ui.globalMapModeSelect.value = "routes";
@@ -7115,6 +7124,25 @@ async function webStravaFetch(action,options={}) {
   return payload;
 }
 
+
+function renderUnifiedConnectionBadgeWeb051() {
+  if (!ui.authState) return;
+
+  const googleFirebaseOk = Boolean(currentUser);
+  const stravaOk = Boolean(webStravaConnected);
+  const networkOk = navigator.onLine !== false;
+  const allConnected = googleFirebaseOk && stravaOk && networkOk;
+
+  ui.authState.textContent = allConnected ? "Connecté" : "Non connecté";
+  ui.authState.className =
+    allConnected
+      ? "pill auth-pill web051-unified-connection connected"
+      : "pill auth-pill web051-unified-connection disconnected";
+
+  ui.authState.title =
+    `Google/Firebase : ${googleFirebaseOk ? "OK" : "NON"} · Strava : ${stravaOk ? "OK" : "NON"} · Réseau : ${networkOk ? "OK" : "NON"}`;
+}
+
 function renderWebStravaState() {
   if (!ui.webStravaBadge) return;
   ui.webStravaBadge.textContent=webStravaConnected ? "Connecté · Auto" : "Non connecté";
@@ -7123,6 +7151,8 @@ function renderWebStravaState() {
   ui.webStravaDisconnectButton.disabled=!webStravaConnected || webStravaBusy;
   ui.webStravaConnectButton.disabled=webStravaBusy;
   renderWebStravaCandidates();
+
+  renderUnifiedConnectionBadgeWeb051();
 }
 
 async function testWebStravaBackend() {
