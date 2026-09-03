@@ -694,9 +694,8 @@ function renderUxSecondaryNav(page, activeSub) {
   ui.uxSecondaryNav.appendChild(inner);
 }
 
-function navigateUx(page, subpage = null, options = {
+function navigateUx(page, subpage = null, options = {}) {
   if (page === "maps") { page = "more"; subpage = "maps"; }
-}) {
   const config = uxPageConfig();
   if (!config[page]) page = "home";
   const allowedSubs = new Set(config[page].subs.map(([key]) => key));
