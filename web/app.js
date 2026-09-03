@@ -4,6 +4,8 @@ import {
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
@@ -32,7 +34,7 @@ import {
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
 const firebaseConfig = {
   apiKey: "AIzaSyDALtXWRoNHiD9oc4SqxH4tn7HY_08NI1A",
-  authDomain: "sport-505813.firebaseapp.com",
+  authDomain: "sport-505813.web.app",
   projectId: "sport-505813",
   storageBucket: "sport-505813.firebasestorage.app",
   messagingSenderId: "161388578171"
@@ -280,6 +282,7 @@ let profileComparisonRenderer = null;
 let profileComparisonClearer = null;
 
 wireEvents();
+void completeGoogleRedirectWebAuth001();
 initUxNavigation();
 initializeWebStravaModule();
 installWeb049UiContract();
@@ -926,12 +929,39 @@ function initUxNavigation() {
   navigateUx(savedPage,savedSub,{keepScroll:true});
 }
 
+
+async function completeGoogleRedirectWebAuth001() {
+  const pending =
+    sessionStorage.getItem("sport_web_auth_redirect_pending") === "1";
+
+  try {
+    const result = await getRedirectResult(auth);
+
+    if (result?.user) {
+      sessionStorage.removeItem("sport_web_auth_redirect_pending");
+      setMessage("Connexion Google réussie.", "success");
+    } else if (pending) {
+      sessionStorage.removeItem("sport_web_auth_redirect_pending");
+      setMessage("Retour Google reçu. Vérification de la session…", "info");
+    }
+  } catch (error) {
+    sessionStorage.removeItem("sport_web_auth_redirect_pending");
+    if (ui.loginButton) ui.loginButton.disabled = false;
+    handleError(error, "Retour de connexion Google impossible");
+  }
+}
+
 function wireEvents() {
   ui.loginButton.addEventListener("click", async () => {
-    setMessage("Connexion Google…", "info");
+    setMessage("Redirection vers Google…", "info");
+    ui.loginButton.disabled = true;
+
     try {
-      await signInWithPopup(auth, provider);
+      sessionStorage.setItem("sport_web_auth_redirect_pending", "1");
+      await signInWithRedirect(auth, provider);
     } catch (error) {
+      sessionStorage.removeItem("sport_web_auth_redirect_pending");
+      ui.loginButton.disabled = false;
       handleError(error, "Connexion Google impossible");
     }
   });
@@ -1249,6 +1279,8 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
 
+  sessionStorage.removeItem("sport_web_auth_redirect_pending");
+  if (ui.loginButton) ui.loginButton.disabled = false;
   ui.authState.textContent = "Firebase connecté";
   ui.authState.className = "pill ok auth-pill";
   ui.loginButton.classList.add("hidden");
