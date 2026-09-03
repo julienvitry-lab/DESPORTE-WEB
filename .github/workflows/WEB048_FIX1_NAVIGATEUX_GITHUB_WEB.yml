@@ -1,0 +1,114 @@
+name: WEB048 FIX1 - corrige syntaxe navigateUx
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Corriger navigateUx
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+          const file = "web/app.js";
+          let s = fs.readFileSync(file, "utf8");
+
+          const bad = `function navigateUx(page, subpage = null, options = {
+            if (page === "maps") { page = "more"; subpage = "maps"; }
+          }) {`;
+
+          const good = `function navigateUx(page, subpage = null, options = {}) {
+            if (page === "maps") { page = "more"; subpage = "maps"; }`;
+
+          if (s.includes(bad)) {
+            s = s.replace(bad, good);
+            fs.writeFileSync(file, s, "utf8");
+            console.log("OK : signature navigateUx corrigée.");
+          } else if (
+            s.includes('function navigateUx(page, subpage = null, options = {}) {') &&
+            s.includes('if (page === "maps") { page = "more"; subpage = "maps"; }')
+          ) {
+            console.log("OK : correctif déjà présent.");
+          } else {
+            console.error("ERREUR : bloc navigateUx attendu introuvable.");
+            process.exit(20);
+          }
+          NODE
+
+      - name: Vérifier syntaxe et authentification
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+          grep -Fq 'function navigateUx(page, subpage = null, options = {}) {' web/app.js
+          grep -Fq 'if (page === "maps") { page = "more"; subpage = "maps"; }' web/app.js
+          grep -Fq 'ui.loginButton.addEventListener("click", async () => {' web/app.js
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          git diff --check
+
+          echo "OK : syntaxe JavaScript valide et gestionnaire Google toujours présent."
+
+      - name: Cache bust
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+          const file = "web/index.html";
+          let s = fs.readFileSync(file, "utf8");
+
+          s = s.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB048-FIX1-NAVIGATEUX"'
+          );
+
+          if (!s.includes("WEB048-FIX1-NAVIGATEUX")) {
+            console.error("ERREUR : cache-bust non appliqué.");
+            process.exit(21);
+          }
+
+          fs.writeFileSync(file, s, "utf8");
+          NODE
+
+      - name: Commit et push
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add web/app.js web/index.html
+
+          if git diff --cached --quiet; then
+            echo "Aucune modification à committer."
+          else
+            git commit -m "WEB048 FIX1 corrige syntaxe navigateUx et authentification Web"
+            git push origin HEAD:main
+          fi
+
+      - name: Déclencher publication Pages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run web.yml --ref main
+          echo "Publication demandée."
