@@ -290,6 +290,9 @@ initUxNavigation();
 initializeWebStravaModule();
 installWeb049UiContract();
 queueMicrotask(() => installEquipmentMappingEditorWeb050());
+/* WEB053_PROFILE_EDITOR_BOOT */
+queueMicrotask(() => installEquipmentProfileEditorWeb053());
+
 upgradeActivityDirectoryUi();
 upgradeActivityUiWeb046();
 upgradeActivityDetailUiWeb047();
@@ -6819,6 +6822,205 @@ function applyAutomaticEquipmentMappingToDraft(activity) {
   return activity;
 }
 
+
+const EQUIPMENT_PROFILES_WEB053 = Object.freeze([
+  { key: "RUN", label: "Course à pied" },
+  { key: "TRAIL", label: "Trail" },
+  { key: "TREADMILL", label: "Tapis de course" },
+  { key: "BIKE", label: "Vélo" },
+  { key: "MTB", label: "VTT" },
+  { key: "TRAINER", label: "Home Trainer" },
+]);
+
+function equipmentProfileLabelWeb053(key) {
+  return EQUIPMENT_PROFILES_WEB053.find((profile) => profile.key === key)?.label || key || "";
+}
+
+function equipmentProfileFromTechnicalOptionWeb053(option) {
+  if (!option) return "";
+
+  const value = String(option.value || "");
+  const label = String(option.textContent || option.label || "").toLowerCase();
+  const [sportRaw, subSportRaw] = value.split("|");
+  const sport = Number(sportRaw);
+  const subSport = Number(subSportRaw);
+
+  const running =
+    sport === 1 ||
+    /course|running|trail|tapis|treadmill/.test(label);
+
+  const cycling =
+    sport === 2 ||
+    /vélo|velo|bike|cycling|vtt|mtb|mountain|trainer/.test(label);
+
+  if (running) {
+    if (/tapis|treadmill|indoor running/.test(label) || [1, 21, 45].includes(subSport)) {
+      return "TREADMILL";
+    }
+
+    if (/trail/.test(label) || subSport === 3) {
+      return "TRAIL";
+    }
+
+    return "RUN";
+  }
+
+  if (cycling) {
+    if (/home.?trainer|trainer|indoor|spin|virtuel|virtual|kinomap/.test(label) ||
+        [5, 6, 58].includes(subSport)) {
+      return "TRAINER";
+    }
+
+    if (/vtt|mtb|mountain/.test(label) || [8, 47].includes(subSport)) {
+      return "MTB";
+    }
+
+    return "BIKE";
+  }
+
+  return "";
+}
+
+function equipmentTechnicalOptionsForProfileWeb053(profileKey) {
+  const technical = document.getElementById("equipmentMappingActivityChoice");
+  if (!technical) return [];
+
+  return [...technical.options].filter((option) =>
+    option.value &&
+    equipmentProfileFromTechnicalOptionWeb053(option) === profileKey
+  );
+}
+
+function refreshEquipmentProfileEditorWeb053() {
+  const profileSelect = document.getElementById("equipmentMappingProfileChoice");
+  const technical = document.getElementById("equipmentMappingActivityChoice");
+  const hint = document.getElementById("equipmentMappingProfileHintWeb053");
+
+  if (!profileSelect || !technical) return;
+
+  const previous = profileSelect.value;
+
+  for (const option of profileSelect.options) {
+    if (!option.value) continue;
+
+    const matches = equipmentTechnicalOptionsForProfileWeb053(option.value);
+    const profile = EQUIPMENT_PROFILES_WEB053.find((item) => item.key === option.value);
+    const label = profile?.label || option.value;
+
+    option.textContent =
+      matches.length > 0
+        ? `${label} · ${matches.length} signature(s) reconnue(s)`
+        : label;
+  }
+
+  if (previous) profileSelect.value = previous;
+
+  const currentMatches = equipmentTechnicalOptionsForProfileWeb053(profileSelect.value);
+
+  if (hint) {
+    if (!profileSelect.value) {
+      hint.textContent = "Choisis simplement l’un des 6 profils utilisés sur ta Garmin.";
+    } else if (currentMatches.length === 0) {
+      hint.textContent =
+        "Aucune signature technique actuellement détectée pour ce profil. " +
+        "Les réglages avancés restent disponibles si nécessaire.";
+    } else {
+      hint.textContent =
+        `${currentMatches.length} signature(s) technique(s) seront associées automatiquement à ce profil.`;
+    }
+  }
+
+  if (profileSelect.value && currentMatches.length > 0) {
+    technical.value = currentMatches[0].value;
+    technical.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+}
+
+function installEquipmentProfileEditorWeb053() {
+  if (document.getElementById("equipmentMappingProfileChoice")) {
+    refreshEquipmentProfileEditorWeb053();
+    return;
+  }
+
+  const technical = document.getElementById("equipmentMappingActivityChoice");
+  const source =
+    document.getElementById("equipmentMappingSourceChoice") ||
+    ui.equipmentMappingSource;
+
+  if (!technical) return;
+
+  const technicalContainer = technical.closest("label") || technical.parentElement;
+  const sourceContainer = source ? (source.closest("label") || source.parentElement) : null;
+
+  const profileContainer = document.createElement("label");
+  profileContainer.className = "web053-profile-field";
+
+  const title = document.createElement("span");
+  title.className = "web053-profile-label";
+  title.textContent = "Profil sportif";
+
+  const profileSelect = document.createElement("select");
+  profileSelect.id = "equipmentMappingProfileChoice";
+  profileSelect.innerHTML =
+    '<option value="">Choisir un profil…</option>' +
+    EQUIPMENT_PROFILES_WEB053.map(
+      (profile) => `<option value="${profile.key}">${profile.label}</option>`
+    ).join("");
+
+  const hint = document.createElement("small");
+  hint.id = "equipmentMappingProfileHintWeb053";
+  hint.className = "muted";
+  hint.textContent = "Choisis simplement l’un des 6 profils utilisés sur ta Garmin.";
+
+  profileContainer.append(title, profileSelect, hint);
+
+  if (technicalContainer?.parentElement) {
+    technicalContainer.parentElement.insertBefore(profileContainer, technicalContainer);
+  } else {
+    technical.parentElement?.insertBefore(profileContainer, technical);
+  }
+
+  const advanced = document.createElement("details");
+  advanced.id = "equipmentMappingAdvancedWeb053";
+  advanced.className = "web053-equipment-advanced";
+
+  const summary = document.createElement("summary");
+  summary.textContent = "Réglages avancés";
+  advanced.appendChild(summary);
+
+  const advancedBody = document.createElement("div");
+  advancedBody.className = "web053-equipment-advanced-body";
+  advanced.appendChild(advancedBody);
+
+  if (technicalContainer?.parentElement) {
+    technicalContainer.parentElement.insertBefore(advanced, technicalContainer);
+  } else {
+    profileContainer.parentElement?.appendChild(advanced);
+  }
+
+  if (sourceContainer && sourceContainer !== technicalContainer) {
+    advancedBody.appendChild(sourceContainer);
+  }
+
+  if (technicalContainer) {
+    advancedBody.appendChild(technicalContainer);
+  }
+
+  profileSelect.addEventListener("change", refreshEquipmentProfileEditorWeb053);
+
+  technical.addEventListener("change", () => {
+    const detected = equipmentProfileFromTechnicalOptionWeb053(
+      technical.options[technical.selectedIndex]
+    );
+
+    if (detected && !profileSelect.value) {
+      profileSelect.value = detected;
+    }
+  });
+
+  refreshEquipmentProfileEditorWeb053();
+}
+
 function renderEquipmentMappingPanel() {
   if (!ui.equipmentMappingSection) return;
 
@@ -6913,9 +7115,66 @@ function renderEquipmentMappingPanel() {
   if (ui.equipmentMappingAddButton) {
     ui.equipmentMappingAddButton.textContent = "Enregistrer la correspondance";
   }
+
+  queueMicrotask(() => { installEquipmentProfileEditorWeb053(); refreshEquipmentProfileEditorWeb053(); });
 }
 
+
 async function addEquipmentMappingRule() {
+  const profileSelect = document.getElementById("equipmentMappingProfileChoice");
+  const technical = document.getElementById("equipmentMappingActivityChoice");
+
+  if (!profileSelect || !technical || !profileSelect.value) {
+    return addEquipmentMappingRuleLegacyWeb053();
+  }
+
+  const profileKey = profileSelect.value;
+  const profileLabel = equipmentProfileLabelWeb053(profileKey);
+  const technicalValues =
+    equipmentTechnicalOptionsForProfileWeb053(profileKey).map((option) => option.value);
+
+  if (technicalValues.length === 0) {
+    setMessage(
+      `WEBEQUIPMAP003 · aucune signature reconnue pour « ${profileLabel} ». Ouvre Réglages avancés si nécessaire.`,
+      "error"
+    );
+    return;
+  }
+
+  const originalValue = technical.value;
+  let saved = 0;
+
+  for (const value of technicalValues) {
+    const currentTechnical = document.getElementById("equipmentMappingActivityChoice");
+    if (!currentTechnical) break;
+
+    const exists = [...currentTechnical.options].some((option) => option.value === value);
+    if (!exists) continue;
+
+    currentTechnical.value = value;
+    currentTechnical.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await addEquipmentMappingRuleLegacyWeb053();
+    saved += 1;
+  }
+
+  const restoredTechnical = document.getElementById("equipmentMappingActivityChoice");
+  if (restoredTechnical && [...restoredTechnical.options].some((option) => option.value === originalValue)) {
+    restoredTechnical.value = originalValue;
+  }
+
+  const restoredProfile = document.getElementById("equipmentMappingProfileChoice");
+  if (restoredProfile) restoredProfile.value = profileKey;
+
+  refreshEquipmentProfileEditorWeb053();
+
+  setMessage(
+    `WEBEQUIPMAP003 · ${profileLabel} : correspondance enregistrée pour ${saved} signature(s).`,
+    "success"
+  );
+}
+
+async function addEquipmentMappingRuleLegacyWeb053() {
   if (!currentUser) return;
 
   syncEquipmentMappingLegacyFieldsWeb050();

@@ -1497,6 +1497,56 @@ select {
   }
 </style>
 
+
+<style id="web053-equipmap003-css">
+  .web053-profile-field {
+    display: grid !important;
+    gap: 7px !important;
+    min-width: 280px !important;
+  }
+
+  .web053-profile-label {
+    font-weight: 600 !important;
+  }
+
+  #equipmentMappingProfileChoice {
+    width: 100% !important;
+    min-height: 46px !important;
+  }
+
+  #equipmentMappingProfileHintWeb053 {
+    line-height: 1.25 !important;
+  }
+
+  #equipmentMappingAdvancedWeb053 {
+    grid-column: 1 / -1 !important;
+    margin-top: 4px !important;
+    border: 1px solid var(--border, rgba(255,255,255,.16)) !important;
+    border-radius: 12px !important;
+    padding: 0 !important;
+  }
+
+  #equipmentMappingAdvancedWeb053 > summary {
+    cursor: pointer !important;
+    padding: 10px 14px !important;
+    font-size: .9rem !important;
+    opacity: .78 !important;
+  }
+
+  .web053-equipment-advanced-body {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(220px, 1fr)) !important;
+    gap: 12px !important;
+    padding: 0 14px 14px !important;
+  }
+
+  @media (max-width: 800px) {
+    .web053-equipment-advanced-body {
+      grid-template-columns: 1fr !important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -2933,7 +2983,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB052-FIX2-C1V1-EXACT"></script>
+  <script type="module" src="./app.js?v=WEB053-WEBEQUIPMAP003"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
