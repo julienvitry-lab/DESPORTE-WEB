@@ -1,0 +1,847 @@
+name: WEB048 - WEBRESTORE001 navigateur
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Pré-contrôles WEB048
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== BASE ==="
+          git log -1 --oneline
+
+          grep -Fq 'function renderEquipmentMappingPanel' web/app.js
+          grep -Fq 'id="equipmentMappingSection"' web/index.html
+          grep -Fq 'equipment_mappings' web/app.js
+          grep -Fq 'function uxPageConfig()' web/app.js
+          grep -Fq 'function navigateUx(' web/app.js
+
+          echo "OK : moteur WEBEQUIPMAP001 + navigation présents."
+
+      - name: Appliquer WEB048 WEBRESTORE001
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+          
+          const appFile = "web/app.js";
+          const indexFile = "web/index.html";
+          
+          let app = fs.readFileSync(appFile, "utf8");
+          let html = fs.readFileSync(indexFile, "utf8");
+          
+          function fail(message, code = 20) {
+            console.error("ERREUR : " + message);
+            process.exit(code);
+          }
+          
+          function replaceRange(text, startMarker, endMarker, replacement, label) {
+            const start = text.indexOf(startMarker);
+            const end = text.indexOf(endMarker, start + startMarker.length);
+            if (start < 0 || end < 0) fail(label + " introuvable", 20);
+            return text.slice(0, start) + replacement + "\n\n" + text.slice(end);
+          }
+          
+          // -----------------------------------------------------------------------------
+          // WEB048 · WEBRESTORE001
+          // Version de consolidation : rétablit les choix UI validés et les verrouille
+          // sans toucher au moteur Strava / Firestore / WEBSPLIT.
+          // -----------------------------------------------------------------------------
+          
+          // 1) Navigation : Cartes quitte la barre principale et rejoint Plus.
+          //    Données disparaît. Matériel auto WEBEQUIPMAP001 est explicitement restauré.
+          const uxConfig = `function uxPageConfig() {
+            return {
+              home: {
+                title: "Accueil",
+                eyebrow: "VUE D’ENSEMBLE",
+                subs: []
+              },
+              activities: {
+                title: "Activités",
+                eyebrow: "",
+                subs: [["directory","Répertoire"],["trash","Corbeille"]]
+              },
+              analysis: {
+                title: "Analyse",
+                eyebrow: "PROGRESSION & REPÈRES",
+                subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]]
+              },
+              maps: {
+                title: "Cartes",
+                eyebrow: "EXPLORATION",
+                subs: [["routes","Carte globale"],["density","Densité"]]
+              },
+              equipment: {
+                title: "Matériel",
+                eyebrow: "ÉQUIPEMENT",
+                subs: [["used","Utilisé"],["all","Tout le matériel"]]
+              },
+              more: {
+                title: "Plus",
+                eyebrow: "",
+                subs: [
+                  ["strava","Strava"],
+                  ["equipment-map","Matériel auto"],
+                  ["maps","Cartes"],
+                  ["files","Fichiers"],
+                  ["manual","Ajout manuel"],
+                  ["import","Import"],
+                  ["sync","Synchronisation"],
+                  ["health","Santé sync"],
+                  ["landmarks-advanced","Repères avancés"]
+                ]
+              }
+            };
+          }`;
+          
+          app = replaceRange(
+            app,
+            "function uxPageConfig() {",
+            "function uxDefaultSubpage(",
+            uxConfig,
+            "uxPageConfig"
+          );
+          
+          // 2) Compatibilité : un ancien lien/sous-état vers la page Maps est redirigé vers Plus > Cartes.
+          const navStart = app.indexOf("function navigateUx(");
+          const navEnd = app.indexOf("\nfunction initUxNavigation(", navStart);
+          if (navStart < 0 || navEnd < 0) fail("navigateUx", 21);
+          
+          let navBlock = app.slice(navStart, navEnd);
+          
+          if (!navBlock.includes('if (page === "maps") { page = "more"; subpage = "maps"; }')) {
+            const brace = navBlock.indexOf("{");
+            navBlock =
+              navBlock.slice(0, brace + 1) +
+              '\n  if (page === "maps") { page = "more"; subpage = "maps"; }\n' +
+              navBlock.slice(brace + 1);
+          }
+          
+          if (!navBlock.includes('document.body.dataset.uxPage = page;')) {
+            const stateNeedle = "  uxCurrentPage = page;\n  uxCurrentSubpage = sub;";
+            if (!navBlock.includes(stateNeedle)) fail("état navigateUx", 22);
+            navBlock = navBlock.replace(
+              stateNeedle,
+              stateNeedle + '\n  document.body.dataset.uxPage = page;'
+            );
+          }
+          
+          // Plus > Cartes : réutilise la section cartographique existante.
+          if (!navBlock.includes('sub === "maps"')) {
+            const moreNeedle = '} else if (page === "more") {\n    if (sub === "strava") {';
+            if (!navBlock.includes(moreNeedle)) fail("branche Plus", 23);
+            navBlock = navBlock.replace(
+              moreNeedle,
+              `} else if (page === "more") {
+              if (sub === "maps") {
+                setUxSectionVisibility([ui.globalMapSection]);
+                if (ui.globalMapModeSelect && !["routes","density"].includes(ui.globalMapModeSelect.value)) {
+                  ui.globalMapModeSelect.value = "routes";
+                }
+                markGlobalMapStale();
+              } else if (sub === "strava") {`
+            );
+          }
+          
+          // Réapplique le nettoyage après chaque navigation.
+          if (!navBlock.includes("queueMicrotask(() => restoreInterfaceWeb048());")) {
+            const scrollNeedle = '  if (!options.keepScroll) window.scrollTo({top:0,behavior:"smooth"});';
+            if (!navBlock.includes(scrollNeedle)) fail("fin navigateUx", 24);
+            navBlock = navBlock.replace(
+              scrollNeedle,
+              '  queueMicrotask(() => restoreInterfaceWeb048());\n' + scrollNeedle
+            );
+          }
+          
+          app = app.slice(0, navStart) + navBlock + app.slice(navEnd);
+          
+          // 3) Répertoire : un grand pictogramme SVG + Date + Départ comme données distinctes.
+          //    Aucun titre d'activité n'est rendu.
+          const iconCandidates = [
+            app.indexOf("function activitySportIconMarkup("),
+            app.indexOf("function activitySportIcon("),
+            app.indexOf("function activityMain(")
+          ].filter((v) => v >= 0);
+          
+          const iconStart = iconCandidates.length ? Math.min(...iconCandidates) : -1;
+          const datumStart = app.indexOf("function datum(", iconStart);
+          
+          if (iconStart < 0 || datumStart < 0) fail("bloc activité / datum", 25);
+          
+          const activityUiBlock = `function activitySportIconMarkup(activity) {
+            const code = Number(activity?.sport);
+          
+            if (code === 1 || code === 6) {
+              return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="39" cy="10" r="5"></circle><path d="M33 20l-11 11 9 7 6-11 11 7"></path><path d="M31 38L19 57"></path><path d="M33 38L48 55"></path><path d="M22 30L9 37"></path></svg>';
+            }
+          
+            if ([2,3,4].includes(code)) {
+              return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="16" cy="47" r="11"></circle><circle cx="49" cy="47" r="11"></circle><path d="M16 47l12-23h11l10 23"></path><path d="M28 24l11 23"></path><path d="M24 36h19"></path><path d="M27 18h10"></path></svg>';
+            }
+          
+            if (code === 5) {
+              return '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 42c8-7 15-7 23 0s15 7 25 0"></path><path d="M8 52c8-7 15-7 23 0s15 7 25 0"></path><circle cx="24" cy="22" r="5"></circle><path d="M29 27l13 8"></path></svg>';
+            }
+          
+            if ([11,17].includes(code)) {
+              return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="34" cy="10" r="5"></circle><path d="M31 19l-8 15 10 7"></path><path d="M33 40L22 57"></path><path d="M34 40l12 17"></path><path d="M22 31L11 43"></path></svg>';
+            }
+          
+            return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="16"></circle></svg>';
+          }
+          
+          function formatActivityDate(value) {
+            const date = dateFromMs(value);
+            if (!date) return "—";
+            return new Intl.DateTimeFormat("fr-FR", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric"
+            }).format(date);
+          }
+          
+          function formatActivityTime(value) {
+            const date = dateFromMs(value);
+            if (!date) return "—";
+            return new Intl.DateTimeFormat("fr-FR", {
+              hour: "2-digit",
+              minute: "2-digit"
+            }).format(date);
+          }
+          
+          function activityMain(activity) {
+            const cell = document.createElement("div");
+            cell.className = "activity-main activity-main-web048";
+          
+            const icon = document.createElement("span");
+            icon.className = "activity-sport-icon activity-sport-icon-web048";
+            icon.innerHTML = activitySportIconMarkup(activity);
+            icon.setAttribute("aria-label", sportName(activity.sport));
+            icon.title = sportName(activity.sport);
+          
+            cell.append(icon);
+            return cell;
+          }`;
+          
+          app = app.slice(0, iconStart) + activityUiBlock + "\n\n" + app.slice(datumStart);
+          
+          // Remplace uniquement la séquence de colonnes de renderActivities.
+          const renderStart = app.indexOf("function renderActivities(");
+          const renderEnd = app.indexOf("\nfunction activitySportIconMarkup(", renderStart);
+          if (renderStart < 0 || renderEnd < 0) fail("renderActivities", 26);
+          
+          let renderBlock = app.slice(renderStart, renderEnd);
+          const sequenceRegex =
+            /button\.appendChild\(activityMain\(activity\)\);[\s\S]*?button\.appendChild\(datum\("Repères",[\s\S]*?\)\);/m;
+          
+          if (!sequenceRegex.test(renderBlock)) fail("colonnes du répertoire", 27);
+          
+          renderBlock = renderBlock.replace(
+            sequenceRegex,
+            `button.appendChild(activityMain(activity));
+              button.appendChild(datum("Date", formatActivityDate(activity.start_time_ms), "activity-date-datum"));
+              button.appendChild(datum("Départ", formatActivityTime(activity.start_time_ms), "activity-time-datum"));
+              button.appendChild(datum("Distance", formatDistance(activity.distance_m)));
+              button.appendChild(datum("D+", formatMeters(activity.ascent_m), "hide-sm"));
+              button.appendChild(datum("Durée", formatDuration(activity.elapsed_time_ms), "hide-sm"));
+              button.appendChild(datum("Matériel", activity.equipment_name || "—", "hide-md hide-sm"));
+              button.appendChild(datum("Repères", markerSummary(activity), "hide-md hide-sm"));`
+          );
+          
+          app = app.slice(0, renderStart) + renderBlock + app.slice(renderEnd);
+          
+          // 4) Détail : jamais de titre visible, logo sport SVG, Date + Départ séparés,
+          //    tout en conservant les 2 lignes WEB047 (stats / matériel+repères).
+          const oldDetailNeedle =
+          `  const sportLabel = sportName(activity.sport);
+            ui.detailSportLine.textContent = sportLabel;
+            ui.detailDateLine.textContent = formatDateLong(activity.start_time_ms).replace(" à ", " · ");`;
+          
+          const newDetailBlock =
+          `  const sportLabel = sportName(activity.sport);
+            ui.detailTitle.textContent = "";
+            ui.detailTitle.classList.add("hidden");
+          
+            ui.detailSportLine.innerHTML =
+              '<span class="detail-sport-svg">' + activitySportIconMarkup(activity) + '</span>';
+            ui.detailSportLine.setAttribute("aria-label", sportLabel);
+            ui.detailSportLine.title = sportLabel;
+          
+            ui.detailDateLine.innerHTML =
+              '<span class="detail-start-stat"><strong>' + formatActivityDate(activity.start_time_ms) + '</strong><span>Date</span></span>' +
+              '<span class="detail-start-stat"><strong>' + formatActivityTime(activity.start_time_ms) + '</strong><span>Départ</span></span>';`;
+          
+          if (app.includes(oldDetailNeedle)) {
+            app = app.replace(oldDetailNeedle, newDetailBlock);
+          } else if (!app.includes("detail-sport-svg") || !app.includes("detail-start-stat")) {
+            fail("rendu détail sport/date", 28);
+          }
+          
+          // 5) Restaurateur d'interface : réapplique les choix utilisateur même si une
+          //    future fonction ancienne réinjecte des éléments redondants.
+          const restoreModule = `
+          // -----------------------------------------------------------------------------
+          // WEB048 · WEBRESTORE001 — garde-fou des choix d'interface validés
+          // -----------------------------------------------------------------------------
+          function restoreInterfaceWeb048() {
+            // Cartes n'est plus un onglet primaire.
+            document.querySelectorAll('[data-ux-page="maps"]').forEach((button) => button.remove());
+          
+            // Aucun titre personnalisé dans le répertoire ou le détail.
+            if (ui.detailTitle) {
+              ui.detailTitle.textContent = "";
+              ui.detailTitle.classList.add("hidden");
+            }
+          
+            // Un seul statut d'interopérabilité : dans le topbar, juste avant Firebase.
+            const compactInterop = document.getElementById("interopCompactStatus");
+            if (compactInterop) {
+              compactInterop.textContent = "Intéropérabilité OK";
+              compactInterop.className = currentUser ? "pill ok web048-interop" : "pill ok web048-interop hidden";
+            }
+          
+            document.querySelectorAll(".interop-badge, #personalSyncStatus").forEach((node) => {
+              if (node.id !== "interopCompactStatus") node.classList.add("hidden");
+            });
+          
+            // Mentions techniques visibles : WEBxxx, identité projet, version.
+            const identity = document.getElementById("identityLine");
+            if (identity) identity.classList.add("hidden");
+          
+            document.querySelectorAll(".version").forEach((node) => node.classList.add("hidden"));
+          
+            document.querySelectorAll(".eyebrow").forEach((node) => {
+              if (/^WEB\\d+/i.test(String(node.textContent || "").trim())) {
+                node.classList.add("web048-technical-hidden");
+              }
+            });
+          
+            // Les gros heros Activités et Plus sont redondants avec les onglets.
+            const page = document.body.dataset.uxPage || "";
+            const hero = document.querySelector("#catalogView > .hero");
+            if (hero) hero.classList.toggle("web048-hero-hidden", page === "activities" || page === "more");
+          
+            // Répertoire : le pavé de filtres redevient un bandeau déroulant fermé par défaut.
+            const directory = document.getElementById("activityDirectorySection");
+            const filters = directory?.querySelector(":scope > .filters");
+          
+            if (filters && !filters.closest("details.activity-filters-disclosure-web048")) {
+              const details = document.createElement("details");
+              details.className = "activity-filters-disclosure activity-filters-disclosure-web048";
+          
+              const summary = document.createElement("summary");
+              summary.innerHTML =
+                '<span>Tri des activités</span><small>Recherche, sport, année, matériel, repères…</small>';
+          
+              filters.parentNode.insertBefore(details, filters);
+              details.append(summary, filters);
+              details.open = false;
+            }
+          
+            // En-tête Répertoire / WEB031 / compteurs supprimé ; boutons Charger... conservés en bas.
+            if (directory) {
+              const header = directory.querySelector(":scope > .panel-title-row");
+              const list = document.getElementById("activityList");
+          
+              if (header && list) {
+                const actions = header.querySelector(".panel-actions");
+                if (actions && !directory.querySelector(".directory-load-actions-bottom")) {
+                  const bottom = document.createElement("div");
+                  bottom.className = "directory-load-actions-bottom";
+                  bottom.append(...Array.from(actions.children));
+                  list.insertAdjacentElement("afterend", bottom);
+                }
+                header.remove();
+              }
+          
+              directory.querySelectorAll("#loadedLabel, .activity-directory-footer .muted")
+                .forEach((node) => node.classList.add("hidden"));
+            }
+          
+            // Les messages purement techniques WEBxxx restent silencieux, sauf erreur.
+            const box = document.getElementById("messageBox");
+            if (box) {
+              const text = String(box.textContent || "").trim();
+              const isError = box.classList.contains("error");
+              if (!isError && (/^WEB\\d+/i.test(text) || /interopérabilit/i.test(text))) {
+                box.classList.add("hidden");
+              }
+            }
+          }
+          
+          function installInterfaceGuardWeb048() {
+            if (window.__web048GuardInstalled) return;
+            window.__web048GuardInstalled = true;
+          
+            const run = () => requestAnimationFrame(() => restoreInterfaceWeb048());
+          
+            run();
+          
+            const observer = new MutationObserver(run);
+            observer.observe(document.body, {
+              childList: true,
+              subtree: true,
+              attributes: true,
+              attributeFilter: ["class"]
+            });
+            window.__web048GuardObserver = observer;
+          }
+          `;
+          
+          if (!app.includes("function restoreInterfaceWeb048()")) {
+            const marker = "function uxPageConfig() {";
+            const pos = app.indexOf(marker);
+            if (pos < 0) fail("insertion restoreInterfaceWeb048", 29);
+            app = app.slice(0, pos) + restoreModule + "\n\n" + app.slice(pos);
+          }
+          
+          // Appel unique après l'initialisation.
+          if (!app.includes("installInterfaceGuardWeb048();")) {
+            const initCandidates = [
+              "installActivityDetailStickyObserverWeb047();",
+              "upgradeActivityDetailUiWeb047();",
+              "upgradeActivityUiWeb046();",
+              "upgradeActivityDirectoryUi();",
+              "initializeWebStravaModule();"
+            ];
+          
+            let inserted = false;
+          
+            for (const marker of initCandidates) {
+              const pos = app.indexOf(marker);
+              if (pos >= 0) {
+                const insertAt = pos + marker.length;
+                app =
+                  app.slice(0, insertAt) +
+                  "\ninstallInterfaceGuardWeb048();" +
+                  app.slice(insertAt);
+                inserted = true;
+                break;
+              }
+            }
+          
+            if (!inserted) fail("appel installInterfaceGuardWeb048", 30);
+          }
+          
+          // 6) Badge compact d'interopérabilité.
+          if (!html.includes('id="interopCompactStatus"')) {
+            const marker = '<span id="authState"';
+            const pos = html.indexOf(marker);
+            if (pos < 0) fail("authState", 31);
+          
+            html =
+              html.slice(0, pos) +
+              '<span id="interopCompactStatus" class="pill ok web048-interop hidden">Intéropérabilité OK</span>\n      ' +
+              html.slice(pos);
+          }
+          
+          // 7) CSS de consolidation.
+          const css = `
+          <style id="web048-restore-ui">
+            /* WEB048 · WEBRESTORE001 */
+          
+            .web048-technical-hidden,
+            .web048-hero-hidden,
+            #detailTitle,
+            [data-ux-page="maps"],
+            #identityLine.hidden,
+            .version.hidden {
+              display: none !important;
+            }
+          
+            .web048-interop {
+              white-space: nowrap;
+              font-size: .86rem;
+              padding: 7px 11px !important;
+            }
+          
+            /* Répertoire : bandeau de filtres compact et fermé */
+            .activity-filters-disclosure-web048 {
+              margin: 8px 0 14px !important;
+              border: 1px solid rgba(128,128,128,.26);
+              border-radius: 14px;
+              background: rgba(128,128,128,.035);
+              overflow: hidden;
+            }
+          
+            .activity-filters-disclosure-web048 > summary {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 16px;
+              cursor: pointer;
+              padding: 10px 14px;
+              list-style: none;
+              font-weight: 700;
+              user-select: none;
+            }
+          
+            .activity-filters-disclosure-web048 > summary::-webkit-details-marker {
+              display: none;
+            }
+          
+            .activity-filters-disclosure-web048 > summary::after {
+              content: "⌄";
+              font-size: 1.2rem;
+              transition: transform .15s ease;
+            }
+          
+            .activity-filters-disclosure-web048[open] > summary::after {
+              transform: rotate(180deg);
+            }
+          
+            .activity-filters-disclosure-web048 > summary small {
+              margin-left: auto;
+              opacity: .68;
+              font-weight: 400;
+            }
+          
+            .activity-filters-disclosure-web048 > .filters {
+              margin: 0 !important;
+              padding: 8px 14px 14px !important;
+            }
+          
+            .directory-load-actions-bottom {
+              display: flex;
+              justify-content: flex-end;
+              gap: 10px;
+              margin: 12px 0 2px;
+              padding-top: 12px;
+              border-top: 1px solid rgba(128,128,128,.16);
+            }
+          
+            /* Carte d'activité : grand logo + Date + Départ + stats */
+            #activityList .activity-card {
+              grid-template-columns:
+                82px
+                minmax(112px,.78fr)
+                minmax(82px,.52fr)
+                repeat(3,minmax(90px,.64fr))
+                minmax(135px,.85fr)
+                minmax(120px,.75fr)
+                !important;
+              align-items: stretch !important;
+              gap: 10px !important;
+              min-height: 94px !important;
+            }
+          
+            #activityList .activity-main-web048 {
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+              min-width: 0 !important;
+            }
+          
+            #activityList .activity-sport-icon-web048 {
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+              width: 68px !important;
+              height: 68px !important;
+              color: var(--green, #b7ff28);
+            }
+          
+            #activityList .activity-sport-icon-web048 svg {
+              width: 60px !important;
+              height: 60px !important;
+              fill: none;
+              stroke: currentColor;
+              stroke-width: 3.5;
+              stroke-linecap: round;
+              stroke-linejoin: round;
+            }
+          
+            #activityList .datum {
+              display: flex !important;
+              flex-direction: column !important;
+              justify-content: center !important;
+              min-width: 0;
+            }
+          
+            #activityList .datum strong {
+              font-size: 1.03rem;
+            }
+          
+            #activityList .activity-date-datum strong,
+            #activityList .activity-time-datum strong {
+              font-size: .98rem;
+              white-space: nowrap;
+            }
+          
+            /* Détail : logo sport uniquement */
+            #detailView #detailSportLine {
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+            }
+          
+            #detailView .detail-sport-svg {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 66px;
+              height: 66px;
+              color: var(--green, #b7ff28);
+            }
+          
+            #detailView .detail-sport-svg svg {
+              width: 58px;
+              height: 58px;
+              fill: none;
+              stroke: currentColor;
+              stroke-width: 3.4;
+              stroke-linecap: round;
+              stroke-linejoin: round;
+            }
+          
+            #detailView #detailDateLine {
+              display: grid !important;
+              grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+              gap: 7px !important;
+              padding: 0 !important;
+              background: transparent !important;
+              border: 0 !important;
+            }
+          
+            #detailView .detail-start-stat {
+              display: flex;
+              min-width: 0;
+              flex-direction: column;
+              justify-content: center;
+              align-items: center;
+              padding: 8px 9px;
+              border: 1px solid rgba(128,128,128,.22);
+              border-radius: 12px;
+              background: rgba(128,128,128,.035);
+            }
+          
+            #detailView .detail-start-stat strong {
+              font-size: .98rem;
+              white-space: nowrap;
+            }
+          
+            #detailView .detail-start-stat span {
+              margin-top: 4px;
+              opacity: .75;
+              font-size: .77rem;
+            }
+          
+            /* WEB047 reste la règle : ligne 1 statistiques, ligne 2 matériel + repères */
+            #detailView .detail-hero-two-lines {
+              display: flex !important;
+              flex-direction: column !important;
+              align-items: stretch !important;
+            }
+          
+            #detailView .detail-hero-two-lines > .detail-summary-row {
+              display: grid !important;
+              grid-template-columns:
+                minmax(82px,.55fr)
+                minmax(205px,1.15fr)
+                minmax(0,4.8fr)
+                !important;
+              width: 100% !important;
+              align-items: stretch !important;
+              gap: 8px !important;
+            }
+          
+            #detailView .detail-summary-row > #detailHeroMetrics {
+              display: grid !important;
+              grid-template-columns: repeat(5,minmax(0,1fr)) !important;
+              width: 100% !important;
+              gap: 8px !important;
+            }
+          
+            #detailView .detail-hero-two-lines > .detail-controls-row {
+              display: grid !important;
+              grid-template-columns: minmax(300px,.9fr) minmax(0,2.5fr) !important;
+              width: 100% !important;
+              gap: 14px !important;
+              align-items: end !important;
+            }
+          
+            #detailView .detail-controls-row > .detail-data-quality {
+              display: none !important;
+            }
+          
+            @media (max-width: 1050px) {
+              #activityList .activity-card {
+                grid-template-columns:
+                  68px minmax(105px,.8fr) 76px repeat(3,minmax(82px,.7fr))
+                  !important;
+              }
+          
+              #activityList .activity-card .hide-md {
+                display: none !important;
+              }
+            }
+          
+            @media (max-width: 760px) {
+              .activity-filters-disclosure-web048 > summary small {
+                display: none;
+              }
+          
+              #activityList .activity-card {
+                grid-template-columns: 60px minmax(105px,1fr) 74px 92px !important;
+              }
+          
+              #activityList .activity-card .hide-sm {
+                display: none !important;
+              }
+          
+              #detailView .detail-hero-two-lines > .detail-summary-row {
+                grid-template-columns: 80px minmax(185px,1fr) !important;
+              }
+          
+              #detailView .detail-summary-row > #detailHeroMetrics {
+                grid-column: 1 / -1 !important;
+                grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+              }
+          
+              #detailView .detail-hero-two-lines > .detail-controls-row {
+                grid-template-columns: 1fr !important;
+              }
+            }
+          </style>`;
+          
+          if (!html.includes('id="web048-restore-ui"')) {
+            const headEnd = html.indexOf("</head>");
+            if (headEnd < 0) fail("</head>", 32);
+            html = html.slice(0, headEnd) + css + "\n" + html.slice(headEnd);
+          }
+          
+          // 8) Marqueur interne + cache-bust. La ligne de version reste masquée à l'utilisateur.
+          if (!html.includes("WEB048 · WEBRESTORE001")) {
+            html = html.replace(
+              "</head>",
+              '  <!-- WEB048 · WEBRESTORE001 · WEBEQUIPMAP001 restauré · navigation consolidée -->\n</head>'
+            );
+          }
+          
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB048-WEBRESTORE001"'
+          );
+          
+          fs.writeFileSync(appFile, app, "utf8");
+          fs.writeFileSync(indexFile, html, "utf8");
+          
+          console.log("OK : WEB048 · WEBRESTORE001 appliqué.");
+          NODE
+
+      - name: Vérifier WEB048
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+
+          grep -Fq 'WEB048 · WEBRESTORE001' web/index.html
+          grep -Fq '["equipment-map","Matériel auto"]' web/app.js
+          grep -Fq '["maps","Cartes"]' web/app.js
+
+          if grep -Fq '["data","Données"]' web/app.js; then
+            echo "ERREUR : sous-onglet Données encore présent"
+            exit 21
+          fi
+
+          grep -Fq 'function activitySportIconMarkup' web/app.js
+          grep -Fq 'datum("Date", formatActivityDate(activity.start_time_ms)' web/app.js
+          grep -Fq 'datum("Départ", formatActivityTime(activity.start_time_ms)' web/app.js
+          grep -Fq 'detail-sport-svg' web/app.js
+          grep -Fq 'detail-start-stat' web/app.js
+          grep -Fq 'function restoreInterfaceWeb048()' web/app.js
+          grep -Fq 'activity-filters-disclosure-web048' web/app.js
+          grep -Fq 'app.js?v=WEB048-WEBRESTORE001' web/index.html
+
+          # Vérifie que le mapping existant n'a pas été supprimé.
+          grep -Fq 'function renderEquipmentMappingPanel' web/app.js
+          grep -Fq 'id="equipmentMappingSection"' web/index.html
+          grep -Fq 'equipment_mappings' web/app.js
+
+          git diff --check
+
+          echo
+          echo "WEB048 vérifié :"
+          echo "  ✓ Matériel auto sous Plus"
+          echo "  ✓ Cartes sous Plus"
+          echo "  ✓ Données supprimé"
+          echo "  ✓ grand SVG sport"
+          echo "  ✓ Date + Départ séparés"
+          echo "  ✓ aucun titre d'activité visible"
+          echo "  ✓ filtres Activités repliables"
+          echo "  ✓ garde-fou interface"
+          echo "  ✓ moteur WEBEQUIPMAP001 conservé"
+
+      - name: Créer la note de version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p docs/releases
+
+          cat > docs/releases/WEB048.md <<'EOF'
+          # WEB048 · WEBRESTORE001
+
+          Version de consolidation de l'interface SPORT Web.
+
+          ## Restaurations
+          - Plus > Matériel auto : accès au module WEBEQUIPMAP001 existant.
+          - Plus > Cartes : l'ancien onglet primaire Cartes est déplacé sous Plus.
+          - Plus : suppression du sous-onglet Données.
+          - Activités : filtre/tri replié dans un bandeau.
+          - Activités : grand pictogramme SVG sport, sans titre d'activité.
+          - Activités : Date et Départ sont deux données distinctes, au même format que les statistiques.
+          - Détail : titre masqué, sport remplacé visuellement par le grand SVG.
+          - Détail : Date et Départ séparés.
+          - Détail : maintien de la structure deux lignes WEB047.
+          - Interopérabilité : un seul badge compact « Intéropérabilité OK » dans le topbar.
+          - Mentions techniques WEBxxx / identité projet / version masquées de l'interface courante.
+
+          Aucune modification du moteur Firestore, Strava ou WEBSPLIT.
+          EOF
+
+      - name: Commit et push WEB048
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add web/app.js web/index.html docs/releases/WEB048.md
+
+          if git diff --cached --quiet; then
+            echo "WEB048 déjà appliqué : aucun nouveau commit."
+          else
+            git commit -m "WEB048 WEBRESTORE001 restaure mapping navigation et interface activites"
+            git push origin HEAD:main
+          fi
+
+      - name: Déclencher la publication GitHub Pages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run web.yml --ref main
+          echo "Publication demandée : Publier SPORT Web · WEB043"
