@@ -53,7 +53,7 @@ provider.setCustomParameters({ prompt: "select_account" });
 const ui = Object.fromEntries(
   [
     "authState", "loginButton", "logoutButton", "messageBox", "dashboard",
-    "appearanceSelect", "uxPrimaryNav", "uxSecondaryNav", "uxHeroTitle", "uxHeroEyebrow", "bootstrapMetrics", "activityDirectorySection", "advancedLandmarksSection",
+    "appearanceSelect", "appearanceSection", "uxPrimaryNav", "uxSecondaryNav", "uxHeroTitle", "uxHeroEyebrow", "bootstrapMetrics", "activityDirectorySection", "advancedLandmarksSection",
     "catalogView", "identityLine", "activityCount", "equipmentCount",
     "landmarkCount", "activityLandmarkCount", "recordCount", "expectedDocuments",
     "webDashboardSection", "webDashboardMeta", "dashboardRunningButton", "dashboardCyclingButton",
@@ -287,6 +287,7 @@ initUxNavigation();
 initializeWebStravaModule();
 installWeb049UiContract();
 installEquipmentMappingEditorWeb050();
+installUnifiedConnectionStatusWeb051();
 upgradeActivityDirectoryUi();
 upgradeActivityUiWeb046();
 upgradeActivityDetailUiWeb047();
@@ -759,6 +760,7 @@ function uxPageConfig() {
       eyebrow: "",
       subs: [
         ["strava","Strava"],
+        ["appearance","Apparence"],
         ["equipment-map","Matériel auto"],
         ["maps","Cartes"],
         ["files","Fichiers"],
@@ -796,7 +798,7 @@ function managedUxSections() {
     ui.webDashboardSection, ui.activityDirectorySection, ui.trashSection,
     ui.personalSyncSection, ui.landmarkManagerSection, ui.recordsManagerSection,
     ui.globalMapSection, ui.equipmentManagerSection,
-    ui.webStravaSection, ui.equipmentMappingSection, ui.webFilesSection, ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
+    ui.webStravaSection, ui.equipmentMappingSection, ui.appearanceSection, ui.webFilesSection, ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
   ].filter(Boolean);
 }
 
@@ -850,6 +852,8 @@ function navigateUx(page, subpage = null, options = {}) {
 
   if (page === "home") {
     setUxSectionVisibility([ui.webDashboardSection]);
+    // WEB051_HOME_AUTO_REFRESH
+    if (currentUser) void loadWebDashboard();
   } else if (page === "activities") {
     if (sub === "trash") setUxSectionVisibility([ui.trashSection]);
     else setUxSectionVisibility([ui.activityDirectorySection]);
@@ -864,7 +868,9 @@ function navigateUx(page, subpage = null, options = {}) {
       renderEquipmentManager();
     }
   } else if (page === "more") {
-    if (sub === "maps") {
+    if (sub === "appearance") {
+      setUxSectionVisibility([ui.appearanceSection]);
+    } else if (sub === "maps") {
       setUxSectionVisibility([ui.globalMapSection]);
       if (ui.globalMapModeSelect && !["routes","density"].includes(ui.globalMapModeSelect.value)) {
         ui.globalMapModeSelect.value = "routes";
@@ -1780,7 +1786,7 @@ async function loadWebDashboard() {
     ui.dashboardComparisonMeta.textContent = compareEnabled
       ? "Écart par rapport à la période précédente, comparée au même stade."
       : "Le total utilise les agrégations Firestore ; le graphique montre les 12 derniers mois.";
-    ui.webDashboardMeta.textContent = `${sportName(dashboardSport)} · ${dashboardPeriodLabel()} · DASHBOARD002`;
+    ui.webDashboardMeta.textContent = `${sportName(dashboardSport)} · ${dashboardPeriodLabel()}`;
 
     renderDashboardChart(currentRows, nowMs);
     renderDashboardTrends(trendRows, nowMs);
@@ -1929,12 +1935,12 @@ async function openDashboardBucket(bucket) {
     dashboardDrilldownText = `${sportName(dashboardSport)} · ${formatDashboardBucketRange(bucket.start, bucket.end)}`;
     ui.sportFilter.value = String(dashboardSport);
     ui.yearFilter.value = "";
-    ui.dashboardDrilldownLabel.textContent = `Filtre DASHBOARD002 : ${dashboardDrilldownText}`;
+    ui.dashboardDrilldownLabel.textContent = `Filtre : ${dashboardDrilldownText}`;
     ui.dashboardDrilldownNotice.classList.remove("hidden");
     applyFiltersAndRender();
     const catalogueHeading = ui.loadedLabel?.closest("section");
     if (catalogueHeading) catalogueHeading.scrollIntoView({ behavior: "smooth", block: "start" });
-    setMessage(`DASHBOARD002 · ${filteredActivities.length} activité(s) affichée(s) pour ${dashboardDrilldownText}.`, "success");
+    setMessage(`${filteredActivities.length} activité(s) affichée(s) pour ${dashboardDrilldownText}.`, "success");
   } catch (error) {
     handleError(error, "Ouverture des activités du graphique impossible");
   }
@@ -2747,11 +2753,11 @@ function activitySportIconMarkup(activity) {
   const code = Number(activity?.sport);
 
   if (code === 1 || code === 6) {
-    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="39" cy="10" r="5"></circle><path d="M33 20l-11 11 9 7 6-11 11 7"></path><path d="M31 38L19 57"></path><path d="M33 38L48 55"></path><path d="M22 30L9 37"></path></svg>';
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="40" cy="10" r="4.5"></circle><path d="M35 19c3 1 6 4 9 7l9-2"></path><path d="M35 19l-9 13 10 7"></path><path d="M27 30l-12 7"></path><path d="M36 39L25 55"></path><path d="M36 39l13 14"></path></svg>';
   }
 
   if ([2,3,4].includes(code)) {
-    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="16" cy="47" r="11"></circle><circle cx="49" cy="47" r="11"></circle><path d="M16 47l12-23h11l10 23"></path><path d="M28 24l11 23"></path><path d="M24 36h19"></path><path d="M27 18h10"></path></svg>';
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="16" cy="46" r="10.5"></circle><circle cx="49" cy="46" r="10.5"></circle><circle cx="37" cy="11" r="4"></circle><path d="M31 20l8 8 8-1"></path><path d="M31 20l-6 13 10 5"></path><path d="M16 46l10-18 11 18"></path><path d="M26 28h13l10 18"></path><path d="M24 22h8"></path></svg>';
   }
 
   if (code === 5) {
@@ -2788,11 +2794,11 @@ function activitySportIconMarkupWeb049(activity) {
   const sport = Number(activity?.sport);
 
   if (sport === 1 || sport === 6) {
-    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="39" cy="10" r="5"></circle><path d="M33 20l-11 11 9 7 6-11 11 7"></path><path d="M31 38L19 57"></path><path d="M33 38L48 55"></path><path d="M22 30L9 37"></path></svg>';
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="40" cy="10" r="4.5"></circle><path d="M35 19c3 1 6 4 9 7l9-2"></path><path d="M35 19l-9 13 10 7"></path><path d="M27 30l-12 7"></path><path d="M36 39L25 55"></path><path d="M36 39l13 14"></path></svg>';
   }
 
   if ([2,3,4].includes(sport)) {
-    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="16" cy="47" r="11"></circle><circle cx="49" cy="47" r="11"></circle><path d="M16 47l12-23h11l10 23"></path><path d="M28 24l11 23"></path><path d="M24 36h19"></path><path d="M27 18h10"></path></svg>';
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="16" cy="46" r="10.5"></circle><circle cx="49" cy="46" r="10.5"></circle><circle cx="37" cy="11" r="4"></circle><path d="M31 20l8 8 8-1"></path><path d="M31 20l-6 13 10 5"></path><path d="M16 46l10-18 11 18"></path><path d="M26 28h13l10 18"></path><path d="M24 22h8"></path></svg>';
   }
 
   return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="14" r="6"></circle><path d="M31 23l-7 15 9 6"></path><path d="M32 43L22 58"></path><path d="M33 43l12 15"></path></svg>';
@@ -7147,6 +7153,37 @@ async function webStravaFetch(action,options={}) {
   return payload;
 }
 
+
+function renderUnifiedConnectionStatusWeb051() {
+  const badge = document.getElementById("connectionStatusUnified");
+  if (!badge) return;
+
+  const googleFirebaseOk = Boolean(currentUser);
+  const stravaOk = Boolean(webStravaConnected);
+  const onlineOk = navigator.onLine !== false;
+  const connected = googleFirebaseOk && stravaOk && onlineOk;
+
+  badge.textContent = connected ? "Connecté" : "Non connecté";
+  badge.className =
+    "pill connection-status-web051 " +
+    (connected ? "connected" : "disconnected");
+
+  badge.title = connected
+    ? "Google/Firebase et Strava opérationnels"
+    : "Une connexion requise est indisponible (Google/Firebase, réseau ou Strava)";
+}
+
+function installUnifiedConnectionStatusWeb051() {
+  if (window.__web051ConnectionInstalled) return;
+  window.__web051ConnectionInstalled = true;
+
+  window.addEventListener("online", renderUnifiedConnectionStatusWeb051, { passive: true });
+  window.addEventListener("offline", renderUnifiedConnectionStatusWeb051, { passive: true });
+
+  renderUnifiedConnectionStatusWeb051();
+}
+
+
 function renderWebStravaState() {
   if (!ui.webStravaBadge) return;
   ui.webStravaBadge.textContent=webStravaConnected ? "Connecté · Auto" : "Non connecté";
@@ -7155,6 +7192,8 @@ function renderWebStravaState() {
   ui.webStravaDisconnectButton.disabled=!webStravaConnected || webStravaBusy;
   ui.webStravaConnectButton.disabled=webStravaBusy;
   renderWebStravaCandidates();
+
+  renderUnifiedConnectionStatusWeb051();
 }
 
 async function testWebStravaBackend() {
