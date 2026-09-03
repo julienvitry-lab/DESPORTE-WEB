@@ -553,6 +553,273 @@ select {
 
 </style>
 
+
+<style id="web048-restore-ui">
+  /* WEB048 · WEBRESTORE001 */
+
+  .web048-technical-hidden,
+  .web048-hero-hidden,
+  #detailTitle,
+  [data-ux-page="maps"],
+  #identityLine.hidden,
+  .version.hidden {
+    display: none !important;
+  }
+
+  .web048-interop {
+    white-space: nowrap;
+    font-size: .86rem;
+    padding: 7px 11px !important;
+  }
+
+  /* Répertoire : bandeau de filtres compact et fermé */
+  .activity-filters-disclosure-web048 {
+    margin: 8px 0 14px !important;
+    border: 1px solid rgba(128,128,128,.26);
+    border-radius: 14px;
+    background: rgba(128,128,128,.035);
+    overflow: hidden;
+  }
+
+  .activity-filters-disclosure-web048 > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    cursor: pointer;
+    padding: 10px 14px;
+    list-style: none;
+    font-weight: 700;
+    user-select: none;
+  }
+
+  .activity-filters-disclosure-web048 > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .activity-filters-disclosure-web048 > summary::after {
+    content: "⌄";
+    font-size: 1.2rem;
+    transition: transform .15s ease;
+  }
+
+  .activity-filters-disclosure-web048[open] > summary::after {
+    transform: rotate(180deg);
+  }
+
+  .activity-filters-disclosure-web048 > summary small {
+    margin-left: auto;
+    opacity: .68;
+    font-weight: 400;
+  }
+
+  .activity-filters-disclosure-web048 > .filters {
+    margin: 0 !important;
+    padding: 8px 14px 14px !important;
+  }
+
+  .directory-load-actions-bottom {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin: 12px 0 2px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(128,128,128,.16);
+  }
+
+  /* Carte d'activité : grand logo + Date + Départ + stats */
+  #activityList .activity-card {
+    grid-template-columns:
+      82px
+      minmax(112px,.78fr)
+      minmax(82px,.52fr)
+      repeat(3,minmax(90px,.64fr))
+      minmax(135px,.85fr)
+      minmax(120px,.75fr)
+      !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    min-height: 94px !important;
+  }
+
+  #activityList .activity-main-web048 {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 0 !important;
+  }
+
+  #activityList .activity-sport-icon-web048 {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 68px !important;
+    height: 68px !important;
+    color: var(--green, #b7ff28);
+  }
+
+  #activityList .activity-sport-icon-web048 svg {
+    width: 60px !important;
+    height: 60px !important;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  #activityList .datum {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    min-width: 0;
+  }
+
+  #activityList .datum strong {
+    font-size: 1.03rem;
+  }
+
+  #activityList .activity-date-datum strong,
+  #activityList .activity-time-datum strong {
+    font-size: .98rem;
+    white-space: nowrap;
+  }
+
+  /* Détail : logo sport uniquement */
+  #detailView #detailSportLine {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  #detailView .detail-sport-svg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 66px;
+    height: 66px;
+    color: var(--green, #b7ff28);
+  }
+
+  #detailView .detail-sport-svg svg {
+    width: 58px;
+    height: 58px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  #detailView #detailDateLine {
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: 7px !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+  }
+
+  #detailView .detail-start-stat {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 8px 9px;
+    border: 1px solid rgba(128,128,128,.22);
+    border-radius: 12px;
+    background: rgba(128,128,128,.035);
+  }
+
+  #detailView .detail-start-stat strong {
+    font-size: .98rem;
+    white-space: nowrap;
+  }
+
+  #detailView .detail-start-stat span {
+    margin-top: 4px;
+    opacity: .75;
+    font-size: .77rem;
+  }
+
+  /* WEB047 reste la règle : ligne 1 statistiques, ligne 2 matériel + repères */
+  #detailView .detail-hero-two-lines {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  #detailView .detail-hero-two-lines > .detail-summary-row {
+    display: grid !important;
+    grid-template-columns:
+      minmax(82px,.55fr)
+      minmax(205px,1.15fr)
+      minmax(0,4.8fr)
+      !important;
+    width: 100% !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  #detailView .detail-summary-row > #detailHeroMetrics {
+    display: grid !important;
+    grid-template-columns: repeat(5,minmax(0,1fr)) !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  #detailView .detail-hero-two-lines > .detail-controls-row {
+    display: grid !important;
+    grid-template-columns: minmax(300px,.9fr) minmax(0,2.5fr) !important;
+    width: 100% !important;
+    gap: 14px !important;
+    align-items: end !important;
+  }
+
+  #detailView .detail-controls-row > .detail-data-quality {
+    display: none !important;
+  }
+
+  @media (max-width: 1050px) {
+    #activityList .activity-card {
+      grid-template-columns:
+        68px minmax(105px,.8fr) 76px repeat(3,minmax(82px,.7fr))
+        !important;
+    }
+
+    #activityList .activity-card .hide-md {
+      display: none !important;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .activity-filters-disclosure-web048 > summary small {
+      display: none;
+    }
+
+    #activityList .activity-card {
+      grid-template-columns: 60px minmax(105px,1fr) 74px 92px !important;
+    }
+
+    #activityList .activity-card .hide-sm {
+      display: none !important;
+    }
+
+    #detailView .detail-hero-two-lines > .detail-summary-row {
+      grid-template-columns: 80px minmax(185px,1fr) !important;
+    }
+
+    #detailView .detail-summary-row > #detailHeroMetrics {
+      grid-column: 1 / -1 !important;
+      grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    }
+
+    #detailView .detail-hero-two-lines > .detail-controls-row {
+      grid-template-columns: 1fr !important;
+    }
+  }
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -1961,7 +2228,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB047-WEBACTIVITY003"></script>
+  <script type="module" src="./app.js?v=WEB048-WEBRESTORE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

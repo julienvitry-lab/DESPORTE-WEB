@@ -286,6 +286,7 @@ upgradeActivityDirectoryUi();
 upgradeActivityUiWeb046();
 upgradeActivityDetailUiWeb047();
 installActivityDetailStickyObserverWeb047();
+installInterfaceGuardWeb048();
 
 
 // -----------------------------------------------------------------------------
@@ -486,14 +487,157 @@ function installActivityDetailStickyObserverWeb047() {
   }
 }
 
+
+// -----------------------------------------------------------------------------
+// WEB048 · WEBRESTORE001 — garde-fou des choix d'interface validés
+// -----------------------------------------------------------------------------
+function restoreInterfaceWeb048() {
+  // Cartes n'est plus un onglet primaire.
+  document.querySelectorAll('[data-ux-page="maps"]').forEach((button) => button.remove());
+
+  // Aucun titre personnalisé dans le répertoire ou le détail.
+  if (ui.detailTitle) {
+    ui.detailTitle.textContent = "";
+    ui.detailTitle.classList.add("hidden");
+  }
+
+  // Un seul statut d'interopérabilité : dans le topbar, juste avant Firebase.
+  const compactInterop = document.getElementById("interopCompactStatus");
+  if (compactInterop) {
+    compactInterop.textContent = "Intéropérabilité OK";
+    compactInterop.className = currentUser ? "pill ok web048-interop" : "pill ok web048-interop hidden";
+  }
+
+  document.querySelectorAll(".interop-badge, #personalSyncStatus").forEach((node) => {
+    if (node.id !== "interopCompactStatus") node.classList.add("hidden");
+  });
+
+  // Mentions techniques visibles : WEBxxx, identité projet, version.
+  const identity = document.getElementById("identityLine");
+  if (identity) identity.classList.add("hidden");
+
+  document.querySelectorAll(".version").forEach((node) => node.classList.add("hidden"));
+
+  document.querySelectorAll(".eyebrow").forEach((node) => {
+    if (/^WEB\d+/i.test(String(node.textContent || "").trim())) {
+      node.classList.add("web048-technical-hidden");
+    }
+  });
+
+  // Les gros heros Activités et Plus sont redondants avec les onglets.
+  const page = document.body.dataset.uxPage || "";
+  const hero = document.querySelector("#catalogView > .hero");
+  if (hero) hero.classList.toggle("web048-hero-hidden", page === "activities" || page === "more");
+
+  // Répertoire : le pavé de filtres redevient un bandeau déroulant fermé par défaut.
+  const directory = document.getElementById("activityDirectorySection");
+  const filters = directory?.querySelector(":scope > .filters");
+
+  if (filters && !filters.closest("details.activity-filters-disclosure-web048")) {
+    const details = document.createElement("details");
+    details.className = "activity-filters-disclosure activity-filters-disclosure-web048";
+
+    const summary = document.createElement("summary");
+    summary.innerHTML =
+      '<span>Tri des activités</span><small>Recherche, sport, année, matériel, repères…</small>';
+
+    filters.parentNode.insertBefore(details, filters);
+    details.append(summary, filters);
+    details.open = false;
+  }
+
+  // En-tête Répertoire / WEB031 / compteurs supprimé ; boutons Charger... conservés en bas.
+  if (directory) {
+    const header = directory.querySelector(":scope > .panel-title-row");
+    const list = document.getElementById("activityList");
+
+    if (header && list) {
+      const actions = header.querySelector(".panel-actions");
+      if (actions && !directory.querySelector(".directory-load-actions-bottom")) {
+        const bottom = document.createElement("div");
+        bottom.className = "directory-load-actions-bottom";
+        bottom.append(...Array.from(actions.children));
+        list.insertAdjacentElement("afterend", bottom);
+      }
+      header.remove();
+    }
+
+    directory.querySelectorAll("#loadedLabel, .activity-directory-footer .muted")
+      .forEach((node) => node.classList.add("hidden"));
+  }
+
+  // Les messages purement techniques WEBxxx restent silencieux, sauf erreur.
+  const box = document.getElementById("messageBox");
+  if (box) {
+    const text = String(box.textContent || "").trim();
+    const isError = box.classList.contains("error");
+    if (!isError && (/^WEB\d+/i.test(text) || /interopérabilit/i.test(text))) {
+      box.classList.add("hidden");
+    }
+  }
+}
+
+function installInterfaceGuardWeb048() {
+  if (window.__web048GuardInstalled) return;
+  window.__web048GuardInstalled = true;
+
+  const run = () => requestAnimationFrame(() => restoreInterfaceWeb048());
+
+  run();
+
+  const observer = new MutationObserver(run);
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class"]
+  });
+  window.__web048GuardObserver = observer;
+}
+
+
 function uxPageConfig() {
   return {
-    home: { title: "Accueil", eyebrow: "VUE D’ENSEMBLE", subs: [] },
-    activities: { title: "Activités", eyebrow: "", subs: [["directory","Répertoire"],["trash","Corbeille"]] },
-    analysis: { title: "Analyse", eyebrow: "PROGRESSION & REPÈRES", subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]] },
-    maps: { title: "Cartes", eyebrow: "EXPLORATION", subs: [["routes","Carte globale"],["density","Densité"]] },
-    equipment: { title: "Matériel", eyebrow: "ÉQUIPEMENT", subs: [["used","Utilisé"],["all","Tout le matériel"]] },
-    more: { title: "Plus", eyebrow: "OUTILS & SYNCHRONISATION", subs: [["strava","Strava"],["equipment-map","Matériel auto"],["files","Fichiers"],["manual","Ajout manuel"],["import","Import"],["sync","Synchronisation"],["health","Santé sync"],["data","Données"],["landmarks-advanced","Repères avancés"]] }
+    home: {
+      title: "Accueil",
+      eyebrow: "VUE D’ENSEMBLE",
+      subs: []
+    },
+    activities: {
+      title: "Activités",
+      eyebrow: "",
+      subs: [["directory","Répertoire"],["trash","Corbeille"]]
+    },
+    analysis: {
+      title: "Analyse",
+      eyebrow: "PROGRESSION & REPÈRES",
+      subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]]
+    },
+    maps: {
+      title: "Cartes",
+      eyebrow: "EXPLORATION",
+      subs: [["routes","Carte globale"],["density","Densité"]]
+    },
+    equipment: {
+      title: "Matériel",
+      eyebrow: "ÉQUIPEMENT",
+      subs: [["used","Utilisé"],["all","Tout le matériel"]]
+    },
+    more: {
+      title: "Plus",
+      eyebrow: "",
+      subs: [
+        ["strava","Strava"],
+        ["equipment-map","Matériel auto"],
+        ["maps","Cartes"],
+        ["files","Fichiers"],
+        ["manual","Ajout manuel"],
+        ["import","Import"],
+        ["sync","Synchronisation"],
+        ["health","Santé sync"],
+        ["landmarks-advanced","Repères avancés"]
+      ]
+    }
   };
 }
 
@@ -550,7 +694,9 @@ function renderUxSecondaryNav(page, activeSub) {
   ui.uxSecondaryNav.appendChild(inner);
 }
 
-function navigateUx(page, subpage = null, options = {}) {
+function navigateUx(page, subpage = null, options = {
+  if (page === "maps") { page = "more"; subpage = "maps"; }
+}) {
   const config = uxPageConfig();
   if (!config[page]) page = "home";
   const allowedSubs = new Set(config[page].subs.map(([key]) => key));
@@ -559,6 +705,7 @@ function navigateUx(page, subpage = null, options = {}) {
 
   uxCurrentPage = page;
   uxCurrentSubpage = sub;
+  document.body.dataset.uxPage = page;
   document.body.classList.toggle("ux-activities-page", page === "activities");
 
   if (!ui.detailView.classList.contains("hidden")) showCatalog(false);
@@ -593,7 +740,13 @@ function navigateUx(page, subpage = null, options = {}) {
       renderEquipmentManager();
     }
   } else if (page === "more") {
-    if (sub === "strava") {
+    if (sub === "maps") {
+      setUxSectionVisibility([ui.globalMapSection]);
+      if (ui.globalMapModeSelect && !["routes","density"].includes(ui.globalMapModeSelect.value)) {
+        ui.globalMapModeSelect.value = "routes";
+      }
+      markGlobalMapStale();
+    } else if (sub === "strava") {
       setUxSectionVisibility([ui.webStravaSection]);
       void refreshWebStravaStatus();
     } else if (sub === "equipment-map") {
@@ -610,6 +763,7 @@ function navigateUx(page, subpage = null, options = {}) {
     else setUxSectionVisibility([ui.syncCenterSection]);
   }
 
+  queueMicrotask(() => restoreInterfaceWeb048());
   if (!options.keepScroll) window.scrollTo({top:0,behavior:"smooth"});
   sessionStorage.setItem("sport_web_ux_page", page);
   sessionStorage.setItem("sport_web_ux_subpage", sub);
@@ -2402,7 +2556,8 @@ function renderActivities() {
     button.addEventListener("click", () => showActivity(activity));
 
     button.appendChild(activityMain(activity));
-    button.appendChild(datum("Départ", formatActivityStart(activity.start_time_ms), "activity-start-datum"));
+    button.appendChild(datum("Date", formatActivityDate(activity.start_time_ms), "activity-date-datum"));
+    button.appendChild(datum("Départ", formatActivityTime(activity.start_time_ms), "activity-time-datum"));
     button.appendChild(datum("Distance", formatDistance(activity.distance_m)));
     button.appendChild(datum("D+", formatMeters(activity.ascent_m), "hide-sm"));
     button.appendChild(datum("Durée", formatDuration(activity.elapsed_time_ms), "hide-sm"));
@@ -2435,35 +2590,51 @@ function renderActivities() {
 
 function activitySportIconMarkup(activity) {
   const code = Number(activity?.sport);
-  if (code === 1) {
-    return '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="30" cy="7.5" r="4.2"></circle><path d="M25 15l-8 8 7 5 4-8 8 5"></path><path d="M23.5 28L15 42"></path><path d="M24.5 28L35 40"></path><path d="M17 23l-8 5"></path></svg>';
+
+  if (code === 1 || code === 6) {
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="39" cy="10" r="5"></circle><path d="M33 20l-11 11 9 7 6-11 11 7"></path><path d="M31 38L19 57"></path><path d="M33 38L48 55"></path><path d="M22 30L9 37"></path></svg>';
   }
-  if (code === 2) {
-    return '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="12" cy="35" r="8"></circle><circle cx="36" cy="35" r="8"></circle><path d="M12 35l9-16h8l7 16"></path><path d="M21 19l8 16"></path><path d="M18 27h14"></path><path d="M20 15h7"></path></svg>';
+
+  if ([2,3,4].includes(code)) {
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="16" cy="47" r="11"></circle><circle cx="49" cy="47" r="11"></circle><path d="M16 47l12-23h11l10 23"></path><path d="M28 24l11 23"></path><path d="M24 36h19"></path><path d="M27 18h10"></path></svg>';
   }
-  if (code === 5) return '<span class="activity-icon-fallback">🏊</span>';
-  if (code === 11 || code === 17) return '<span class="activity-icon-fallback">🥾</span>';
-  return '<span class="activity-icon-fallback">●</span>';
+
+  if (code === 5) {
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 42c8-7 15-7 23 0s15 7 25 0"></path><path d="M8 52c8-7 15-7 23 0s15 7 25 0"></path><circle cx="24" cy="22" r="5"></circle><path d="M29 27l13 8"></path></svg>';
+  }
+
+  if ([11,17].includes(code)) {
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="34" cy="10" r="5"></circle><path d="M31 19l-8 15 10 7"></path><path d="M33 40L22 57"></path><path d="M34 40l12 17"></path><path d="M22 31L11 43"></path></svg>';
+  }
+
+  return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="16"></circle></svg>';
 }
 
-function formatActivityStart(value) {
+function formatActivityDate(value) {
   const date = dateFromMs(value);
   if (!date) return "—";
-  const day = new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit", month: "2-digit", year: "numeric"
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
   }).format(date);
-  const time = new Intl.DateTimeFormat("fr-FR", {
-    hour: "2-digit", minute: "2-digit"
+}
+
+function formatActivityTime(value) {
+  const date = dateFromMs(value);
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit"
   }).format(date);
-  return `${day} · ${time}`;
 }
 
 function activityMain(activity) {
   const cell = document.createElement("div");
-  cell.className = "activity-main activity-main-web046";
+  cell.className = "activity-main activity-main-web048";
 
   const icon = document.createElement("span");
-  icon.className = "activity-sport-icon activity-sport-icon-web046";
+  icon.className = "activity-sport-icon activity-sport-icon-web048";
   icon.innerHTML = activitySportIconMarkup(activity);
   icon.setAttribute("aria-label", sportName(activity.sport));
   icon.title = sportName(activity.sport);
@@ -3019,8 +3190,17 @@ function renderDetail(activity) {
   ui.trashCurrentActivityButton.textContent =
     activity.deleted_at_ms == null ? "🗑 Mettre à la corbeille" : "↩ Restaurer";
   const sportLabel = sportName(activity.sport);
-  ui.detailSportLine.textContent = sportLabel;
-  ui.detailDateLine.textContent = formatDateLong(activity.start_time_ms).replace(" à ", " · ");
+  ui.detailTitle.textContent = "";
+  ui.detailTitle.classList.add("hidden");
+
+  ui.detailSportLine.innerHTML =
+    '<span class="detail-sport-svg">' + activitySportIconMarkup(activity) + '</span>';
+  ui.detailSportLine.setAttribute("aria-label", sportLabel);
+  ui.detailSportLine.title = sportLabel;
+
+  ui.detailDateLine.innerHTML =
+    '<span class="detail-start-stat"><strong>' + formatActivityDate(activity.start_time_ms) + '</strong><span>Date</span></span>' +
+    '<span class="detail-start-stat"><strong>' + formatActivityTime(activity.start_time_ms) + '</strong><span>Départ</span></span>';
 
   renderHeroMetrics(activity);
   renderSummary(activity);
