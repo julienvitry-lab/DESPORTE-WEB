@@ -287,7 +287,6 @@ initUxNavigation();
 initializeWebStravaModule();
 installWeb049UiContract();
 installEquipmentMappingEditorWeb050();
-installUnifiedConnectionStatusWeb051();
 upgradeActivityDirectoryUi();
 upgradeActivityUiWeb046();
 upgradeActivityDetailUiWeb047();
@@ -852,8 +851,10 @@ function navigateUx(page, subpage = null, options = {}) {
 
   if (page === "home") {
     setUxSectionVisibility([ui.webDashboardSection]);
-    // WEB051_HOME_AUTO_REFRESH
-    if (currentUser) void loadWebDashboard();
+    // WEB051_HOME_AUTO_REFRESH_SAFE
+    if (currentUser) {
+      queueMicrotask(() => { void loadWebDashboard(); });
+    }
   } else if (page === "activities") {
     if (sub === "trash") setUxSectionVisibility([ui.trashSection]);
     else setUxSectionVisibility([ui.activityDirectorySection]);
@@ -946,6 +947,9 @@ function wireEvents() {
   });
 
   ui.logoutButton.addEventListener("click", () => signOut(auth));
+  // WEB051_CONNECTION_NETWORK_EVENTS
+  window.addEventListener("online", renderGlobalConnectionStatusWeb051, { passive: true });
+  window.addEventListener("offline", renderGlobalConnectionStatusWeb051, { passive: true });
   ui.metricChartCloseButton?.addEventListener("click", () => closeMetricChart());
   ui.webImportFileInput?.addEventListener("change", (event) => {
     void handleWebImportFiles([...event.target.files]);
@@ -1260,8 +1264,7 @@ onAuthStateChanged(auth, async (user) => {
 
   sessionStorage.removeItem("sport_web_auth_redirect_pending");
   if (ui.loginButton) ui.loginButton.disabled = false;
-  ui.authState.textContent = "Firebase connecté";
-  ui.authState.className = "pill ok auth-pill";
+  renderGlobalConnectionStatusWeb051();
   ui.loginButton.classList.add("hidden");
   ui.logoutButton.classList.remove("hidden");
   ui.dashboard.classList.remove("hidden");
@@ -1940,7 +1943,7 @@ async function openDashboardBucket(bucket) {
     applyFiltersAndRender();
     const catalogueHeading = ui.loadedLabel?.closest("section");
     if (catalogueHeading) catalogueHeading.scrollIntoView({ behavior: "smooth", block: "start" });
-    setMessage(`${filteredActivities.length} activité(s) affichée(s) pour ${dashboardDrilldownText}.`, "success");
+    setMessage(`DASHBOARD002 · ${filteredActivities.length} activité(s) affichée(s) pour ${dashboardDrilldownText}.`, "success");
   } catch (error) {
     handleError(error, "Ouverture des activités du graphique impossible");
   }
@@ -7154,33 +7157,23 @@ async function webStravaFetch(action,options={}) {
 }
 
 
-function renderUnifiedConnectionStatusWeb051() {
-  const badge = document.getElementById("connectionStatusUnified");
-  if (!badge) return;
+function renderGlobalConnectionStatusWeb051() {
+  if (!ui.authState) return;
 
-  const googleFirebaseOk = Boolean(currentUser);
-  const stravaOk = Boolean(webStravaConnected);
-  const onlineOk = navigator.onLine !== false;
-  const connected = googleFirebaseOk && stravaOk && onlineOk;
+  const connected =
+    Boolean(currentUser) &&
+    Boolean(webStravaConnected) &&
+    navigator.onLine !== false;
 
-  badge.textContent = connected ? "Connecté" : "Non connecté";
-  badge.className =
-    "pill connection-status-web051 " +
-    (connected ? "connected" : "disconnected");
+  ui.authState.textContent = connected ? "Connecté" : "Non connecté";
+  ui.authState.className =
+    connected
+      ? "pill auth-pill connection-status-web051 connected"
+      : "pill auth-pill connection-status-web051 disconnected";
 
-  badge.title = connected
+  ui.authState.title = connected
     ? "Google/Firebase et Strava opérationnels"
-    : "Une connexion requise est indisponible (Google/Firebase, réseau ou Strava)";
-}
-
-function installUnifiedConnectionStatusWeb051() {
-  if (window.__web051ConnectionInstalled) return;
-  window.__web051ConnectionInstalled = true;
-
-  window.addEventListener("online", renderUnifiedConnectionStatusWeb051, { passive: true });
-  window.addEventListener("offline", renderUnifiedConnectionStatusWeb051, { passive: true });
-
-  renderUnifiedConnectionStatusWeb051();
+    : "Une connexion requise est indisponible : Google/Firebase, réseau ou Strava";
 }
 
 
@@ -7193,7 +7186,7 @@ function renderWebStravaState() {
   ui.webStravaConnectButton.disabled=webStravaBusy;
   renderWebStravaCandidates();
 
-  renderUnifiedConnectionStatusWeb051();
+  renderGlobalConnectionStatusWeb051();
 }
 
 async function testWebStravaBackend() {

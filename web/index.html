@@ -1242,11 +1242,11 @@ select {
 </style>
   <!-- WEB050 · WEBEQUIPMAP002 · éditeur de correspondances matériel -->
 
-<style id="web051-ui002-css">
-  /* Un seul statut global visible dans le topbar. */
+<style id="web051-fix1-css">
   #interopCompactStatus,
   #web049InteropStatus,
-  #authState {
+  .hero-actions .interop-badge,
+  #personalSyncStatus {
     display: none !important;
   }
 
@@ -1256,7 +1256,6 @@ select {
     text-align: center;
     color: #fff !important;
     font-weight: 700;
-    border-width: 1px !important;
   }
 
   .connection-status-web051.connected {
@@ -1271,18 +1270,13 @@ select {
     color: #fff !important;
   }
 
-  /* Apparence uniquement dans Plus. */
-  .topbar .appearance-picker {
-    display: none !important;
-  }
-
   .appearance-settings-web051 {
     max-width: 560px;
-    padding-top: 8px;
   }
 
-  .appearance-settings-web051 label {
-    display: grid;
+  .appearance-settings-web051 .appearance-picker {
+    display: grid !important;
+    grid-template-columns: 1fr;
     gap: 8px;
   }
 
@@ -1290,7 +1284,6 @@ select {
     width: 100%;
   }
 
-  /* Accueil : le nom de l'onglet suffit. */
   body[data-ux-page="home"] #catalogView > .hero {
     display: none !important;
   }
@@ -1303,22 +1296,14 @@ select {
     display: none !important;
   }
 
-  /* Icônes plus douces et homogènes. */
   .activity-sport-icon-web049 svg,
   .detail-sport-svg-web049 svg {
     stroke-width: 2.8 !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
   }
-
-  @media (max-width: 760px) {
-    .connection-status-web051 {
-      min-width: 94px;
-      font-size: .8rem;
-    }
-  }
 </style>
-  <!-- WEB051 · WEBUI002 · topbar connexion / apparence / accueil / icônes -->
+  <!-- WEB051-FIX1 · auth safe -->
 </head>
 <body>
   <header class="topbar">
@@ -1327,8 +1312,7 @@ select {
       <div class="version">WEB044 · WEBSPLIT003-FIX2 · WEBSTRAVA003 · WEBEQUIPMAP001 · Comfortaa · Firestore</div>
     </div>
     <div class="auth-actions">
-<span id="connectionStatusUnified" class="pill connection-status-web051 disconnected">Non connecté</span>
-      <span id="interopCompactStatus" class="pill ok hidden">Intéropérabilité OK</span>
+<span id="interopCompactStatus" class="pill ok hidden">Intéropérabilité OK</span>
       <span id="web049InteropStatus" class="pill ok hidden">Intéropérabilité OK</span>
       <span id="authState" class="pill neutral">Non connecté</span>
       <button id="loginButton" class="primary">Se connecter avec Google</button>
@@ -1388,7 +1372,7 @@ select {
           </div>
 
           <div class="dashboard-metric-grid">
-            <article class="dashboard-metric"><span>Nombre</span><strong id="dashboardActivityValue">—</strong><small id="dashboardActivityDelta" class="dashboard-delta">—</small></article>
+            <article class="dashboard-metric"><span>Activités</span><strong id="dashboardActivityValue">—</strong><small id="dashboardActivityDelta" class="dashboard-delta">—</small></article>
             <article class="dashboard-metric"><span>Distance</span><strong id="dashboardDistanceValue">—</strong><small id="dashboardDistanceDelta" class="dashboard-delta">—</small></article>
             <article class="dashboard-metric"><span>Temps</span><strong id="dashboardDurationValue">—</strong><small id="dashboardDurationDelta" class="dashboard-delta">—</small></article>
             <article class="dashboard-metric"><span>D+</span><strong id="dashboardAscentValue">—</strong><small id="dashboardAscentDelta" class="dashboard-delta">—</small></article>
@@ -1567,17 +1551,16 @@ select {
       <p class="muted">Choisis l’apparence générale de SPORT Web.</p>
     </div>
   </div>
-
   <div class="appearance-settings-web051">
-    <label>
-      Thème
-      <select id="appearanceSelect" aria-label="Apparence SPORT Web">
-        <option value="sport">SPORT · Noir / vert</option>
-        <option value="aurum">Aurum Futur · Or nocturne</option>
-        <option value="light">Clair</option>
-        <option value="contrast">Contraste</option>
-      </select>
-    </label>
+    <label class="appearance-picker" title="Changer l’apparence">
+        <span>Apparence</span>
+        <select id="appearanceSelect" aria-label="Apparence SPORT Web">
+          <option value="sport">SPORT · Noir / vert</option>
+          <option value="aurum">Aurum Futur · Or nocturne</option>
+          <option value="light">Clair</option>
+          <option value="contrast">Contraste</option>
+        </select>
+      </label>
   </div>
 </section>
 
@@ -2757,7 +2740,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB051-WEBUI002"></script>
+  <script type="module" src="./app.js?v=WEB051-FIX1-AUTH-SAFE"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
