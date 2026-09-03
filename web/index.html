@@ -1243,128 +1243,148 @@ select {
   <!-- WEB050 · WEBEQUIPMAP002 · éditeur de correspondances matériel -->
   <!-- WEB050 · AUTHRESTORE002 · popup Google + firebaseapp authDomain -->
 
-<style id="web050-fixui002-css">
-  /* WEB050-FIXUI002
-     Correction strictement visuelle : aucun JS/Auth modifié. */
 
-  /* --- Bandeau de filtres compact --- */
-  #activityDirectorySection details > summary,
-  #activityDirectorySection summary {
+<style id="web050-fixui003-css">
+  /* ---- Statut global ---- */
+  .web051-connection {
+    min-width: 108px !important;
+    justify-content: center !important;
+    text-align: center !important;
+    font-weight: 700 !important;
+    color: #fff !important;
+  }
+
+  .web051-connection.connected {
+    background: #177245 !important;
+    border-color: #35a86d !important;
+    color: #fff !important;
+  }
+
+  .web051-connection.disconnected {
+    background: #a72b2b !important;
+    border-color: #d34a4a !important;
+    color: #fff !important;
+  }
+
+  /* Les autres statuts d'interop ne doivent pas doubler le badge global. */
+  #interopCompactStatus,
+  #web049InteropStatus {
+    display: none !important;
+  }
+
+  /* ---- Tri des activités : résumé court, quelles que soient ses text nodes ---- */
+  #activityDirectorySection details > summary {
     min-height: 42px !important;
+    height: 42px !important;
+    box-sizing: border-box !important;
     padding: 9px 14px !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 8px !important;
-    line-height: 1.2 !important;
-    cursor: pointer !important;
+    line-height: 22px !important;
+    font-size: 0 !important;
     white-space: nowrap !important;
     overflow: hidden !important;
   }
 
-  /* Quand le panneau est replié : garder seulement le libellé principal. */
-  #activityDirectorySection details:not([open]) > summary > *:not(:first-child) {
+  #activityDirectorySection details > summary::marker {
+    font-size: 15px !important;
+  }
+
+  #activityDirectorySection details > summary::after {
+    content: "Tri des activités";
+    font-size: 16px !important;
+    line-height: 22px !important;
+    font-weight: 600 !important;
+  }
+
+  #activityDirectorySection details > summary * {
     display: none !important;
   }
 
-  #activityDirectorySection details > summary strong,
-  #activityDirectorySection details > summary b {
-    font-size: 0.98rem !important;
+  /* ---- Bandeaux d'activités ----
+     :has(svg) cible la carte réellement générée, sans supposer sa classe. */
+  #activityList > *:has(svg) {
+    height: 92px !important;
+    min-height: 92px !important;
+    max-height: 92px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    align-items: center !important;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
   }
 
-  /* Éviter tout collage du texte "Tri des activitésRecherche..." */
-  #activityDirectorySection details > summary > * {
-    margin: 0 !important;
-  }
-
-  /* --- Icône sport : taille raisonnable et SVG en traits --- */
-  #activityList .activity-sport-icon-web049,
-  .activity-sport-icon-web049 {
-    width: 64px !important;
-    height: 64px !important;
-    min-width: 64px !important;
-    min-height: 64px !important;
-    max-width: 64px !important;
-    max-height: 64px !important;
-    flex: 0 0 64px !important;
-    display: grid !important;
-    place-items: center !important;
+  /* Conteneur réel de l'icône */
+  #activityList > *:has(svg) > *:has(svg) {
+    width: 68px !important;
+    min-width: 68px !important;
+    max-width: 68px !important;
+    height: 68px !important;
+    min-height: 68px !important;
+    max-height: 68px !important;
+    place-self: center !important;
     align-self: center !important;
     justify-self: center !important;
     overflow: hidden !important;
-    color: var(--accent, #aaff22) !important;
+    padding: 0 !important;
+    margin: 0 !important;
     background: transparent !important;
     border: 0 !important;
-    padding: 0 !important;
   }
 
-  #activityList .activity-sport-icon-web049 svg,
-  .activity-sport-icon-web049 svg {
-    width: 52px !important;
-    height: 52px !important;
-    max-width: 52px !important;
-    max-height: 52px !important;
+  /* SVG lui-même : cible générique, prioritaire sur anciennes règles. */
+  #activityList svg {
+    width: 54px !important;
+    min-width: 54px !important;
+    max-width: 54px !important;
+    height: 54px !important;
+    min-height: 54px !important;
+    max-height: 54px !important;
     display: block !important;
+    margin: auto !important;
+    overflow: visible !important;
+    color: var(--accent, #aaff22) !important;
     fill: none !important;
     stroke: currentColor !important;
     stroke-width: 2.7 !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
-    vector-effect: non-scaling-stroke !important;
   }
 
-  #activityList .activity-sport-icon-web049 svg circle,
-  #activityList .activity-sport-icon-web049 svg path,
-  #activityList .activity-sport-icon-web049 svg line,
-  #activityList .activity-sport-icon-web049 svg polyline,
-  .activity-sport-icon-web049 svg circle,
-  .activity-sport-icon-web049 svg path,
-  .activity-sport-icon-web049 svg line,
-  .activity-sport-icon-web049 svg polyline {
+  #activityList svg * {
     fill: none !important;
     stroke: currentColor !important;
+    stroke-width: inherit !important;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
   }
 
-  /* --- Carte activité : revenir à un bandeau compact --- */
-  #activityList > *:has(.activity-sport-icon-web049) {
-    min-height: 82px !important;
-    height: auto !important;
-    max-height: none !important;
-    padding-top: 10px !important;
-    padding-bottom: 10px !important;
-    align-items: center !important;
+  /* Aucune image/icône ne peut faire exploser le bandeau. */
+  #activityList > *:has(svg) img,
+  #activityList > *:has(svg) canvas {
+    max-width: 54px !important;
+    max-height: 54px !important;
+    object-fit: contain !important;
   }
 
-  #activityList > *:has(.activity-sport-icon-web049) > * {
+  /* Les tuiles stats restent compactes. */
+  #activityList > *:has(svg) > * {
     min-height: 0 !important;
-  }
-
-  /* Les valeurs Date / Départ / Distance / D+ / Durée restent lisibles
-     sans gonfler verticalement le bandeau. */
-  #activityList > *:has(.activity-sport-icon-web049) strong {
-    line-height: 1.08 !important;
-  }
-
-  #activityList > *:has(.activity-sport-icon-web049) small,
-  #activityList > *:has(.activity-sport-icon-web049) .muted {
-    line-height: 1.05 !important;
+    max-height: 72px !important;
   }
 
   @media (max-width: 900px) {
-    #activityList .activity-sport-icon-web049,
-    .activity-sport-icon-web049 {
-      width: 54px !important;
-      height: 54px !important;
-      min-width: 54px !important;
-      min-height: 54px !important;
-      max-width: 54px !important;
-      max-height: 54px !important;
-      flex-basis: 54px !important;
+    #activityList > *:has(svg) {
+      height: auto !important;
+      min-height: 86px !important;
+      max-height: none !important;
     }
 
-    #activityList .activity-sport-icon-web049 svg,
-    .activity-sport-icon-web049 svg {
-      width: 44px !important;
-      height: 44px !important;
+    #activityList svg {
+      width: 46px !important;
+      height: 46px !important;
+      min-width: 46px !important;
+      min-height: 46px !important;
+      max-width: 46px !important;
+      max-height: 46px !important;
     }
   }
 </style>
@@ -2793,7 +2813,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB050-FIXUI002"></script>
+  <script type="module" src="./app.js?v=WEB050-FIXUI003"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
