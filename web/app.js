@@ -1753,44 +1753,60 @@ function web055FormatPace(valueSecondsPerKm) {
 }
 
 function web055SafeChargeScore(activity) {
-  try {
-    if (typeof activityChargePresentation === "function") {
-      const score = Number(activityChargePresentation(activity)?.score);
-      if (Number.isFinite(score)) return Math.max(0, score);
-    }
-  } catch (_) {}
-
+  /* WEB055-FIX3 · PERF003
+     Même base de charge universelle que SPORT Android :
+     (minutes + 2 × km + D+/100) × facteur FC, facteur borné à 0,75..1,50. */
   for (const raw of [
     activity?.training_load,
     activity?.trainingLoad,
     activity?.load,
     activity?.activity_load,
     activity?.activityLoad,
-    activity?.trimp
+    activity?.trimp,
+    activity?.charge_score,
+    activity?.chargeScore,
+    activity?.sport_load,
+    activity?.sportLoad
   ]) {
     const value = Number(raw);
-    if (Number.isFinite(value)) return Math.max(0, value);
+    if (Number.isFinite(value) && value >= 0) return value;
   }
-  return null;
+
+  const durationMs = web055ActivityDurationMs(activity);
+  const minutes = Math.max(0, Number(durationMs) || 0) / 60000;
+  const km = Math.max(0, Number(activity?.distance_m) || 0) / 1000;
+  const ascent = Math.max(0, Number(activity?.ascent_m) || 0);
+
+  let hrFactor = 1;
+  const avgHr = Number(activity?.avg_hr);
+  if (Number.isFinite(avgHr) && avgHr > 0) {
+    hrFactor = Math.max(0.75, Math.min(1.50, avgHr / 130));
+  }
+
+  const score = (minutes + km * 2 + ascent / 100) * hrFactor;
+  return Number.isFinite(score) && score > 0 ? score : null;
 }
 
 function web055SafeGapSecondsPerKm(activity) {
-  try {
-    if (typeof storedGapSecondsPerKm === "function") {
-      const value = Number(storedGapSecondsPerKm(activity));
-      if (Number.isFinite(value) && value > 0) return value;
-    }
-  } catch (_) {}
-
   for (const raw of [
     activity?.gap_seconds_per_km,
     activity?.gap_s_per_km,
     activity?.gapSecondsPerKm,
-    activity?.grade_adjusted_pace_s_per_km
+    activity?.grade_adjusted_pace_s_per_km,
+    activity?.gap_sec_per_km,
+    activity?.grade_adjusted_pace_sec_per_km
   ]) {
     const value = Number(raw);
-    if (Number.isFinite(value) && value > 0) return value;
+    if (Number.isFinite(value) && value > 30 && value < 3600) return value;
   }
+
+  try {
+    web055EnsureGapCacheUser();
+    const key = String(activityKey(activity) || "");
+    const cached = Number(web055GapSummaryCache.get(key));
+    if (Number.isFinite(cached) && cached > 30 && cached < 3600) return cached;
+  } catch (_) {}
+
   return null;
 }
 
@@ -1811,6 +1827,172 @@ function web055SafeRender(name, renderer) {
     console.error("WEB055-FIX2 · " + name, error);
     return false;
   }
+}
+
+
+/* WEB055_FIX3_GAP_CACHE · GAP003
+   Le GAP n'est jamais inventé : il est agrégé depuis les séries fiables
+   présentes dans activity_routes, puis mémorisé localement dans le navigateur. */
+const web055GapSummaryCache = new Map();
+const web055GapNoDataSession = new Set();
+let web055GapCacheUser = "";
+let web055GapEnrichmentToken = 0;
+let web055GapEnrichmentSignature = "";
+
+function web055EnsureGapCacheUser() {
+  const uid = String(currentUser?.uid || "");
+  if (uid === web055GapCacheUser) return;
+
+  web055GapCacheUser = uid;
+  web055GapSummaryCache.clear();
+  web055GapNoDataSession.clear();
+  if (!uid) return;
+
+  try {
+    const raw = localStorage.getItem("sport_web_web055_gap_cache_v1_" + uid);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return;
+
+    for (const [key, value] of Object.entries(parsed)) {
+      const n = Number(value);
+      if (Number.isFinite(n) && n > 30 && n < 3600) web055GapSummaryCache.set(String(key), n);
+    }
+  } catch (error) {
+    console.warn("WEB055-FIX3 cache GAP illisible", error);
+  }
+}
+
+function web055PersistGapCache() {
+  const uid = String(currentUser?.uid || "");
+  if (!uid) return;
+
+  try {
+    const entries = [...web055GapSummaryCache.entries()]
+      .filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 30 && Number(value) < 3600)
+      .slice(-6000);
+    localStorage.setItem(
+      "sport_web_web055_gap_cache_v1_" + uid,
+      JSON.stringify(Object.fromEntries(entries))
+    );
+  } catch (error) {
+    console.warn("WEB055-FIX3 cache GAP non persistant", error);
+  }
+}
+
+function web055RouteAverageGap(route) {
+  const points = Array.isArray(route?.points) ? route.points : [];
+  if (!points.length) return null;
+
+  let weighted = 0;
+  let weight = 0;
+  let fallbackSum = 0;
+  let fallbackCount = 0;
+
+  for (let i = 0; i < points.length; i++) {
+    const gap = routePointGapSecondsPerKm(points[i]);
+    if (!Number.isFinite(gap)) continue;
+
+    fallbackSum += gap;
+    fallbackCount++;
+
+    if (i > 0) {
+      const d1 = Number(points[i - 1]?.distanceMeters);
+      const d2 = Number(points[i]?.distanceMeters);
+      const dx = d2 - d1;
+      if (Number.isFinite(dx) && dx > 0 && dx < 5000) {
+        weighted += gap * dx;
+        weight += dx;
+      }
+    }
+  }
+
+  if (weight > 0) return weighted / weight;
+  return fallbackCount > 0 ? fallbackSum / fallbackCount : null;
+}
+
+async function web055LoadRouteForGap(activity) {
+  const keys = [...new Set([
+    activity?.id,
+    activity?.__docId,
+    activityKey(activity)
+  ].filter((value) => value !== null && value !== undefined && String(value).trim() !== "")
+    .map((value) => String(value)))];
+
+  for (const key of keys) {
+    try {
+      const snapshot = await getDoc(doc(db, ROOT, currentUser.uid, "activity_routes", key));
+      if (!snapshot.exists()) continue;
+      const route = normalizeRoute(snapshot.data());
+      if (route?.points?.length >= 2) return route;
+    } catch (error) {
+      console.warn("WEB055-FIX3 route GAP ignorée", key, error);
+    }
+  }
+  return null;
+}
+
+async function web055EnrichGapRows(rows, token) {
+  web055EnsureGapCacheUser();
+
+  const pending = (rows || []).filter((row) => {
+    const key = String(activityKey(row) || "");
+    if (!key || web055GapSummaryCache.has(key) || web055GapNoDataSession.has(key)) return false;
+    return web055SafeGapSecondsPerKm(row) == null;
+  });
+
+  if (!pending.length) return;
+
+  await mapWithConcurrency(pending, async (row) => {
+    if (token !== web055GapEnrichmentToken || Number(dashboardSport) !== 1) return;
+    const key = String(activityKey(row) || "");
+    if (!key || web055GapSummaryCache.has(key) || web055GapNoDataSession.has(key)) return;
+
+    const route = await web055LoadRouteForGap(row);
+    const gap = web055RouteAverageGap(route);
+    if (Number.isFinite(gap) && gap > 30 && gap < 3600) {
+      web055GapSummaryCache.set(key, gap);
+    } else {
+      /* Absence mémorisée seulement pour la session : un tracé publié plus tard
+         sera donc retenté lors de la prochaine ouverture du Web. */
+      web055GapNoDataSession.add(key);
+    }
+  }, 8);
+
+  if (token !== web055GapEnrichmentToken) return;
+  web055PersistGapCache();
+  renderWeb055Periods();
+}
+
+function web055ScheduleGapEnrichment() {
+  if (!currentUser || Number(dashboardSport) !== 1) {
+    web055GapEnrichmentToken++;
+    web055GapEnrichmentSignature = "";
+    return;
+  }
+
+  web055EnsureGapCacheUser();
+  const rows = Array.isArray(web055HomeRows) ? [...web055HomeRows] : [];
+  const latest = rows.reduce((max, row) => Math.max(max, Number(row?.start_time_ms) || 0), 0);
+  const signature = String(currentUser.uid) + ":" + rows.length + ":" + latest;
+  if (signature === web055GapEnrichmentSignature) return;
+
+  web055GapEnrichmentSignature = signature;
+  const token = ++web055GapEnrichmentToken;
+  const startOfYear = web055StartOfYear(Date.now());
+  const currentYearRows = rows.filter((row) => Number(row?.start_time_ms) >= startOfYear);
+  const olderRows = rows.filter((row) => Number(row?.start_time_ms) < startOfYear);
+
+  queueMicrotask(async () => {
+    try {
+      /* Priorité aux lignes Semaine / Mois / Année ; le Total vient ensuite. */
+      await web055EnrichGapRows(currentYearRows, token);
+      if (token !== web055GapEnrichmentToken) return;
+      await web055EnrichGapRows(olderRows, token);
+    } catch (error) {
+      console.warn("WEB055-FIX3 enrichissement GAP interrompu", error);
+    }
+  });
 }
 
 function web055Metrics(rows) {
@@ -1940,69 +2122,118 @@ function renderWeb055Goal() {
   container.innerHTML = "";
 
   const goal = web055SafeSportGoal();
-  const target = Math.max(0, Number(goal?.annual_distance_km) || 0);
-
-  if (!(target > 0)) {
-    meta.textContent = String(new Date().getFullYear());
-    container.innerHTML =
-      '<div class="web055-empty">Aucun objectif annuel de distance configuré pour ce sport. Configuration disponible dans Analyse → Objectifs.</div>';
-    return;
-  }
-
+  const distanceTarget = Math.max(0, Number(goal?.annual_distance_km) || 0);
+  const ascentTarget = Math.max(0, Number(goal?.annual_ascent_m) || 0);
   const now = new Date();
   const year = now.getFullYear();
   const yearStart = new Date(year, 0, 1).getTime();
-  const yearRows = web055HomeRows.filter((row) => Number(row.start_time_ms) >= yearStart);
-
-  const actual = web055Metrics(yearRows).distance / 1000;
-  const expectedRatio = web055DayOfYear(now) / web055DaysInYear(year);
-  const expected = target * expectedRatio;
-  const delta = actual - expected;
-  const actualRatio = Math.max(0, Math.min(1, actual / target));
-  const deficitRatio = Math.max(0, Math.min(1 - actualRatio, expectedRatio - actualRatio));
-  const remaining = Math.max(0, target - actual);
+  const yearRows = web055HomeRows.filter(
+    (row) => Number(row?.start_time_ms) >= yearStart
+  );
+  const metrics = web055Metrics(yearRows);
+  const dayOfYear = web055DayOfYear(now);
+  const daysInYear = web055DaysInYear(year);
+  const theoreticalRatio = Math.max(0, Math.min(1, dayOfYear / daysInYear));
   const remainingDays = web055RemainingDaysInclusive(now);
-  const daily = remaining / remainingDays;
+  const todayLabel = now.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }).replace(".", "");
 
-  meta.textContent = `${year} · objectif au 31 décembre`;
+  meta.textContent = year + " · objectif au 31 décembre";
 
-  const headline = document.createElement("div");
-  headline.className = "web055-goal-headline";
-  headline.innerHTML =
-    `<strong>${actual.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} / ${target.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</strong>`;
+  if (!(distanceTarget > 0) && !(ascentTarget > 0)) {
+    container.innerHTML =
+      '<div class="web055-empty">Aucun objectif annuel Distance ou D+ configuré pour ce sport. Configuration disponible dans Analyse → Objectifs.</div>';
+    return;
+  }
 
-  const gauge = document.createElement("div");
-  gauge.className = "web055-goal-gauge";
+  function metricCard(options) {
+    const target = Math.max(0, Number(options.target) || 0);
+    if (!(target > 0)) {
+      return '<article class="web055-fix3-goal-card web055-fix3-goal-empty">' +
+        '<strong>' + options.label + '</strong>' +
+        '<span>Objectif annuel non configuré</span></article>';
+    }
 
-  const achieved = document.createElement("span");
-  achieved.className = "web055-goal-achieved";
-  achieved.style.width = `${actualRatio * 100}%`;
+    const actual = Math.max(0, Number(options.actual) || 0);
+    /* Invariant : la cible théorique du jour ne peut jamais dépasser l'objectif annuel. */
+    const theoretical = Math.max(0, Math.min(target, target * theoreticalRatio));
+    const delta = actual - theoretical;
+    const actualRatio = Math.max(0, Math.min(1, actual / target));
+    const expectedRatio = Math.max(0, Math.min(1, theoretical / target));
+    const aheadRatio = Math.max(0, actualRatio - expectedRatio);
+    const remaining = Math.max(0, target - actual);
+    const theoreticalDaily = target / daysInYear;
+    const requiredDaily = remaining / remainingDays;
 
-  const deficit = document.createElement("span");
-  deficit.className = "web055-goal-deficit";
-  deficit.style.width = `${deficitRatio * 100}%`;
-
-  gauge.append(achieved, deficit);
-
-  const status = document.createElement("div");
-  status.className = `web055-goal-status ${delta >= 0 ? "ahead" : "behind"}`;
-  status.textContent =
-    Math.abs(delta) < 0.005
+    const deltaClass = delta >= 0 ? "ahead" : "behind";
+    const deltaWord = Math.abs(delta) < options.epsilon
       ? "Dans le rythme théorique"
       : delta > 0
-        ? `En avance de ${Math.abs(delta).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km`
-        : `Retard de ${Math.abs(delta).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km`;
+        ? "Avance : " + options.formatDelta(Math.abs(delta))
+        : "Retard : " + options.formatDelta(Math.abs(delta));
 
-  const details = document.createElement("div");
-  details.className = "web055-goal-details";
-  details.innerHTML = `
-    <div><span>Cap théorique aujourd’hui</span><strong>${expected.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</strong></div>
-    <div><span>Reste jusqu’au 31 décembre</span><strong>${remaining.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</strong></div>
-    <div><span>Rythme désormais nécessaire</span><strong>${daily.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km / jour</strong></div>
-    <div><span>Jours restants</span><strong>${remainingDays}</strong></div>
-  `;
+    return '<article class="web055-fix3-goal-card">' +
+      '<div class="web055-fix3-goal-title"><strong>' + options.label + '</strong>' +
+        '<span>' + options.formatActual(actual) + ' / ' + options.formatTarget(target) + '</span></div>' +
 
-  container.append(headline, gauge, status, details);
+      '<div class="web055-fix3-goal-bar-row">' +
+        '<span>Réalisé</span>' +
+        '<div class="web055-fix3-goal-track" aria-label="Réalisé">' +
+          '<i class="web055-fix3-goal-real" style="width:' + (actualRatio * 100).toFixed(4) + '%"></i>' +
+          (aheadRatio > 0
+            ? '<i class="web055-fix3-goal-ahead" style="left:' + (expectedRatio * 100).toFixed(4) + '%;width:' + (aheadRatio * 100).toFixed(4) + '%"></i>'
+            : '') +
+        '</div>' +
+        '<b>' + options.formatActual(actual) + '</b>' +
+      '</div>' +
+
+      '<div class="web055-fix3-goal-bar-row">' +
+        '<span>Objectif au ' + todayLabel + '</span>' +
+        '<div class="web055-fix3-goal-track" aria-label="Objectif théorique aujourd’hui">' +
+          '<i class="web055-fix3-goal-theoretical" style="width:' + (expectedRatio * 100).toFixed(4) + '%"></i>' +
+        '</div>' +
+        '<b>' + options.formatTheoretical(theoretical) + '</b>' +
+      '</div>' +
+
+      '<div class="web055-fix3-goal-status ' + deltaClass + '">' + deltaWord + '</div>' +
+
+      '<div class="web055-fix3-goal-details">' +
+        '<div><span>Objectif annuel</span><strong>' + options.formatTarget(target) + '</strong></div>' +
+        '<div><span>Cible théorique aujourd’hui</span><strong>' + options.formatTheoretical(theoretical) + '</strong></div>' +
+        '<div><span>Reste annuel</span><strong>' + options.formatRemaining(remaining) + '</strong></div>' +
+        '<div><span>Rythme théorique</span><strong>' + options.formatDaily(theoreticalDaily) + '</strong></div>' +
+        '<div><span>Rythme nécessaire</span><strong>' + options.formatDaily(requiredDaily) + '</strong></div>' +
+        '<div><span>Jours restants</span><strong>' + remainingDays.toLocaleString("fr-FR") + '</strong></div>' +
+      '</div>' +
+    '</article>';
+  }
+
+  const distanceCard = metricCard({
+    label: "Distance",
+    actual: metrics.distance / 1000,
+    target: distanceTarget,
+    epsilon: 0.5,
+    formatActual: (value) => value.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km",
+    formatTarget: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
+    formatTheoretical: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
+    formatDelta: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
+    formatRemaining: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
+    formatDaily: (value) => value.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " km/j"
+  });
+
+  const ascentCard = metricCard({
+    label: "D+",
+    actual: metrics.ascent,
+    target: ascentTarget,
+    epsilon: 0.5,
+    formatActual: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
+    formatTarget: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
+    formatTheoretical: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
+    formatDelta: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
+    formatRemaining: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
+    formatDaily: (value) => Math.round(value).toLocaleString("fr-FR") + " m/j"
+  });
+
+  container.innerHTML = '<div class="web055-fix3-goal-grid">' + distanceCard + ascentCard + '</div>';
 }
 
 function web055LocalDateKey(ms) {
@@ -2155,8 +2386,8 @@ function web055ComparisonValue(row, metric) {
   if (metric === "ascent") return Math.max(0, Number(row.ascent_m) || 0);
   if (metric === "time") return web055ActivityDurationMs(row) / 3600000;
   if (metric === "load") {
-    const charge = activityChargePresentation(row);
-    return Number.isFinite(Number(charge?.score)) ? Math.max(0, Number(charge.score)) : 0;
+    const score = web055SafeChargeScore(row);
+    return Number.isFinite(score) ? Math.max(0, score) : 0;
   }
   return Math.max(0, Number(row.distance_m) || 0) / 1000;
 }
@@ -2387,9 +2618,11 @@ function renderWeb055Home() {
     const ok = results.filter(Boolean).length;
     status.textContent =
       ok === results.length
-        ? `Mis à jour à ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
-        : `Accueil partiellement affiché · ${ok}/${results.length} blocs`;
+        ? "Mis à jour à " + new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+        : "Accueil partiellement affiché · " + ok + "/" + results.length + " blocs";
   }
+
+  web055ScheduleGapEnrichment();
 }
 
 function web055SetSport(sport) {
