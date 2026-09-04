@@ -303,6 +303,7 @@ queueMicrotask(() => installWeb055HomeLayout());
 initializeWebStravaModule();
 installWeb049UiContract();
 queueMicrotask(() => installEquipmentMappingEditorWeb050());
+queueMicrotask(() => installProgressiveActivityFiltersWeb056());
 /* WEB053_PROFILE_EDITOR_BOOT */
 queueMicrotask(() => installEquipmentProfileEditorWeb053());
 
@@ -748,6 +749,272 @@ function installWeb049UiContract() {
 
     window.__web049ResizeObserver = resizeObserver;
   }
+}
+
+
+
+// -----------------------------------------------------------------------------
+// WEB056 · FILTERUX006 — filtres progressifs du Répertoire
+// -----------------------------------------------------------------------------
+const WEB056_FILTER_DEFS = Object.freeze([
+  { key: "search",    label: "Recherche",     id: "searchInput" },
+  { key: "sport",     label: "Sport",         id: "sportFilter" },
+  { key: "subsport",  label: "Sous-sport",    id: "activitySubSportFilterWeb054" },
+  { key: "year",      label: "Année",         id: "yearFilter" },
+  { key: "equipment", label: "Matériel",      id: "equipmentFilter" },
+  { key: "landmark",  label: "Repère",        id: "landmarkFilter" },
+  { key: "source",    label: "Source",        id: "sourceFilter" },
+  { key: "distance",  label: "Distance min.", id: "distanceFilter" },
+  { key: "ascent",    label: "D+ minimum",    id: "ascentFilter" }
+]);
+
+function web056FilterDef(kind) {
+  return WEB056_FILTER_DEFS.find((item) => item.key === kind) || WEB056_FILTER_DEFS[0];
+}
+
+function web056OriginalFilter(kind) {
+  const def = web056FilterDef(kind);
+  return def ? document.getElementById(def.id) : null;
+}
+
+function web056FilterDefault(kind) {
+  return ["distance", "ascent"].includes(kind) ? "0" : "";
+}
+
+function web056DispatchFilter(source) {
+  if (!source) return;
+  source.dispatchEvent(new Event("input", { bubbles: true }));
+  source.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function web056FilterActive(kind) {
+  const source = web056OriginalFilter(kind);
+  if (!source) return false;
+
+  if (["distance", "ascent"].includes(kind)) {
+    return Number(String(source.value || "0").replace(",", ".")) > 0;
+  }
+
+  return String(source.value || "").trim() !== "";
+}
+
+function web056ResetFilter(kind) {
+  const source = web056OriginalFilter(kind);
+  if (!source) return;
+  source.value = web056FilterDefault(kind);
+  web056DispatchFilter(source);
+}
+
+function web056SyncProxyOptions(proxy, source) {
+  if (!proxy || !source || source.tagName !== "SELECT") return;
+  const value = source.value;
+  proxy.innerHTML = source.innerHTML;
+  proxy.value = value;
+}
+
+function web056CreateProxy(kind) {
+  const source = web056OriginalFilter(kind);
+  if (!source) {
+    const missing = document.createElement("span");
+    missing.className = "muted";
+    missing.textContent = "Filtre indisponible";
+    return missing;
+  }
+
+  const proxy = source.cloneNode(true);
+  proxy.removeAttribute("id");
+  proxy.removeAttribute("name");
+  proxy.classList.add("web056-filter-proxy");
+  proxy.dataset.web056Kind = kind;
+  proxy.value = source.value;
+
+  if (source.tagName === "SELECT") {
+    web056SyncProxyOptions(proxy, source);
+    proxy.addEventListener("focus", () => {
+      web056SyncProxyOptions(proxy, source);
+    });
+  }
+
+  const sync = () => {
+    source.value = proxy.value;
+    web056DispatchFilter(source);
+  };
+
+  proxy.addEventListener("input", sync);
+  proxy.addEventListener("change", sync);
+
+  return proxy;
+}
+
+function web056UsedKinds(root, exceptRow = null) {
+  return new Set(
+    [...root.querySelectorAll(".web056-filter-row")]
+      .filter((row) => row !== exceptRow)
+      .map((row) => row.dataset.kind)
+      .filter(Boolean)
+  );
+}
+
+function web056RenumberFilterRows(root) {
+  const rows = [...root.querySelectorAll(".web056-filter-row")];
+
+  rows.forEach((row, index) => {
+    const label = row.querySelector(".web056-filter-index");
+    if (label) label.textContent = "Filtre " + (index + 1);
+
+    const remove = row.querySelector(".web056-filter-remove");
+    if (remove) remove.classList.toggle("hidden", rows.length <= 1);
+  });
+
+  const add = root.querySelector("#web056AddFilter");
+  if (add) {
+    add.disabled = rows.length >= WEB056_FILTER_DEFS.length;
+    add.textContent = rows.length >= WEB056_FILTER_DEFS.length
+      ? "Tous les filtres sont affichés"
+      : "+ Filtre " + (rows.length + 1);
+  }
+}
+
+function web056RenderFilterRow(root, row, kind) {
+  const previousKind = row.dataset.kind || "";
+  if (previousKind && previousKind !== kind) {
+    web056ResetFilter(previousKind);
+  }
+
+  row.dataset.kind = kind;
+
+  const type = row.querySelector(".web056-filter-type");
+  const host = row.querySelector(".web056-filter-value");
+  if (!type || !host) return;
+
+  const used = web056UsedKinds(root, row);
+  const current = kind;
+
+  type.innerHTML = "";
+  for (const def of WEB056_FILTER_DEFS) {
+    const option = document.createElement("option");
+    option.value = def.key;
+    option.textContent = def.label;
+    option.disabled = used.has(def.key) && def.key !== current;
+    type.appendChild(option);
+  }
+  type.value = current;
+
+  host.innerHTML = "";
+  host.appendChild(web056CreateProxy(current));
+}
+
+function web056AddFilterRow(root, kind) {
+  const used = web056UsedKinds(root);
+  const fallback = WEB056_FILTER_DEFS.find((item) => !used.has(item.key));
+  const selected = kind && !used.has(kind)
+    ? kind
+    : fallback?.key;
+
+  if (!selected) return;
+
+  const row = document.createElement("div");
+  row.className = "web056-filter-row";
+
+  const index = document.createElement("strong");
+  index.className = "web056-filter-index";
+
+  const type = document.createElement("select");
+  type.className = "web056-filter-type";
+  type.setAttribute("aria-label", "Type de filtre");
+
+  const host = document.createElement("div");
+  host.className = "web056-filter-value";
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "secondary web056-filter-remove";
+  remove.textContent = "−";
+  remove.title = "Retirer ce filtre";
+
+  row.append(index, type, host, remove);
+  root.querySelector(".web056-filter-rows")?.appendChild(row);
+
+  web056RenderFilterRow(root, row, selected);
+
+  type.addEventListener("change", () => {
+    web056RenderFilterRow(root, row, type.value);
+    web056RenumberFilterRows(root);
+  });
+
+  remove.addEventListener("click", () => {
+    const oldKind = row.dataset.kind;
+    if (oldKind) web056ResetFilter(oldKind);
+    row.remove();
+    web056RenumberFilterRows(root);
+  });
+
+  web056RenumberFilterRows(root);
+}
+
+function web056InstallSortProxy(root) {
+  const source = document.getElementById("sortFilter");
+  const host = root.querySelector(".web056-sort-host");
+  if (!source || !host) return;
+
+  host.innerHTML = "";
+  const proxy = source.cloneNode(true);
+  proxy.removeAttribute("id");
+  proxy.removeAttribute("name");
+  proxy.classList.add("web056-filter-proxy");
+  proxy.value = source.value;
+
+  proxy.addEventListener("change", () => {
+    source.value = proxy.value;
+    web056DispatchFilter(source);
+  });
+
+  host.appendChild(proxy);
+}
+
+function installProgressiveActivityFiltersWeb056() {
+  const directory = document.getElementById("activityDirectorySection");
+  if (!directory) return;
+
+  if (document.getElementById("web056ProgressiveFilters")) return;
+
+  const filters = directory.querySelector(".filters");
+  if (!filters) return;
+
+  const details =
+    filters.closest("details") ||
+    directory.querySelector("details");
+
+  if (!details) return;
+
+  filters.classList.add("web056-original-filters");
+
+  const root = document.createElement("div");
+  root.id = "web056ProgressiveFilters";
+  root.className = "web056-progressive-filters";
+
+  root.innerHTML =
+    '<div class="web056-filter-rows"></div>' +
+    '<div class="web056-filter-footer">' +
+      '<button id="web056AddFilter" class="secondary" type="button">+ Filtre 2</button>' +
+      '<label class="web056-sort"><span>Tri</span><span class="web056-sort-host"></span></label>' +
+    '</div>';
+
+  filters.insertAdjacentElement("beforebegin", root);
+
+  const active = WEB056_FILTER_DEFS
+    .map((item) => item.key)
+    .filter(web056FilterActive);
+
+  const initial = active.length ? active : ["search"];
+  for (const kind of initial) web056AddFilterRow(root, kind);
+
+  root.querySelector("#web056AddFilter")?.addEventListener("click", () => {
+    web056AddFilterRow(root);
+  });
+
+  web056InstallSortProxy(root);
+  web056RenumberFilterRows(root);
 }
 
 
@@ -1838,7 +2105,7 @@ function web055SafeRender(name, renderer) {
 
 
 /* WEB055_FIX3_GAP_CACHE · GAP003
-   Le GAP n'est jamais inventé : il est agrégé depuis les séries fiables
+   Le GAP publié reste prioritaire ; à défaut, une estimation est calculée depuis vitesse + pente lissée.
    présentes dans activity_routes, puis mémorisé localement dans le navigateur. */
 const web055GapSummaryCache = new Map();
 const web055GapNoDataSession = new Set();
@@ -1889,33 +2156,108 @@ function web055PersistGapCache() {
 
 function web055RouteAverageGap(route) {
   const points = Array.isArray(route?.points) ? route.points : [];
-  if (!points.length) return null;
+  if (points.length < 2) return null;
 
-  let weighted = 0;
-  let weight = 0;
-  let fallbackSum = 0;
-  let fallbackCount = 0;
+  // 1) GAP explicite publié dans activity_routes : toujours prioritaire.
+  let explicitWeighted = 0;
+  let explicitWeight = 0;
+  let explicitSum = 0;
+  let explicitCount = 0;
 
   for (let i = 0; i < points.length; i++) {
     const gap = routePointGapSecondsPerKm(points[i]);
     if (!Number.isFinite(gap)) continue;
 
-    fallbackSum += gap;
-    fallbackCount++;
+    explicitSum += gap;
+    explicitCount += 1;
 
     if (i > 0) {
       const d1 = Number(points[i - 1]?.distanceMeters);
       const d2 = Number(points[i]?.distanceMeters);
       const dx = d2 - d1;
+
       if (Number.isFinite(dx) && dx > 0 && dx < 5000) {
-        weighted += gap * dx;
-        weight += dx;
+        explicitWeighted += gap * dx;
+        explicitWeight += dx;
       }
     }
   }
 
-  if (weight > 0) return weighted / weight;
-  return fallbackCount > 0 ? fallbackSum / fallbackCount : null;
+  if (explicitWeight > 0) return explicitWeighted / explicitWeight;
+  if (explicitCount > 0) return explicitSum / explicitCount;
+
+  // 2) Aucun GAP publié : estimation à partir de la vitesse et de la pente.
+  //    La pente a déjà été lissée par calculateRouteGrades() sur ~120 m.
+  let estimatedWeighted = 0;
+  let estimatedWeight = 0;
+
+  for (let i = 1; i < points.length; i++) {
+    const previous = points[i - 1];
+    const current = points[i];
+
+    const d1 = Number(previous?.distanceMeters);
+    const d2 = Number(current?.distanceMeters);
+    const dx = d2 - d1;
+
+    if (!Number.isFinite(dx) || dx <= 1 || dx > 2000) continue;
+
+    let speed = routePointSpeedMps(current);
+
+    if (!Number.isFinite(speed)) {
+      const t1 = routePointTimeMs(previous);
+      const t2 = routePointTimeMs(current);
+      const dtSeconds =
+        Number.isFinite(t1) && Number.isFinite(t2) && t2 > t1
+          ? (t2 - t1) / 1000
+          : null;
+
+      if (
+        Number.isFinite(dtSeconds) &&
+        dtSeconds > 0 &&
+        dtSeconds < 600
+      ) {
+        speed = dx / dtSeconds;
+      }
+    }
+
+    if (!Number.isFinite(speed) || speed < 0.45 || speed > 12) continue;
+
+    const grades = [
+      Number(previous?.gradePercent),
+      Number(current?.gradePercent)
+    ].filter(Number.isFinite);
+
+    const gradePercent = grades.length
+      ? grades.reduce((a, b) => a + b, 0) / grades.length
+      : 0;
+
+    const g = Math.max(-0.25, Math.min(0.25, gradePercent / 100));
+
+    const cost =
+      155.4 * Math.pow(g, 5) -
+      30.4 * Math.pow(g, 4) -
+      43.3 * Math.pow(g, 3) +
+      46.3 * Math.pow(g, 2) +
+      19.5 * g +
+      3.6;
+
+    const ratio = Math.max(0.50, Math.min(3.00, cost / 3.6));
+    const actualPace = 1000 / speed;
+    const estimatedGap = actualPace / ratio;
+
+    if (
+      !Number.isFinite(estimatedGap) ||
+      estimatedGap <= 30 ||
+      estimatedGap >= 3600
+    ) continue;
+
+    estimatedWeighted += estimatedGap * dx;
+    estimatedWeight += dx;
+  }
+
+  return estimatedWeight > 0
+    ? estimatedWeighted / estimatedWeight
+    : null;
 }
 
 async function web055LoadRouteForGap(activity) {
@@ -2172,8 +2514,9 @@ function renderWeb055Goal() {
     const commonPct = Math.min(actualPct, theoreticalPct);
     const goldTailPct = Math.max(0, actualPct - theoreticalPct);
     const remaining = Math.max(0, target - actual);
-    const dailyTheoretical = target / daysInYear;
-    const weeklyTheoretical = dailyTheoretical * 7;
+    const remainingDays = Math.max(1, daysInYear - dayOfYear + 1);
+    const dailyRequired = remaining / remainingDays;
+    const weeklyRequired = dailyRequired * 7;
     const delta = actual - theoretical;
     const deltaClass = delta >= 0 ? 'ahead' : 'behind';
     const deltaText = Math.abs(delta) < options.epsilon
@@ -2203,9 +2546,8 @@ function renderWeb055Goal() {
       '</div>' +
       '<div class="web055-fix5-goal-status ' + deltaClass + '">' + deltaText + '</div>' +
       '<div class="web055-fix5-goal-details">' +
-        '<div><span>Reste avant objectif</span><strong>' + options.format(remaining) + '</strong></div>' +
-        '<div><span>Rythme hebdo théorique</span><strong>' + options.formatWeekly(weeklyTheoretical) + '</strong></div>' +
-        '<div><span>Rythme quotidien théorique</span><strong>' + options.formatDaily(dailyTheoretical) + '</strong></div>' +
+        '<div><span>Rythme hebdo à suivre</span><strong>' + options.formatWeekly(weeklyRequired) + '</strong></div>' +
+        '<div><span>Rythme quotidien à suivre</span><strong>' + options.formatDaily(dailyRequired) + '</strong></div>' +
       '</div>' +
     '</article>';
   }
@@ -4852,8 +5194,8 @@ function renderDetail(activity) {
   ui.detailSportLine.setAttribute("aria-label", sportLabel);
 
   ui.detailDateLine.innerHTML =
-    '<span class="detail-start-stat-web049"><strong>' + formatActivityDateWeb049(activity.start_time_ms) + '</strong><span>Date</span></span>' +
-    '<span class="detail-start-stat-web049"><strong>' + formatActivityTimeWeb049(activity.start_time_ms) + '</strong><span>Départ</span></span>';
+    '<span class="detail-start-stat-web049"><span>Date</span><strong>' + formatActivityDateWeb049(activity.start_time_ms) + '</strong></span>' +
+    '<span class="detail-start-stat-web049"><span>Départ</span><strong>' + formatActivityTimeWeb049(activity.start_time_ms) + '</strong></span>';
 
   renderHeroMetrics(activity);
   renderSummary(activity);
@@ -5058,30 +5400,57 @@ function equipmentCategoriesForSport(activity) {
   return null;
 }
 
+
+// WEB056 · DETAIL011
+function formatCyclingSpeedWeb056(activity) {
+  const speed = averageSpeedKmh(activity);
+  return speed == null
+    ? "—"
+    : speed.toLocaleString("fr-FR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }) + " km/h";
+}
+
 function renderHeroMetrics(activity) {
   ui.detailHeroMetrics.innerHTML = "";
   updateCaloriesQuality(activity);
+
+  const sport = Number(activity?.sport);
+  const movementLabel =
+    sport === 1 ? "Allure" :
+    sport === 2 ? "Vitesse" :
+    "Allure / vitesse";
+
+  const movementValue =
+    sport === 1 ? formatPace(activity) :
+    sport === 2 ? formatCyclingSpeedWeb056(activity) :
+    primarySpeedMetric(activity);
 
   const metrics = [
     ["Distance", formatDistance(activity.distance_m), null],
     ["Durée", formatDuration(activity.elapsed_time_ms), null],
     ["D+", formatMeters(activity.ascent_m), null],
-    ["Allure / vitesse", primarySpeedMetric(activity), "pace"],
+    [movementLabel, movementValue, "pace"],
     ["FC moy.", formatHeartRate(activity.avg_hr), "hr"]
   ];
 
   for (const [label, value, chartKind] of metrics) {
     const box = document.createElement(chartKind ? "button" : "div");
     box.className = `hero-metric summary-chip${chartKind ? " metric-clickable" : ""}`;
+
     if (chartKind) {
       box.type = "button";
       box.title = `Afficher le graphique ${label.toLowerCase()}`;
       box.addEventListener("click", () => renderMetricChart(activity, chartKind));
     }
+
     const span = document.createElement("span");
     span.textContent = label;
+
     const strong = document.createElement("strong");
     strong.textContent = value;
+
     box.append(span, strong);
     ui.detailHeroMetrics.appendChild(box);
   }
@@ -7468,7 +7837,7 @@ function renderPersonal(activity) {
   addDetailItem(ui.detailPersonalGrid, "Note personnelle", activity.personal_note || "—", "full");
 
   const links = linksForActivity(activity);
-  rebuildAddLandmarkSelect(links);
+  rebuildAddLandmarkSelect(links, activity);
   renderQuickLandmarkButtons(activity, links);
 
   if (!links.length) {
@@ -7522,13 +7891,25 @@ function renderPersonal(activity) {
 }
 
 
+
+// WEB056 · LANDMARK008
+function landmarkAllowedForActivityWeb056(activity, code) {
+  return !(
+    Number(activity?.sport) === 2 &&
+    String(code || "").trim().toUpperCase() === "Q"
+  );
+}
+
 function renderQuickLandmarkButtons(activity, links = linksForActivity(activity)) {
   if (!ui.quickLandmarkButtons) return;
   ui.quickLandmarkButtons.innerHTML = "";
 
   const counts = new Map();
   for (const link of links || []) {
-    counts.set(String(link.landmark_code ?? ""), Math.max(1, numberOrZero(link.occurrences)));
+    counts.set(
+      String(link.landmark_code ?? ""),
+      Math.max(1, numberOrZero(link.occurrences))
+    );
   }
 
   const rows = [...landmarks.entries()]
@@ -7538,24 +7919,37 @@ function renderQuickLandmarkButtons(activity, links = linksForActivity(activity)
     );
 
   if (!rows.length) {
-    ui.quickLandmarkButtons.innerHTML = '<span class="muted">Aucun repère configuré</span>';
+    ui.quickLandmarkButtons.innerHTML =
+      '<span class="muted">Aucun repère configuré</span>';
     return;
   }
 
   rows.forEach(([code,row]) => {
     const count = counts.get(String(code)) || 0;
+
+    // Q n'est pas proposé aux activités vélo.
+    // Une ancienne affectation Q reste visible uniquement pour pouvoir la retirer.
+    if (!landmarkAllowedForActivityWeb056(activity, code) && count <= 0) return;
+
     const wrap = document.createElement("div");
     wrap.className = `quick-landmark-stepper${count ? " active" : ""}`;
 
     const plus = document.createElement("button");
     plus.type = "button";
     plus.className = "quick-landmark-plus";
-    plus.innerHTML = `<strong>${escapeHtml(code)}</strong>${count ? `<span>×${count}</span>` : ""}`;
-    plus.title = `${row?.name || row?.label || "Repère"} · ajouter une occurrence`;
+    plus.innerHTML =
+      `<strong>${escapeHtml(code)}</strong>${count ? `<span>×${count}</span>` : ""}`;
+    plus.title =
+      `${row?.name || row?.label || "Repère"} · ajouter une occurrence`;
+    plus.disabled = !landmarkAllowedForActivityWeb056(activity, code);
+
     plus.addEventListener("click", async () => {
       plus.disabled = true;
       try { await changeLandmarkOccurrence(activity, code, +1); }
-      finally { plus.disabled = false; }
+      finally {
+        plus.disabled =
+          !landmarkAllowedForActivityWeb056(activity, code);
+      }
     });
 
     const minus = document.createElement("button");
@@ -7564,6 +7958,7 @@ function renderQuickLandmarkButtons(activity, links = linksForActivity(activity)
     minus.textContent = "−";
     minus.title = `Retirer une occurrence de ${code}`;
     minus.disabled = count <= 0;
+
     minus.addEventListener("click", async () => {
       minus.disabled = true;
       try { await changeLandmarkOccurrence(activity, code, -1); }
@@ -7575,22 +7970,33 @@ function renderQuickLandmarkButtons(activity, links = linksForActivity(activity)
   });
 }
 
-function rebuildAddLandmarkSelect(links) {
-  const used = new Set((links || []).map((link) => String(link.landmark_code ?? "")));
+function rebuildAddLandmarkSelect(links, activity = null) {
+  const used = new Set(
+    (links || []).map((link) => String(link.landmark_code ?? ""))
+  );
   const selected = ui.addLandmarkSelect.value;
   ui.addLandmarkSelect.innerHTML = '<option value="">Choisir…</option>';
 
   [...landmarks.entries()]
-    .sort((a, b) => Number(a[1]?.sort_order ?? 999) - Number(b[1]?.sort_order ?? 999))
+    .sort((a, b) =>
+      Number(a[1]?.sort_order ?? 999) -
+      Number(b[1]?.sort_order ?? 999)
+    )
     .forEach(([code, row]) => {
       if (used.has(code)) return;
+      if (!landmarkAllowedForActivityWeb056(activity, code)) return;
+
       const option = document.createElement("option");
       option.value = code;
-      option.textContent = `${code} · ${row.name || row.label || "Repère"}`;
+      option.textContent =
+        `${code} · ${row.name || row.label || "Repère"}`;
       ui.addLandmarkSelect.appendChild(option);
     });
 
-  if ([...ui.addLandmarkSelect.options].some((option) => option.value === selected)) {
+  if (
+    [...ui.addLandmarkSelect.options]
+      .some((option) => option.value === selected)
+  ) {
     ui.addLandmarkSelect.value = selected;
   }
 }

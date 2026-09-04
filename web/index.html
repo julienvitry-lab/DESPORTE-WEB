@@ -2172,6 +2172,186 @@ select {
   }
 </style>
 
+
+<style id="web056-ux-css">
+  /* WEB056 · ACTIVITYUX012 / GOAL007 / FILTERUX006 / GAP005 */
+
+  /* Répertoire : environ 1 cm de moins que les 96 px historiques. */
+  #activityList .activity-card {
+    min-height: calc(96px - 1cm) !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    box-sizing: border-box !important;
+    align-items: stretch !important;
+  }
+
+  #activityList .datum {
+    justify-content: center !important;
+    text-align: left;
+  }
+
+  #activityList .datum span {
+    margin-top: 1px !important;
+  }
+
+  #activityList .activity-sport-icon-web049,
+  #activityList .activity-sport-icon-web048,
+  #activityList .activity-sport-icon-web046 {
+    width: 48px !important;
+    height: 48px !important;
+  }
+
+  #activityList .activity-sport-icon-web049 svg,
+  #activityList .activity-sport-icon-web048 svg,
+  #activityList .activity-sport-icon-web046 svg {
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  /* Détail : tous les encarts ont le même centrage que FC moy. */
+  #detailView .hero-metric.summary-chip,
+  #detailView .detail-start-stat-web049,
+  #detailView .detail-start-stat {
+    min-width: 0 !important;
+    height: 100% !important;
+    min-height: 78px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    padding: 8px !important;
+    box-sizing: border-box !important;
+  }
+
+  #detailView .hero-metric.summary-chip > span,
+  #detailView .hero-metric.summary-chip > strong,
+  #detailView .detail-start-stat-web049 > span,
+  #detailView .detail-start-stat-web049 > strong,
+  #detailView .detail-start-stat > span,
+  #detailView .detail-start-stat > strong {
+    width: 100% !important;
+    text-align: center !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  /* Objectifs : deux indicateurs seulement. */
+  .web055-fix5-goal-details {
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  }
+
+  /* Accueil : laisser respirer le mot Distance + la flèche native. */
+  #web055RegularityMetric,
+  #web055CompareMetric {
+    width: 152px !important;
+    min-width: 152px !important;
+  }
+
+  /* Filtres progressifs : les anciens contrôles restent vivants mais masqués. */
+  #activityDirectorySection .web056-original-filters {
+    display: none !important;
+  }
+
+  #web056ProgressiveFilters {
+    display: grid;
+    gap: 9px;
+    padding: 10px 14px 12px;
+  }
+
+  .web056-filter-rows {
+    display: grid;
+    gap: 7px;
+  }
+
+  .web056-filter-row {
+    display: grid;
+    grid-template-columns: 70px minmax(130px,.75fr) minmax(170px,1.4fr) 38px;
+    gap: 7px;
+    align-items: center;
+  }
+
+  .web056-filter-index {
+    font-size: .78rem;
+    color: var(--muted,#9ca89f);
+    white-space: nowrap;
+  }
+
+  .web056-filter-type,
+  .web056-filter-proxy {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 38px !important;
+  }
+
+  .web056-filter-value {
+    min-width: 0;
+  }
+
+  .web056-filter-remove {
+    min-width: 38px !important;
+    width: 38px;
+    min-height: 38px;
+    padding: 0 !important;
+  }
+
+  .web056-filter-remove.hidden {
+    visibility: hidden !important;
+    display: block !important;
+  }
+
+  .web056-filter-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .web056-sort {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted,#9ca89f);
+    font-size: .78rem;
+  }
+
+  .web056-sort-host {
+    display: inline-block;
+    min-width: 190px;
+  }
+
+  @media (max-width: 760px) {
+    #web056ProgressiveFilters {
+      padding: 8px 9px 10px;
+    }
+
+    .web056-filter-row {
+      grid-template-columns: 64px minmax(0,1fr) 36px;
+    }
+
+    .web056-filter-value {
+      grid-column: 1 / -1;
+    }
+
+    .web056-sort {
+      width: 100%;
+      margin-left: 0;
+    }
+
+    .web056-sort-host {
+      flex: 1;
+      min-width: 0;
+    }
+
+    #web055RegularityMetric,
+    #web055CompareMetric {
+      width: 158px !important;
+      min-width: 158px !important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -3206,9 +3386,9 @@ select {
             <button id="trashCurrentActivityButton" class="secondary trash-detail-button" type="button">🗑 Corbeille</button>
           </div>
           <div class="detail-nav">
-            <button id="previousActivityButton" class="secondary">← Activité précédente</button>
+            <button id="previousActivityButton" class="secondary">← Activité suivante</button>
             <span id="detailPosition" class="pill neutral">—</span>
-            <button id="nextActivityButton" class="secondary">Activité suivante →</button>
+            <button id="nextActivityButton" class="secondary">Activité précédente →</button>
           </div>
         </div>
 
@@ -3602,9 +3782,9 @@ select {
 
 
         <div class="detail-bottom-nav">
-          <button id="previousActivityBottomButton" class="secondary">← Activité précédente</button>
+          <button id="previousActivityBottomButton" class="secondary">← Activité suivante</button>
           <button id="backToCatalogBottomButton" class="primary">Répertoire</button>
-          <button id="nextActivityBottomButton" class="secondary">Activité suivante →</button>
+          <button id="nextActivityBottomButton" class="secondary">Activité précédente →</button>
         </div>
       </section>
     </section>
@@ -3615,7 +3795,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB055-FIX8-FIX4-EQUIPPROFILE005"></script>
+  <script type="module" src="./app.js?v=WEB056-ACTIVITYUX012-GOAL007-FILTERUX006-GAP005"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
