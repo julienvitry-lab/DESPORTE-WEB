@@ -3894,6 +3894,7 @@ function rebuildSimpleSelect(select, entries, firstLabel) {
 function applyFiltersAndRender() {
   const needle = ui.searchInput.value.trim().toLowerCase();
   const sport = ui.sportFilter.value;
+  const subSport = document.getElementById("activitySubSportFilterWeb054")?.value || "";
   const year = ui.yearFilter.value;
   const equipment = ui.equipmentFilter.value;
   const landmark = ui.landmarkFilter.value;
@@ -3905,6 +3906,7 @@ function applyFiltersAndRender() {
   filteredActivities = activities.filter((activity) => {
     if (activity.deleted_at_ms != null) return false;
     if (sport && String(activity.sport ?? "") !== sport) return false;
+    if (subSport && activitySubSportValueWeb054(activity) !== subSport) return false;
     if (dashboardDrilldownStartMs > 0) {
       const startTime = numberOrZero(activity.start_time_ms);
       if (startTime < dashboardDrilldownStartMs || startTime >= dashboardDrilldownEndMs) return false;
@@ -3997,6 +3999,7 @@ function renderActivities() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "activity-card";
+    button.dataset.subSportWeb054 = activitySubSportValueWeb054(activity);
     button.addEventListener("click", () => showActivity(activity));
 
     button.appendChild(activityMain(activity));
@@ -4172,7 +4175,9 @@ function refreshActivitySubSportFilterWeb054() {
   if (!select) return;
 
   const current = select.value;
-  const source = Array.isArray(filteredActivities) ? filteredActivities : [];
+  const source = Array.isArray(activities)
+    ? activities.filter((activity) => activity?.deleted_at_ms == null)
+    : [];
   const counts = new Map();
 
   for (const activity of source) {
@@ -4208,43 +4213,33 @@ function updateActivitySubSportFilterStatusWeb054() {
     return;
   }
 
-  const visible = document.querySelectorAll(
-    '#activityList [data-sub-sport-web054]:not(.web054-sub-sport-hidden)'
-  ).length;
+  const visible = Array.isArray(filteredActivities)
+    ? filteredActivities.length
+    : 0;
 
   status.textContent =
-    `Filtre actif : sub_sport = ${select.value} · ${visible} ligne(s) visible(s)`;
+    `Filtre actif : sub_sport = ${select.value} · ${visible} activité(s)`;
 }
 
 function applyActivitySubSportFilterWeb054() {
   const select = document.getElementById("activitySubSportFilterWeb054");
   if (!select) return;
 
-  const selected = select.value;
-
-  document.querySelectorAll('#activityList [data-sub-sport-web054]').forEach((row) => {
-    const mismatch = Boolean(selected) && row.dataset.subSportWeb054 !== selected;
-    row.classList.toggle("web054-sub-sport-hidden", mismatch);
-  });
-
+  activityVisibleLimit = 20;
+  applyFiltersAndRender();
   updateActivitySubSportFilterStatusWeb054();
 }
 
-function loadAllActivitiesForSubSportWeb054() {
+async function loadAllActivitiesForSubSportWeb054() {
   const select = document.getElementById("activitySubSportFilterWeb054");
   if (!select?.value) return;
 
-  const loadAllButton = [...document.querySelectorAll("button")].find((button) =>
-    /charger tout/i.test(String(button.textContent || "").trim())
-  );
-
-  if (loadAllButton && !loadAllButton.disabled) {
-    loadAllButton.click();
+  if (moreActivities && !loadingAll && !loading) {
+    await loadAllActivities();
   }
 
-  setTimeout(applyActivitySubSportFilterWeb054, 50);
-  setTimeout(applyActivitySubSportFilterWeb054, 250);
-  setTimeout(applyActivitySubSportFilterWeb054, 700);
+  refreshActivitySubSportFilterWeb054();
+  applyActivitySubSportFilterWeb054();
 }
 
 function installActivitySubSportFilterWeb054() {
@@ -4290,14 +4285,6 @@ function activityMain(activity) {
 
   cell.append(icon);
   return cell;
-
-  cell.dataset.subSportWeb054 = activitySubSportValueWeb054(activity);
-
-  const web054SubSportFilter = document.getElementById("activitySubSportFilterWeb054");
-  if (web054SubSportFilter?.value &&
-      cell.dataset.subSportWeb054 !== web054SubSportFilter.value) {
-    cell.classList.add("web054-sub-sport-hidden");
-  }
 
 }
 
