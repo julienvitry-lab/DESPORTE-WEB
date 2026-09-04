@@ -2107,7 +2107,12 @@ function renderWeb055Periods() {
 }
 
 function web055DaysInYear(year) {
-  return new Date(year + 1, 0, 0).getDate();
+  /* WEB055-FIX5 · GOAL006
+     Nombre réel de jours de l'année : 365 ou 366.
+     FIX4 utilisait getDate() sur le 31 décembre, ce qui renvoyait 31. */
+  const start = new Date(Number(year), 0, 1);
+  const end = new Date(Number(year) + 1, 0, 1);
+  return Math.round((end.getTime() - start.getTime()) / 86400000);
 }
 
 function web055DayOfYear(date = new Date()) {
@@ -2122,85 +2127,82 @@ function web055RemainingDaysInclusive(date = new Date()) {
 }
 
 function renderWeb055Goal() {
-  /* WEB055-FIX4 · GOAL005
-     Une seule jauge superposée :
-     - vert = réalisé jusqu'à la cible théorique ;
-     - rouge visible uniquement en bout lorsque le réalisé est en retard ;
-     - or visible uniquement au-delà de la cible théorique lorsque le réalisé est en avance. */
-  const container = document.getElementById("web055GoalContent");
-  const meta = document.getElementById("web055GoalMeta");
+  /* WEB055-FIX5 · GOAL006
+     Jauge unique par métrique, rapportée à l'objectif annuel :
+     - rouge = cible théorique cumulée à la date du jour ;
+     - vert = réalisé ;
+     - or = seule portion d'avance au-delà de la cible théorique. */
+  const container = document.getElementById('web055GoalContent');
+  const meta = document.getElementById('web055GoalMeta');
   if (!container || !meta) return;
 
-  container.innerHTML = "";
+  container.innerHTML = '';
   const goal = web055SafeSportGoal();
   const distanceTarget = Math.max(0, Number(goal?.annual_distance_km) || 0);
   const ascentTarget = Math.max(0, Number(goal?.annual_ascent_m) || 0);
   const now = new Date();
   const year = now.getFullYear();
   const yearStart = new Date(year, 0, 1).getTime();
-  const yearRows = web055HomeRows.filter(
-    (row) => Number(row?.start_time_ms) >= yearStart
-  );
+  const yearRows = web055HomeRows.filter((row) => Number(row?.start_time_ms) >= yearStart);
   const metrics = web055Metrics(yearRows);
   const daysInYear = web055DaysInYear(year);
   const dayOfYear = web055DayOfYear(now);
   const theoreticalRatio = Math.max(0, Math.min(1, dayOfYear / daysInYear));
 
-  meta.textContent = year + " · objectif au 31 décembre";
+  meta.textContent = year + ' · objectif au 31 décembre';
 
   if (!(distanceTarget > 0) && !(ascentTarget > 0)) {
-    container.innerHTML =
-      '<div class="web055-empty">Aucun objectif annuel Distance ou D+ configuré pour ce sport. Configuration disponible dans Analyse → Objectifs.</div>';
+    container.innerHTML = '<div class="web055-empty">Aucun objectif annuel Distance ou D+ configuré pour ce sport. Configuration disponible dans Analyse → Objectifs.</div>';
     return;
   }
 
   function metricCard(options) {
     const target = Math.max(0, Number(options.target) || 0);
     if (!(target > 0)) {
-      return '<article class="web055-fix4-goal-card web055-fix4-goal-empty">' +
-        '<strong>' + options.label + '</strong>' +
-        '<span>Objectif annuel non configuré</span></article>';
+      return '<article class="web055-fix5-goal-card web055-fix5-goal-empty"><strong>' +
+        options.label + '</strong><span>Objectif annuel non configuré</span></article>';
     }
 
     const actual = Math.max(0, Number(options.actual) || 0);
-    const theoretical = Math.max(0, Math.min(target, target * theoreticalRatio));
-    const actualPct = Math.max(0, Math.min(100, actual / target * 100));
-    const theoreticalPct = Math.max(0, Math.min(100, theoretical / target * 100));
+    const theoretical = target * theoreticalRatio;
+    const actualPctRaw = actual / target * 100;
+    const theoreticalPctRaw = theoreticalRatio * 100;
+    const actualPct = Math.max(0, Math.min(100, actualPctRaw));
+    const theoreticalPct = Math.max(0, Math.min(100, theoreticalPctRaw));
     const commonPct = Math.min(actualPct, theoreticalPct);
-    const redTailPct = Math.max(0, theoreticalPct - actualPct);
     const goldTailPct = Math.max(0, actualPct - theoreticalPct);
     const remaining = Math.max(0, target - actual);
     const dailyTheoretical = target / daysInYear;
     const weeklyTheoretical = dailyTheoretical * 7;
     const delta = actual - theoretical;
-
-    const deltaClass = delta >= 0 ? "ahead" : "behind";
+    const deltaClass = delta >= 0 ? 'ahead' : 'behind';
     const deltaText = Math.abs(delta) < options.epsilon
-      ? "Dans le rythme théorique"
+      ? 'Dans le rythme théorique'
       : delta > 0
-        ? "Avance : " + options.format(Math.abs(delta))
-        : "Retard : " + options.format(Math.abs(delta));
+        ? 'Avance : ' + options.format(Math.abs(delta))
+        : 'Retard : ' + options.format(Math.abs(delta));
 
-    return '<article class="web055-fix4-goal-card">' +
-      '<div class="web055-fix4-goal-title"><strong>' + options.label + '</strong>' +
-      '<span>' + options.format(actual) + ' / ' + options.format(target) + '</span></div>' +
-      '<div class="web055-fix4-goal-track" role="img" aria-label="' +
-        options.label + ' réalisé ' + options.format(actual) +
-        ', cible théorique ' + options.format(theoretical) + '">' +
-        '<i class="web055-fix4-goal-theory" style="width:' + theoreticalPct + '%"></i>' +
-        '<i class="web055-fix4-goal-real" style="width:' + commonPct + '%"></i>' +
-        (redTailPct > 0
-          ? '<i class="web055-fix4-goal-late" style="left:' + actualPct + '%;width:' + redTailPct + '%"></i>'
-          : '') +
+    return '<article class="web055-fix5-goal-card">' +
+      '<div class="web055-fix5-goal-title"><strong>' + options.label + '</strong>' +
+        '<span>' + options.format(actual) + ' / ' + options.format(target) + '</span></div>' +
+      '<div class="web055-fix5-goal-pct">Réalisé ' +
+        actualPctRaw.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' % · Théorique ' +
+        theoreticalPctRaw.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %</div>' +
+      '<div class="web055-fix5-goal-track" role="img" aria-label="' + options.label +
+        ' réalisé ' + actualPctRaw.toFixed(1) + ' %, cible théorique ' + theoreticalPctRaw.toFixed(1) + ' %">' +
+        '<i class="web055-fix5-goal-theory" style="width:' + theoreticalPct + '%"></i>' +
+        '<i class="web055-fix5-goal-real" style="width:' + commonPct + '%"></i>' +
         (goldTailPct > 0
-          ? '<i class="web055-fix4-goal-ahead" style="left:' + theoreticalPct + '%;width:' + goldTailPct + '%"></i>'
+          ? '<i class="web055-fix5-goal-ahead" style="left:' + theoreticalPct + '%;width:' + goldTailPct + '%"></i>'
           : '') +
       '</div>' +
-      '<div class="web055-fix4-goal-legend"><span><b class="dot green"></b>Réalisé</span>' +
-        '<span><b class="dot red"></b>Cible théorique à date</span>' +
-        '<span><b class="dot gold"></b>Avance</span></div>' +
-      '<div class="web055-fix4-goal-status ' + deltaClass + '">' + deltaText + '</div>' +
-      '<div class="web055-fix4-goal-details">' +
+      '<div class="web055-fix5-goal-legend">' +
+        '<span><b class="dot green"></b>Réalisé</span>' +
+        '<span><b class="dot red"></b>Théorique à date</span>' +
+        '<span><b class="dot gold"></b>Avance</span>' +
+      '</div>' +
+      '<div class="web055-fix5-goal-status ' + deltaClass + '">' + deltaText + '</div>' +
+      '<div class="web055-fix5-goal-details">' +
         '<div><span>Reste avant objectif</span><strong>' + options.format(remaining) + '</strong></div>' +
         '<div><span>Rythme hebdo théorique</span><strong>' + options.formatWeekly(weeklyTheoretical) + '</strong></div>' +
         '<div><span>Rythme quotidien théorique</span><strong>' + options.formatDaily(dailyTheoretical) + '</strong></div>' +
@@ -2209,27 +2211,26 @@ function renderWeb055Goal() {
   }
 
   const distanceCard = metricCard({
-    label: "Distance",
+    label: 'Distance',
     actual: metrics.distance / 1000,
     target: distanceTarget,
     epsilon: 0.005,
-    format: (value) => Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km",
-    formatWeekly: (value) => Number(value).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " km/sem",
-    formatDaily: (value) => Number(value).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " km/j"
+    format: (value) => Number(value).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' km',
+    formatWeekly: (value) => Number(value).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' km/sem',
+    formatDaily: (value) => Number(value).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' km/j'
   });
 
   const ascentCard = metricCard({
-    label: "D+",
+    label: 'D+',
     actual: metrics.ascent,
     target: ascentTarget,
     epsilon: 0.5,
-    format: (value) => Math.round(Number(value)).toLocaleString("fr-FR") + " m",
-    formatWeekly: (value) => Math.round(Number(value)).toLocaleString("fr-FR") + " m/sem",
-    formatDaily: (value) => Math.round(Number(value)).toLocaleString("fr-FR") + " m/j"
+    format: (value) => Math.round(Number(value)).toLocaleString('fr-FR') + ' m',
+    formatWeekly: (value) => Math.round(Number(value)).toLocaleString('fr-FR') + ' m/sem',
+    formatDaily: (value) => Math.round(Number(value)).toLocaleString('fr-FR') + ' m/j'
   });
 
-  container.innerHTML =
-    '<div class="web055-fix4-goal-grid">' + distanceCard + ascentCard + '</div>';
+  container.innerHTML = '<div class="web055-fix5-goal-grid">' + distanceCard + ascentCard + '</div>';
 }
 
 function web055LocalDateKey(ms) {
@@ -2265,40 +2266,57 @@ function web055DailyRegularityMap() {
   return result;
 }
 
-function web055RegularityData(distanceThreshold, ascentThreshold, mode = "OR") {
-  /* WEB055-FIX4 · REGULARITY004 */
+
+/* WEB055-FIX5 · REGULARITY005 */
+function web055RegularityMetricValue(entry, metric) {
+  return metric === 'ascent' ? Math.max(0, Number(entry?.ascentM) || 0) : Math.max(0, Number(entry?.distanceKm) || 0);
+}
+
+function web055RegularityMetricLabel(metric) {
+  return metric === 'ascent' ? 'D+' : 'Distance';
+}
+
+function web055RegularityMetricUnit(metric) {
+  return metric === 'ascent' ? 'm' : 'km';
+}
+
+function web055RegularityOtherMetric(metric) {
+  return metric === 'ascent' ? 'distance' : 'ascent';
+}
+
+function web055RegularityData(primaryMetric, primaryThreshold, combineEnabled = false, operator = 'AND', secondaryThreshold = 0) {
+  /* WEB055-FIX5 · REGULARITY005
+     Mode normal : une seule métrique.
+     Mode « 2 critères » : la seconde métrique est automatiquement l'autre (Distance ou D+). */
   const daily = web055DailyRegularityMap();
   const now = new Date();
   const currentYear = now.getFullYear();
+  const secondaryMetric = web055RegularityOtherMetric(primaryMetric);
   const yearsFromRows = web055HomeRows
     .map((row) => new Date(Number(row.start_time_ms)).getFullYear())
     .filter((year) => Number.isFinite(year));
-  const firstYear = Math.max(
-    2012,
-    yearsFromRows.length ? Math.min(...yearsFromRows) : currentYear
-  );
-
+  const firstYear = Math.max(2012, yearsFromRows.length ? Math.min(...yearsFromRows) : currentYear);
   const result = [];
+
   for (let year = firstYear; year <= currentYear; year++) {
     const start = new Date(year, 0, 1);
-    const end = year === currentYear
-      ? new Date(web055StartOfDay(now))
-      : new Date(year, 11, 31);
-
+    const end = year === currentYear ? new Date(web055StartOfDay(now)) : new Date(year, 11, 31);
     let count = 0;
     let streak = 0;
     let maxStreak = 0;
 
     for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
-      const key = cursor.getFullYear() + "-" +
-        String(cursor.getMonth() + 1).padStart(2, "0") + "-" +
-        String(cursor.getDate()).padStart(2, "0");
+      const key = cursor.getFullYear() + '-' +
+        String(cursor.getMonth() + 1).padStart(2, '0') + '-' +
+        String(cursor.getDate()).padStart(2, '0');
       const entry = daily.get(key) || { distanceKm: 0, ascentM: 0 };
-      const distanceOk = entry.distanceKm > distanceThreshold;
-      const ascentOk = entry.ascentM > ascentThreshold;
-      const qualified = mode === "AND"
-        ? (distanceOk && ascentOk)
-        : (distanceOk || ascentOk);
+      const primaryOk = web055RegularityMetricValue(entry, primaryMetric) > primaryThreshold;
+      let qualified = primaryOk;
+
+      if (combineEnabled) {
+        const secondaryOk = web055RegularityMetricValue(entry, secondaryMetric) > secondaryThreshold;
+        qualified = operator === 'OR' ? (primaryOk || secondaryOk) : (primaryOk && secondaryOk);
+      }
 
       if (qualified) {
         count++;
@@ -2372,33 +2390,50 @@ function drawWeb055RegularityChart(data) {
 }
 
 function renderWeb055Regularity() {
-  const distanceInput = document.getElementById("web055RegularityThreshold");
-  const ascentInput = document.getElementById("web055RegularityAscentThreshold");
-  const modeSelect = document.getElementById("web055RegularityMode");
-  const summary = document.getElementById("web055RegularitySummary");
-  if (!distanceInput || !ascentInput || !modeSelect || !summary) return;
+  const metricSelect = document.getElementById('web055RegularityMetric');
+  const primaryInput = document.getElementById('web055RegularityThreshold');
+  const primaryUnit = document.getElementById('web055RegularityPrimaryUnit');
+  const combineToggle = document.getElementById('web055RegularityCombineToggle');
+  const advanced = document.getElementById('web055RegularityAdvanced');
+  const modeSelect = document.getElementById('web055RegularityMode');
+  const secondaryLabel = document.getElementById('web055RegularitySecondaryLabel');
+  const secondaryInput = document.getElementById('web055RegularitySecondaryThreshold');
+  const secondaryUnit = document.getElementById('web055RegularitySecondaryUnit');
+  const summary = document.getElementById('web055RegularitySummary');
+  if (!metricSelect || !primaryInput || !combineToggle || !advanced || !modeSelect || !secondaryInput || !summary) return;
 
-  const distanceThreshold = Math.max(0, Number(String(distanceInput.value).replace(",", ".")) || 0);
-  const ascentThreshold = Math.max(0, Number(String(ascentInput.value).replace(",", ".")) || 0);
-  const mode = modeSelect.value === "AND" ? "AND" : "OR";
-  const data = web055RegularityData(distanceThreshold, ascentThreshold, mode);
-  const current = data[data.length - 1] || {
-    year: new Date().getFullYear(), count: 0, maxStreak: 0
-  };
+  const primaryMetric = metricSelect.value === 'ascent' ? 'ascent' : 'distance';
+  const secondaryMetric = web055RegularityOtherMetric(primaryMetric);
+  const combineEnabled = combineToggle.getAttribute('aria-pressed') === 'true';
+  const operator = modeSelect.value === 'OR' ? 'OR' : 'AND';
+  const primaryThreshold = Math.max(0, Number(String(primaryInput.value).replace(',', '.')) || 0);
+  const secondaryThreshold = Math.max(0, Number(String(secondaryInput.value).replace(',', '.')) || 0);
+
+  if (primaryUnit) primaryUnit.textContent = web055RegularityMetricUnit(primaryMetric);
+  if (secondaryLabel) secondaryLabel.textContent = web055RegularityMetricLabel(secondaryMetric) + ' >';
+  if (secondaryUnit) secondaryUnit.textContent = web055RegularityMetricUnit(secondaryMetric);
+  advanced.classList.toggle('hidden', !combineEnabled);
+  combineToggle.textContent = combineEnabled ? '− 2e critère' : '+ 2e critère';
+
+  const data = web055RegularityData(primaryMetric, primaryThreshold, combineEnabled, operator, secondaryThreshold);
+  const current = data[data.length - 1] || { year: new Date().getFullYear(), count: 0, maxStreak: 0 };
   const record = data.reduce(
     (best, item) => item.count > best.count ? item : best,
     { year: current.year, count: -1, maxStreak: 0 }
   );
 
-  const connector = mode === "AND" ? " ET " : " OU ";
-  summary.innerHTML =
-    '<strong>' + current.year + ' : ' + current.count + ' jour(s) · &gt; ' +
-    distanceThreshold.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + ' km' +
-    connector + '&gt; ' +
-    Math.round(ascentThreshold).toLocaleString("fr-FR") + ' m D+</strong>' +
-    '<span>Série record cette année : ' + current.maxStreak +
-    ' jour(s) · record annuel : ' + Math.max(0, record.count) +
-    ' jour(s) en ' + record.year + '</span>';
+  const primaryText = '> ' + primaryThreshold.toLocaleString('fr-FR', { maximumFractionDigits: primaryMetric === 'distance' ? 1 : 0 }) +
+    ' ' + web055RegularityMetricUnit(primaryMetric) + (primaryMetric === 'ascent' ? ' D+' : '');
+  let criteriaText = web055RegularityMetricLabel(primaryMetric) + ' ' + primaryText;
+  if (combineEnabled) {
+    const secondaryText = '> ' + secondaryThreshold.toLocaleString('fr-FR', { maximumFractionDigits: secondaryMetric === 'distance' ? 1 : 0 }) +
+      ' ' + web055RegularityMetricUnit(secondaryMetric) + (secondaryMetric === 'ascent' ? ' D+' : '');
+    criteriaText += ' ' + operator + ' ' + web055RegularityMetricLabel(secondaryMetric) + ' ' + secondaryText;
+  }
+
+  summary.innerHTML = '<strong>' + current.year + ' : ' + current.count + ' jour(s) · ' + criteriaText + '</strong>' +
+    '<span>Série record cette année : ' + current.maxStreak + ' jour(s) · record annuel : ' +
+    Math.max(0, record.count) + ' jour(s) en ' + record.year + '</span>';
 
   drawWeb055RegularityChart(data);
 }
@@ -2416,6 +2451,10 @@ function web055ComparisonValue(row, metric) {
 function web055MonthDayKey(date) {
   return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
+
+
+/* WEB055-FIX5 · COMPARE005 */
+let web055ComparisonCursorIndex = null;
 
 function web055ComparisonSeries(metric, selectedYear) {
   /* WEB055-FIX4 · COMPARE004 : N contre toute année antérieure choisie. */
@@ -2490,38 +2529,34 @@ function web055FormatComparisonValue(value, meta) {
   return meta.unit ? `${text} ${meta.unit}` : text;
 }
 
-function drawWeb055ComparisonChart(data, metric) {
-  const canvas = document.getElementById("web055ComparisonChart");
+function drawWeb055ComparisonChart(data, metric, cursorIndex = null) {
+  /* WEB055-FIX5 · COMPARE005 : curseur interactif. */
+  const canvas = document.getElementById('web055ComparisonChart');
   if (!canvas || !data.current.length) return;
-
   const width = Math.max(320, canvas.parentElement?.clientWidth || 760);
   const height = 260;
   const dpr = window.devicePixelRatio || 1;
-
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
-  canvas.style.width = width + "px";
-  canvas.style.height = height + "px";
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+  canvas.style.cursor = 'crosshair';
 
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, width, height);
-
   const left = 42;
   const right = 16;
   const top = 38;
   const bottom = 34;
   const plotW = width - left - right;
   const plotH = height - top - bottom;
-
   let max = 1;
-
   for (let i = 0; i < data.previous.length; i++) max = Math.max(max, data.previous[i]);
   for (let i = 0; i <= data.todayIndex && i < data.current.length; i++) max = Math.max(max, data.current[i]);
 
-  ctx.strokeStyle = "rgba(180,180,180,.18)";
+  ctx.strokeStyle = 'rgba(180,180,180,.18)';
   ctx.lineWidth = 1;
-
   for (let row = 0; row <= 4; row++) {
     const y = top + (plotH * row) / 4;
     ctx.beginPath();
@@ -2532,9 +2567,9 @@ function drawWeb055ComparisonChart(data, metric) {
 
   for (const month of data.monthStarts) {
     const x = left + (month.index / Math.max(1, data.current.length - 1)) * plotW;
-    ctx.fillStyle = "rgba(235,235,225,.65)";
-    ctx.font = "10px Comfortaa, sans-serif";
-    ctx.textAlign = "center";
+    ctx.fillStyle = 'rgba(235,235,225,.65)';
+    ctx.font = '10px Comfortaa, sans-serif';
+    ctx.textAlign = 'center';
     ctx.fillText(month.label, x, height - 10);
   }
 
@@ -2547,31 +2582,28 @@ function drawWeb055ComparisonChart(data, metric) {
 
   function drawSeries(values, start, end, color, dashed = false) {
     if (end <= start) return;
-
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = 2.3;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
     ctx.setLineDash(dashed ? [7, 6] : []);
     ctx.beginPath();
-
     for (let i = start; i <= end; i++) {
       const p = point(i, values[i]);
       if (i === start) ctx.moveTo(p.x, p.y);
       else ctx.lineTo(p.x, p.y);
     }
-
     ctx.stroke();
     ctx.restore();
   }
 
-  drawSeries(data.previous, 0, data.todayIndex, "#d8ae48");
-  drawSeries(data.previous, data.todayIndex, data.previous.length - 1, "#d8ae48", true);
-  drawSeries(data.current, 0, data.todayIndex, "#a7ff2a");
+  drawSeries(data.previous, 0, data.todayIndex, '#d8ae48');
+  drawSeries(data.previous, data.todayIndex, data.previous.length - 1, '#d8ae48', true);
+  drawSeries(data.current, 0, data.todayIndex, '#a7ff2a');
 
   const todayX = point(data.todayIndex, 0).x;
-  ctx.strokeStyle = "rgba(255,255,255,.34)";
+  ctx.strokeStyle = 'rgba(255,255,255,.22)';
   ctx.setLineDash([3, 4]);
   ctx.beginPath();
   ctx.moveTo(todayX, top);
@@ -2579,23 +2611,94 @@ function drawWeb055ComparisonChart(data, metric) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.font = "11px Comfortaa, sans-serif";
-  ctx.textAlign = "left";
-  ctx.fillStyle = "#a7ff2a";
-  ctx.fillText("● " + data.currentYear, left, 18);
-  ctx.fillStyle = "#d8ae48";
-  ctx.fillText("● " + data.previousYear, left + 82, 18);
+  const activeIndex = Number.isInteger(cursorIndex)
+    ? Math.max(0, Math.min(data.todayIndex, cursorIndex))
+    : data.todayIndex;
+  const cursorX = point(activeIndex, 0).x;
+  ctx.strokeStyle = 'rgba(255,255,255,.82)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(cursorX, top);
+  ctx.lineTo(cursorX, top + plotH);
+  ctx.stroke();
 
+  const currentPoint = point(activeIndex, data.current[activeIndex] || 0);
+  const previousPoint = point(activeIndex, data.previous[activeIndex] || 0);
+  for (const item of [
+    { p: currentPoint, color: '#a7ff2a' },
+    { p: previousPoint, color: '#d8ae48' }
+  ]) {
+    ctx.beginPath();
+    ctx.fillStyle = item.color;
+    ctx.arc(item.p.x, item.p.y, 4.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.font = '11px Comfortaa, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#a7ff2a';
+  ctx.fillText('● ' + data.currentYear, left, 18);
+  ctx.fillStyle = '#d8ae48';
+  ctx.fillText('● ' + data.previousYear, left + 82, 18);
   const meta = web055ComparisonMetricMeta(metric);
-  ctx.textAlign = "right";
-  ctx.fillStyle = "rgba(235,235,225,.75)";
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(235,235,225,.75)';
   ctx.fillText(meta.label, width - right, 18);
+
+  canvas.__web055ComparisonData = data;
+  canvas.__web055ComparisonMetric = metric;
+}
+
+
+function web055ComparisonDateLabel(data, index) {
+  const d = new Date(data.currentYear, 0, 1);
+  d.setDate(d.getDate() + Math.max(0, Number(index) || 0));
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+}
+
+function web055RenderComparisonSummary(data, metric, index) {
+  const summary = document.getElementById('web055ComparisonSummary');
+  if (!summary) return;
+  const safeIndex = Math.max(0, Math.min(data.todayIndex, Number(index) || 0));
+  const meta = web055ComparisonMetricMeta(metric);
+  const currentValue = data.current[safeIndex] || 0;
+  const previousValue = data.previous[safeIndex] || 0;
+  const delta = currentValue - previousValue;
+  const percent = previousValue > 0 ? (delta / previousValue) * 100 : null;
+  const dateLabel = web055ComparisonDateLabel(data, safeIndex);
+
+  summary.innerHTML = '<strong>' + dateLabel + ' · ' + data.currentYear + ' : ' +
+    web055FormatComparisonValue(currentValue, meta) + '</strong>' +
+    '<span>' + data.previousYear + ' à la même date : ' +
+    web055FormatComparisonValue(previousValue, meta) + ' · ' +
+    (delta >= 0 ? '+' : '−') + web055FormatComparisonValue(Math.abs(delta), meta) +
+    (percent == null ? '' : ' · ' + (percent >= 0 ? '+' : '') +
+      percent.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %') + '</span>';
+}
+
+function web055MoveComparisonCursor(event) {
+  const canvas = document.getElementById('web055ComparisonChart');
+  const data = canvas?.__web055ComparisonData;
+  const metric = canvas?.__web055ComparisonMetric;
+  if (!canvas || !data || !metric) return;
+  const rect = canvas.getBoundingClientRect();
+  const left = 42;
+  const right = 16;
+  const plotW = Math.max(1, rect.width - left - right);
+  const localX = Math.max(left, Math.min(rect.width - right, event.clientX - rect.left));
+  const ratio = (localX - left) / plotW;
+  const index = Math.max(0, Math.min(data.todayIndex,
+    Math.round(ratio * Math.max(1, data.current.length - 1))));
+  web055ComparisonCursorIndex = index;
+  web055RenderComparisonSummary(data, metric, index);
+  drawWeb055ComparisonChart(data, metric, index);
 }
 
 function renderWeb055Comparison() {
-  const metricSelect = document.getElementById("web055CompareMetric");
-  const yearSelect = document.getElementById("web055CompareYear");
-  const summary = document.getElementById("web055ComparisonSummary");
+  /* WEB055-FIX5 · COMPARE005 */
+  const metricSelect = document.getElementById('web055CompareMetric');
+  const yearSelect = document.getElementById('web055CompareYear');
+  const summary = document.getElementById('web055ComparisonSummary');
   if (!metricSelect || !yearSelect || !summary) return;
 
   const currentYear = new Date().getFullYear();
@@ -2606,11 +2709,8 @@ function renderWeb055Comparison() {
   )].sort((a, b) => b - a);
 
   const previousSelection = Number(yearSelect.value);
-  yearSelect.innerHTML = years.map(
-    (year) => '<option value="' + year + '">' + year + '</option>'
-  ).join("");
-
-  let selectedYear = years.includes(previousSelection)
+  yearSelect.innerHTML = years.map((year) => '<option value="' + year + '">' + year + '</option>').join('');
+  const selectedYear = years.includes(previousSelection)
     ? previousSelection
     : (years.includes(currentYear - 1) ? currentYear - 1 : years[0]);
 
@@ -2623,26 +2723,11 @@ function renderWeb055Comparison() {
 
   yearSelect.disabled = false;
   yearSelect.value = String(selectedYear);
-  web055CompareMetric = metricSelect.value || "distance";
+  web055CompareMetric = metricSelect.value || 'distance';
   const data = web055ComparisonSeries(web055CompareMetric, selectedYear);
-  const meta = web055ComparisonMetricMeta(web055CompareMetric);
-  const currentValue = data.current[data.todayIndex] || 0;
-  const previousValue = data.previous[data.todayIndex] || 0;
-  const delta = currentValue - previousValue;
-  const percent = previousValue > 0 ? (delta / previousValue) * 100 : null;
-
-  summary.innerHTML =
-    '<strong>' + data.currentYear + ' : ' +
-    web055FormatComparisonValue(currentValue, meta) + '</strong>' +
-    '<span>' + data.previousYear + ' à la même date : ' +
-    web055FormatComparisonValue(previousValue, meta) + ' · ' +
-    (delta >= 0 ? '+' : '−') +
-    web055FormatComparisonValue(Math.abs(delta), meta) +
-    (percent == null ? '' : ' · ' + (percent >= 0 ? '+' : '') +
-      percent.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + ' %') +
-    '</span>';
-
-  drawWeb055ComparisonChart(data, web055CompareMetric);
+  web055ComparisonCursorIndex = data.todayIndex;
+  web055RenderComparisonSummary(data, web055CompareMetric, data.todayIndex);
+  drawWeb055ComparisonChart(data, web055CompareMetric, data.todayIndex);
 }
 
 function renderWeb055Home() {
@@ -2675,143 +2760,168 @@ function web055SetSport(sport) {
 function installWeb055HomeLayout() {
   const section = ui.webDashboardSection;
   if (!section) return;
-  if (document.getElementById("web055HomeRoot")) return;
+  if (document.getElementById('web055HomeRoot')) return;
 
-  for (const child of [...section.children]) child.classList.add("web055-legacy-home-hidden");
-
-  const root = document.createElement("div");
-  root.id = "web055HomeRoot";
-  root.className = "web055-home-root";
-  root.innerHTML = `
-    <div class="web055-home-head">
-      <div class="web055-sport-switch" aria-label="Sport de l'accueil">
-        <button id="web055RunningButton" class="secondary dashboard-choice active" type="button">Course à pied</button>
-        <button id="web055CyclingButton" class="secondary dashboard-choice" type="button">Vélo</button>
-      </div>
-    </div>
-
-    <section class="web055-card web055-period-card">
-      <div id="web055PeriodRows" class="web055-period-rows"></div>
-    </section>
-
-    <section class="web055-card">
-      <div class="web055-card-heading">
-        <h3>Objectifs</h3>
-        <span id="web055GoalMeta" class="muted"></span>
-      </div>
-      <div id="web055GoalContent"></div>
-    </section>
-
-    <section class="web055-card web055-fix4-regularity-card">
-      <div class="web055-card-heading web055-fix4-regularity-heading">
-        <h3>Régularité</h3>
-        <div class="web055-fix4-regularity-controls">
-          <label>Distance &gt;
-            <input id="web055RegularityThreshold" type="number" min="0" step="0.5" value="10"> km
-          </label>
-          <select id="web055RegularityMode" aria-label="Combinaison des seuils">
-            <option value="OR">OU</option>
-            <option value="AND">ET</option>
-          </select>
-          <label>D+ &gt;
-            <input id="web055RegularityAscentThreshold" type="number" min="0" step="50" value="500"> m
-          </label>
-        </div>
-      </div>
-      <div id="web055RegularitySummary" class="web055-summary-two-lines"></div>
-      <div class="web055-fix4-chart-wrap">
-        <canvas id="web055RegularityChart" aria-label="Nombre annuel de jours correspondant aux seuils Distance et D+"></canvas>
-        <div id="web055RegularityTooltip" class="web055-fix4-chart-tooltip hidden"></div>
-      </div>
-    </section>
-
-    <section class="web055-card">
-      <div class="web055-card-heading web055-fix4-compare-heading">
-        <h3>Comparaison année N / année antérieure</h3>
-        <div class="web055-fix4-compare-controls">
-          <select id="web055CompareMetric" class="web055-compare-select">
-            <option value="distance">Distance</option>
-            <option value="ascent">D+</option>
-            <option value="time">Temps</option>
-            <option value="load">Charge</option>
-          </select>
-          <select id="web055CompareYear" class="web055-fix4-year-select" aria-label="Année de comparaison"></select>
-        </div>
-      </div>
-      <div id="web055ComparisonSummary" class="web055-summary-two-lines"></div>
-      <canvas id="web055ComparisonChart" aria-label="Comparaison cumulative de l'année en cours avec une année antérieure choisie"></canvas>
-    </section>
-  `;
+  for (const child of [...section.children]) child.classList.add('web055-legacy-home-hidden');
+  const root = document.createElement('div');
+  root.id = 'web055HomeRoot';
+  root.className = 'web055-home-root';
+  root.innerHTML = [
+    "<div class='web055-home-head'>",
+      "<div class='web055-sport-switch' aria-label='Sport de l’accueil'>",
+        "<button id='web055RunningButton' class='secondary dashboard-choice active' type='button'>Course à pied</button>",
+        "<button id='web055CyclingButton' class='secondary dashboard-choice' type='button'>Vélo</button>",
+      "</div>",
+    "</div>",
+    "<section class='web055-card web055-period-card'><div id='web055PeriodRows' class='web055-period-rows'></div></section>",
+    "<section class='web055-card'>",
+      "<div class='web055-card-heading'><h3>Objectifs</h3><span id='web055GoalMeta' class='muted'></span></div>",
+      "<div id='web055GoalContent'></div>",
+    "</section>",
+    "<section class='web055-card web055-fix5-regularity-card'>",
+      "<div class='web055-card-heading web055-fix5-regularity-heading'>",
+        "<h3>Régularité</h3>",
+        "<div class='web055-fix5-regularity-controls'>",
+          "<select id='web055RegularityMetric' aria-label='Métrique de régularité'><option value='distance'>Distance</option><option value='ascent'>D+</option></select>",
+          "<label><span>Seuil &gt;</span><input id='web055RegularityThreshold' type='number' min='0' step='0.5' value='10'><span id='web055RegularityPrimaryUnit'>km</span></label>",
+          "<button id='web055RegularityCombineToggle' class='secondary web055-fix5-combine-toggle' type='button' aria-pressed='false'>+ 2e critère</button>",
+        "</div>",
+      "</div>",
+      "<div id='web055RegularityAdvanced' class='web055-fix5-regularity-advanced hidden'>",
+        "<select id='web055RegularityMode' aria-label='Combinaison des deux critères'><option value='AND'>ET</option><option value='OR'>OU</option></select>",
+        "<label><span id='web055RegularitySecondaryLabel'>D+ &gt;</span><input id='web055RegularitySecondaryThreshold' type='number' min='0' step='50' value='500'><span id='web055RegularitySecondaryUnit'>m</span></label>",
+      "</div>",
+      "<div id='web055RegularitySummary' class='web055-summary-two-lines'></div>",
+      "<div class='web055-fix4-chart-wrap'><canvas id='web055RegularityChart' aria-label='Nombre annuel de jours correspondant au critère de régularité'></canvas><div id='web055RegularityTooltip' class='web055-fix4-chart-tooltip hidden'></div></div>",
+    "</section>",
+    "<section class='web055-card web055-fix5-compare-card'>",
+      "<div class='web055-card-heading web055-fix5-compare-heading'>",
+        "<h3>Comparaison</h3>",
+        "<div class='web055-fix5-compare-controls'>",
+          "<select id='web055CompareMetric' class='web055-compare-select'><option value='distance'>Distance</option><option value='ascent'>D+</option><option value='time'>Temps</option><option value='load'>Charge</option></select>",
+          "<select id='web055CompareYear' class='web055-fix4-year-select' aria-label='Année de comparaison'></select>",
+        "</div>",
+      "</div>",
+      "<div id='web055ComparisonSummary' class='web055-summary-two-lines'></div>",
+      "<canvas id='web055ComparisonChart' aria-label='Comparaison cumulative interactive avec une année antérieure'></canvas>",
+    "</section>"
+  ].join('');
 
   section.appendChild(root);
   web055SetSport(1);
 
-  document.getElementById("web055RunningButton")?.addEventListener("click", () => {
+  document.getElementById('web055RunningButton')?.addEventListener('click', () => {
     web055SetSport(1);
     void loadWebDashboard();
   });
-  document.getElementById("web055CyclingButton")?.addEventListener("click", () => {
+  document.getElementById('web055CyclingButton')?.addEventListener('click', () => {
     web055SetSport(2);
     void loadWebDashboard();
   });
 
-  const distanceThreshold = document.getElementById("web055RegularityThreshold");
-  const ascentThreshold = document.getElementById("web055RegularityAscentThreshold");
-  const regularityMode = document.getElementById("web055RegularityMode");
+  const metricSelect = document.getElementById('web055RegularityMetric');
+  const primaryInput = document.getElementById('web055RegularityThreshold');
+  const combineToggle = document.getElementById('web055RegularityCombineToggle');
+  const modeSelect = document.getElementById('web055RegularityMode');
+  const secondaryInput = document.getElementById('web055RegularitySecondaryThreshold');
 
-  const storedDistance = localStorage.getItem("sport_web_web055_regularity_threshold");
-  const storedAscent = localStorage.getItem("sport_web_web055_regularity_ascent_threshold");
-  const storedMode = localStorage.getItem("sport_web_web055_regularity_mode");
-  if (storedDistance != null && storedDistance !== "") distanceThreshold.value = storedDistance;
-  if (storedAscent != null && storedAscent !== "") ascentThreshold.value = storedAscent;
-  if (storedMode === "AND" || storedMode === "OR") regularityMode.value = storedMode;
+  const distanceKey = 'sport_web_web055_regularity_distance_threshold';
+  const ascentKey = 'sport_web_web055_regularity_ascent_threshold_v2';
+  const metricKey = 'sport_web_web055_regularity_metric_v2';
+  const combineKey = 'sport_web_web055_regularity_combine_v2';
+  const modeKey = 'sport_web_web055_regularity_mode';
 
-  const rerenderRegularity = () => {
-    localStorage.setItem("sport_web_web055_regularity_threshold", distanceThreshold.value);
-    localStorage.setItem("sport_web_web055_regularity_ascent_threshold", ascentThreshold.value);
-    localStorage.setItem("sport_web_web055_regularity_mode", regularityMode.value);
+  const legacyDistance = localStorage.getItem('sport_web_web055_regularity_threshold');
+  const legacyAscent = localStorage.getItem('sport_web_web055_regularity_ascent_threshold');
+  if (localStorage.getItem(distanceKey) == null && legacyDistance != null) localStorage.setItem(distanceKey, legacyDistance);
+  if (localStorage.getItem(ascentKey) == null && legacyAscent != null) localStorage.setItem(ascentKey, legacyAscent);
+
+  metricSelect.value = localStorage.getItem(metricKey) === 'ascent' ? 'ascent' : 'distance';
+  modeSelect.value = localStorage.getItem(modeKey) === 'OR' ? 'OR' : 'AND';
+  combineToggle.setAttribute('aria-pressed', localStorage.getItem(combineKey) === '1' ? 'true' : 'false');
+
+  function storedThreshold(metric) {
+    const raw = localStorage.getItem(metric === 'ascent' ? ascentKey : distanceKey);
+    const fallback = metric === 'ascent' ? 500 : 10;
+    const value = Number(String(raw == null ? fallback : raw).replace(',', '.'));
+    return Number.isFinite(value) && value >= 0 ? value : fallback;
+  }
+
+  function syncRegularityInputs() {
+    const metric = metricSelect.value === 'ascent' ? 'ascent' : 'distance';
+    const other = web055RegularityOtherMetric(metric);
+    primaryInput.step = metric === 'ascent' ? '50' : '0.5';
+    secondaryInput.step = other === 'ascent' ? '50' : '0.5';
+    primaryInput.value = String(storedThreshold(metric));
+    secondaryInput.value = String(storedThreshold(other));
     renderWeb055Regularity();
-  };
-  distanceThreshold.addEventListener("input", rerenderRegularity);
-  ascentThreshold.addEventListener("input", rerenderRegularity);
-  regularityMode.addEventListener("change", rerenderRegularity);
+  }
 
-  const regularityCanvas = document.getElementById("web055RegularityChart");
-  const tooltip = document.getElementById("web055RegularityTooltip");
-  regularityCanvas?.addEventListener("mousemove", (event) => {
+  metricSelect.addEventListener('change', () => {
+    localStorage.setItem(metricKey, metricSelect.value);
+    syncRegularityInputs();
+  });
+  primaryInput.addEventListener('input', () => {
+    const metric = metricSelect.value === 'ascent' ? 'ascent' : 'distance';
+    localStorage.setItem(metric === 'ascent' ? ascentKey : distanceKey, primaryInput.value);
+    renderWeb055Regularity();
+  });
+  secondaryInput.addEventListener('input', () => {
+    const other = web055RegularityOtherMetric(metricSelect.value === 'ascent' ? 'ascent' : 'distance');
+    localStorage.setItem(other === 'ascent' ? ascentKey : distanceKey, secondaryInput.value);
+    renderWeb055Regularity();
+  });
+  combineToggle.addEventListener('click', () => {
+    const enabled = combineToggle.getAttribute('aria-pressed') !== 'true';
+    combineToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    localStorage.setItem(combineKey, enabled ? '1' : '0');
+    renderWeb055Regularity();
+  });
+  modeSelect.addEventListener('change', () => {
+    localStorage.setItem(modeKey, modeSelect.value);
+    renderWeb055Regularity();
+  });
+
+  const regularityCanvas = document.getElementById('web055RegularityChart');
+  const tooltip = document.getElementById('web055RegularityTooltip');
+  regularityCanvas?.addEventListener('mousemove', (event) => {
     const rect = regularityCanvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     const box = (regularityCanvas.__web055RegularityHitboxes || []).find(
-      (item) => x >= item.x && x <= item.x + item.w &&
-        y >= item.y && y <= item.y + item.h
+      (item) => x >= item.x && x <= item.x + item.w && y >= item.y && y <= item.y + item.h
     );
     if (!box || !tooltip) {
-      tooltip?.classList.add("hidden");
+      tooltip?.classList.add('hidden');
       return;
     }
-    tooltip.textContent = box.item.year + " : " + box.item.count + " jour(s)";
-    tooltip.style.left = Math.min(rect.width - 120, Math.max(8, x + 12)) + "px";
-    tooltip.style.top = Math.max(6, y - 34) + "px";
-    tooltip.classList.remove("hidden");
+    tooltip.textContent = box.item.year + ' : ' + box.item.count + ' jour(s)';
+    tooltip.style.left = Math.min(rect.width - 120, Math.max(8, x + 12)) + 'px';
+    tooltip.style.top = Math.max(6, y - 34) + 'px';
+    tooltip.classList.remove('hidden');
   });
-  regularityCanvas?.addEventListener("mouseleave", () => tooltip?.classList.add("hidden"));
+  regularityCanvas?.addEventListener('mouseleave', () => tooltip?.classList.add('hidden'));
 
-  document.getElementById("web055CompareMetric")?.addEventListener("change", renderWeb055Comparison);
-  document.getElementById("web055CompareYear")?.addEventListener("change", renderWeb055Comparison);
+  document.getElementById('web055CompareMetric')?.addEventListener('change', renderWeb055Comparison);
+  document.getElementById('web055CompareYear')?.addEventListener('change', renderWeb055Comparison);
+  const compareCanvas = document.getElementById('web055ComparisonChart');
+  compareCanvas?.addEventListener('pointermove', web055MoveComparisonCursor);
+  compareCanvas?.addEventListener('pointerdown', web055MoveComparisonCursor);
 
-  window.addEventListener("resize", () => {
-    if (document.body.dataset.uxPage !== "home") return;
+  syncRegularityInputs();
+
+  window.addEventListener('resize', () => {
+    if (document.body.dataset.uxPage !== 'home') return;
     renderWeb055Regularity();
     renderWeb055Comparison();
   }, { passive: true });
 
-  document.querySelectorAll("[data-ux-page]").forEach((button) => {
-    if (button.dataset.web055RefreshBound === "1") return;
-    button.dataset.web055RefreshBound = "1";
-    button.addEventListener("click", () => {
+  document.querySelectorAll('[data-ux-page]').forEach((button) => {
+    if (button.dataset.web055RefreshBound === '1') return;
+    button.dataset.web055RefreshBound = '1';
+    button.addEventListener('click', () => {
       if (!currentUser) return;
-      if (button.dataset.uxPage === "home") web055SetSport(1);
+      if (button.dataset.uxPage === 'home') web055SetSport(1);
       window.setTimeout(() => { void reloadAll(); }, 0);
     });
   });
