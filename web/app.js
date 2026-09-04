@@ -1788,7 +1788,14 @@ function web055SafeChargeScore(activity) {
 }
 
 function web055SafeGapSecondsPerKm(activity) {
+  /* WEB055-FIX4 · GAP004
+     On accepte aussi les alias de PERFORMANCE001 lorsqu'ils existent
+     dans le résumé Firestore, puis le cache activity_routes de FIX3. */
   for (const raw of [
+    activity?.personal_gap,
+    activity?.personalGap,
+    activity?.generic_gap,
+    activity?.genericGap,
     activity?.gap_seconds_per_km,
     activity?.gap_s_per_km,
     activity?.gapSecondsPerKm,
@@ -2115,12 +2122,16 @@ function web055RemainingDaysInclusive(date = new Date()) {
 }
 
 function renderWeb055Goal() {
+  /* WEB055-FIX4 · GOAL005
+     Une seule jauge superposée :
+     - vert = réalisé jusqu'à la cible théorique ;
+     - rouge visible uniquement en bout lorsque le réalisé est en retard ;
+     - or visible uniquement au-delà de la cible théorique lorsque le réalisé est en avance. */
   const container = document.getElementById("web055GoalContent");
   const meta = document.getElementById("web055GoalMeta");
   if (!container || !meta) return;
 
   container.innerHTML = "";
-
   const goal = web055SafeSportGoal();
   const distanceTarget = Math.max(0, Number(goal?.annual_distance_km) || 0);
   const ascentTarget = Math.max(0, Number(goal?.annual_ascent_m) || 0);
@@ -2131,11 +2142,9 @@ function renderWeb055Goal() {
     (row) => Number(row?.start_time_ms) >= yearStart
   );
   const metrics = web055Metrics(yearRows);
-  const dayOfYear = web055DayOfYear(now);
   const daysInYear = web055DaysInYear(year);
+  const dayOfYear = web055DayOfYear(now);
   const theoreticalRatio = Math.max(0, Math.min(1, dayOfYear / daysInYear));
-  const remainingDays = web055RemainingDaysInclusive(now);
-  const todayLabel = now.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }).replace(".", "");
 
   meta.textContent = year + " · objectif au 31 décembre";
 
@@ -2148,61 +2157,53 @@ function renderWeb055Goal() {
   function metricCard(options) {
     const target = Math.max(0, Number(options.target) || 0);
     if (!(target > 0)) {
-      return '<article class="web055-fix3-goal-card web055-fix3-goal-empty">' +
+      return '<article class="web055-fix4-goal-card web055-fix4-goal-empty">' +
         '<strong>' + options.label + '</strong>' +
         '<span>Objectif annuel non configuré</span></article>';
     }
 
     const actual = Math.max(0, Number(options.actual) || 0);
-    /* Invariant : la cible théorique du jour ne peut jamais dépasser l'objectif annuel. */
     const theoretical = Math.max(0, Math.min(target, target * theoreticalRatio));
-    const delta = actual - theoretical;
-    const actualRatio = Math.max(0, Math.min(1, actual / target));
-    const expectedRatio = Math.max(0, Math.min(1, theoretical / target));
-    const aheadRatio = Math.max(0, actualRatio - expectedRatio);
+    const actualPct = Math.max(0, Math.min(100, actual / target * 100));
+    const theoreticalPct = Math.max(0, Math.min(100, theoretical / target * 100));
+    const commonPct = Math.min(actualPct, theoreticalPct);
+    const redTailPct = Math.max(0, theoreticalPct - actualPct);
+    const goldTailPct = Math.max(0, actualPct - theoreticalPct);
     const remaining = Math.max(0, target - actual);
-    const theoreticalDaily = target / daysInYear;
-    const requiredDaily = remaining / remainingDays;
+    const dailyTheoretical = target / daysInYear;
+    const weeklyTheoretical = dailyTheoretical * 7;
+    const delta = actual - theoretical;
 
     const deltaClass = delta >= 0 ? "ahead" : "behind";
-    const deltaWord = Math.abs(delta) < options.epsilon
+    const deltaText = Math.abs(delta) < options.epsilon
       ? "Dans le rythme théorique"
       : delta > 0
-        ? "Avance : " + options.formatDelta(Math.abs(delta))
-        : "Retard : " + options.formatDelta(Math.abs(delta));
+        ? "Avance : " + options.format(Math.abs(delta))
+        : "Retard : " + options.format(Math.abs(delta));
 
-    return '<article class="web055-fix3-goal-card">' +
-      '<div class="web055-fix3-goal-title"><strong>' + options.label + '</strong>' +
-        '<span>' + options.formatActual(actual) + ' / ' + options.formatTarget(target) + '</span></div>' +
-
-      '<div class="web055-fix3-goal-bar-row">' +
-        '<span>Réalisé</span>' +
-        '<div class="web055-fix3-goal-track" aria-label="Réalisé">' +
-          '<i class="web055-fix3-goal-real" style="width:' + (actualRatio * 100).toFixed(4) + '%"></i>' +
-          (aheadRatio > 0
-            ? '<i class="web055-fix3-goal-ahead" style="left:' + (expectedRatio * 100).toFixed(4) + '%;width:' + (aheadRatio * 100).toFixed(4) + '%"></i>'
-            : '') +
-        '</div>' +
-        '<b>' + options.formatActual(actual) + '</b>' +
+    return '<article class="web055-fix4-goal-card">' +
+      '<div class="web055-fix4-goal-title"><strong>' + options.label + '</strong>' +
+      '<span>' + options.format(actual) + ' / ' + options.format(target) + '</span></div>' +
+      '<div class="web055-fix4-goal-track" role="img" aria-label="' +
+        options.label + ' réalisé ' + options.format(actual) +
+        ', cible théorique ' + options.format(theoretical) + '">' +
+        '<i class="web055-fix4-goal-theory" style="width:' + theoreticalPct + '%"></i>' +
+        '<i class="web055-fix4-goal-real" style="width:' + commonPct + '%"></i>' +
+        (redTailPct > 0
+          ? '<i class="web055-fix4-goal-late" style="left:' + actualPct + '%;width:' + redTailPct + '%"></i>'
+          : '') +
+        (goldTailPct > 0
+          ? '<i class="web055-fix4-goal-ahead" style="left:' + theoreticalPct + '%;width:' + goldTailPct + '%"></i>'
+          : '') +
       '</div>' +
-
-      '<div class="web055-fix3-goal-bar-row">' +
-        '<span>Objectif au ' + todayLabel + '</span>' +
-        '<div class="web055-fix3-goal-track" aria-label="Objectif théorique aujourd’hui">' +
-          '<i class="web055-fix3-goal-theoretical" style="width:' + (expectedRatio * 100).toFixed(4) + '%"></i>' +
-        '</div>' +
-        '<b>' + options.formatTheoretical(theoretical) + '</b>' +
-      '</div>' +
-
-      '<div class="web055-fix3-goal-status ' + deltaClass + '">' + deltaWord + '</div>' +
-
-      '<div class="web055-fix3-goal-details">' +
-        '<div><span>Objectif annuel</span><strong>' + options.formatTarget(target) + '</strong></div>' +
-        '<div><span>Cible théorique aujourd’hui</span><strong>' + options.formatTheoretical(theoretical) + '</strong></div>' +
-        '<div><span>Reste annuel</span><strong>' + options.formatRemaining(remaining) + '</strong></div>' +
-        '<div><span>Rythme théorique</span><strong>' + options.formatDaily(theoreticalDaily) + '</strong></div>' +
-        '<div><span>Rythme nécessaire</span><strong>' + options.formatDaily(requiredDaily) + '</strong></div>' +
-        '<div><span>Jours restants</span><strong>' + remainingDays.toLocaleString("fr-FR") + '</strong></div>' +
+      '<div class="web055-fix4-goal-legend"><span><b class="dot green"></b>Réalisé</span>' +
+        '<span><b class="dot red"></b>Cible théorique à date</span>' +
+        '<span><b class="dot gold"></b>Avance</span></div>' +
+      '<div class="web055-fix4-goal-status ' + deltaClass + '">' + deltaText + '</div>' +
+      '<div class="web055-fix4-goal-details">' +
+        '<div><span>Reste avant objectif</span><strong>' + options.format(remaining) + '</strong></div>' +
+        '<div><span>Rythme hebdo théorique</span><strong>' + options.formatWeekly(weeklyTheoretical) + '</strong></div>' +
+        '<div><span>Rythme quotidien théorique</span><strong>' + options.formatDaily(dailyTheoretical) + '</strong></div>' +
       '</div>' +
     '</article>';
   }
@@ -2211,13 +2212,10 @@ function renderWeb055Goal() {
     label: "Distance",
     actual: metrics.distance / 1000,
     target: distanceTarget,
-    epsilon: 0.5,
-    formatActual: (value) => value.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km",
-    formatTarget: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
-    formatTheoretical: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
-    formatDelta: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
-    formatRemaining: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
-    formatDaily: (value) => value.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " km/j"
+    epsilon: 0.005,
+    format: (value) => Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km",
+    formatWeekly: (value) => Number(value).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " km/sem",
+    formatDaily: (value) => Number(value).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " km/j"
   });
 
   const ascentCard = metricCard({
@@ -2225,15 +2223,13 @@ function renderWeb055Goal() {
     actual: metrics.ascent,
     target: ascentTarget,
     epsilon: 0.5,
-    formatActual: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
-    formatTarget: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
-    formatTheoretical: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
-    formatDelta: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
-    formatRemaining: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
-    formatDaily: (value) => Math.round(value).toLocaleString("fr-FR") + " m/j"
+    format: (value) => Math.round(Number(value)).toLocaleString("fr-FR") + " m",
+    formatWeekly: (value) => Math.round(Number(value)).toLocaleString("fr-FR") + " m/sem",
+    formatDaily: (value) => Math.round(Number(value)).toLocaleString("fr-FR") + " m/j"
   });
 
-  container.innerHTML = '<div class="web055-fix3-goal-grid">' + distanceCard + ascentCard + '</div>';
+  container.innerHTML =
+    '<div class="web055-fix4-goal-grid">' + distanceCard + ascentCard + '</div>';
 }
 
 function web055LocalDateKey(ms) {
@@ -2256,22 +2252,33 @@ function web055DailyDistanceMap() {
   return result;
 }
 
-function web055RegularityData(threshold) {
-  const daily = web055DailyDistanceMap();
+function web055DailyRegularityMap() {
+  const result = new Map();
+  for (const row of web055HomeRows) {
+    const key = web055LocalDateKey(row.start_time_ms);
+    if (!key) continue;
+    const entry = result.get(key) || { distanceKm: 0, ascentM: 0 };
+    entry.distanceKm += Math.max(0, Number(row.distance_m) || 0) / 1000;
+    entry.ascentM += Math.max(0, Number(row.ascent_m) || 0);
+    result.set(key, entry);
+  }
+  return result;
+}
+
+function web055RegularityData(distanceThreshold, ascentThreshold, mode = "OR") {
+  /* WEB055-FIX4 · REGULARITY004 */
+  const daily = web055DailyRegularityMap();
   const now = new Date();
   const currentYear = now.getFullYear();
-
   const yearsFromRows = web055HomeRows
     .map((row) => new Date(Number(row.start_time_ms)).getFullYear())
     .filter((year) => Number.isFinite(year));
-
   const firstYear = Math.max(
     2012,
     yearsFromRows.length ? Math.min(...yearsFromRows) : currentYear
   );
 
   const result = [];
-
   for (let year = firstYear; year <= currentYear; year++) {
     const start = new Date(year, 0, 1);
     const end = year === currentYear
@@ -2283,8 +2290,15 @@ function web055RegularityData(threshold) {
     let maxStreak = 0;
 
     for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
-      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
-      const qualified = (daily.get(key) || 0) > threshold;
+      const key = cursor.getFullYear() + "-" +
+        String(cursor.getMonth() + 1).padStart(2, "0") + "-" +
+        String(cursor.getDate()).padStart(2, "0");
+      const entry = daily.get(key) || { distanceKm: 0, ascentM: 0 };
+      const distanceOk = entry.distanceKm > distanceThreshold;
+      const ascentOk = entry.ascentM > ascentThreshold;
+      const qualified = mode === "AND"
+        ? (distanceOk && ascentOk)
+        : (distanceOk || ascentOk);
 
       if (qualified) {
         count++;
@@ -2297,18 +2311,17 @@ function web055RegularityData(threshold) {
 
     result.push({ year, count, maxStreak });
   }
-
   return result;
 }
 
 function drawWeb055RegularityChart(data) {
+  /* WEB055-FIX4 · CHART004 : toutes les années + hitboxes pour survol. */
   const canvas = document.getElementById("web055RegularityChart");
   if (!canvas || !data.length) return;
 
   const width = Math.max(320, canvas.parentElement?.clientWidth || 720);
-  const height = 190;
+  const height = 205;
   const dpr = window.devicePixelRatio || 1;
-
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   canvas.style.width = width + "px";
@@ -2321,14 +2334,13 @@ function drawWeb055RegularityChart(data) {
   const left = 38;
   const right = 14;
   const top = 14;
-  const bottom = 30;
+  const bottom = 38;
   const plotW = width - left - right;
   const plotH = height - top - bottom;
   const max = Math.max(1, ...data.map((item) => item.count));
 
   ctx.strokeStyle = "rgba(180,180,180,.18)";
   ctx.lineWidth = 1;
-
   for (let i = 0; i <= 4; i++) {
     const y = top + (plotH * i) / 4;
     ctx.beginPath();
@@ -2339,45 +2351,54 @@ function drawWeb055RegularityChart(data) {
 
   const step = plotW / Math.max(1, data.length);
   const barW = Math.max(5, Math.min(28, step * 0.62));
+  const hitboxes = [];
 
   data.forEach((item, index) => {
     const h = (item.count / max) * plotH;
     const x = left + step * index + (step - barW) / 2;
     const y = top + plotH - h;
-
     ctx.fillStyle = "#a7ff2a";
     ctx.fillRect(x, y, barW, h);
 
-    if (data.length <= 10 || index === 0 || index === data.length - 1 || item.year % 2 === 0) {
-      ctx.fillStyle = "rgba(235,235,225,.72)";
-      ctx.font = "10px Comfortaa, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(String(item.year), x + barW / 2, height - 9);
-    }
+    ctx.fillStyle = "rgba(235,235,225,.78)";
+    ctx.font = data.length > 16 ? "8px Comfortaa, sans-serif" : "9px Comfortaa, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(String(item.year), x + barW / 2, height - 10);
+
+    hitboxes.push({ x, y, w: barW, h: Math.max(h, 4), item });
   });
+
+  canvas.__web055RegularityHitboxes = hitboxes;
 }
 
 function renderWeb055Regularity() {
-  const input = document.getElementById("web055RegularityThreshold");
+  const distanceInput = document.getElementById("web055RegularityThreshold");
+  const ascentInput = document.getElementById("web055RegularityAscentThreshold");
+  const modeSelect = document.getElementById("web055RegularityMode");
   const summary = document.getElementById("web055RegularitySummary");
-  if (!input || !summary) return;
+  if (!distanceInput || !ascentInput || !modeSelect || !summary) return;
 
-  const threshold = Math.max(0, Number(String(input.value).replace(",", ".")) || 0);
-  const data = web055RegularityData(threshold);
+  const distanceThreshold = Math.max(0, Number(String(distanceInput.value).replace(",", ".")) || 0);
+  const ascentThreshold = Math.max(0, Number(String(ascentInput.value).replace(",", ".")) || 0);
+  const mode = modeSelect.value === "AND" ? "AND" : "OR";
+  const data = web055RegularityData(distanceThreshold, ascentThreshold, mode);
   const current = data[data.length - 1] || {
-    year: new Date().getFullYear(),
-    count: 0,
-    maxStreak: 0
+    year: new Date().getFullYear(), count: 0, maxStreak: 0
   };
-
   const record = data.reduce(
     (best, item) => item.count > best.count ? item : best,
     { year: current.year, count: -1, maxStreak: 0 }
   );
 
+  const connector = mode === "AND" ? " ET " : " OU ";
   summary.innerHTML =
-    `<strong>${current.year} : ${current.count} jour(s) &gt; ${threshold.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</strong>` +
-    `<span>Série record cette année : ${current.maxStreak} jour(s) · record annuel : ${Math.max(0, record.count)} jour(s) en ${record.year}</span>`;
+    '<strong>' + current.year + ' : ' + current.count + ' jour(s) · &gt; ' +
+    distanceThreshold.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + ' km' +
+    connector + '&gt; ' +
+    Math.round(ascentThreshold).toLocaleString("fr-FR") + ' m D+</strong>' +
+    '<span>Série record cette année : ' + current.maxStreak +
+    ' jour(s) · record annuel : ' + Math.max(0, record.count) +
+    ' jour(s) en ' + record.year + '</span>';
 
   drawWeb055RegularityChart(data);
 }
@@ -2396,10 +2417,13 @@ function web055MonthDayKey(date) {
   return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function web055ComparisonSeries(metric) {
+function web055ComparisonSeries(metric, selectedYear) {
+  /* WEB055-FIX4 · COMPARE004 : N contre toute année antérieure choisie. */
   const now = new Date();
   const currentYear = now.getFullYear();
-  const previousYear = currentYear - 1;
+  const previousYear = Number(selectedYear) < currentYear
+    ? Number(selectedYear)
+    : currentYear - 1;
 
   const dailyCurrent = new Map();
   const dailyPrevious = new Map();
@@ -2408,7 +2432,6 @@ function web055ComparisonSeries(metric) {
     const d = new Date(Number(row.start_time_ms));
     const value = web055ComparisonValue(row, metric);
     if (!(value > 0) || !Number.isFinite(d.getTime())) continue;
-
     const key = web055MonthDayKey(d);
 
     if (d.getFullYear() === currentYear) {
@@ -2423,7 +2446,6 @@ function web055ComparisonSeries(metric) {
   const current = [];
   const previous = [];
   const monthStarts = [];
-
   let c = 0;
   let p = 0;
   let todayIndex = 0;
@@ -2431,10 +2453,8 @@ function web055ComparisonSeries(metric) {
 
   while (cursor < nextYear) {
     const key = web055MonthDayKey(cursor);
-
     c += dailyCurrent.get(key) || 0;
     p += dailyPrevious.get(key) || 0;
-
     current.push(c);
     previous.push(p);
 
@@ -2444,23 +2464,14 @@ function web055ComparisonSeries(metric) {
         label: cursor.toLocaleDateString("fr-FR", { month: "short" }).replace(".", "")
       });
     }
-
     if (cursor.getMonth() === now.getMonth() && cursor.getDate() === now.getDate()) {
       todayIndex = index;
     }
-
     cursor.setDate(cursor.getDate() + 1);
     index++;
   }
 
-  return {
-    currentYear,
-    previousYear,
-    current,
-    previous,
-    monthStarts,
-    todayIndex
-  };
+  return { currentYear, previousYear, current, previous, monthStarts, todayIndex };
 }
 
 function web055ComparisonMetricMeta(metric) {
@@ -2582,25 +2593,54 @@ function drawWeb055ComparisonChart(data, metric) {
 }
 
 function renderWeb055Comparison() {
-  const select = document.getElementById("web055CompareMetric");
+  const metricSelect = document.getElementById("web055CompareMetric");
+  const yearSelect = document.getElementById("web055CompareYear");
   const summary = document.getElementById("web055ComparisonSummary");
-  if (!select || !summary) return;
+  if (!metricSelect || !yearSelect || !summary) return;
 
-  web055CompareMetric = select.value || "distance";
+  const currentYear = new Date().getFullYear();
+  const years = [...new Set(
+    web055HomeRows
+      .map((row) => new Date(Number(row.start_time_ms)).getFullYear())
+      .filter((year) => Number.isFinite(year) && year < currentYear)
+  )].sort((a, b) => b - a);
 
-  const data = web055ComparisonSeries(web055CompareMetric);
+  const previousSelection = Number(yearSelect.value);
+  yearSelect.innerHTML = years.map(
+    (year) => '<option value="' + year + '">' + year + '</option>'
+  ).join("");
+
+  let selectedYear = years.includes(previousSelection)
+    ? previousSelection
+    : (years.includes(currentYear - 1) ? currentYear - 1 : years[0]);
+
+  if (!Number.isFinite(selectedYear)) {
+    yearSelect.innerHTML = '<option value="">Aucune année</option>';
+    yearSelect.disabled = true;
+    summary.innerHTML = '<strong>Aucune année antérieure disponible</strong>';
+    return;
+  }
+
+  yearSelect.disabled = false;
+  yearSelect.value = String(selectedYear);
+  web055CompareMetric = metricSelect.value || "distance";
+  const data = web055ComparisonSeries(web055CompareMetric, selectedYear);
   const meta = web055ComparisonMetricMeta(web055CompareMetric);
-
   const currentValue = data.current[data.todayIndex] || 0;
   const previousValue = data.previous[data.todayIndex] || 0;
   const delta = currentValue - previousValue;
   const percent = previousValue > 0 ? (delta / previousValue) * 100 : null;
 
   summary.innerHTML =
-    `<strong>${data.currentYear} : ${web055FormatComparisonValue(currentValue, meta)}</strong>` +
-    `<span>${data.previousYear} à la même date : ${web055FormatComparisonValue(previousValue, meta)} · ` +
-    `${delta >= 0 ? "+" : "−"}${web055FormatComparisonValue(Math.abs(delta), meta)}` +
-    `${percent == null ? "" : " · " + (percent >= 0 ? "+" : "") + percent.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " %"}</span>`;
+    '<strong>' + data.currentYear + ' : ' +
+    web055FormatComparisonValue(currentValue, meta) + '</strong>' +
+    '<span>' + data.previousYear + ' à la même date : ' +
+    web055FormatComparisonValue(previousValue, meta) + ' · ' +
+    (delta >= 0 ? '+' : '−') +
+    web055FormatComparisonValue(Math.abs(delta), meta) +
+    (percent == null ? '' : ' · ' + (percent >= 0 ? '+' : '') +
+      percent.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + ' %') +
+    '</span>';
 
   drawWeb055ComparisonChart(data, web055CompareMetric);
 }
@@ -2642,7 +2682,6 @@ function installWeb055HomeLayout() {
   const root = document.createElement("div");
   root.id = "web055HomeRoot";
   root.className = "web055-home-root";
-
   root.innerHTML = `
     <div class="web055-home-head">
       <div class="web055-sport-switch" aria-label="Sport de l'accueil">
@@ -2663,31 +2702,44 @@ function installWeb055HomeLayout() {
       <div id="web055GoalContent"></div>
     </section>
 
-    <section class="web055-card">
-      <div class="web055-card-heading">
+    <section class="web055-card web055-fix4-regularity-card">
+      <div class="web055-card-heading web055-fix4-regularity-heading">
         <h3>Régularité</h3>
-        <label class="web055-threshold-label">
-          Jours à plus de
-          <input id="web055RegularityThreshold" type="number" min="0" step="0.5" value="10">
-          km
-        </label>
+        <div class="web055-fix4-regularity-controls">
+          <label>Distance &gt;
+            <input id="web055RegularityThreshold" type="number" min="0" step="0.5" value="10"> km
+          </label>
+          <select id="web055RegularityMode" aria-label="Combinaison des seuils">
+            <option value="OR">OU</option>
+            <option value="AND">ET</option>
+          </select>
+          <label>D+ &gt;
+            <input id="web055RegularityAscentThreshold" type="number" min="0" step="50" value="500"> m
+          </label>
+        </div>
       </div>
       <div id="web055RegularitySummary" class="web055-summary-two-lines"></div>
-      <canvas id="web055RegularityChart" aria-label="Nombre annuel de jours au-dessus du seuil"></canvas>
+      <div class="web055-fix4-chart-wrap">
+        <canvas id="web055RegularityChart" aria-label="Nombre annuel de jours correspondant aux seuils Distance et D+"></canvas>
+        <div id="web055RegularityTooltip" class="web055-fix4-chart-tooltip hidden"></div>
+      </div>
     </section>
 
     <section class="web055-card">
-      <div class="web055-card-heading">
-        <h3>Comparaison année N / N−1</h3>
-        <select id="web055CompareMetric" class="web055-compare-select">
-          <option value="distance">Distance</option>
-          <option value="ascent">D+</option>
-          <option value="time">Temps</option>
-          <option value="load">Charge</option>
-        </select>
+      <div class="web055-card-heading web055-fix4-compare-heading">
+        <h3>Comparaison année N / année antérieure</h3>
+        <div class="web055-fix4-compare-controls">
+          <select id="web055CompareMetric" class="web055-compare-select">
+            <option value="distance">Distance</option>
+            <option value="ascent">D+</option>
+            <option value="time">Temps</option>
+            <option value="load">Charge</option>
+          </select>
+          <select id="web055CompareYear" class="web055-fix4-year-select" aria-label="Année de comparaison"></select>
+        </div>
       </div>
       <div id="web055ComparisonSummary" class="web055-summary-two-lines"></div>
-      <canvas id="web055ComparisonChart" aria-label="Comparaison cumulative de l'année en cours avec l'année précédente"></canvas>
+      <canvas id="web055ComparisonChart" aria-label="Comparaison cumulative de l'année en cours avec une année antérieure choisie"></canvas>
     </section>
   `;
 
@@ -2698,24 +2750,55 @@ function installWeb055HomeLayout() {
     web055SetSport(1);
     void loadWebDashboard();
   });
-
   document.getElementById("web055CyclingButton")?.addEventListener("click", () => {
     web055SetSport(2);
     void loadWebDashboard();
   });
 
-  const threshold = document.getElementById("web055RegularityThreshold");
-  if (threshold) {
-    const stored = localStorage.getItem("sport_web_web055_regularity_threshold");
-    if (stored != null && stored !== "") threshold.value = stored;
+  const distanceThreshold = document.getElementById("web055RegularityThreshold");
+  const ascentThreshold = document.getElementById("web055RegularityAscentThreshold");
+  const regularityMode = document.getElementById("web055RegularityMode");
 
-    threshold.addEventListener("input", () => {
-      localStorage.setItem("sport_web_web055_regularity_threshold", threshold.value);
-      renderWeb055Regularity();
-    });
-  }
+  const storedDistance = localStorage.getItem("sport_web_web055_regularity_threshold");
+  const storedAscent = localStorage.getItem("sport_web_web055_regularity_ascent_threshold");
+  const storedMode = localStorage.getItem("sport_web_web055_regularity_mode");
+  if (storedDistance != null && storedDistance !== "") distanceThreshold.value = storedDistance;
+  if (storedAscent != null && storedAscent !== "") ascentThreshold.value = storedAscent;
+  if (storedMode === "AND" || storedMode === "OR") regularityMode.value = storedMode;
+
+  const rerenderRegularity = () => {
+    localStorage.setItem("sport_web_web055_regularity_threshold", distanceThreshold.value);
+    localStorage.setItem("sport_web_web055_regularity_ascent_threshold", ascentThreshold.value);
+    localStorage.setItem("sport_web_web055_regularity_mode", regularityMode.value);
+    renderWeb055Regularity();
+  };
+  distanceThreshold.addEventListener("input", rerenderRegularity);
+  ascentThreshold.addEventListener("input", rerenderRegularity);
+  regularityMode.addEventListener("change", rerenderRegularity);
+
+  const regularityCanvas = document.getElementById("web055RegularityChart");
+  const tooltip = document.getElementById("web055RegularityTooltip");
+  regularityCanvas?.addEventListener("mousemove", (event) => {
+    const rect = regularityCanvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const box = (regularityCanvas.__web055RegularityHitboxes || []).find(
+      (item) => x >= item.x && x <= item.x + item.w &&
+        y >= item.y && y <= item.y + item.h
+    );
+    if (!box || !tooltip) {
+      tooltip?.classList.add("hidden");
+      return;
+    }
+    tooltip.textContent = box.item.year + " : " + box.item.count + " jour(s)";
+    tooltip.style.left = Math.min(rect.width - 120, Math.max(8, x + 12)) + "px";
+    tooltip.style.top = Math.max(6, y - 34) + "px";
+    tooltip.classList.remove("hidden");
+  });
+  regularityCanvas?.addEventListener("mouseleave", () => tooltip?.classList.add("hidden"));
 
   document.getElementById("web055CompareMetric")?.addEventListener("change", renderWeb055Comparison);
+  document.getElementById("web055CompareYear")?.addEventListener("change", renderWeb055Comparison);
 
   window.addEventListener("resize", () => {
     if (document.body.dataset.uxPage !== "home") return;
@@ -2726,7 +2809,6 @@ function installWeb055HomeLayout() {
   document.querySelectorAll("[data-ux-page]").forEach((button) => {
     if (button.dataset.web055RefreshBound === "1") return;
     button.dataset.web055RefreshBound = "1";
-
     button.addEventListener("click", () => {
       if (!currentUser) return;
       if (button.dataset.uxPage === "home") web055SetSport(1);
