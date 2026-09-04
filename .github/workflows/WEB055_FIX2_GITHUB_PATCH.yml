@@ -1,0 +1,371 @@
+name: WEB055 FIX2 - corrige accueil vide
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Vérifier la base WEB055
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          grep -Fq 'function installWeb055HomeLayout()' web/app.js
+          grep -Fq 'function renderWeb055Home()' web/app.js
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          grep -Fq 'function renderUnifiedConnectionBadgeWeb055()' web/app.js
+          grep -Fq 'queueMicrotask(() => installEquipmentMappingEditorWeb050());' web/app.js
+          grep -Fq 'const EQUIPMENT_PROFILES_WEB053' web/app.js
+          grep -Fq 'sport-running-c1-exact.png' web/app.js
+          grep -Fq 'sport-bike-v1-exact.png' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+      - name: Appliquer WEB055-FIX2
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+          const f = "web/app.js";
+          let s = fs.readFileSync(f, "utf8");
+
+          function fail(m) {
+            console.error("ERREUR:", m);
+            process.exit(30);
+          }
+
+          const marker = "function web055Metrics(rows) {";
+          if (!s.includes(marker)) fail("web055Metrics introuvable");
+
+          const helpers = `
+          /* WEB055-FIX2 · HOMERENDER002 */
+          function web055FormatDistance(valueMeters) {
+            const km = Math.max(0, Number(valueMeters) || 0) / 1000;
+            return km.toLocaleString("fr-FR", {
+              minimumFractionDigits: km < 100 ? 2 : 1,
+              maximumFractionDigits: km < 100 ? 2 : 1
+            }) + " km";
+          }
+
+          function web055FormatAscent(valueMeters) {
+            return Math.round(Math.max(0, Number(valueMeters) || 0))
+              .toLocaleString("fr-FR") + " m";
+          }
+
+          function web055FormatPace(valueSecondsPerKm) {
+            const value = Number(valueSecondsPerKm);
+            if (!Number.isFinite(value) || value <= 0) return "—";
+            const total = Math.round(value);
+            return Math.floor(total / 60) + ":" +
+              String(total % 60).padStart(2, "0") + " /km";
+          }
+
+          function web055SafeChargeScore(activity) {
+            try {
+              if (typeof activityChargePresentation === "function") {
+                const score = Number(activityChargePresentation(activity)?.score);
+                if (Number.isFinite(score)) return Math.max(0, score);
+              }
+            } catch (_) {}
+
+            for (const raw of [
+              activity?.training_load,
+              activity?.trainingLoad,
+              activity?.load,
+              activity?.activity_load,
+              activity?.activityLoad,
+              activity?.trimp
+            ]) {
+              const value = Number(raw);
+              if (Number.isFinite(value)) return Math.max(0, value);
+            }
+            return null;
+          }
+
+          function web055SafeGapSecondsPerKm(activity) {
+            try {
+              if (typeof storedGapSecondsPerKm === "function") {
+                const value = Number(storedGapSecondsPerKm(activity));
+                if (Number.isFinite(value) && value > 0) return value;
+              }
+            } catch (_) {}
+
+            for (const raw of [
+              activity?.gap_seconds_per_km,
+              activity?.gap_s_per_km,
+              activity?.gapSecondsPerKm,
+              activity?.grade_adjusted_pace_s_per_km
+            ]) {
+              const value = Number(raw);
+              if (Number.isFinite(value) && value > 0) return value;
+            }
+            return null;
+          }
+
+          function web055SafeSportGoal() {
+            try {
+              if (typeof sportGoals !== "undefined" && sportGoals?.get) {
+                return sportGoals.get(String(dashboardSport)) || null;
+              }
+            } catch (_) {}
+            return null;
+          }
+
+          function web055SafeRender(name, renderer) {
+            try {
+              renderer();
+              return true;
+            } catch (error) {
+              console.error("WEB055-FIX2 · " + name, error);
+              return false;
+            }
+          }
+          `;
+
+          if (!s.includes("function web055FormatDistance(")) {
+            s = s.replace(marker, helpers + "\n" + marker);
+          }
+
+          s = s.replace(
+            /const charge = activityChargePresentation\(row\);\s*if \(Number\.isFinite\(Number\(charge\?\.score\)\)\) \{\s*metrics\.load \+= Math\.max\(0, Number\(charge\.score\)\);\s*metrics\.loadKnown = true;\s*\}/m,
+            `const chargeScore = web055SafeChargeScore(row);
+              if (Number.isFinite(chargeScore)) {
+                metrics.load += chargeScore;
+                metrics.loadKnown = true;
+              }`
+          );
+
+          s = s.replaceAll(
+            "const gap = storedGapSecondsPerKm(row);",
+            "const gap = web055SafeGapSecondsPerKm(row);"
+          );
+
+          s = s.replaceAll(
+            "formatDistance(period.metrics.distance)",
+            "web055FormatDistance(period.metrics.distance)"
+          );
+
+          s = s.replaceAll(
+            "formatMeters(period.metrics.ascent)",
+            "web055FormatAscent(period.metrics.ascent)"
+          );
+
+          s = s.replaceAll(
+            "formatPaceFromSeconds(period.metrics.gap)",
+            "web055FormatPace(period.metrics.gap)"
+          );
+
+          s = s.replaceAll(
+            "const goal = sportGoals.get(String(dashboardSport));",
+            "const goal = web055SafeSportGoal();"
+          );
+
+          const newRender = `function renderWeb055Home() {
+            const results = [
+              web055SafeRender("Périodes", renderWeb055Periods),
+              web055SafeRender("Objectifs", renderWeb055Goal),
+              web055SafeRender("Régularité", renderWeb055Regularity),
+              web055SafeRender("Comparaison", renderWeb055Comparison)
+            ];
+
+            const status = document.getElementById("web055HomeStatus");
+            if (status) {
+              const ok = results.filter(Boolean).length;
+              status.textContent =
+                ok === results.length
+                  ? \`Mis à jour à \${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}\`
+                  : \`Accueil partiellement affiché · \${ok}/\${results.length} blocs\`;
+            }
+          }`;
+
+          function replaceBalancedFunction(source, marker, replacement) {
+            const start = source.indexOf(marker);
+            if (start < 0) fail(marker + " introuvable");
+
+            const brace = source.indexOf("{", start);
+            if (brace < 0) fail("accolade de " + marker + " introuvable");
+
+            let depth = 0;
+            let quote = null;
+            let escape = false;
+
+            for (let i = brace; i < source.length; i++) {
+              const ch = source[i];
+
+              if (quote) {
+                if (escape) escape = false;
+                else if (ch === "\\") escape = true;
+                else if (ch === quote) quote = null;
+                continue;
+              }
+
+              if (ch === '"' || ch === "'" || ch === "`") {
+                quote = ch;
+                continue;
+              }
+
+              if (ch === "{") depth++;
+              else if (ch === "}") {
+                depth--;
+                if (depth === 0) {
+                  return source.slice(0, start) + replacement + source.slice(i + 1);
+                }
+              }
+            }
+
+            fail("fin de " + marker + " introuvable");
+          }
+
+          if (!s.includes('web055SafeRender("Périodes"')) {
+            s = replaceBalancedFunction(
+              s,
+              "function renderWeb055Home()",
+              newRender
+            );
+          }
+
+          fs.writeFileSync(f, s, "utf8");
+          NODE
+
+          node <<'NODE'
+          const fs = require("fs");
+          const f = "web/index.html";
+          let s = fs.readFileSync(f, "utf8");
+          s = s.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB055-FIX2-HOMERENDER002"'
+          );
+          fs.writeFileSync(f, s, "utf8");
+          NODE
+
+      - name: Valider le correctif
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          npx --yes acorn@8.15.0 --ecma2022 --module web/app.js >/dev/null
+
+          grep -Fq 'function web055FormatDistance(' web/app.js
+          grep -Fq 'function web055SafeChargeScore(' web/app.js
+          grep -Fq 'web055SafeRender("Périodes"' web/app.js
+          grep -Fq 'WEB055-FIX2-HOMERENDER002' web/index.html
+
+          # Acquis non touchés
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          grep -Fq 'function renderUnifiedConnectionBadgeWeb055()' web/app.js
+          grep -Fq 'queueMicrotask(() => installEquipmentMappingEditorWeb050());' web/app.js
+          grep -Fq 'const EQUIPMENT_PROFILES_WEB053' web/app.js
+          grep -Fq '["appearance","Apparence"]' web/app.js
+          grep -Fq 'sport-running-c1-exact.png' web/app.js
+          grep -Fq 'sport-bike-v1-exact.png' web/app.js
+
+          if grep -Fq 'async async function' web/app.js; then exit 40; fi
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+          if [ -f scripts/contracts/validate_web_golden.mjs ]; then
+            node scripts/contracts/validate_web_golden.mjs
+          fi
+
+          git diff --check
+
+          echo "PERIODES          : RENDU AUTONOME"
+          echo "OBJECTIFS         : ISOLE"
+          echo "REGULARITE        : ISOLEE"
+          echo "COMPARAISON N/N-1 : ISOLEE"
+          echo "AUTH              : NON MODIFIEE"
+          echo "WEB053            : CONSERVE"
+          echo "TDZFIX001         : CONSERVE"
+          echo "C1/V1             : CONSERVES"
+
+      - name: Préparer le déploiement Cloud Shell
+        run: |
+          set -euo pipefail
+          mkdir -p scripts docs/releases
+
+          cat > scripts/deploy_web055_fix2_cloudshell.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          git fetch origin
+          git checkout main
+          git reset --hard origin/main
+
+          node --check web/app.js
+          grep -Fq 'WEB055-FIX2-HOMERENDER002' web/index.html
+          grep -Fq 'function web055FormatDistance(' web/app.js
+          grep -Fq 'web055SafeRender("Périodes"' web/app.js
+
+          cat > firebase.hosting.web055fix2.json <<'JSON'
+          {
+            "hosting": {
+              "site": "sport-505813",
+              "public": "web",
+              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+              "headers": [
+                {
+                  "source": "**",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "no-cache, no-store, must-revalidate"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          JSON
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --only hosting \
+            --project sport-505813 \
+            --config firebase.hosting.web055fix2.json
+
+          echo
+          echo "✅ WEB055-FIX2 DEPLOYE"
+          echo "https://sport-505813.web.app"
+          EOF
+
+          chmod +x scripts/deploy_web055_fix2_cloudshell.sh
+
+          cat > docs/releases/WEB055-FIX2.md <<'EOF'
+          # WEB055-FIX2 · HOMERENDER002
+
+          Corrige le rendu vide de la page Accueil :
+          - formatage local Distance / D+ / GAP ;
+          - Charge et GAP tolérants aux variations de schéma ;
+          - accès Objectifs sécurisé ;
+          - les quatre blocs sont rendus indépendamment ;
+          - une erreur d'un bloc ne masque plus les autres ;
+          - authentification et acquis précédents inchangés.
+          EOF
+
+      - name: Commit et push
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add web/app.js web/index.html \
+            scripts/deploy_web055_fix2_cloudshell.sh \
+            docs/releases/WEB055-FIX2.md
+
+          if git diff --cached --quiet; then
+            echo "WEB055-FIX2 deja applique : aucun commit necessaire."
+            exit 0
+          fi
+
+          git commit -m "WEB055 FIX2 corrige rendu vide accueil"
+          git push origin HEAD:main
