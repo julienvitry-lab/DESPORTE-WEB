@@ -1,0 +1,999 @@
+name: WEB055 FIX4 V2 - jauges regularite comparaison GAP
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Vérifier la base WEB055-FIX3
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          grep -Fq 'WEB055-FIX3 · PERF003' web/app.js
+          grep -Fq 'WEB055_FIX3_GAP_CACHE · GAP003' web/app.js
+          grep -Fq 'function renderWeb055Goal()' web/app.js
+          grep -Fq 'function renderWeb055Regularity()' web/app.js
+          grep -Fq 'function web055RegularityData(' web/app.js
+          grep -Fq 'function drawWeb055RegularityChart(' web/app.js
+          grep -Fq 'function web055ComparisonSeries(' web/app.js
+          grep -Fq 'function renderWeb055Comparison()' web/app.js
+          grep -Fq 'function installWeb055HomeLayout()' web/app.js
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+      - name: Appliquer WEB055-FIX4
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+          const appFile = "web/app.js";
+          const indexFile = "web/index.html";
+          let s = fs.readFileSync(appFile, "utf8");
+          let html = fs.readFileSync(indexFile, "utf8");
+
+          function fail(message) {
+            console.error("ERREUR WEB055-FIX4:", message);
+            process.exit(30);
+          }
+
+          function replaceBalancedFunction(source, marker, replacement) {
+            const start = source.indexOf(marker);
+            if (start < 0) fail(marker + " introuvable");
+            const brace = source.indexOf("{", start);
+            if (brace < 0) fail("accolade de " + marker + " introuvable");
+
+            let depth = 0;
+            let state = "code";
+            let escape = false;
+
+            for (let i = brace; i < source.length; i++) {
+              const ch = source[i];
+              const next = source[i + 1] || "";
+
+              if (state === "lineComment") {
+                if (ch === "\n") state = "code";
+                continue;
+              }
+
+              if (state === "blockComment") {
+                if (ch === "*" && next === "/") {
+                  state = "code";
+                  i++;
+                }
+                continue;
+              }
+
+              if (state === "single" || state === "double" || state === "template") {
+                const end = state === "single" ? "'" : state === "double" ? '"' : "`";
+                if (escape) {
+                  escape = false;
+                  continue;
+                }
+                if (ch === "\\") {
+                  escape = true;
+                  continue;
+                }
+                if (ch === end) state = "code";
+                continue;
+              }
+
+              if (ch === "/" && next === "/") {
+                state = "lineComment";
+                i++;
+                continue;
+              }
+              if (ch === "/" && next === "*") {
+                state = "blockComment";
+                i++;
+                continue;
+              }
+              if (ch === "'") {
+                state = "single";
+                continue;
+              }
+              if (ch === '"') {
+                state = "double";
+                continue;
+              }
+              if (ch === "`") {
+                state = "template";
+                continue;
+              }
+
+              if (ch === "{") {
+                depth++;
+              } else if (ch === "}") {
+                depth--;
+                if (depth === 0) {
+                  return source.slice(0, start) + replacement + source.slice(i + 1);
+                }
+              }
+            }
+
+            fail("fin de " + marker + " introuvable");
+          }
+
+          const goalFunction = String.raw`function renderWeb055Goal() {
+            /* WEB055-FIX4 · GOAL005
+               Une seule jauge superposée :
+               - vert = réalisé jusqu'à la cible théorique ;
+               - rouge visible uniquement en bout lorsque le réalisé est en retard ;
+               - or visible uniquement au-delà de la cible théorique lorsque le réalisé est en avance. */
+            const container = document.getElementById("web055GoalContent");
+            const meta = document.getElementById("web055GoalMeta");
+            if (!container || !meta) return;
+
+            container.innerHTML = "";
+            const goal = web055SafeSportGoal();
+            const distanceTarget = Math.max(0, Number(goal?.annual_distance_km) || 0);
+            const ascentTarget = Math.max(0, Number(goal?.annual_ascent_m) || 0);
+            const now = new Date();
+            const year = now.getFullYear();
+            const yearStart = new Date(year, 0, 1).getTime();
+            const yearRows = web055HomeRows.filter(
+              (row) => Number(row?.start_time_ms) >= yearStart
+            );
+            const metrics = web055Metrics(yearRows);
+            const daysInYear = web055DaysInYear(year);
+            const dayOfYear = web055DayOfYear(now);
+            const theoreticalRatio = Math.max(0, Math.min(1, dayOfYear / daysInYear));
+
+            meta.textContent = year + " · objectif au 31 décembre";
+
+            if (!(distanceTarget > 0) && !(ascentTarget > 0)) {
+              container.innerHTML =
+                '<div class="web055-empty">Aucun objectif annuel Distance ou D+ configuré pour ce sport. Configuration disponible dans Analyse → Objectifs.</div>';
+              return;
+            }
+
+            function metricCard(options) {
+              const target = Math.max(0, Number(options.target) || 0);
+              if (!(target > 0)) {
+                return '<article class="web055-fix4-goal-card web055-fix4-goal-empty">' +
+                  '<strong>' + options.label + '</strong>' +
+                  '<span>Objectif annuel non configuré</span></article>';
+              }
+
+              const actual = Math.max(0, Number(options.actual) || 0);
+              const theoretical = Math.max(0, Math.min(target, target * theoreticalRatio));
+              const actualPct = Math.max(0, Math.min(100, actual / target * 100));
+              const theoreticalPct = Math.max(0, Math.min(100, theoretical / target * 100));
+              const commonPct = Math.min(actualPct, theoreticalPct);
+              const redTailPct = Math.max(0, theoreticalPct - actualPct);
+              const goldTailPct = Math.max(0, actualPct - theoreticalPct);
+              const remaining = Math.max(0, target - actual);
+              const dailyTheoretical = target / daysInYear;
+              const weeklyTheoretical = dailyTheoretical * 7;
+              const delta = actual - theoretical;
+
+              const deltaClass = delta >= 0 ? "ahead" : "behind";
+              const deltaText = Math.abs(delta) < options.epsilon
+                ? "Dans le rythme théorique"
+                : delta > 0
+                  ? "Avance : " + options.format(Math.abs(delta))
+                  : "Retard : " + options.format(Math.abs(delta));
+
+              return '<article class="web055-fix4-goal-card">' +
+                '<div class="web055-fix4-goal-title"><strong>' + options.label + '</strong>' +
+                '<span>' + options.format(actual) + ' / ' + options.format(target) + '</span></div>' +
+                '<div class="web055-fix4-goal-track" role="img" aria-label="' +
+                  options.label + ' réalisé ' + options.format(actual) +
+                  ', cible théorique ' + options.format(theoretical) + '">' +
+                  '<i class="web055-fix4-goal-theory" style="width:' + theoreticalPct + '%"></i>' +
+                  '<i class="web055-fix4-goal-real" style="width:' + commonPct + '%"></i>' +
+                  (redTailPct > 0
+                    ? '<i class="web055-fix4-goal-late" style="left:' + actualPct + '%;width:' + redTailPct + '%"></i>'
+                    : '') +
+                  (goldTailPct > 0
+                    ? '<i class="web055-fix4-goal-ahead" style="left:' + theoreticalPct + '%;width:' + goldTailPct + '%"></i>'
+                    : '') +
+                '</div>' +
+                '<div class="web055-fix4-goal-legend"><span><b class="dot green"></b>Réalisé</span>' +
+                  '<span><b class="dot red"></b>Cible théorique à date</span>' +
+                  '<span><b class="dot gold"></b>Avance</span></div>' +
+                '<div class="web055-fix4-goal-status ' + deltaClass + '">' + deltaText + '</div>' +
+                '<div class="web055-fix4-goal-details">' +
+                  '<div><span>Reste avant objectif</span><strong>' + options.format(remaining) + '</strong></div>' +
+                  '<div><span>Rythme hebdo théorique</span><strong>' + options.formatWeekly(weeklyTheoretical) + '</strong></div>' +
+                  '<div><span>Rythme quotidien théorique</span><strong>' + options.formatDaily(dailyTheoretical) + '</strong></div>' +
+                '</div>' +
+              '</article>';
+            }
+
+            const distanceCard = metricCard({
+              label: "Distance",
+              actual: metrics.distance / 1000,
+              target: distanceTarget,
+              epsilon: 0.005,
+              format: (value) => Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km",
+              formatWeekly: (value) => Number(value).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " km/sem",
+              formatDaily: (value) => Number(value).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " km/j"
+            });
+
+            const ascentCard = metricCard({
+              label: "D+",
+              actual: metrics.ascent,
+              target: ascentTarget,
+              epsilon: 0.5,
+              format: (value) => Math.round(Number(value)).toLocaleString("fr-FR") + " m",
+              formatWeekly: (value) => Math.round(Number(value)).toLocaleString("fr-FR") + " m/sem",
+              formatDaily: (value) => Math.round(Number(value)).toLocaleString("fr-FR") + " m/j"
+            });
+
+            container.innerHTML =
+              '<div class="web055-fix4-goal-grid">' + distanceCard + ascentCard + '</div>';
+          }`;
+
+          s = replaceBalancedFunction(s, "function renderWeb055Goal()", goalFunction);
+
+          const gapFunction = String.raw`function web055SafeGapSecondsPerKm(activity) {
+            /* WEB055-FIX4 · GAP004
+               On accepte aussi les alias de PERFORMANCE001 lorsqu'ils existent
+               dans le résumé Firestore, puis le cache activity_routes de FIX3. */
+            for (const raw of [
+              activity?.personal_gap,
+              activity?.personalGap,
+              activity?.generic_gap,
+              activity?.genericGap,
+              activity?.gap_seconds_per_km,
+              activity?.gap_s_per_km,
+              activity?.gapSecondsPerKm,
+              activity?.grade_adjusted_pace_s_per_km,
+              activity?.gap_sec_per_km,
+              activity?.grade_adjusted_pace_sec_per_km
+            ]) {
+              const value = Number(raw);
+              if (Number.isFinite(value) && value > 30 && value < 3600) return value;
+            }
+
+            try {
+              web055EnsureGapCacheUser();
+              const key = String(activityKey(activity) || "");
+              const cached = Number(web055GapSummaryCache.get(key));
+              if (Number.isFinite(cached) && cached > 30 && cached < 3600) return cached;
+            } catch (_) {}
+
+            return null;
+          }`;
+          s = replaceBalancedFunction(s, "function web055SafeGapSecondsPerKm(activity)", gapFunction);
+
+          const regularityHelpers = String.raw`function web055DailyRegularityMap() {
+            const result = new Map();
+            for (const row of web055HomeRows) {
+              const key = web055LocalDateKey(row.start_time_ms);
+              if (!key) continue;
+              const entry = result.get(key) || { distanceKm: 0, ascentM: 0 };
+              entry.distanceKm += Math.max(0, Number(row.distance_m) || 0) / 1000;
+              entry.ascentM += Math.max(0, Number(row.ascent_m) || 0);
+              result.set(key, entry);
+            }
+            return result;
+          }`;
+
+          if (!s.includes("function web055DailyRegularityMap()")) {
+            const marker = "function web055RegularityData(";
+            const pos = s.indexOf(marker);
+            if (pos < 0) fail("web055RegularityData introuvable");
+            s = s.slice(0, pos) + regularityHelpers + "\n\n" + s.slice(pos);
+          }
+
+          const regularityData = String.raw`function web055RegularityData(distanceThreshold, ascentThreshold, mode = "OR") {
+            /* WEB055-FIX4 · REGULARITY004 */
+            const daily = web055DailyRegularityMap();
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const yearsFromRows = web055HomeRows
+              .map((row) => new Date(Number(row.start_time_ms)).getFullYear())
+              .filter((year) => Number.isFinite(year));
+            const firstYear = Math.max(
+              2012,
+              yearsFromRows.length ? Math.min(...yearsFromRows) : currentYear
+            );
+
+            const result = [];
+            for (let year = firstYear; year <= currentYear; year++) {
+              const start = new Date(year, 0, 1);
+              const end = year === currentYear
+                ? new Date(web055StartOfDay(now))
+                : new Date(year, 11, 31);
+
+              let count = 0;
+              let streak = 0;
+              let maxStreak = 0;
+
+              for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+                const key = cursor.getFullYear() + "-" +
+                  String(cursor.getMonth() + 1).padStart(2, "0") + "-" +
+                  String(cursor.getDate()).padStart(2, "0");
+                const entry = daily.get(key) || { distanceKm: 0, ascentM: 0 };
+                const distanceOk = entry.distanceKm > distanceThreshold;
+                const ascentOk = entry.ascentM > ascentThreshold;
+                const qualified = mode === "AND"
+                  ? (distanceOk && ascentOk)
+                  : (distanceOk || ascentOk);
+
+                if (qualified) {
+                  count++;
+                  streak++;
+                  maxStreak = Math.max(maxStreak, streak);
+                } else {
+                  streak = 0;
+                }
+              }
+
+              result.push({ year, count, maxStreak });
+            }
+            return result;
+          }`;
+          s = replaceBalancedFunction(s, "function web055RegularityData(", regularityData);
+
+          const drawRegularity = String.raw`function drawWeb055RegularityChart(data) {
+            /* WEB055-FIX4 · CHART004 : toutes les années + hitboxes pour survol. */
+            const canvas = document.getElementById("web055RegularityChart");
+            if (!canvas || !data.length) return;
+
+            const width = Math.max(320, canvas.parentElement?.clientWidth || 720);
+            const height = 205;
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = Math.round(width * dpr);
+            canvas.height = Math.round(height * dpr);
+            canvas.style.width = width + "px";
+            canvas.style.height = height + "px";
+
+            const ctx = canvas.getContext("2d");
+            ctx.scale(dpr, dpr);
+            ctx.clearRect(0, 0, width, height);
+
+            const left = 38;
+            const right = 14;
+            const top = 14;
+            const bottom = 38;
+            const plotW = width - left - right;
+            const plotH = height - top - bottom;
+            const max = Math.max(1, ...data.map((item) => item.count));
+
+            ctx.strokeStyle = "rgba(180,180,180,.18)";
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+              const y = top + (plotH * i) / 4;
+              ctx.beginPath();
+              ctx.moveTo(left, y);
+              ctx.lineTo(width - right, y);
+              ctx.stroke();
+            }
+
+            const step = plotW / Math.max(1, data.length);
+            const barW = Math.max(5, Math.min(28, step * 0.62));
+            const hitboxes = [];
+
+            data.forEach((item, index) => {
+              const h = (item.count / max) * plotH;
+              const x = left + step * index + (step - barW) / 2;
+              const y = top + plotH - h;
+              ctx.fillStyle = "#a7ff2a";
+              ctx.fillRect(x, y, barW, h);
+
+              ctx.fillStyle = "rgba(235,235,225,.78)";
+              ctx.font = data.length > 16 ? "8px Comfortaa, sans-serif" : "9px Comfortaa, sans-serif";
+              ctx.textAlign = "center";
+              ctx.fillText(String(item.year), x + barW / 2, height - 10);
+
+              hitboxes.push({ x, y, w: barW, h: Math.max(h, 4), item });
+            });
+
+            canvas.__web055RegularityHitboxes = hitboxes;
+          }`;
+          s = replaceBalancedFunction(s, "function drawWeb055RegularityChart(", drawRegularity);
+
+          const renderRegularity = String.raw`function renderWeb055Regularity() {
+            const distanceInput = document.getElementById("web055RegularityThreshold");
+            const ascentInput = document.getElementById("web055RegularityAscentThreshold");
+            const modeSelect = document.getElementById("web055RegularityMode");
+            const summary = document.getElementById("web055RegularitySummary");
+            if (!distanceInput || !ascentInput || !modeSelect || !summary) return;
+
+            const distanceThreshold = Math.max(0, Number(String(distanceInput.value).replace(",", ".")) || 0);
+            const ascentThreshold = Math.max(0, Number(String(ascentInput.value).replace(",", ".")) || 0);
+            const mode = modeSelect.value === "AND" ? "AND" : "OR";
+            const data = web055RegularityData(distanceThreshold, ascentThreshold, mode);
+            const current = data[data.length - 1] || {
+              year: new Date().getFullYear(), count: 0, maxStreak: 0
+            };
+            const record = data.reduce(
+              (best, item) => item.count > best.count ? item : best,
+              { year: current.year, count: -1, maxStreak: 0 }
+            );
+
+            const connector = mode === "AND" ? " ET " : " OU ";
+            summary.innerHTML =
+              '<strong>' + current.year + ' : ' + current.count + ' jour(s) · &gt; ' +
+              distanceThreshold.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + ' km' +
+              connector + '&gt; ' +
+              Math.round(ascentThreshold).toLocaleString("fr-FR") + ' m D+</strong>' +
+              '<span>Série record cette année : ' + current.maxStreak +
+              ' jour(s) · record annuel : ' + Math.max(0, record.count) +
+              ' jour(s) en ' + record.year + '</span>';
+
+            drawWeb055RegularityChart(data);
+          }`;
+          s = replaceBalancedFunction(s, "function renderWeb055Regularity()", renderRegularity);
+
+          const comparisonSeries = String.raw`function web055ComparisonSeries(metric, selectedYear) {
+            /* WEB055-FIX4 · COMPARE004 : N contre toute année antérieure choisie. */
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const previousYear = Number(selectedYear) < currentYear
+              ? Number(selectedYear)
+              : currentYear - 1;
+
+            const dailyCurrent = new Map();
+            const dailyPrevious = new Map();
+
+            for (const row of web055HomeRows) {
+              const d = new Date(Number(row.start_time_ms));
+              const value = web055ComparisonValue(row, metric);
+              if (!(value > 0) || !Number.isFinite(d.getTime())) continue;
+              const key = web055MonthDayKey(d);
+
+              if (d.getFullYear() === currentYear) {
+                dailyCurrent.set(key, (dailyCurrent.get(key) || 0) + value);
+              } else if (d.getFullYear() === previousYear) {
+                dailyPrevious.set(key, (dailyPrevious.get(key) || 0) + value);
+              }
+            }
+
+            const cursor = new Date(currentYear, 0, 1);
+            const nextYear = new Date(currentYear + 1, 0, 1);
+            const current = [];
+            const previous = [];
+            const monthStarts = [];
+            let c = 0;
+            let p = 0;
+            let todayIndex = 0;
+            let index = 0;
+
+            while (cursor < nextYear) {
+              const key = web055MonthDayKey(cursor);
+              c += dailyCurrent.get(key) || 0;
+              p += dailyPrevious.get(key) || 0;
+              current.push(c);
+              previous.push(p);
+
+              if (cursor.getDate() === 1) {
+                monthStarts.push({
+                  index,
+                  label: cursor.toLocaleDateString("fr-FR", { month: "short" }).replace(".", "")
+                });
+              }
+              if (cursor.getMonth() === now.getMonth() && cursor.getDate() === now.getDate()) {
+                todayIndex = index;
+              }
+              cursor.setDate(cursor.getDate() + 1);
+              index++;
+            }
+
+            return { currentYear, previousYear, current, previous, monthStarts, todayIndex };
+          }`;
+          s = replaceBalancedFunction(s, "function web055ComparisonSeries(", comparisonSeries);
+
+          const renderComparison = String.raw`function renderWeb055Comparison() {
+            const metricSelect = document.getElementById("web055CompareMetric");
+            const yearSelect = document.getElementById("web055CompareYear");
+            const summary = document.getElementById("web055ComparisonSummary");
+            if (!metricSelect || !yearSelect || !summary) return;
+
+            const currentYear = new Date().getFullYear();
+            const years = [...new Set(
+              web055HomeRows
+                .map((row) => new Date(Number(row.start_time_ms)).getFullYear())
+                .filter((year) => Number.isFinite(year) && year < currentYear)
+            )].sort((a, b) => b - a);
+
+            const previousSelection = Number(yearSelect.value);
+            yearSelect.innerHTML = years.map(
+              (year) => '<option value="' + year + '">' + year + '</option>'
+            ).join("");
+
+            let selectedYear = years.includes(previousSelection)
+              ? previousSelection
+              : (years.includes(currentYear - 1) ? currentYear - 1 : years[0]);
+
+            if (!Number.isFinite(selectedYear)) {
+              yearSelect.innerHTML = '<option value="">Aucune année</option>';
+              yearSelect.disabled = true;
+              summary.innerHTML = '<strong>Aucune année antérieure disponible</strong>';
+              return;
+            }
+
+            yearSelect.disabled = false;
+            yearSelect.value = String(selectedYear);
+            web055CompareMetric = metricSelect.value || "distance";
+            const data = web055ComparisonSeries(web055CompareMetric, selectedYear);
+            const meta = web055ComparisonMetricMeta(web055CompareMetric);
+            const currentValue = data.current[data.todayIndex] || 0;
+            const previousValue = data.previous[data.todayIndex] || 0;
+            const delta = currentValue - previousValue;
+            const percent = previousValue > 0 ? (delta / previousValue) * 100 : null;
+
+            summary.innerHTML =
+              '<strong>' + data.currentYear + ' : ' +
+              web055FormatComparisonValue(currentValue, meta) + '</strong>' +
+              '<span>' + data.previousYear + ' à la même date : ' +
+              web055FormatComparisonValue(previousValue, meta) + ' · ' +
+              (delta >= 0 ? '+' : '−') +
+              web055FormatComparisonValue(Math.abs(delta), meta) +
+              (percent == null ? '' : ' · ' + (percent >= 0 ? '+' : '') +
+                percent.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + ' %') +
+              '</span>';
+
+            drawWeb055ComparisonChart(data, web055CompareMetric);
+          }`;
+          s = replaceBalancedFunction(s, "function renderWeb055Comparison()", renderComparison);
+
+          const installLayout = String.raw`function installWeb055HomeLayout() {
+            const section = ui.webDashboardSection;
+            if (!section) return;
+            if (document.getElementById("web055HomeRoot")) return;
+
+            for (const child of [...section.children]) child.classList.add("web055-legacy-home-hidden");
+
+            const root = document.createElement("div");
+            root.id = "web055HomeRoot";
+            root.className = "web055-home-root";
+            root.innerHTML = \`
+              <div class="web055-home-head">
+                <div class="web055-sport-switch" aria-label="Sport de l'accueil">
+                  <button id="web055RunningButton" class="secondary dashboard-choice active" type="button">Course à pied</button>
+                  <button id="web055CyclingButton" class="secondary dashboard-choice" type="button">Vélo</button>
+                </div>
+              </div>
+
+              <section class="web055-card web055-period-card">
+                <div id="web055PeriodRows" class="web055-period-rows"></div>
+              </section>
+
+              <section class="web055-card">
+                <div class="web055-card-heading">
+                  <h3>Objectifs</h3>
+                  <span id="web055GoalMeta" class="muted"></span>
+                </div>
+                <div id="web055GoalContent"></div>
+              </section>
+
+              <section class="web055-card web055-fix4-regularity-card">
+                <div class="web055-card-heading web055-fix4-regularity-heading">
+                  <h3>Régularité</h3>
+                  <div class="web055-fix4-regularity-controls">
+                    <label>Distance &gt;
+                      <input id="web055RegularityThreshold" type="number" min="0" step="0.5" value="10"> km
+                    </label>
+                    <select id="web055RegularityMode" aria-label="Combinaison des seuils">
+                      <option value="OR">OU</option>
+                      <option value="AND">ET</option>
+                    </select>
+                    <label>D+ &gt;
+                      <input id="web055RegularityAscentThreshold" type="number" min="0" step="50" value="500"> m
+                    </label>
+                  </div>
+                </div>
+                <div id="web055RegularitySummary" class="web055-summary-two-lines"></div>
+                <div class="web055-fix4-chart-wrap">
+                  <canvas id="web055RegularityChart" aria-label="Nombre annuel de jours correspondant aux seuils Distance et D+"></canvas>
+                  <div id="web055RegularityTooltip" class="web055-fix4-chart-tooltip hidden"></div>
+                </div>
+              </section>
+
+              <section class="web055-card">
+                <div class="web055-card-heading web055-fix4-compare-heading">
+                  <h3>Comparaison année N / année antérieure</h3>
+                  <div class="web055-fix4-compare-controls">
+                    <select id="web055CompareMetric" class="web055-compare-select">
+                      <option value="distance">Distance</option>
+                      <option value="ascent">D+</option>
+                      <option value="time">Temps</option>
+                      <option value="load">Charge</option>
+                    </select>
+                    <select id="web055CompareYear" class="web055-fix4-year-select" aria-label="Année de comparaison"></select>
+                  </div>
+                </div>
+                <div id="web055ComparisonSummary" class="web055-summary-two-lines"></div>
+                <canvas id="web055ComparisonChart" aria-label="Comparaison cumulative de l'année en cours avec une année antérieure choisie"></canvas>
+              </section>
+            \`;
+
+            section.appendChild(root);
+            web055SetSport(1);
+
+            document.getElementById("web055RunningButton")?.addEventListener("click", () => {
+              web055SetSport(1);
+              void loadWebDashboard();
+            });
+            document.getElementById("web055CyclingButton")?.addEventListener("click", () => {
+              web055SetSport(2);
+              void loadWebDashboard();
+            });
+
+            const distanceThreshold = document.getElementById("web055RegularityThreshold");
+            const ascentThreshold = document.getElementById("web055RegularityAscentThreshold");
+            const regularityMode = document.getElementById("web055RegularityMode");
+
+            const storedDistance = localStorage.getItem("sport_web_web055_regularity_threshold");
+            const storedAscent = localStorage.getItem("sport_web_web055_regularity_ascent_threshold");
+            const storedMode = localStorage.getItem("sport_web_web055_regularity_mode");
+            if (storedDistance != null && storedDistance !== "") distanceThreshold.value = storedDistance;
+            if (storedAscent != null && storedAscent !== "") ascentThreshold.value = storedAscent;
+            if (storedMode === "AND" || storedMode === "OR") regularityMode.value = storedMode;
+
+            const rerenderRegularity = () => {
+              localStorage.setItem("sport_web_web055_regularity_threshold", distanceThreshold.value);
+              localStorage.setItem("sport_web_web055_regularity_ascent_threshold", ascentThreshold.value);
+              localStorage.setItem("sport_web_web055_regularity_mode", regularityMode.value);
+              renderWeb055Regularity();
+            };
+            distanceThreshold.addEventListener("input", rerenderRegularity);
+            ascentThreshold.addEventListener("input", rerenderRegularity);
+            regularityMode.addEventListener("change", rerenderRegularity);
+
+            const regularityCanvas = document.getElementById("web055RegularityChart");
+            const tooltip = document.getElementById("web055RegularityTooltip");
+            regularityCanvas?.addEventListener("mousemove", (event) => {
+              const rect = regularityCanvas.getBoundingClientRect();
+              const x = event.clientX - rect.left;
+              const y = event.clientY - rect.top;
+              const box = (regularityCanvas.__web055RegularityHitboxes || []).find(
+                (item) => x >= item.x && x <= item.x + item.w &&
+                  y >= item.y && y <= item.y + item.h
+              );
+              if (!box || !tooltip) {
+                tooltip?.classList.add("hidden");
+                return;
+              }
+              tooltip.textContent = box.item.year + " : " + box.item.count + " jour(s)";
+              tooltip.style.left = Math.min(rect.width - 120, Math.max(8, x + 12)) + "px";
+              tooltip.style.top = Math.max(6, y - 34) + "px";
+              tooltip.classList.remove("hidden");
+            });
+            regularityCanvas?.addEventListener("mouseleave", () => tooltip?.classList.add("hidden"));
+
+            document.getElementById("web055CompareMetric")?.addEventListener("change", renderWeb055Comparison);
+            document.getElementById("web055CompareYear")?.addEventListener("change", renderWeb055Comparison);
+
+            window.addEventListener("resize", () => {
+              if (document.body.dataset.uxPage !== "home") return;
+              renderWeb055Regularity();
+              renderWeb055Comparison();
+            }, { passive: true });
+
+            document.querySelectorAll("[data-ux-page]").forEach((button) => {
+              if (button.dataset.web055RefreshBound === "1") return;
+              button.dataset.web055RefreshBound = "1";
+              button.addEventListener("click", () => {
+                if (!currentUser) return;
+                if (button.dataset.uxPage === "home") web055SetSport(1);
+                window.setTimeout(() => { void reloadAll(); }, 0);
+              });
+            });
+          }`;
+          s = replaceBalancedFunction(s, "function installWeb055HomeLayout()", installLayout);
+
+          const css = String.raw`
+          <style id="web055-fix4-home-ux-css">
+            .web055-fix4-goal-grid {
+              display:grid;
+              grid-template-columns:repeat(2,minmax(0,1fr));
+              gap:14px;
+            }
+            .web055-fix4-goal-card {
+              min-width:0;
+              padding:13px;
+              border:1px solid rgba(210,180,95,.22);
+              border-radius:14px;
+              background:rgba(255,255,255,.018);
+            }
+            .web055-fix4-goal-title {
+              display:flex;
+              align-items:baseline;
+              justify-content:space-between;
+              gap:12px;
+              margin-bottom:10px;
+            }
+            .web055-fix4-goal-title > span {
+              font-weight:700;
+              white-space:nowrap;
+              font-size:.86rem;
+            }
+            .web055-fix4-goal-track {
+              position:relative;
+              width:100%;
+              height:15px;
+              overflow:hidden;
+              border-radius:999px;
+              background:rgba(210,214,210,.16);
+              border:1px solid rgba(255,255,255,.09);
+            }
+            .web055-fix4-goal-track > i {
+              position:absolute;
+              left:0;
+              top:0;
+              bottom:0;
+              display:block;
+            }
+            .web055-fix4-goal-theory { background:#cd3838; z-index:1; }
+            .web055-fix4-goal-real { background:#1f9653; z-index:2; }
+            .web055-fix4-goal-late { background:#cd3838; z-index:3; }
+            .web055-fix4-goal-ahead { background:#d4af37; z-index:3; }
+            .web055-fix4-goal-legend {
+              display:flex;
+              flex-wrap:wrap;
+              gap:10px 16px;
+              margin-top:7px;
+              font-size:.7rem;
+              color:var(--muted,#9ca89f);
+            }
+            .web055-fix4-goal-legend .dot {
+              display:inline-block;
+              width:8px;
+              height:8px;
+              border-radius:50%;
+              margin-right:5px;
+            }
+            .web055-fix4-goal-legend .green { background:#1f9653; }
+            .web055-fix4-goal-legend .red { background:#cd3838; }
+            .web055-fix4-goal-legend .gold { background:#d4af37; }
+            .web055-fix4-goal-status {
+              margin-top:9px;
+              font-size:.84rem;
+              font-weight:800;
+            }
+            .web055-fix4-goal-status.ahead { color:#d4af37; }
+            .web055-fix4-goal-status.behind { color:#ec6767; }
+            .web055-fix4-goal-details {
+              display:grid;
+              grid-template-columns:repeat(3,minmax(0,1fr));
+              gap:8px;
+              margin-top:10px;
+            }
+            .web055-fix4-goal-details > div {
+              display:grid;
+              gap:3px;
+              padding:8px 9px;
+              border-radius:10px;
+              background:rgba(255,255,255,.025);
+            }
+            .web055-fix4-goal-details span {
+              color:var(--muted,#9ca89f);
+              font-size:.72rem;
+            }
+            .web055-fix4-goal-details strong { font-size:.82rem; }
+
+            .web055-fix4-regularity-heading,
+            .web055-fix4-compare-heading {
+              align-items:center;
+              gap:14px;
+            }
+            .web055-fix4-regularity-controls,
+            .web055-fix4-compare-controls {
+              display:flex;
+              align-items:center;
+              gap:7px;
+              flex-wrap:wrap;
+            }
+            .web055-fix4-regularity-controls label {
+              display:flex;
+              align-items:center;
+              gap:5px;
+              color:var(--muted,#9ca89f);
+              font-size:.78rem;
+            }
+            #web055RegularityThreshold,
+            #web055RegularityAscentThreshold {
+              width:72px;
+              min-height:34px;
+              padding:4px 6px;
+            }
+            #web055RegularityMode {
+              min-width:58px;
+              width:58px;
+              min-height:34px;
+              padding:4px 5px;
+              text-align:center;
+            }
+            .web055-fix4-chart-wrap { position:relative; }
+            .web055-fix4-chart-tooltip {
+              position:absolute;
+              z-index:6;
+              pointer-events:none;
+              padding:6px 8px;
+              border-radius:8px;
+              background:rgba(20,24,20,.96);
+              border:1px solid rgba(167,255,42,.35);
+              color:#f4f4ef;
+              font-size:.75rem;
+              white-space:nowrap;
+              box-shadow:0 4px 18px rgba(0,0,0,.28);
+            }
+            .web055-fix4-chart-tooltip.hidden { display:none; }
+
+            .web055-fix4-compare-controls select {
+              width:auto;
+              min-width:0;
+              min-height:36px;
+              padding:5px 28px 5px 9px;
+            }
+            #web055CompareMetric { width:118px; }
+            #web055CompareYear { width:88px; }
+
+            @media (max-width:980px) {
+              .web055-fix4-goal-grid { grid-template-columns:1fr; }
+            }
+            @media (max-width:650px) {
+              .web055-fix4-goal-details { grid-template-columns:1fr; }
+              .web055-fix4-regularity-heading,
+              .web055-fix4-compare-heading { align-items:flex-start; }
+            }
+          </style>
+          `;
+
+          html = html.replace(/<style id="web055-fix4-home-ux-css">[\s\S]*?<\/style>\s*/g, "");
+          if (!html.includes("</head>")) fail("balise </head> introuvable");
+          html = html.replace("</head>", css + "\n</head>");
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB055-FIX4-GOAL005-REG004-COMP004-GAP004"'
+          );
+
+          fs.writeFileSync(appFile, s, "utf8");
+          fs.writeFileSync(indexFile, html, "utf8");
+          NODE
+
+      - name: Valider WEB055-FIX4
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          npx --yes acorn@8.15.0 --ecma2022 --module web/app.js >/dev/null
+          git diff --check
+
+          grep -Fq 'WEB055-FIX4 · GOAL005' web/app.js
+          grep -Fq 'WEB055-FIX4 · REGULARITY004' web/app.js
+          grep -Fq 'WEB055-FIX4 · CHART004' web/app.js
+          grep -Fq 'WEB055-FIX4 · COMPARE004' web/app.js
+          grep -Fq 'WEB055-FIX4 · GAP004' web/app.js
+          grep -Fq 'web055RegularityAscentThreshold' web/app.js
+          grep -Fq 'web055RegularityMode' web/app.js
+          grep -Fq 'web055CompareYear' web/app.js
+          grep -Fq 'web055-fix4-goal-track' web/index.html
+          grep -Fq 'WEB055-FIX4-GOAL005-REG004-COMP004-GAP004' web/index.html
+
+          # Acquis à préserver.
+          grep -Fq 'WEB055-FIX3 · PERF003' web/app.js
+          grep -Fq 'WEB055_FIX3_GAP_CACHE · GAP003' web/app.js
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          grep -Fq 'function renderUnifiedConnectionBadgeWeb055()' web/app.js
+          grep -Fq 'queueMicrotask(() => installEquipmentMappingEditorWeb050());' web/app.js
+          grep -Fq 'const EQUIPMENT_PROFILES_WEB053' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+          if [ -f scripts/contracts/validate_web_golden.mjs ]; then
+            node scripts/contracts/validate_web_golden.mjs
+          fi
+
+          echo "GOAL005      : JAUGE UNIQUE SUPERPOSEE + 3 CASES"
+          echo "REGULARITY004: DISTANCE / D+ + ET/OU + TOUTES ANNEES + SURVOL"
+          echo "COMPARE004   : N / ANNEE ANTERIEURE CHOISIE"
+          echo "GAP004       : ALIAS PERFORMANCE001 + CACHE ACTIVITY_ROUTES"
+          echo "AUTH         : NON MODIFIEE"
+
+      - name: Préparer le déploiement Cloud Shell
+        run: |
+          set -euo pipefail
+          mkdir -p scripts docs/releases
+
+          cat > scripts/deploy_web055_fix4_cloudshell.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          git fetch origin
+          git checkout main
+          git reset --hard origin/main
+
+          node --check web/app.js
+          grep -Fq 'WEB055-FIX4-GOAL005-REG004-COMP004-GAP004' web/index.html
+          grep -Fq 'WEB055-FIX4 · GOAL005' web/app.js
+          grep -Fq 'WEB055-FIX4 · REGULARITY004' web/app.js
+          grep -Fq 'WEB055-FIX4 · COMPARE004' web/app.js
+          grep -Fq 'WEB055-FIX4 · GAP004' web/app.js
+
+          cat > firebase.hosting.web055fix4.json <<'JSON'
+          {
+            "hosting": {
+              "site": "sport-505813",
+              "public": "web",
+              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+              "headers": [
+                {
+                  "source": "**",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "no-cache, no-store, must-revalidate"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          JSON
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --only hosting \
+            --project sport-505813 \
+            --config firebase.hosting.web055fix4.json
+
+          echo
+          echo "✅ WEB055-FIX4 DEPLOYE"
+          echo "https://sport-505813.web.app"
+          EOF
+
+          chmod +x scripts/deploy_web055_fix4_cloudshell.sh
+
+          cat > docs/releases/WEB055-FIX4.md <<'EOF'
+          # WEB055-FIX4 · GOAL005 / REGULARITY004 / COMPARE004 / GAP004
+
+          ## Objectifs
+          - Une seule jauge superposée pour Distance et D+.
+          - Vert = réalisé jusqu'à la cible théorique.
+          - Si retard : seul le bout manquant reste rouge au-delà du vert.
+          - Si avance : seul le dépassement au-delà de la cible théorique est or.
+          - Trois indicateurs seulement : reste, rythme hebdomadaire théorique, rythme quotidien théorique.
+
+          ## Régularité
+          - Deux seuils : Distance et D+.
+          - Sélecteur OU / ET.
+          - Toutes les années sont inscrites.
+          - Survol d'une barre : année + nombre de jours.
+
+          ## Comparaison
+          - Année N comparée à une année antérieure choisie.
+          - Sélecteur métrique compact + sélecteur d'année compact.
+
+          ## GAP
+          - Ajout des alias generic_gap / personal_gap de PERFORMANCE001 lorsqu'ils sont présents.
+          - Conservation de l'enrichissement activity_routes et du cache local WEB055-FIX3.
+          EOF
+
+      - name: Commit et push
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add web/app.js web/index.html \
+            scripts/deploy_web055_fix4_cloudshell.sh \
+            docs/releases/WEB055-FIX4.md
+
+          if git diff --cached --quiet; then
+            echo "WEB055-FIX4 deja applique : aucun commit necessaire."
+            exit 0
+          fi
+
+          git commit -m "WEB055 FIX4 affine accueil objectifs regularite comparaison GAP"
+          git push origin HEAD:main
+
+          echo
+          echo "✅ WEB055-FIX4 pousse sur main"
+          echo "Commit : $(git rev-parse --short HEAD)"
