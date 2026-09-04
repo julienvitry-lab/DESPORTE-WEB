@@ -1,0 +1,1106 @@
+name: WEB055 FIX8 - 6 profils materiel
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Vérifier la base WEB055-FIX7
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+
+          grep -Fq 'WEB055-FIX7-SUBSPORT002' web/index.html
+          grep -Fq 'WEB055-FIX6 · ACTIVITYOPEN001' web/app.js
+          grep -Fq 'WEB055-FIX6 · UX010' web/index.html
+
+          grep -Fq 'const EQUIPMENT_PROFILES_WEB053' web/app.js
+          grep -Fq 'function equipmentProfileFromTechnicalOptionWeb053(' web/app.js
+          grep -Fq 'function equipmentProfileSignaturesWeb053(' web/app.js
+          grep -Fq 'function resolveAutomaticEquipmentMapping(activity)' web/app.js
+          grep -Fq 'function renderEquipmentMappingPanel()' web/app.js
+          grep -Fq 'function equipmentDisplayName(' web/app.js
+          grep -Fq 'function equipmentCategoryLabel(' web/app.js
+          grep -Fq 'function applyFiltersAndRender()' web/app.js
+
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          grep -Fq 'function renderUnifiedConnectionBadgeWeb055()' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+          echo "✓ Base FIX7 reconnue"
+          echo "✓ Moteur WEBEQUIPMAP002/003 présent"
+          echo "✓ Matériels SPORT Web disponibles"
+
+      - name: Appliquer WEB055-FIX8
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+
+          const appFile = "web/app.js";
+          const indexFile = "web/index.html";
+
+          let app = fs.readFileSync(appFile, "utf8");
+          let html = fs.readFileSync(indexFile, "utf8");
+
+          function fail(message) {
+            console.error("ERREUR WEB055-FIX8:", message);
+            process.exit(30);
+          }
+
+          function findFunctionBounds(source, functionName) {
+            const marker = `function ${functionName}(`;
+            const start = source.indexOf(marker);
+            if (start < 0) fail(`fonction ${functionName} introuvable`);
+
+            const brace = source.indexOf("{", start);
+            if (brace < 0) fail(`accolade ${functionName} introuvable`);
+
+            let depth = 0;
+            let quote = null;
+            let escaped = false;
+            let lineComment = false;
+            let blockComment = false;
+
+            for (let i = brace; i < source.length; i += 1) {
+              const ch = source[i];
+              const next = source[i + 1];
+
+              if (lineComment) {
+                if (ch === "\n") lineComment = false;
+                continue;
+              }
+
+              if (blockComment) {
+                if (ch === "*" && next === "/") {
+                  blockComment = false;
+                  i += 1;
+                }
+                continue;
+              }
+
+              if (quote) {
+                if (escaped) {
+                  escaped = false;
+                  continue;
+                }
+                if (ch === "\\") {
+                  escaped = true;
+                  continue;
+                }
+                if (ch === quote) quote = null;
+                continue;
+              }
+
+              if (ch === "/" && next === "/") {
+                lineComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "/" && next === "*") {
+                blockComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "'" || ch === '"' || ch === "`") {
+                quote = ch;
+                continue;
+              }
+
+              if (ch === "{") depth += 1;
+              if (ch === "}") {
+                depth -= 1;
+                if (depth === 0) return { start, end: i + 1 };
+              }
+            }
+
+            fail(`fin de ${functionName} introuvable`);
+          }
+
+          function replaceFunction(source, functionName, replacement) {
+            const bounds = findFunctionBounds(source, functionName);
+            return source.slice(0, bounds.start) + replacement + source.slice(bounds.end);
+          }
+
+          function appendBeforeFunctionEnd(source, functionName, code) {
+            const bounds = findFunctionBounds(source, functionName);
+            return source.slice(0, bounds.end - 1) + "\n" + code + "\n" + source.slice(bounds.end - 1);
+          }
+
+          // ---------------------------------------------------------------------------
+          // WEB055-FIX8 · EQUIPPROFILE004
+          //
+          // Six profils fonctionnels demandés :
+          // 1 VELO         -> VELO 1
+          // 2 VTT          -> VELO 2
+          // 3 HOME TRAINER -> VELO 3 (signature technique volontairement différée)
+          // 4 COURSE       -> CHAUSSURES 1
+          // 5 TRAIL        -> CHAUSSURES 2
+          // 6 KINOMAP      -> CHAUSSURES 3
+          // ---------------------------------------------------------------------------
+
+          const profilesBlock = `const EQUIPMENT_PROFILES_WEB053 = Object.freeze([
+            {
+              key: "BIKE",
+              label: "VELO",
+              slot: "VELO 1",
+              equipmentCategories: ["BIKE"],
+              signature: "FIT : sport 2 · sub_sport 0"
+            },
+            {
+              key: "MTB",
+              label: "VTT",
+              slot: "VELO 2",
+              equipmentCategories: ["BIKE"],
+              signature: "FIT fourni : sport 2 · sub_sport 8"
+            },
+            {
+              key: "TRAINER",
+              label: "HOME TRAINER",
+              slot: "VELO 3",
+              equipmentCategories: ["BIKE", "HOME_TRAINER"],
+              signature: "Signature technique à configurer plus tard"
+            },
+            {
+              key: "RUN",
+              label: "COURSE A PIED",
+              slot: "CHAUSSURES 1",
+              equipmentCategories: ["SHOES"],
+              signature: "FIT fourni : sport 1 · sub_sport 0"
+            },
+            {
+              key: "TRAIL",
+              label: "TRAIL",
+              slot: "CHAUSSURES 2",
+              equipmentCategories: ["SHOES"],
+              signature: "FIT fourni : sport 1 · sub_sport 3"
+            },
+            {
+              key: "KINOMAP",
+              label: "KINOMAP",
+              slot: "CHAUSSURES 3",
+              equipmentCategories: ["SHOES"],
+              signature: "TCX fourni : running · créateur KinomapVirtualRun"
+            }
+          ]);`;
+
+          const profilesRegex =
+            /const EQUIPMENT_PROFILES_WEB053\s*=\s*Object\.freeze\(\[[\s\S]*?\]\);/m;
+
+          if (!profilesRegex.test(app)) fail("table EQUIPMENT_PROFILES_WEB053 inattendue");
+          app = app.replace(profilesRegex, profilesBlock);
+
+          const classifier = String.raw`function equipmentProfileFromTechnicalOptionWeb053(option) {
+            if (!option) return "";
+
+            const sport = Number(option.sport) || 0;
+            const subSport = Number(option.subSport ?? option.sub_sport) || 0;
+            const label = String(option.label || "").toUpperCase();
+
+            const running =
+              sport === 1 ||
+              /COURSE|RUN|TRAIL|TREADMILL|VIRTUALRUN|KINOMAP/.test(label);
+
+            if (running) {
+              // KINOMAP / VirtualRun avant le profil générique Course.
+              if (
+                subSport === 21 ||
+                /KINOMAP|VIRTUALRUN|VIRTUAL RUN/.test(label)
+              ) return "KINOMAP";
+
+              // Compatibilité fichier Garmin fourni (3) + import Strava Android (6).
+              if (
+                [3, 6].includes(subSport) ||
+                /TRAILRUN|TRAIL/.test(label)
+              ) return "TRAIL";
+
+              return "RUN";
+            }
+
+            const cycling =
+              sport === 2 ||
+              /VELO|VÉLO|BIKE|RIDE|CYCL|VTT|MTB|TRAINER|TACX|ZWIFT/.test(label);
+
+            if (cycling) {
+              // HOME TRAINER reste proposé/configurable, mais sa correspondance
+              // technique définitive sera traitée ultérieurement.
+              if (
+                [5, 6, 58].includes(subSport) ||
+                /HOME TRAINER|TRAINER|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE/.test(label)
+              ) return "TRAINER";
+
+              // Fichier VTT fourni = 8 ; compatibilité historique Strava/SPORT = 7/47.
+              if (
+                [7, 8, 47].includes(subSport) ||
+                /MOUNTAINBIKERIDE|MOUNTAIN BIKE|\bVTT\b|\bMTB\b/.test(label)
+              ) return "MTB";
+
+              return "BIKE";
+            }
+
+            return "";
+          }`;
+
+          app = replaceFunction(
+            app,
+            "equipmentProfileFromTechnicalOptionWeb053",
+            classifier
+          );
+
+          const signatures = `function equipmentProfileSignaturesWeb053(profileKey) {
+            const key = String(profileKey || "").toUpperCase();
+
+            if (key === "BIKE") {
+              return [{ sport: 2, subSport: 0 }];
+            }
+
+            if (key === "MTB") {
+              return [
+                { sport: 2, subSport: 8 },
+                { sport: 2, subSport: 7 },
+                { sport: 2, subSport: 47 }
+              ];
+            }
+
+            if (key === "TRAINER") {
+              // L'utilisateur souhaite configurer la signature Home Trainer plus tard.
+              return [];
+            }
+
+            if (key === "RUN") {
+              return [{ sport: 1, subSport: 0 }];
+            }
+
+            if (key === "TRAIL") {
+              return [
+                { sport: 1, subSport: 3 },
+                { sport: 1, subSport: 6 }
+              ];
+            }
+
+            if (key === "KINOMAP") {
+              return [{ sport: 1, subSport: 21 }];
+            }
+
+            return [];
+          }`;
+
+          app = replaceFunction(
+            app,
+            "equipmentProfileSignaturesWeb053",
+            signatures
+          );
+
+          const module = String.raw`
+          // -----------------------------------------------------------------------------
+          // WEB055-FIX8 · EQUIPPROFILE004 — six profils de matériel
+          // -----------------------------------------------------------------------------
+          const EQUIPMENT_PROFILE_MAPPING_VERSION_WEB058 = "WEBEQUIPMAP004";
+          const EQUIPMENT_PROFILE_SOURCE_WEB058 = "__PROFILE__";
+
+          function equipmentProfileDefinitionWeb058(profileKey) {
+            const key = String(profileKey || "").trim().toUpperCase();
+            return EQUIPMENT_PROFILES_WEB053.find((profile) => profile.key === key) || null;
+          }
+
+          function equipmentProfileMetadataWeb058(activity) {
+            return [
+              activity?.import_source,
+              activity?.import_profile,
+              activity?.strava_type,
+              activity?.strava_sport_type,
+              activity?.strava_device_name,
+              activity?.device_name,
+              activity?.manufacturer,
+              activity?.product,
+              activity?.file_name,
+              activity?.source_file_name,
+              activity?.custom_title
+            ]
+              .map((value) => String(value ?? "").trim())
+              .filter(Boolean)
+              .join(" ")
+              .toUpperCase();
+          }
+
+          function equipmentProfileKeyFromActivityWeb058(activity) {
+            if (!activity || activity.deleted_at_ms != null) return "";
+
+            const sport = Number(activity.sport) || 0;
+            const subSport = Number(activity.sub_sport) || 0;
+            const meta = equipmentProfileMetadataWeb058(activity);
+
+            if (sport === 1) {
+              if (
+                subSport === 21 ||
+                /KINOMAP|VIRTUALRUN|VIRTUAL RUN/.test(meta)
+              ) {
+                return "KINOMAP";
+              }
+
+              if (
+                [3, 6].includes(subSport) ||
+                /TRAILRUN|TRAIL RUN|\bTRAIL\b/.test(meta)
+              ) {
+                return "TRAIL";
+              }
+
+              return "RUN";
+            }
+
+            if (sport === 2) {
+              // HOME TRAINER est volontairement réservé : la signature précise
+              // sera configurée lors d'une étape ultérieure.
+              if (
+                [5, 6, 58].includes(subSport) ||
+                /HOME TRAINER|\bTRAINER\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE/.test(meta)
+              ) {
+                return "";
+              }
+
+              if (
+                [7, 8, 47].includes(subSport) ||
+                /MOUNTAINBIKERIDE|MOUNTAIN BIKE|\bVTT\b|\bMTB\b/.test(meta)
+              ) {
+                return "MTB";
+              }
+
+              return "BIKE";
+            }
+
+            return "";
+          }
+
+          function equipmentProfileRuleWeb058(profileKey) {
+            const key = String(profileKey || "").trim().toUpperCase();
+            if (!key) return null;
+
+            return equipmentMappingRows.find((rule) =>
+              String(rule?.profile_key || "").trim().toUpperCase() === key
+            ) || null;
+          }
+
+          function equipmentProfileEquipmentRowsWeb058(profileKey) {
+            const profile = equipmentProfileDefinitionWeb058(profileKey);
+            if (!profile) return [];
+
+            const allowed = new Set(
+              (profile.equipmentCategories || []).map((value) => String(value).toUpperCase())
+            );
+
+            return equipmentRows
+              .filter((item) => {
+                const status = String(item?.status ?? "ACTIVE").toUpperCase();
+                const category = String(item?.category ?? "").toUpperCase();
+                return status === "ACTIVE" && allowed.has(category);
+              })
+              .slice()
+              .sort((a, b) =>
+                equipmentDisplayName(a).localeCompare(
+                  equipmentDisplayName(b),
+                  "fr",
+                  { sensitivity: "base" }
+                )
+              );
+          }
+
+          function equipmentProfileSelectOptionsWeb058(select, profile) {
+            const currentRule = equipmentProfileRuleWeb058(profile.key);
+            const current = String(currentRule?.equipment_name || "").trim();
+
+            select.innerHTML = "";
+
+            const empty = document.createElement("option");
+            empty.value = "";
+            empty.textContent = "Choisir dans SPORT Web…";
+            select.appendChild(empty);
+
+            const rows = equipmentProfileEquipmentRowsWeb058(profile.key);
+            const names = new Set();
+
+            for (const item of rows) {
+              const name = equipmentDisplayName(item);
+              if (!name || names.has(name)) continue;
+              names.add(name);
+
+              const option = document.createElement("option");
+              option.value = name;
+              option.textContent = name;
+              select.appendChild(option);
+            }
+
+            if (current && !names.has(current)) {
+              const legacy = document.createElement("option");
+              legacy.value = current;
+              legacy.textContent = current + " · affectation actuelle";
+              select.appendChild(legacy);
+            }
+
+            select.value = current;
+          }
+
+          async function saveEquipmentProfileWeb058(profileKey, equipmentName) {
+            if (!currentUser) return;
+
+            const profile = equipmentProfileDefinitionWeb058(profileKey);
+            if (!profile) throw new Error("Profil matériel inconnu.");
+
+            const key = String(profile.key || "").toUpperCase();
+            const rowKey = "PROFILE_" + key;
+            const name = String(equipmentName || "").trim();
+            const now = Date.now();
+
+            const row = {
+              profile_key: key,
+              profile_label: profile.label,
+              slot_label: profile.slot,
+              import_source: EQUIPMENT_PROFILE_SOURCE_WEB058,
+              sport: 0,
+              sub_sport: 0,
+              equipment_name: name,
+              enabled: Boolean(name),
+              mapping_version: EQUIPMENT_PROFILE_MAPPING_VERSION_WEB058,
+              updated_at_ms: now
+            };
+
+            await commitWebMutation({
+              table: "equipment_mappings",
+              rowKey,
+              operation: "UPSERT",
+              row,
+              materializedCollection: "equipment_mappings",
+              materializedData: row
+            });
+
+            equipmentMappingRows = equipmentMappingRows.filter((item) =>
+              String(item?.profile_key || "").trim().toUpperCase() !== key &&
+              String(item?.__docId || "") !== rowKey
+            );
+            equipmentMappingRows.push({ __docId: rowKey, ...row });
+
+            renderEquipmentProfileGridWeb058();
+            renderEquipmentMappingPanel();
+
+            setMessage(
+              name
+                ? "WEBEQUIPMAP004 · " + profile.label + " → " + name + " enregistré."
+                : "WEBEQUIPMAP004 · " + profile.label + " désactivé.",
+              "success"
+            );
+          }
+
+          function ensureEquipmentProfileGridWeb058() {
+            const section = document.getElementById("equipmentMappingSection");
+            if (!section) return null;
+
+            let panel = document.getElementById("equipmentProfileGridWeb058");
+            if (!panel) {
+              panel = document.createElement("div");
+              panel.id = "equipmentProfileGridWeb058";
+              panel.className = "equipment-profile-panel-web058";
+              panel.innerHTML =
+                '<div class="equipment-profile-head-web058">' +
+                  '<div>' +
+                    '<h3>6 profils de matériel</h3>' +
+                    '<p class="muted">Choisis le matériel SPORT Web utilisé automatiquement pour chaque profil.</p>' +
+                  '</div>' +
+                  '<button id="equipmentProfileApplyHistoryWeb058" class="secondary" type="button">Appliquer à l’historique</button>' +
+                '</div>' +
+                '<div id="equipmentProfileRowsWeb058" class="equipment-profile-grid-web058"></div>' +
+                '<div id="equipmentProfileHistoryStatusWeb058" class="muted equipment-profile-status-web058"></div>';
+
+              const editor = section.querySelector(".equipment-map-editor-web050");
+              if (editor) editor.insertAdjacentElement("beforebegin", panel);
+              else section.prepend(panel);
+
+              panel
+                .querySelector("#equipmentProfileApplyHistoryWeb058")
+                ?.addEventListener("click", () => {
+                  void applyEquipmentProfilesToHistoryWeb058();
+                });
+            }
+
+            let advanced = document.getElementById("equipmentProfileAdvancedWeb058");
+            if (!advanced) {
+              const editor = section.querySelector(".equipment-map-editor-web050");
+              const list = document.getElementById("equipmentMappingList");
+              const unmatched = document.getElementById("equipmentMappingUnmatched");
+
+              advanced = document.createElement("details");
+              advanced.id = "equipmentProfileAdvancedWeb058";
+              advanced.className = "equipment-profile-advanced-web058";
+
+              const summary = document.createElement("summary");
+              summary.textContent = "Réglages avancés du mapping";
+              advanced.appendChild(summary);
+
+              if (editor) editor.insertAdjacentElement("beforebegin", advanced);
+              else section.appendChild(advanced);
+
+              if (editor) advanced.appendChild(editor);
+              if (list) advanced.appendChild(list);
+              if (unmatched) advanced.appendChild(unmatched);
+            }
+
+            return panel;
+          }
+
+          function renderEquipmentProfileGridWeb058() {
+            const panel = ensureEquipmentProfileGridWeb058();
+            if (!panel) return;
+
+            const root = document.getElementById("equipmentProfileRowsWeb058");
+            if (!root) return;
+
+            root.innerHTML = "";
+
+            for (const profile of EQUIPMENT_PROFILES_WEB053) {
+              const row = document.createElement("article");
+              row.className = "equipment-profile-row-web058";
+              row.dataset.profileKey = profile.key;
+
+              const identity = document.createElement("div");
+              identity.className = "equipment-profile-identity-web058";
+
+              const label = document.createElement("strong");
+              label.textContent = profile.label;
+
+              const signature = document.createElement("small");
+              signature.textContent = profile.signature || "";
+
+              identity.append(label, signature);
+
+              const slot = document.createElement("span");
+              slot.className = "pill neutral equipment-profile-slot-web058";
+              slot.textContent = profile.slot;
+
+              const select = document.createElement("select");
+              select.className = "equipment-profile-select-web058";
+              select.dataset.profileKey = profile.key;
+              equipmentProfileSelectOptionsWeb058(select, profile);
+
+              select.addEventListener("change", () => {
+                const value = select.value;
+                select.disabled = true;
+
+                void saveEquipmentProfileWeb058(profile.key, value)
+                  .catch((error) => {
+                    console.error(error);
+                    handleError(error, "Enregistrement du profil matériel impossible");
+                    renderEquipmentProfileGridWeb058();
+                  })
+                  .finally(() => {
+                    select.disabled = false;
+                  });
+              });
+
+              row.append(identity, slot, select);
+              root.appendChild(row);
+            }
+
+            const button = document.getElementById("equipmentProfileApplyHistoryWeb058");
+            if (button) {
+              const configured = EQUIPMENT_PROFILES_WEB053.filter((profile) => {
+                const rule = equipmentProfileRuleWeb058(profile.key);
+                return Boolean(rule?.enabled !== false && String(rule?.equipment_name || "").trim());
+              }).length;
+              button.disabled = configured === 0;
+              button.title = configured
+                ? configured + " profil(s) configuré(s)"
+                : "Configure d’abord au moins un profil";
+            }
+          }
+
+          async function applyEquipmentProfilesToHistoryWeb058() {
+            if (!currentUser) return;
+
+            const status = document.getElementById("equipmentProfileHistoryStatusWeb058");
+            const button = document.getElementById("equipmentProfileApplyHistoryWeb058");
+            if (button) button.disabled = true;
+
+            try {
+              if (moreActivities && !loadingAll && !loading) {
+                if (status) status.textContent = "Chargement de toutes les activités…";
+                await loadAllActivities();
+              }
+
+              let changed = 0;
+              let examined = 0;
+
+              for (const activity of activities) {
+                if (!activity || activity.deleted_at_ms != null) continue;
+                if (numberOrZero(activity.equipment_manual) === 1) continue;
+
+                const profileKey = equipmentProfileKeyFromActivityWeb058(activity);
+                if (!profileKey) continue;
+
+                const rule = equipmentProfileRuleWeb058(profileKey);
+                const equipmentName = String(rule?.equipment_name || "").trim();
+                if (!rule || rule.enabled === false || !equipmentName) continue;
+
+                examined += 1;
+
+                if (String(activity.equipment_name || "").trim() === equipmentName) continue;
+
+                const rowKey = activityKey(activity);
+                if (!rowKey) continue;
+
+                const numericId = Number(activity.id ?? rowKey);
+                const patch = {
+                  equipment_name: equipmentName,
+                  equipment_manual: 0
+                };
+
+                if (Number.isFinite(numericId) && numericId > 0) {
+                  patch.id = numericId;
+                }
+
+                await commitWebMutation({
+                  table: "activities",
+                  rowKey,
+                  operation: "UPSERT",
+                  row: patch,
+                  materializedCollection: "activities",
+                  materializedData: patch
+                });
+
+                Object.assign(activity, patch);
+                changed += 1;
+
+                if (status && (changed % 20 === 0 || changed === 1)) {
+                  status.textContent =
+                    "Application en cours · " + changed + " activité(s) mise(s) à jour…";
+                }
+              }
+
+              rebuildDynamicFilters();
+              applyFiltersAndRender();
+              void loadWebDashboard();
+
+              if (status) {
+                status.textContent =
+                  changed + " activité(s) mise(s) à jour · " +
+                  examined + " activité(s) reconnue(s) par les profils.";
+              }
+
+              setMessage(
+                "WEBEQUIPMAP004 · profils appliqués à l’historique : " +
+                changed + " modification(s).",
+                "success"
+              );
+            } catch (error) {
+              console.error(error);
+              if (status) {
+                status.textContent =
+                  "Application interrompue : " + (error?.message || String(error));
+              }
+              handleError(error, "Application des profils à l’historique impossible");
+            } finally {
+              renderEquipmentProfileGridWeb058();
+            }
+          }
+          `;
+
+          const insertionMarker = "function renderEquipmentMappingPanel()";
+          const insertionPos = app.indexOf(insertionMarker);
+          if (insertionPos < 0) fail("renderEquipmentMappingPanel introuvable pour insertion");
+          if (!app.includes("const EQUIPMENT_PROFILE_MAPPING_VERSION_WEB058")) {
+            app = app.slice(0, insertionPos) + module + "\n\n" + app.slice(insertionPos);
+          }
+
+          // Résolveur : profils simples en premier, puis anciennes règles techniques
+          // exactes/générales en repli. Aucune ancienne règle n'est détruite.
+          const resolver = `function resolveAutomaticEquipmentMapping(activity) {
+            if (!activity) return null;
+
+            const enabled = equipmentMappingRows.filter((rule) => rule.enabled !== false);
+
+            const profileKey = equipmentProfileKeyFromActivityWeb058(activity);
+            if (profileKey) {
+              const profileRule = enabled.find((rule) =>
+                String(rule.profile_key || "").trim().toUpperCase() === profileKey &&
+                String(rule.equipment_name || "").trim()
+              );
+              if (profileRule) return profileRule;
+            }
+
+            const source = String(activity.import_source || "").trim().toUpperCase();
+            const sport = Number(activity.sport) || 0;
+            const subSport = Number(activity.sub_sport) || 0;
+
+            const legacy = enabled.filter((rule) =>
+              !String(rule.profile_key || "").trim()
+            );
+
+            const exactKey = equipmentMappingKey(source, sport, subSport);
+            const generalKey = equipmentMappingKey(
+              EQUIPMENT_MAPPING_ALL_SOURCES,
+              sport,
+              subSport
+            );
+
+            const exact = legacy.find((rule) =>
+              equipmentMappingKey(rule.import_source, rule.sport, rule.sub_sport) === exactKey
+            );
+            if (exact) return exact;
+
+            return legacy.find((rule) =>
+              equipmentMappingKey(rule.import_source, rule.sport, rule.sub_sport) === generalKey
+            ) || null;
+          }`;
+
+          app = replaceFunction(app, "resolveAutomaticEquipmentMapping", resolver);
+
+          // Le panneau de mapping reconstruit toujours le nouveau tableau simple.
+          {
+            const panelBounds = findFunctionBounds(app, "renderEquipmentMappingPanel");
+            const panelBody = app.slice(panelBounds.start, panelBounds.end);
+            if (!panelBody.includes("renderEquipmentProfileGridWeb058();")) {
+              app = appendBeforeFunctionEnd(
+                app,
+                "renderEquipmentMappingPanel",
+                "  renderEquipmentProfileGridWeb058();"
+              );
+            }
+          }
+
+          // ---------------------------------------------------------------------------
+          // CSS
+          // ---------------------------------------------------------------------------
+          html = html.replace(
+            /<style id=["']web055-fix8-equipment-profiles-css["']>[\s\S]*?<\/style>\s*/g,
+            ""
+          );
+
+          const css = `
+          <style id="web055-fix8-equipment-profiles-css">
+            /* WEB055-FIX8 · EQUIPPROFILE004 */
+
+            .equipment-profile-panel-web058 {
+              margin: 12px 0 18px;
+              padding: 14px;
+              border: 1px solid rgba(128,128,128,.22);
+              border-radius: 16px;
+              background: rgba(255,255,255,.018);
+            }
+
+            .equipment-profile-head-web058 {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 14px;
+              margin-bottom: 12px;
+            }
+
+            .equipment-profile-head-web058 h3 {
+              margin: 0 0 3px;
+            }
+
+            .equipment-profile-head-web058 p {
+              margin: 0;
+            }
+
+            .equipment-profile-grid-web058 {
+              display: grid;
+              gap: 8px;
+            }
+
+            .equipment-profile-row-web058 {
+              display: grid;
+              grid-template-columns: minmax(190px, 1fr) 125px minmax(250px, 1.35fr);
+              align-items: center;
+              gap: 12px;
+              padding: 10px 12px;
+              border-radius: 12px;
+              border: 1px solid rgba(128,128,128,.16);
+              background: rgba(255,255,255,.025);
+            }
+
+            .equipment-profile-identity-web058 {
+              display: grid;
+              gap: 2px;
+            }
+
+            .equipment-profile-identity-web058 strong {
+              font-size: .96rem;
+            }
+
+            .equipment-profile-identity-web058 small {
+              color: var(--muted, #9ca89f);
+              font-size: .73rem;
+            }
+
+            .equipment-profile-slot-web058 {
+              justify-self: start;
+              min-width: 104px;
+              text-align: center;
+            }
+
+            .equipment-profile-select-web058 {
+              width: 100%;
+              min-width: 0;
+            }
+
+            .equipment-profile-status-web058 {
+              min-height: 1.2em;
+              margin-top: 10px;
+            }
+
+            .equipment-profile-advanced-web058 {
+              margin-top: 12px;
+              border-top: 1px solid rgba(128,128,128,.18);
+              padding-top: 10px;
+            }
+
+            .equipment-profile-advanced-web058 > summary {
+              cursor: pointer;
+              font-weight: 700;
+              padding: 8px 2px;
+            }
+
+            /* L'ancien sélecteur "Profil sportif" WEB053 devient redondant :
+               il reste disponible dans le code, mais pas dans l'UI principale. */
+            .equipment-profile-field-web053 {
+              display: none !important;
+            }
+
+            @media (max-width: 850px) {
+              .equipment-profile-head-web058 {
+                align-items: stretch;
+                flex-direction: column;
+              }
+
+              .equipment-profile-row-web058 {
+                grid-template-columns: 1fr;
+              }
+
+              .equipment-profile-slot-web058 {
+                justify-self: start;
+              }
+            }
+          </style>
+          `;
+
+          if (!html.includes("</head>")) fail("</head> introuvable");
+          html = html.replace("</head>", css + "\n</head>");
+
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB055-FIX8-EQUIPPROFILE004"'
+          );
+
+          fs.writeFileSync(appFile, app, "utf8");
+          fs.writeFileSync(indexFile, html, "utf8");
+
+          console.log("✓ 6 profils installés");
+          console.log("✓ Menus SPORT Web par catégorie installés");
+          console.log("✓ Resolver profils > ancien mapping technique");
+          console.log("✓ Home Trainer réservé pour configuration ultérieure");
+          NODE
+
+      - name: Valider WEB055-FIX8
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+          npx --yes acorn@8.15.0 --ecma2022 --module web/app.js >/dev/null
+          git diff --check
+
+          grep -Fq 'WEB055-FIX8 · EQUIPPROFILE004' web/app.js
+          grep -Fq 'WEB055-FIX8 · EQUIPPROFILE004' web/index.html
+          grep -Fq 'WEB055-FIX8-EQUIPPROFILE004' web/index.html
+
+          grep -Fq 'slot: "VELO 1"' web/app.js
+          grep -Fq 'slot: "VELO 2"' web/app.js
+          grep -Fq 'slot: "VELO 3"' web/app.js
+          grep -Fq 'slot: "CHAUSSURES 1"' web/app.js
+          grep -Fq 'slot: "CHAUSSURES 2"' web/app.js
+          grep -Fq 'slot: "CHAUSSURES 3"' web/app.js
+
+          grep -Fq 'FIT fourni : sport 2 · sub_sport 8' web/app.js
+          grep -Fq 'FIT fourni : sport 1 · sub_sport 0' web/app.js
+          grep -Fq 'FIT fourni : sport 1 · sub_sport 3' web/app.js
+          grep -Fq 'KinomapVirtualRun' web/app.js
+          grep -Fq 'Signature technique à configurer plus tard' web/app.js
+
+          grep -Fq 'function equipmentProfileKeyFromActivityWeb058(activity)' web/app.js
+          grep -Fq 'function saveEquipmentProfileWeb058(' web/app.js
+          grep -Fq 'function renderEquipmentProfileGridWeb058()' web/app.js
+          grep -Fq 'async function applyEquipmentProfilesToHistoryWeb058()' web/app.js
+
+          grep -Fq 'equipmentCategories: ["BIKE"]' web/app.js
+          grep -Fq 'equipmentCategories: ["BIKE", "HOME_TRAINER"]' web/app.js
+          grep -Fq 'equipmentCategories: ["SHOES"]' web/app.js
+
+          # Le resolver doit conserver l'ancien mapping en fallback.
+          grep -Fq 'const profileKey = equipmentProfileKeyFromActivityWeb058(activity);' web/app.js
+          grep -Fq 'const exactKey = equipmentMappingKey(source, sport, subSport);' web/app.js
+          grep -Fq 'EQUIPMENT_MAPPING_ALL_SOURCES' web/app.js
+
+          # Acquis récents à préserver.
+          grep -Fq 'WEB055-FIX7-SUBSPORT002' web/index.html
+          grep -Fq 'WEB055-FIX6 · ACTIVITYOPEN001' web/app.js
+          grep -Fq 'WEB055-FIX6 · UX010' web/index.html
+          grep -Fq 'button.addEventListener("click", () => showActivity(activity));' web/app.js
+          grep -Fq 'renderCartography(activity);' web/app.js
+
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          grep -Fq 'function renderUnifiedConnectionBadgeWeb055()' web/app.js
+          grep -Fq 'queueMicrotask(() => installEquipmentMappingEditorWeb050());' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+          if [ -f scripts/contracts/validate_web_golden.mjs ]; then
+            node scripts/contracts/validate_web_golden.mjs
+          fi
+
+          echo
+          echo "======================================================"
+          echo "WEB055-FIX8 VALIDÉ"
+          echo "VELO          -> VELO 1"
+          echo "VTT           -> VELO 2"
+          echo "HOME TRAINER  -> VELO 3"
+          echo "COURSE        -> CHAUSSURES 1"
+          echo "TRAIL         -> CHAUSSURES 2"
+          echo "KINOMAP       -> CHAUSSURES 3"
+          echo "HOME TRAINER  : SIGNATURE EN ATTENTE"
+          echo "======================================================"
+
+      - name: Préparer le déploiement Git Bash
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p scripts docs/releases
+
+          cat > scripts/deploy_web055_fix8.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          git fetch origin
+          git checkout main
+          git reset --hard origin/main
+
+          node --check web/app.js
+
+          grep -Fq 'WEB055-FIX8 · EQUIPPROFILE004' web/app.js
+          grep -Fq 'WEB055-FIX8-EQUIPPROFILE004' web/index.html
+          grep -Fq 'slot: "CHAUSSURES 3"' web/app.js
+
+          cat > firebase.hosting.web055fix8.json <<'JSON'
+          {
+            "hosting": {
+              "site": "sport-505813",
+              "public": "web",
+              "ignore": [
+                "firebase.json",
+                "**/.*",
+                "**/node_modules/**"
+              ],
+              "headers": [
+                {
+                  "source": "**",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "no-cache, no-store, must-revalidate"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          JSON
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --only hosting \
+            --project sport-505813 \
+            --config firebase.hosting.web055fix8.json
+
+          echo
+          echo "✅ WEB055-FIX8 DEPLOYE"
+          echo "https://sport-505813.web.app"
+          EOF
+
+          chmod +x scripts/deploy_web055_fix8.sh
+
+          cat > docs/releases/WEB055-FIX8.md <<'EOF'
+          # WEB055-FIX8 · EQUIPPROFILE004
+
+          Simplification du mapping matériel en six profils fixes :
+
+          1. VELO → VELO 1
+          2. VTT → VELO 2
+          3. HOME TRAINER → VELO 3
+          4. COURSE A PIED → CHAUSSURES 1
+          5. TRAIL → CHAUSSURES 2
+          6. KINOMAP → CHAUSSURES 3
+
+          Chaque profil possède un menu déroulant construit depuis les matériels
+          actifs de SPORT Web :
+          - VELO/VTT : catégorie BIKE ;
+          - HOME TRAINER : BIKE + HOME_TRAINER ;
+          - COURSE/TRAIL/KINOMAP : catégorie SHOES.
+
+          Signatures déduites des fichiers fournis :
+          - VELO : sport 2 / sub_sport 0 ;
+          - VTT : sport 2 / sub_sport 8 ;
+          - COURSE A PIED : sport 1 / sub_sport 0 ;
+          - TRAIL : sport 1 / sub_sport 3 ;
+          - KINOMAP : TCX running créé par KinomapVirtualRun ; compatibilité VirtualRun/sub_sport 21.
+
+          HOME TRAINER reste configurable côté matériel mais sa signature technique
+          est volontairement réservée pour une étape ultérieure.
+
+          Les anciennes règles techniques WEBEQUIPMAP002/003 sont conservées dans
+          Réglages avancés et servent de fallback.
+          EOF
+
+      - name: Commit et push
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            web/app.js \
+            web/index.html \
+            scripts/deploy_web055_fix8.sh \
+            docs/releases/WEB055-FIX8.md
+
+          if git diff --cached --quiet; then
+            echo "WEB055-FIX8 déjà appliqué : aucun commit nécessaire."
+            exit 0
+          fi
+
+          git commit -m "WEB055 FIX8 simplifie mapping en 6 profils materiel"
+          git push origin HEAD:main
+
+          echo
+          echo "✅ WEB055-FIX8 poussé sur main"
+          echo "Commit : $(git rev-parse --short HEAD)"
