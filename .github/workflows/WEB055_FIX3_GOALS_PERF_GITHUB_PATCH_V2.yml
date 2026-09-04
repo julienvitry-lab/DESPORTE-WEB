@@ -1,0 +1,759 @@
+name: WEB055 FIX3 - objectifs distance D+ et stats GAP charge
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Vérifier la base WEB055-FIX2
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          grep -Fq 'function renderWeb055Goal()' web/app.js
+          grep -Fq 'function renderWeb055Home()' web/app.js
+          grep -Fq 'function web055SafeChargeScore(' web/app.js
+          grep -Fq 'function web055SafeGapSecondsPerKm(' web/app.js
+          grep -Fq 'function web055ComparisonValue(' web/app.js
+          # FIX3 n'utilise pas loadGlobalMapRoute : cette fonction n'existe pas dans la base WEB055-FIX2.
+          # Les deux helpers réellement requis pour l'enrichissement GAP sont ceux-ci.
+          grep -Fq 'function mapWithConcurrency(' web/app.js
+          grep -Fq 'function routePointGapSecondsPerKm(' web/app.js
+          grep -Fq 'function normalizeRoute(' web/app.js
+          grep -Fq 'WEB055-FIX2-HOMERENDER002' web/index.html
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+      - name: Appliquer WEB055-FIX3
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+          const appFile = "web/app.js";
+          const indexFile = "web/index.html";
+          let s = fs.readFileSync(appFile, "utf8");
+          let html = fs.readFileSync(indexFile, "utf8");
+
+          function fail(message) {
+            console.error("ERREUR WEB055-FIX3:", message);
+            process.exit(30);
+          }
+
+          function replaceBalancedFunction(source, marker, replacement) {
+            const start = source.indexOf(marker);
+            if (start < 0) fail(marker + " introuvable");
+            const brace = source.indexOf("{", start);
+            if (brace < 0) fail("accolade de " + marker + " introuvable");
+
+            let depth = 0;
+            let quote = null;
+            let escape = false;
+
+            for (let i = brace; i < source.length; i++) {
+              const ch = source[i];
+              if (quote) {
+                if (escape) escape = false;
+                else if (ch === "\\") escape = true;
+                else if (ch === quote) quote = null;
+                continue;
+              }
+              if (ch === '"' || ch === "'" || ch === "`") {
+                quote = ch;
+                continue;
+              }
+              if (ch === "{") depth++;
+              else if (ch === "}") {
+                depth--;
+                if (depth === 0) {
+                  return source.slice(0, start) + replacement + source.slice(i + 1);
+                }
+              }
+            }
+            fail("fin de " + marker + " introuvable");
+          }
+
+          const chargeFunction = String.raw`function web055SafeChargeScore(activity) {
+            /* WEB055-FIX3 · PERF003
+               Même base de charge universelle que SPORT Android :
+               (minutes + 2 × km + D+/100) × facteur FC, facteur borné à 0,75..1,50. */
+            for (const raw of [
+              activity?.training_load,
+              activity?.trainingLoad,
+              activity?.load,
+              activity?.activity_load,
+              activity?.activityLoad,
+              activity?.trimp,
+              activity?.charge_score,
+              activity?.chargeScore,
+              activity?.sport_load,
+              activity?.sportLoad
+            ]) {
+              const value = Number(raw);
+              if (Number.isFinite(value) && value >= 0) return value;
+            }
+
+            const durationMs = web055ActivityDurationMs(activity);
+            const minutes = Math.max(0, Number(durationMs) || 0) / 60000;
+            const km = Math.max(0, Number(activity?.distance_m) || 0) / 1000;
+            const ascent = Math.max(0, Number(activity?.ascent_m) || 0);
+
+            let hrFactor = 1;
+            const avgHr = Number(activity?.avg_hr);
+            if (Number.isFinite(avgHr) && avgHr > 0) {
+              hrFactor = Math.max(0.75, Math.min(1.50, avgHr / 130));
+            }
+
+            const score = (minutes + km * 2 + ascent / 100) * hrFactor;
+            return Number.isFinite(score) && score > 0 ? score : null;
+          }`;
+
+          s = replaceBalancedFunction(
+            s,
+            "function web055SafeChargeScore(activity)",
+            chargeFunction
+          );
+
+          const gapFunction = String.raw`function web055SafeGapSecondsPerKm(activity) {
+            for (const raw of [
+              activity?.gap_seconds_per_km,
+              activity?.gap_s_per_km,
+              activity?.gapSecondsPerKm,
+              activity?.grade_adjusted_pace_s_per_km,
+              activity?.gap_sec_per_km,
+              activity?.grade_adjusted_pace_sec_per_km
+            ]) {
+              const value = Number(raw);
+              if (Number.isFinite(value) && value > 30 && value < 3600) return value;
+            }
+
+            try {
+              web055EnsureGapCacheUser();
+              const key = String(activityKey(activity) || "");
+              const cached = Number(web055GapSummaryCache.get(key));
+              if (Number.isFinite(cached) && cached > 30 && cached < 3600) return cached;
+            } catch (_) {}
+
+            return null;
+          }`;
+
+          s = replaceBalancedFunction(
+            s,
+            "function web055SafeGapSecondsPerKm(activity)",
+            gapFunction
+          );
+
+          if (!s.includes("WEB055_FIX3_GAP_CACHE")) {
+            const marker = "function web055Metrics(rows) {";
+            const pos = s.indexOf(marker);
+            if (pos < 0) fail("web055Metrics introuvable");
+
+            const gapHelpers = String.raw`
+          /* WEB055_FIX3_GAP_CACHE · GAP003
+             Le GAP n'est jamais inventé : il est agrégé depuis les séries fiables
+             présentes dans activity_routes, puis mémorisé localement dans le navigateur. */
+          const web055GapSummaryCache = new Map();
+          const web055GapNoDataSession = new Set();
+          let web055GapCacheUser = "";
+          let web055GapEnrichmentToken = 0;
+          let web055GapEnrichmentSignature = "";
+
+          function web055EnsureGapCacheUser() {
+            const uid = String(currentUser?.uid || "");
+            if (uid === web055GapCacheUser) return;
+
+            web055GapCacheUser = uid;
+            web055GapSummaryCache.clear();
+            web055GapNoDataSession.clear();
+            if (!uid) return;
+
+            try {
+              const raw = localStorage.getItem("sport_web_web055_gap_cache_v1_" + uid);
+              if (!raw) return;
+              const parsed = JSON.parse(raw);
+              if (!parsed || typeof parsed !== "object") return;
+
+              for (const [key, value] of Object.entries(parsed)) {
+                const n = Number(value);
+                if (Number.isFinite(n) && n > 30 && n < 3600) web055GapSummaryCache.set(String(key), n);
+              }
+            } catch (error) {
+              console.warn("WEB055-FIX3 cache GAP illisible", error);
+            }
+          }
+
+          function web055PersistGapCache() {
+            const uid = String(currentUser?.uid || "");
+            if (!uid) return;
+
+            try {
+              const entries = [...web055GapSummaryCache.entries()]
+                .filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 30 && Number(value) < 3600)
+                .slice(-6000);
+              localStorage.setItem(
+                "sport_web_web055_gap_cache_v1_" + uid,
+                JSON.stringify(Object.fromEntries(entries))
+              );
+            } catch (error) {
+              console.warn("WEB055-FIX3 cache GAP non persistant", error);
+            }
+          }
+
+          function web055RouteAverageGap(route) {
+            const points = Array.isArray(route?.points) ? route.points : [];
+            if (!points.length) return null;
+
+            let weighted = 0;
+            let weight = 0;
+            let fallbackSum = 0;
+            let fallbackCount = 0;
+
+            for (let i = 0; i < points.length; i++) {
+              const gap = routePointGapSecondsPerKm(points[i]);
+              if (!Number.isFinite(gap)) continue;
+
+              fallbackSum += gap;
+              fallbackCount++;
+
+              if (i > 0) {
+                const d1 = Number(points[i - 1]?.distanceMeters);
+                const d2 = Number(points[i]?.distanceMeters);
+                const dx = d2 - d1;
+                if (Number.isFinite(dx) && dx > 0 && dx < 5000) {
+                  weighted += gap * dx;
+                  weight += dx;
+                }
+              }
+            }
+
+            if (weight > 0) return weighted / weight;
+            return fallbackCount > 0 ? fallbackSum / fallbackCount : null;
+          }
+
+          async function web055LoadRouteForGap(activity) {
+            const keys = [...new Set([
+              activity?.id,
+              activity?.__docId,
+              activityKey(activity)
+            ].filter((value) => value !== null && value !== undefined && String(value).trim() !== "")
+              .map((value) => String(value)))];
+
+            for (const key of keys) {
+              try {
+                const snapshot = await getDoc(doc(db, ROOT, currentUser.uid, "activity_routes", key));
+                if (!snapshot.exists()) continue;
+                const route = normalizeRoute(snapshot.data());
+                if (route?.points?.length >= 2) return route;
+              } catch (error) {
+                console.warn("WEB055-FIX3 route GAP ignorée", key, error);
+              }
+            }
+            return null;
+          }
+
+          async function web055EnrichGapRows(rows, token) {
+            web055EnsureGapCacheUser();
+
+            const pending = (rows || []).filter((row) => {
+              const key = String(activityKey(row) || "");
+              if (!key || web055GapSummaryCache.has(key) || web055GapNoDataSession.has(key)) return false;
+              return web055SafeGapSecondsPerKm(row) == null;
+            });
+
+            if (!pending.length) return;
+
+            await mapWithConcurrency(pending, async (row) => {
+              if (token !== web055GapEnrichmentToken || Number(dashboardSport) !== 1) return;
+              const key = String(activityKey(row) || "");
+              if (!key || web055GapSummaryCache.has(key) || web055GapNoDataSession.has(key)) return;
+
+              const route = await web055LoadRouteForGap(row);
+              const gap = web055RouteAverageGap(route);
+              if (Number.isFinite(gap) && gap > 30 && gap < 3600) {
+                web055GapSummaryCache.set(key, gap);
+              } else {
+                /* Absence mémorisée seulement pour la session : un tracé publié plus tard
+                   sera donc retenté lors de la prochaine ouverture du Web. */
+                web055GapNoDataSession.add(key);
+              }
+            }, 8);
+
+            if (token !== web055GapEnrichmentToken) return;
+            web055PersistGapCache();
+            renderWeb055Periods();
+          }
+
+          function web055ScheduleGapEnrichment() {
+            if (!currentUser || Number(dashboardSport) !== 1) {
+              web055GapEnrichmentToken++;
+              web055GapEnrichmentSignature = "";
+              return;
+            }
+
+            web055EnsureGapCacheUser();
+            const rows = Array.isArray(web055HomeRows) ? [...web055HomeRows] : [];
+            const latest = rows.reduce((max, row) => Math.max(max, Number(row?.start_time_ms) || 0), 0);
+            const signature = String(currentUser.uid) + ":" + rows.length + ":" + latest;
+            if (signature === web055GapEnrichmentSignature) return;
+
+            web055GapEnrichmentSignature = signature;
+            const token = ++web055GapEnrichmentToken;
+            const startOfYear = web055StartOfYear(Date.now());
+            const currentYearRows = rows.filter((row) => Number(row?.start_time_ms) >= startOfYear);
+            const olderRows = rows.filter((row) => Number(row?.start_time_ms) < startOfYear);
+
+            queueMicrotask(async () => {
+              try {
+                /* Priorité aux lignes Semaine / Mois / Année ; le Total vient ensuite. */
+                await web055EnrichGapRows(currentYearRows, token);
+                if (token !== web055GapEnrichmentToken) return;
+                await web055EnrichGapRows(olderRows, token);
+              } catch (error) {
+                console.warn("WEB055-FIX3 enrichissement GAP interrompu", error);
+              }
+            });
+          }
+
+          `;
+
+            s = s.slice(0, pos) + gapHelpers + s.slice(pos);
+          }
+
+          const goalFunction = String.raw`function renderWeb055Goal() {
+            const container = document.getElementById("web055GoalContent");
+            const meta = document.getElementById("web055GoalMeta");
+            if (!container || !meta) return;
+
+            container.innerHTML = "";
+
+            const goal = web055SafeSportGoal();
+            const distanceTarget = Math.max(0, Number(goal?.annual_distance_km) || 0);
+            const ascentTarget = Math.max(0, Number(goal?.annual_ascent_m) || 0);
+            const now = new Date();
+            const year = now.getFullYear();
+            const yearStart = new Date(year, 0, 1).getTime();
+            const yearRows = web055HomeRows.filter(
+              (row) => Number(row?.start_time_ms) >= yearStart
+            );
+            const metrics = web055Metrics(yearRows);
+            const dayOfYear = web055DayOfYear(now);
+            const daysInYear = web055DaysInYear(year);
+            const theoreticalRatio = Math.max(0, Math.min(1, dayOfYear / daysInYear));
+            const remainingDays = web055RemainingDaysInclusive(now);
+            const todayLabel = now.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }).replace(".", "");
+
+            meta.textContent = year + " · objectif au 31 décembre";
+
+            if (!(distanceTarget > 0) && !(ascentTarget > 0)) {
+              container.innerHTML =
+                '<div class="web055-empty">Aucun objectif annuel Distance ou D+ configuré pour ce sport. Configuration disponible dans Analyse → Objectifs.</div>';
+              return;
+            }
+
+            function metricCard(options) {
+              const target = Math.max(0, Number(options.target) || 0);
+              if (!(target > 0)) {
+                return '<article class="web055-fix3-goal-card web055-fix3-goal-empty">' +
+                  '<strong>' + options.label + '</strong>' +
+                  '<span>Objectif annuel non configuré</span></article>';
+              }
+
+              const actual = Math.max(0, Number(options.actual) || 0);
+              /* Invariant : la cible théorique du jour ne peut jamais dépasser l'objectif annuel. */
+              const theoretical = Math.max(0, Math.min(target, target * theoreticalRatio));
+              const delta = actual - theoretical;
+              const actualRatio = Math.max(0, Math.min(1, actual / target));
+              const expectedRatio = Math.max(0, Math.min(1, theoretical / target));
+              const aheadRatio = Math.max(0, actualRatio - expectedRatio);
+              const remaining = Math.max(0, target - actual);
+              const theoreticalDaily = target / daysInYear;
+              const requiredDaily = remaining / remainingDays;
+
+              const deltaClass = delta >= 0 ? "ahead" : "behind";
+              const deltaWord = Math.abs(delta) < options.epsilon
+                ? "Dans le rythme théorique"
+                : delta > 0
+                  ? "Avance : " + options.formatDelta(Math.abs(delta))
+                  : "Retard : " + options.formatDelta(Math.abs(delta));
+
+              return '<article class="web055-fix3-goal-card">' +
+                '<div class="web055-fix3-goal-title"><strong>' + options.label + '</strong>' +
+                  '<span>' + options.formatActual(actual) + ' / ' + options.formatTarget(target) + '</span></div>' +
+
+                '<div class="web055-fix3-goal-bar-row">' +
+                  '<span>Réalisé</span>' +
+                  '<div class="web055-fix3-goal-track" aria-label="Réalisé">' +
+                    '<i class="web055-fix3-goal-real" style="width:' + (actualRatio * 100).toFixed(4) + '%"></i>' +
+                    (aheadRatio > 0
+                      ? '<i class="web055-fix3-goal-ahead" style="left:' + (expectedRatio * 100).toFixed(4) + '%;width:' + (aheadRatio * 100).toFixed(4) + '%"></i>'
+                      : '') +
+                  '</div>' +
+                  '<b>' + options.formatActual(actual) + '</b>' +
+                '</div>' +
+
+                '<div class="web055-fix3-goal-bar-row">' +
+                  '<span>Objectif au ' + todayLabel + '</span>' +
+                  '<div class="web055-fix3-goal-track" aria-label="Objectif théorique aujourd’hui">' +
+                    '<i class="web055-fix3-goal-theoretical" style="width:' + (expectedRatio * 100).toFixed(4) + '%"></i>' +
+                  '</div>' +
+                  '<b>' + options.formatTheoretical(theoretical) + '</b>' +
+                '</div>' +
+
+                '<div class="web055-fix3-goal-status ' + deltaClass + '">' + deltaWord + '</div>' +
+
+                '<div class="web055-fix3-goal-details">' +
+                  '<div><span>Objectif annuel</span><strong>' + options.formatTarget(target) + '</strong></div>' +
+                  '<div><span>Cible théorique aujourd’hui</span><strong>' + options.formatTheoretical(theoretical) + '</strong></div>' +
+                  '<div><span>Reste annuel</span><strong>' + options.formatRemaining(remaining) + '</strong></div>' +
+                  '<div><span>Rythme théorique</span><strong>' + options.formatDaily(theoreticalDaily) + '</strong></div>' +
+                  '<div><span>Rythme nécessaire</span><strong>' + options.formatDaily(requiredDaily) + '</strong></div>' +
+                  '<div><span>Jours restants</span><strong>' + remainingDays.toLocaleString("fr-FR") + '</strong></div>' +
+                '</div>' +
+              '</article>';
+            }
+
+            const distanceCard = metricCard({
+              label: "Distance",
+              actual: metrics.distance / 1000,
+              target: distanceTarget,
+              epsilon: 0.5,
+              formatActual: (value) => value.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km",
+              formatTarget: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
+              formatTheoretical: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
+              formatDelta: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
+              formatRemaining: (value) => Math.round(value).toLocaleString("fr-FR") + " km",
+              formatDaily: (value) => value.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " km/j"
+            });
+
+            const ascentCard = metricCard({
+              label: "D+",
+              actual: metrics.ascent,
+              target: ascentTarget,
+              epsilon: 0.5,
+              formatActual: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
+              formatTarget: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
+              formatTheoretical: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
+              formatDelta: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
+              formatRemaining: (value) => Math.round(value).toLocaleString("fr-FR") + " m",
+              formatDaily: (value) => Math.round(value).toLocaleString("fr-FR") + " m/j"
+            });
+
+            container.innerHTML = '<div class="web055-fix3-goal-grid">' + distanceCard + ascentCard + '</div>';
+          }`;
+
+          s = replaceBalancedFunction(s, "function renderWeb055Goal()", goalFunction);
+
+          const comparisonValue = String.raw`function web055ComparisonValue(row, metric) {
+            if (metric === "ascent") return Math.max(0, Number(row.ascent_m) || 0);
+            if (metric === "time") return web055ActivityDurationMs(row) / 3600000;
+            if (metric === "load") {
+              const score = web055SafeChargeScore(row);
+              return Number.isFinite(score) ? Math.max(0, score) : 0;
+            }
+            return Math.max(0, Number(row.distance_m) || 0) / 1000;
+          }`;
+
+          s = replaceBalancedFunction(s, "function web055ComparisonValue(row, metric)", comparisonValue);
+
+          const homeRender = String.raw`function renderWeb055Home() {
+            const results = [
+              web055SafeRender("Périodes", renderWeb055Periods),
+              web055SafeRender("Objectifs", renderWeb055Goal),
+              web055SafeRender("Régularité", renderWeb055Regularity),
+              web055SafeRender("Comparaison", renderWeb055Comparison)
+            ];
+
+            const status = document.getElementById("web055HomeStatus");
+            if (status) {
+              const ok = results.filter(Boolean).length;
+              status.textContent =
+                ok === results.length
+                  ? "Mis à jour à " + new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                  : "Accueil partiellement affiché · " + ok + "/" + results.length + " blocs";
+            }
+
+            web055ScheduleGapEnrichment();
+          }`;
+
+          s = replaceBalancedFunction(s, "function renderWeb055Home()", homeRender);
+
+          const fix3Css = String.raw`
+          <style id="web055-fix3-goals-perf-css">
+            .web055-fix3-goal-grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 14px;
+            }
+            .web055-fix3-goal-card {
+              min-width: 0;
+              border: 1px solid rgba(210, 180, 95, .22);
+              border-radius: 14px;
+              padding: 13px;
+              background: rgba(255,255,255,.018);
+            }
+            .web055-fix3-goal-empty {
+              display: grid;
+              gap: 5px;
+              align-content: start;
+              min-height: 92px;
+            }
+            .web055-fix3-goal-empty span {
+              color: var(--muted, #9ca89f);
+              font-size: .8rem;
+            }
+            .web055-fix3-goal-title {
+              display: flex;
+              align-items: baseline;
+              justify-content: space-between;
+              gap: 12px;
+              margin-bottom: 12px;
+            }
+            .web055-fix3-goal-title > strong {
+              font-size: 1.02rem;
+            }
+            .web055-fix3-goal-title > span {
+              font-weight: 700;
+              white-space: nowrap;
+            }
+            .web055-fix3-goal-bar-row {
+              display: grid;
+              grid-template-columns: minmax(105px, auto) minmax(120px, 1fr) minmax(76px, auto);
+              align-items: center;
+              gap: 9px;
+              margin-top: 8px;
+              font-size: .78rem;
+            }
+            .web055-fix3-goal-bar-row > span {
+              color: var(--muted, #9ca89f);
+            }
+            .web055-fix3-goal-bar-row > b {
+              text-align: right;
+              white-space: nowrap;
+              font-size: .78rem;
+            }
+            .web055-fix3-goal-track {
+              position: relative;
+              width: 100%;
+              height: 12px;
+              overflow: hidden;
+              border-radius: 999px;
+              background: rgba(210,214,210,.16);
+              border: 1px solid rgba(255,255,255,.08);
+            }
+            .web055-fix3-goal-track > i {
+              position: absolute;
+              top: 0;
+              bottom: 0;
+              left: 0;
+              display: block;
+            }
+            .web055-fix3-goal-real { background: #1f9653; }
+            .web055-fix3-goal-theoretical { background: #cd3838; }
+            .web055-fix3-goal-ahead { background: #d4af37; z-index: 2; }
+            .web055-fix3-goal-status {
+              margin-top: 10px;
+              font-weight: 800;
+              font-size: .86rem;
+            }
+            .web055-fix3-goal-status.ahead { color: #d4af37; }
+            .web055-fix3-goal-status.behind { color: #ec6767; }
+            .web055-fix3-goal-details {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(110px, 1fr));
+              gap: 8px;
+              margin-top: 11px;
+            }
+            .web055-fix3-goal-details > div {
+              display: grid;
+              gap: 3px;
+              padding: 8px 9px;
+              border-radius: 10px;
+              background: rgba(255,255,255,.025);
+            }
+            .web055-fix3-goal-details span {
+              color: var(--muted, #9ca89f);
+              font-size: .72rem;
+            }
+            .web055-fix3-goal-details strong {
+              font-size: .82rem;
+            }
+            @media (max-width: 980px) {
+              .web055-fix3-goal-grid { grid-template-columns: 1fr; }
+            }
+            @media (max-width: 650px) {
+              .web055-fix3-goal-bar-row {
+                grid-template-columns: 1fr minmax(72px, auto);
+              }
+              .web055-fix3-goal-bar-row .web055-fix3-goal-track {
+                grid-column: 1 / -1;
+                grid-row: 2;
+              }
+              .web055-fix3-goal-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
+          </style>
+          `;
+
+          html = html.replace(/<style id="web055-fix3-goals-perf-css">[\s\S]*?<\/style>\s*/g, "");
+          if (!html.includes("</head>")) fail("balise </head> introuvable");
+          html = html.replace("</head>", fix3Css + "\n</head>");
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB055-FIX3-GOAL004-PERF003-GAP003"'
+          );
+
+          fs.writeFileSync(appFile, s, "utf8");
+          fs.writeFileSync(indexFile, html, "utf8");
+          NODE
+
+      - name: Valider WEB055-FIX3
+        run: |
+          set -euo pipefail
+          node --check web/app.js
+          npx --yes acorn@8.15.0 --ecma2022 --module web/app.js >/dev/null
+          git diff --check
+
+          grep -Fq 'WEB055-FIX3 · PERF003' web/app.js
+          grep -Fq 'WEB055_FIX3_GAP_CACHE · GAP003' web/app.js
+          grep -Fq 'annual_ascent_m' web/app.js
+          grep -Fq 'web055-fix3-goal-theoretical' web/index.html
+          grep -Fq 'web055-fix3-goal-ahead' web/index.html
+          grep -Fq '#d4af37' web/index.html
+          grep -Fq 'WEB055-FIX3-GOAL004-PERF003-GAP003' web/index.html
+
+          # La comparaison Charge ne doit plus appeler la fonction inexistante de WEB055 initial.
+          node <<'NODE'
+          const fs = require('fs');
+          const s = fs.readFileSync('web/app.js','utf8');
+          const start = s.indexOf('function web055ComparisonValue(row, metric)');
+          const end = s.indexOf('function web055MonthDayKey', start);
+          if (start < 0 || end < 0) process.exit(41);
+          const block = s.slice(start, end);
+          if (block.includes('activityChargePresentation(')) process.exit(42);
+          if (!block.includes('web055SafeChargeScore(row)')) process.exit(43);
+          NODE
+
+          # Acquis à préserver.
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          grep -Fq 'function renderUnifiedConnectionBadgeWeb055()' web/app.js
+          grep -Fq 'queueMicrotask(() => installEquipmentMappingEditorWeb050());' web/app.js
+          grep -Fq 'const EQUIPMENT_PROFILES_WEB053' web/app.js
+          grep -Fq 'sport-running-c1-exact.png' web/app.js
+          grep -Fq 'sport-bike-v1-exact.png' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+          if [ -f scripts/contracts/validate_web_golden.mjs ]; then
+            node scripts/contracts/validate_web_golden.mjs
+          fi
+
+          echo "OBJECTIF DISTANCE : DOUBLE BARRE REEL / THEORIQUE"
+          echo "AVANCE             : OR #d4af37"
+          echo "OBJECTIF D+        : AJOUTE"
+          echo "CHARGE             : FORMULE SPORT ANDROID + COMPARAISON CORRIGEE"
+          echo "GAP                : ACTIVITY_ROUTES, ANNEE PRIORITAIRE, CACHE LOCAL"
+          echo "AUTH               : NON MODIFIEE"
+
+      - name: Préparer le déploiement Cloud Shell
+        run: |
+          set -euo pipefail
+          mkdir -p scripts docs/releases
+
+          cat > scripts/deploy_web055_fix3_cloudshell.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          git fetch origin
+          git checkout main
+          git reset --hard origin/main
+
+          node --check web/app.js
+          grep -Fq 'WEB055-FIX3-GOAL004-PERF003-GAP003' web/index.html
+          grep -Fq 'WEB055-FIX3 · PERF003' web/app.js
+          grep -Fq 'WEB055_FIX3_GAP_CACHE · GAP003' web/app.js
+          grep -Fq 'web055-fix3-goal-ahead' web/index.html
+
+          cat > firebase.hosting.web055fix3.json <<'JSON'
+          {
+            "hosting": {
+              "site": "sport-505813",
+              "public": "web",
+              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+              "headers": [
+                {
+                  "source": "**",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "no-cache, no-store, must-revalidate"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          JSON
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --only hosting \
+            --project sport-505813 \
+            --config firebase.hosting.web055fix3.json
+
+          echo
+          echo "✅ WEB055-FIX3 DEPLOYE"
+          echo "https://sport-505813.web.app"
+          EOF
+
+          chmod +x scripts/deploy_web055_fix3_cloudshell.sh
+
+          cat > docs/releases/WEB055-FIX3.md <<'EOF'
+          # WEB055-FIX3 · GOAL004 / PERF003 / GAP003
+
+          ## Objectifs
+          - Distance : barre verte = réalisé réel.
+          - Distance : barre rouge séparée = cible théorique cumulée du jour, calculée avec un objectif quotidien strictement constant.
+          - Avance : segment or sur la barre du réalisé au-delà de la cible théorique.
+          - Les valeurs Distance théoriques et avance/retard sont affichées au kilomètre près.
+          - Invariant : la cible théorique du jour ne peut pas dépasser l'objectif annuel.
+          - Un encart identique est ajouté pour le D+ à partir de annual_ascent_m.
+
+          ## Charge
+          - La Charge est recalculée depuis les résumés d'activité avec la formule universelle SPORT Android :
+            (minutes + 2 × km + D+/100) × facteur FC, borné à 0,75..1,50.
+          - La comparaison annuelle Charge n'appelle plus activityChargePresentation, absent du Web courant.
+
+          ## GAP
+          - Aucun GAP artificiel n'est fabriqué.
+          - Si le résumé d'activité ne porte pas de GAP, le Web lit les séries gap_sec_per_km publiées dans activity_routes.
+          - Les activités de l'année courante sont traitées en priorité, puis l'historique pour le Total.
+          - Le résultat par activité est mis en cache localement dans le navigateur pour éviter de relire les tracés à chaque ouverture.
+          EOF
+
+      - name: Commit et push
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add web/app.js web/index.html \
+            scripts/deploy_web055_fix3_cloudshell.sh \
+            docs/releases/WEB055-FIX3.md
+
+          if git diff --cached --quiet; then
+            echo "WEB055-FIX3 deja applique : aucun commit necessaire."
+            exit 0
+          fi
+
+          git commit -m "WEB055 FIX3 corrige objectifs D+ GAP et charge"
+          git push origin HEAD:main
