@@ -1,0 +1,523 @@
+name: WEB055 FIX7 - filtre sous-sport reel
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Vérifier la base WEB055-FIX6
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+
+          grep -Fq 'WEB055-FIX6 · ACTIVITYOPEN001' web/app.js
+          grep -Fq 'WEB055-FIX6 · UX010' web/index.html
+
+          grep -Fq 'function activitySubSportValueWeb054(activity)' web/app.js
+          grep -Fq 'function refreshActivitySubSportFilterWeb054()' web/app.js
+          grep -Fq 'function applyActivitySubSportFilterWeb054()' web/app.js
+          grep -Fq 'function loadAllActivitiesForSubSportWeb054()' web/app.js
+          grep -Fq 'function applyFiltersAndRender()' web/app.js
+
+          # Preuve du défaut actuel : le data-sub-sport a été injecté APRES return.
+          grep -Fq 'cell.dataset.subSportWeb054 = activitySubSportValueWeb054(activity);' web/app.js
+
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          grep -Fq 'function renderUnifiedConnectionBadgeWeb055()' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+          echo "✓ Base FIX6 reconnue"
+          echo "✓ Moteur WEB054 trouvé"
+
+      - name: Appliquer WEB055-FIX7
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+
+          const appFile = "web/app.js";
+          const indexFile = "web/index.html";
+
+          let app = fs.readFileSync(appFile, "utf8");
+          let html = fs.readFileSync(indexFile, "utf8");
+
+          function fail(message) {
+            console.error("ERREUR WEB055-FIX7:", message);
+            process.exit(30);
+          }
+
+          function findFunctionBounds(source, functionName) {
+            const marker = `function ${functionName}(`;
+            const start = source.indexOf(marker);
+            if (start < 0) fail(`fonction ${functionName} introuvable`);
+
+            const brace = source.indexOf("{", start);
+            if (brace < 0) fail(`accolade ${functionName} introuvable`);
+
+            let depth = 0;
+            let quote = null;
+            let escaped = false;
+            let lineComment = false;
+            let blockComment = false;
+
+            for (let i = brace; i < source.length; i += 1) {
+              const ch = source[i];
+              const next = source[i + 1];
+
+              if (lineComment) {
+                if (ch === "\n") lineComment = false;
+                continue;
+              }
+
+              if (blockComment) {
+                if (ch === "*" && next === "/") {
+                  blockComment = false;
+                  i += 1;
+                }
+                continue;
+              }
+
+              if (quote) {
+                if (escaped) {
+                  escaped = false;
+                  continue;
+                }
+                if (ch === "\\") {
+                  escaped = true;
+                  continue;
+                }
+                if (ch === quote) quote = null;
+                continue;
+              }
+
+              if (ch === "/" && next === "/") {
+                lineComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "/" && next === "*") {
+                blockComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "'" || ch === '"' || ch === "`") {
+                quote = ch;
+                continue;
+              }
+
+              if (ch === "{") depth += 1;
+              if (ch === "}") {
+                depth -= 1;
+                if (depth === 0) return { start, end: i + 1 };
+              }
+            }
+
+            fail(`fin de ${functionName} introuvable`);
+          }
+
+          function replaceFunction(source, functionName, replacement) {
+            const b = findFunctionBounds(source, functionName);
+            return source.slice(0, b.start) + replacement + source.slice(b.end);
+          }
+
+          /*
+           * SUBSPORT002
+           *
+           * Défaut WEB054 constaté :
+           * 1) applyFiltersAndRender() ignorait totalement le sous-sport ;
+           * 2) le data-sub-sport avait été ajouté dans activityMain APRES "return cell",
+           *    donc le code n'était jamais exécuté ;
+           * 3) le moteur masquait un enfant de la carte, pas la carte elle-même.
+           *
+           * FIX7 fait du sous-sport un VRAI critère de filteredActivities.
+           */
+
+          const sportNeedle = '  const sport = ui.sportFilter.value;';
+          if (!app.includes(sportNeedle)) fail("lecture filtre Sport introuvable");
+
+          app = app.replace(
+            sportNeedle,
+            sportNeedle +
+            '\n  const subSport = document.getElementById("activitySubSportFilterWeb054")?.value || "";'
+          );
+
+          const sportPredicate =
+            '    if (sport && String(activity.sport ?? "") !== sport) return false;';
+
+          if (!app.includes(sportPredicate)) fail("prédicat Sport introuvable");
+
+          app = app.replace(
+            sportPredicate,
+            sportPredicate +
+            '\n    if (subSport && activitySubSportValueWeb054(activity) !== subSport) return false;'
+          );
+
+          /*
+           * Les valeurs du menu sont calculées sur toutes les activités actives,
+           * pas sur filteredActivities déjà réduit par le sous-sport choisi.
+           */
+          const refreshReplacement = `function refreshActivitySubSportFilterWeb054() {
+            const select = document.getElementById("activitySubSportFilterWeb054");
+            if (!select) return;
+
+            const current = select.value;
+            const source = Array.isArray(activities)
+              ? activities.filter((activity) => activity?.deleted_at_ms == null)
+              : [];
+            const counts = new Map();
+
+            for (const activity of source) {
+              const value = activitySubSportValueWeb054(activity);
+              counts.set(value, (counts.get(value) || 0) + 1);
+            }
+
+            const options = [...counts.keys()].sort(activitySubSportSortWeb054);
+
+            select.innerHTML = '<option value="">Tous les sous-sports</option>';
+
+            for (const value of options) {
+              const option = document.createElement("option");
+              option.value = value;
+              option.textContent = activitySubSportLabelWeb054(value, counts.get(value));
+              select.appendChild(option);
+            }
+
+            if ([...select.options].some((option) => option.value === current)) {
+              select.value = current;
+            }
+
+            updateActivitySubSportFilterStatusWeb054();
+          }`;
+
+          app = replaceFunction(
+            app,
+            "refreshActivitySubSportFilterWeb054",
+            refreshReplacement
+          );
+
+          /*
+           * Le statut reflète maintenant le vrai tableau filtré.
+           */
+          const statusReplacement = `function updateActivitySubSportFilterStatusWeb054() {
+            const select = document.getElementById("activitySubSportFilterWeb054");
+            const status = document.getElementById("activitySubSportFilterStatusWeb054");
+            if (!select || !status) return;
+
+            if (!select.value) {
+              status.textContent = "Valeur FIT/Garmin brute";
+              return;
+            }
+
+            const visible = Array.isArray(filteredActivities)
+              ? filteredActivities.length
+              : 0;
+
+            status.textContent =
+              \`Filtre actif : sub_sport = \${select.value} · \${visible} activité(s)\`;
+          }`;
+
+          app = replaceFunction(
+            app,
+            "updateActivitySubSportFilterStatusWeb054",
+            statusReplacement
+          );
+
+          /*
+           * Plus de masquage DOM : on relance le moteur de filtres central,
+           * ce qui compose Sous-sport + Sport + Année + Matériel + Repère + Source
+           * + Distance + D+ + recherche.
+           */
+          const applyReplacement = `function applyActivitySubSportFilterWeb054() {
+            const select = document.getElementById("activitySubSportFilterWeb054");
+            if (!select) return;
+
+            activityVisibleLimit = 20;
+            applyFiltersAndRender();
+            updateActivitySubSportFilterStatusWeb054();
+          }`;
+
+          app = replaceFunction(
+            app,
+            "applyActivitySubSportFilterWeb054",
+            applyReplacement
+          );
+
+          /*
+           * Si toutes les activités ne sont pas encore chargées, on attend
+           * réellement loadAllActivities() au lieu de simuler un clic + timers.
+           */
+          const loadAllReplacement = `async function loadAllActivitiesForSubSportWeb054() {
+            const select = document.getElementById("activitySubSportFilterWeb054");
+            if (!select?.value) return;
+
+            if (moreActivities && !loadingAll && !loading) {
+              await loadAllActivities();
+            }
+
+            refreshActivitySubSportFilterWeb054();
+            applyActivitySubSportFilterWeb054();
+          }`;
+
+          app = replaceFunction(
+            app,
+            "loadAllActivitiesForSubSportWeb054",
+            loadAllReplacement
+          );
+
+          /*
+           * Nettoyage du code mort dans activityMain et pose du data-sub-sport
+           * sur la VRAIE carte <button>, utile pour diagnostic/inspection DOM.
+           */
+          const deadCode = `
+            cell.dataset.subSportWeb054 = activitySubSportValueWeb054(activity);
+            const web054SubSportFilter = document.getElementById("activitySubSportFilterWeb054");
+            if (web054SubSportFilter?.value &&
+                cell.dataset.subSportWeb054 !== web054SubSportFilter.value) {
+              cell.classList.add("web054-sub-sport-hidden");
+            }
+          `;
+
+          if (app.includes(deadCode)) {
+            app = app.replace(deadCode, "\n");
+          } else {
+            // Tolérance sur l'indentation : retire le bloc placé après return cell.
+            app = app.replace(
+              /\n\s*cell\.dataset\.subSportWeb054\s*=\s*activitySubSportValueWeb054\(activity\);[\s\S]*?cell\.classList\.add\("web054-sub-sport-hidden"\);\s*\}\s*(?=\n\s*\})/,
+              "\n"
+            );
+          }
+
+          const cardNeedle =
+            '    button.className = "activity-card";';
+
+          if (!app.includes(cardNeedle)) fail("création activity-card introuvable");
+
+          app = app.replace(
+            cardNeedle,
+            cardNeedle +
+            '\n    button.dataset.subSportWeb054 = activitySubSportValueWeb054(activity);'
+          );
+
+          /*
+           * L'événement du select reste asynchrone sans promesse non gérée.
+           */
+          const oldListener = `  select.addEventListener("change", () => {
+            loadAllActivitiesForSubSportWeb054();
+            applyActivitySubSportFilterWeb054();
+          });`;
+
+          const newListener = `  select.addEventListener("change", () => {
+            activityVisibleLimit = 20;
+            applyActivitySubSportFilterWeb054();
+            void loadAllActivitiesForSubSportWeb054();
+          });`;
+
+          if (app.includes(oldListener)) {
+            app = app.replace(oldListener, newListener);
+          }
+
+          /*
+           * Le panneau des autres filtres ne doit plus lancer plusieurs timers DOM.
+           */
+          const oldPanelBlock = `    if (select.value) {
+              setTimeout(() => {
+                loadAllActivitiesForSubSportWeb054();
+                applyActivitySubSportFilterWeb054();
+              }, 0);
+            }`;
+
+          const newPanelBlock = `    if (select.value) {
+              queueMicrotask(() => applyActivitySubSportFilterWeb054());
+            }`;
+
+          if (app.includes(oldPanelBlock)) {
+            app = app.replace(oldPanelBlock, newPanelBlock);
+          }
+
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB055-FIX7-SUBSPORT002"'
+          );
+
+          fs.writeFileSync(appFile, app, "utf8");
+          fs.writeFileSync(indexFile, html, "utf8");
+
+          console.log("✓ Sous-sport intégré à filteredActivities");
+          console.log("✓ Code mort après return supprimé");
+          console.log("✓ data-sub-sport porté par activity-card");
+          console.log("✓ Charger tout réellement attendu");
+          NODE
+
+      - name: Valider WEB055-FIX7
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+          npx --yes acorn@8.15.0 --ecma2022 --module web/app.js >/dev/null
+          git diff --check
+
+          grep -Fq 'const subSport = document.getElementById("activitySubSportFilterWeb054")?.value || "";' web/app.js
+          grep -Fq 'if (subSport && activitySubSportValueWeb054(activity) !== subSport) return false;' web/app.js
+          grep -Fq 'button.dataset.subSportWeb054 = activitySubSportValueWeb054(activity);' web/app.js
+
+          grep -Fq 'const source = Array.isArray(activities)' web/app.js
+          grep -Fq 'filteredActivities.length' web/app.js
+          grep -Fq 'async function loadAllActivitiesForSubSportWeb054()' web/app.js
+          grep -Fq 'await loadAllActivities();' web/app.js
+
+          # Le défaut exact ne doit plus exister : aucune affectation au cell après return.
+          node <<'NODE'
+          const fs = require("fs");
+          const s = fs.readFileSync("web/app.js", "utf8");
+          const start = s.indexOf("function activityMain(activity)");
+          const end = s.indexOf("function datum(", start);
+          if (start < 0 || end < 0) process.exit(20);
+          const body = s.slice(start, end);
+          const r = body.indexOf("return cell;");
+          const d = body.indexOf("cell.dataset.subSportWeb054");
+          if (d >= 0 && d > r) {
+            console.error("ERREUR : data-sub-sport encore après return cell");
+            process.exit(21);
+          }
+          console.log("✓ Aucun code sub-sport mort après return");
+          NODE
+
+          # Acquis sensibles FIX6 / Auth / UI.
+          grep -Fq 'WEB055-FIX6 · ACTIVITYOPEN001' web/app.js
+          grep -Fq 'WEB055-FIX6 · UX010' web/index.html
+          grep -Fq 'button.addEventListener("click", () => showActivity(activity));' web/app.js
+          grep -Fq 'renderCartography(activity);' web/app.js
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          grep -Fq 'function renderUnifiedConnectionBadgeWeb055()' web/app.js
+          grep -Fq 'const EQUIPMENT_PROFILES_WEB053' web/app.js
+          grep -Fq 'queueMicrotask(() => installEquipmentMappingEditorWeb050());' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+          if [ -f scripts/contracts/validate_web_golden.mjs ]; then
+            node scripts/contracts/validate_web_golden.mjs
+          fi
+
+          echo
+          echo "=============================================="
+          echo "WEB055-FIX7 VALIDÉ"
+          echo "SOUS-SPORT          : VRAI FILTRE DE DONNEES"
+          echo "COMPOSITION FILTRES : CONSERVEE"
+          echo "COMPTE              : filteredActivities"
+          echo "CHARGER TOUT        : ATTENDU"
+          echo "FIX6 OUVERTURE      : CONSERVE"
+          echo "=============================================="
+
+      - name: Préparer le déploiement
+        run: |
+          set -euo pipefail
+
+          mkdir -p scripts docs/releases
+
+          cat > scripts/deploy_web055_fix7.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          git fetch origin
+          git checkout main
+          git reset --hard origin/main
+
+          node --check web/app.js
+
+          grep -Fq 'WEB055-FIX7-SUBSPORT002' web/index.html
+          grep -Fq 'const subSport = document.getElementById("activitySubSportFilterWeb054")?.value || "";' web/app.js
+          grep -Fq 'button.dataset.subSportWeb054 = activitySubSportValueWeb054(activity);' web/app.js
+
+          cat > firebase.hosting.web055fix7.json <<'JSON'
+          {
+            "hosting": {
+              "site": "sport-505813",
+              "public": "web",
+              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+              "headers": [
+                {
+                  "source": "**",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "no-cache, no-store, must-revalidate"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          JSON
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --only hosting \
+            --project sport-505813 \
+            --config firebase.hosting.web055fix7.json
+
+          echo
+          echo "✅ WEB055-FIX7 DEPLOYE"
+          echo "https://sport-505813.web.app"
+          EOF
+
+          chmod +x scripts/deploy_web055_fix7.sh
+
+          cat > docs/releases/WEB055-FIX7.md <<'EOF'
+          # WEB055-FIX7 · SUBSPORT002
+
+          Correction du filtre `Sous-sport` dans Activités.
+
+          Cause :
+          - WEB054 appliquait le filtre au DOM et non à `filteredActivities`.
+          - le `data-sub-sport` avait été injecté après `return cell` dans `activityMain()`, donc ce code était inatteignable.
+          - le masquage aurait de toute façon concerné un enfant de la carte et non la carte complète.
+
+          Correction :
+          - `sub_sport` devient un critère natif de `applyFiltersAndRender()`.
+          - il se compose avec Sport, Année, Matériel, Repère, Source, Distance, D+, recherche et tri.
+          - le compteur de statut repose sur `filteredActivities`.
+          - les options Sous-sport sont construites depuis toutes les activités actives.
+          - `Charger tout` est réellement attendu lorsque nécessaire.
+          - `data-sub-sport-web054` est placé sur le vrai bouton `.activity-card`.
+          EOF
+
+      - name: Commit et push
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            web/app.js \
+            web/index.html \
+            scripts/deploy_web055_fix7.sh \
+            docs/releases/WEB055-FIX7.md
+
+          if git diff --cached --quiet; then
+            echo "WEB055-FIX7 deja applique : aucun commit necessaire."
+            exit 0
+          fi
+
+          git commit -m "WEB055 FIX7 corrige filtre sous sport"
+          git push origin HEAD:main
+
+          echo
+          echo "✅ WEB055-FIX7 pousse sur main"
+          echo "Commit : $(git rev-parse --short HEAD)"
