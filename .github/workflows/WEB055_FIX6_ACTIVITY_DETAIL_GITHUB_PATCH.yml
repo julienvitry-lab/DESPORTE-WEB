@@ -1,0 +1,343 @@
+name: WEB055 FIX6 - activites ouverture detail et tri
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Vérifier la base WEB055-FIX5
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+
+          grep -Fq 'WEB055-FIX5-GOAL006-REG005-COMP005' web/index.html
+          grep -Fq 'function installWeb055HomeLayout()' web/app.js
+          grep -Fq 'function renderActivities()' web/app.js
+          grep -Fq 'function showActivity(activity)' web/app.js
+          grep -Fq 'function renderDetail(activity)' web/app.js
+          grep -Fq 'renderCartography(activity);' web/app.js
+          grep -Fq 'renderPerformance(activity);' web/app.js
+          grep -Fq 'button.addEventListener("click", () => showActivity(activity));' web/app.js
+          grep -Fq 'window.setTimeout(() => { void reloadAll(); }, 0);' web/app.js
+
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          grep -Fq 'function renderUnifiedConnectionBadgeWeb055()' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+          echo "✓ Base FIX5 reconnue"
+          echo "✓ Ouverture détail + carte + performances présentes"
+          echo "✓ Rafraîchissement global d'onglet à corriger identifié"
+
+      - name: Appliquer WEB055-FIX6
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+
+          const appFile = "web/app.js";
+          const indexFile = "web/index.html";
+
+          let app = fs.readFileSync(appFile, "utf8");
+          let html = fs.readFileSync(indexFile, "utf8");
+
+          function fail(message) {
+            console.error("ERREUR WEB055-FIX6:", message);
+            process.exit(30);
+          }
+
+          /*
+           * ACTIVITYOPEN001
+           *
+           * WEB055 avait attaché un reloadAll() à TOUS les onglets principaux.
+           * Or reloadAll() remet explicitement currentDetailId à null et appelle
+           * showCatalog(false). Sur Activités, cela peut donc refermer une fiche
+           * qui vient d'être ouverte pendant la fin d'un rafraîchissement Firestore.
+           *
+           * FIX6 conserve le rafraîchissement automatique uniquement pour Accueil.
+           * Les autres onglets utilisent l'état déjà synchronisé / temps réel.
+           */
+          const oldRefresh = 'window.setTimeout(() => { void reloadAll(); }, 0);';
+          const occurrences = app.split(oldRefresh).length - 1;
+
+          if (occurrences !== 1) {
+            fail("rafraîchissement global WEB055 inattendu : " + occurrences + " occurrence(s)");
+          }
+
+          const newRefresh = `/* WEB055-FIX6 · ACTIVITYOPEN001 */
+                if (button.dataset.uxPage === "home") {
+                  window.setTimeout(() => {
+                    if (
+                      document.body.dataset.uxPage === "home" &&
+                      ui.detailView.classList.contains("hidden")
+                    ) {
+                      void reloadAll();
+                    }
+                  }, 0);
+                }`;
+
+          app = app.replace(oldRefresh, newRefresh);
+
+          /*
+           * UX010
+           *
+           * Plusieurs générations CSS utilisaient summary::after :
+           * - certaines pour le texte "Tri des activités",
+           * - d'autres pour le chevron avec rotate(180deg) à l'ouverture.
+           *
+           * Le pseudo-élément pouvait donc contenir le TEXTE et se retourner.
+           * On rend le vrai <span> visible et on réserve ::before au chevron.
+           */
+          const css = `
+          <style id="web055-fix6-activity-css">
+            /* WEB055-FIX6 · UX010 */
+
+            #activityDirectorySection details > summary,
+            #activityDirectorySection details > summary *,
+            body.ux-activities-page #activityDirectorySection details > summary,
+            body.ux-activities-page #activityDirectorySection details > summary * {
+              writing-mode: horizontal-tb !important;
+              text-orientation: mixed !important;
+              transform: none !important;
+              rotate: 0deg !important;
+              direction: ltr !important;
+            }
+
+            /* Le vrai libellé DOM redevient la source du texte. */
+            #activityDirectorySection details > summary > span:first-child {
+              display: inline-block !important;
+              order: 0 !important;
+              margin: 0 !important;
+              font-size: 16px !important;
+              line-height: 22px !important;
+              font-weight: 600 !important;
+              transform: none !important;
+              rotate: 0deg !important;
+            }
+
+            #activityDirectorySection details > summary > small {
+              display: none !important;
+            }
+
+            /*
+             * Neutralise tous les anciens ::after susceptibles de porter
+             * "Tri des activités" puis d'être retournés à l'ouverture.
+             */
+            #activityDirectorySection details > summary::after,
+            #activityDirectorySection details[open] > summary::after,
+            #activityDirectorySection .activity-filters-disclosure > summary::after,
+            #activityDirectorySection .activity-filters-disclosure[open] > summary::after,
+            #activityDirectorySection .activity-filters-disclosure-web048 > summary::after,
+            #activityDirectorySection .activity-filters-disclosure-web048[open] > summary::after,
+            #activityDirectorySection .activity-filters-web049 > summary::after,
+            #activityDirectorySection .activity-filters-web049[open] > summary::after {
+              content: none !important;
+              transform: none !important;
+              rotate: 0deg !important;
+            }
+
+            /* Chevron indépendant : lui seul pivote. */
+            #activityDirectorySection details > summary::before {
+              content: "⌄" !important;
+              display: inline-block !important;
+              order: 99 !important;
+              margin-left: auto !important;
+              font-size: 1.15rem !important;
+              line-height: 1 !important;
+              transform: rotate(0deg) !important;
+              transform-origin: center !important;
+              transition: transform .15s ease !important;
+            }
+
+            #activityDirectorySection details[open] > summary::before {
+              transform: rotate(180deg) !important;
+            }
+          </style>
+          `;
+
+          html = html.replace(
+            /<style id=["']web055-fix6-activity-css["']>[\s\S]*?<\/style>\s*/g,
+            ""
+          );
+
+          if (!html.includes("</head>")) {
+            fail("balise </head> introuvable");
+          }
+
+          html = html.replace("</head>", css + "\n</head>");
+
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB055-FIX6-ACTIVITYOPEN001-UX010"'
+          );
+
+          fs.writeFileSync(appFile, app, "utf8");
+          fs.writeFileSync(indexFile, html, "utf8");
+
+          console.log("✓ ACTIVITYOPEN001 : reloadAll limité à Accueil");
+          console.log("✓ UX010 : Tri des activités horizontal, chevron indépendant");
+          NODE
+
+      - name: Valider WEB055-FIX6
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+          npx --yes acorn@8.15.0 --ecma2022 --module web/app.js >/dev/null
+          git diff --check
+
+          grep -Fq 'WEB055-FIX6 · ACTIVITYOPEN001' web/app.js
+          grep -Fq 'WEB055-FIX6 · UX010' web/index.html
+          grep -Fq 'WEB055-FIX6-ACTIVITYOPEN001-UX010' web/index.html
+
+          # L'ancien reload global de tous les onglets doit avoir disparu.
+          if grep -Fq 'window.setTimeout(() => { void reloadAll(); }, 0);' web/app.js; then
+            echo "ERREUR : reloadAll global encore présent"
+            exit 41
+          fi
+
+          # Le reload automatique reste autorisé uniquement dans le chemin Accueil.
+          grep -Fq 'if (button.dataset.uxPage === "home") {' web/app.js
+          grep -Fq 'document.body.dataset.uxPage === "home"' web/app.js
+
+          # Le clic activité et le moteur de détail restent en place.
+          grep -Fq 'button.addEventListener("click", () => showActivity(activity));' web/app.js
+          grep -Fq 'function showActivity(activity)' web/app.js
+          grep -Fq 'function renderDetail(activity)' web/app.js
+          grep -Fq 'renderCartography(activity);' web/app.js
+          grep -Fq 'renderPerformance(activity);' web/app.js
+          grep -Fq 'renderPersonal(activity);' web/app.js
+
+          # Contrôle CSS précis : le texte n'est plus porté par ::after.
+          grep -Fq 'content: none !important;' web/index.html
+          grep -Fq '#activityDirectorySection details > summary::before' web/index.html
+          grep -Fq '#activityDirectorySection details[open] > summary::before' web/index.html
+
+          # Acquis sensibles.
+          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
+          grep -Fq 'function renderUnifiedConnectionBadgeWeb055()' web/app.js
+          grep -Fq 'queueMicrotask(() => installEquipmentMappingEditorWeb050());' web/app.js
+          grep -Fq 'const EQUIPMENT_PROFILES_WEB053' web/app.js
+          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
+
+          if [ -f scripts/contracts/validate_web_golden.mjs ]; then
+            node scripts/contracts/validate_web_golden.mjs
+          fi
+
+          echo
+          echo "=============================================="
+          echo "WEB055-FIX6 VALIDÉ"
+          echo "TRI ACTIVITES       : HORIZONTAL"
+          echo "OUVERTURE ACTIVITE  : CLIC CONSERVE"
+          echo "CARTE DETAIL        : CONSERVEE"
+          echo "STATS DETAIL        : CONSERVEES"
+          echo "RELOAD ONGLET       : ACCUEIL UNIQUEMENT"
+          echo "=============================================="
+
+      - name: Préparer le déploiement Git Bash Cloud Shell
+        run: |
+          set -euo pipefail
+
+          mkdir -p scripts docs/releases
+
+          cat > scripts/deploy_web055_fix6.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          git fetch origin
+          git checkout main
+          git reset --hard origin/main
+
+          node --check web/app.js
+          grep -Fq 'WEB055-FIX6 · ACTIVITYOPEN001' web/app.js
+          grep -Fq 'WEB055-FIX6 · UX010' web/index.html
+          grep -Fq 'WEB055-FIX6-ACTIVITYOPEN001-UX010' web/index.html
+
+          cat > firebase.hosting.web055fix6.json <<'JSON'
+          {
+            "hosting": {
+              "site": "sport-505813",
+              "public": "web",
+              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+              "headers": [
+                {
+                  "source": "**",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "no-cache, no-store, must-revalidate"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          JSON
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --only hosting \
+            --project sport-505813 \
+            --config firebase.hosting.web055fix6.json
+
+          echo
+          echo "✅ WEB055-FIX6 DEPLOYE"
+          echo "https://sport-505813.web.app"
+          EOF
+
+          chmod +x scripts/deploy_web055_fix6.sh
+
+          cat > docs/releases/WEB055-FIX6.md <<'EOF'
+          # WEB055-FIX6 · ACTIVITYOPEN001 / UX010
+
+          ## Activités · ouverture de fiche
+          - Le rafraîchissement automatique `reloadAll()` ajouté par WEB055 n'est plus lancé à l'ouverture de tous les onglets.
+          - Il est désormais limité à `Accueil`.
+          - Cela évite que `reloadAll()` remette `currentDetailId` à zéro et rappelle `showCatalog(false)` pendant l'ouverture d'une activité.
+          - Le clic d'une carte activité continue d'appeler `showActivity(activity)`.
+          - La fiche conserve la carte, les statistiques, les performances et les données personnelles existantes.
+
+          ## Tri des activités
+          - Le vrai texte `<span>Tri des activités</span>` est affiché horizontalement.
+          - Les anciens `summary::after` sont neutralisés.
+          - Le chevron est déplacé vers `summary::before` et lui seul pivote à l'ouverture.
+          EOF
+
+      - name: Commit et push
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            web/app.js \
+            web/index.html \
+            scripts/deploy_web055_fix6.sh \
+            docs/releases/WEB055-FIX6.md
+
+          if git diff --cached --quiet; then
+            echo "WEB055-FIX6 deja applique : aucun commit necessaire."
+            exit 0
+          fi
+
+          git commit -m "WEB055 FIX6 restaure ouverture activite et tri horizontal"
+          git push origin HEAD:main
+
+          echo
+          echo "✅ WEB055-FIX6 pousse sur main"
+          echo "Commit : $(git rev-parse --short HEAD)"
