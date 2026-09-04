@@ -2011,6 +2011,72 @@ select {
   }
 </style>
 
+
+<style id="web055-fix6-activity-css">
+  /* WEB055-FIX6 · UX010 */
+
+  #activityDirectorySection details > summary,
+  #activityDirectorySection details > summary *,
+  body.ux-activities-page #activityDirectorySection details > summary,
+  body.ux-activities-page #activityDirectorySection details > summary * {
+    writing-mode: horizontal-tb !important;
+    text-orientation: mixed !important;
+    transform: none !important;
+    rotate: 0deg !important;
+    direction: ltr !important;
+  }
+
+  /* Le vrai libellé DOM redevient la source du texte. */
+  #activityDirectorySection details > summary > span:first-child {
+    display: inline-block !important;
+    order: 0 !important;
+    margin: 0 !important;
+    font-size: 16px !important;
+    line-height: 22px !important;
+    font-weight: 600 !important;
+    transform: none !important;
+    rotate: 0deg !important;
+  }
+
+  #activityDirectorySection details > summary > small {
+    display: none !important;
+  }
+
+  /*
+   * Neutralise tous les anciens ::after susceptibles de porter
+   * "Tri des activités" puis d'être retournés à l'ouverture.
+   */
+  #activityDirectorySection details > summary::after,
+  #activityDirectorySection details[open] > summary::after,
+  #activityDirectorySection .activity-filters-disclosure > summary::after,
+  #activityDirectorySection .activity-filters-disclosure[open] > summary::after,
+  #activityDirectorySection .activity-filters-disclosure-web048 > summary::after,
+  #activityDirectorySection .activity-filters-disclosure-web048[open] > summary::after,
+  #activityDirectorySection .activity-filters-web049 > summary::after,
+  #activityDirectorySection .activity-filters-web049[open] > summary::after {
+    content: none !important;
+    transform: none !important;
+    rotate: 0deg !important;
+  }
+
+  /* Chevron indépendant : lui seul pivote. */
+  #activityDirectorySection details > summary::before {
+    content: "⌄" !important;
+    display: inline-block !important;
+    order: 99 !important;
+    margin-left: auto !important;
+    font-size: 1.15rem !important;
+    line-height: 1 !important;
+    transform: rotate(0deg) !important;
+    transform-origin: center !important;
+    transition: transform .15s ease !important;
+  }
+
+  #activityDirectorySection details[open] > summary::before {
+    transform: rotate(180deg) !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -3454,7 +3520,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB055-FIX5-GOAL006-REG005-COMP005"></script>
+  <script type="module" src="./app.js?v=WEB055-FIX6-ACTIVITYOPEN001-UX010"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

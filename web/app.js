@@ -2922,7 +2922,17 @@ function installWeb055HomeLayout() {
     button.addEventListener('click', () => {
       if (!currentUser) return;
       if (button.dataset.uxPage === 'home') web055SetSport(1);
-      window.setTimeout(() => { void reloadAll(); }, 0);
+      /* WEB055-FIX6 · ACTIVITYOPEN001 */
+      if (button.dataset.uxPage === "home") {
+        window.setTimeout(() => {
+          if (
+            document.body.dataset.uxPage === "home" &&
+            ui.detailView.classList.contains("hidden")
+          ) {
+            void reloadAll();
+          }
+        }, 0);
+      }
     });
   });
 }
