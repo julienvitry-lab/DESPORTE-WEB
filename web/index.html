@@ -1568,6 +1568,129 @@ select {
   }
 </style>
 
+
+<style id="web055-home003-css">
+  #authState.web051-unified-connection {
+    min-width: 108px !important;
+    justify-content: center !important;
+    text-align: center !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+  }
+  #authState.web051-unified-connection.connected {
+    background: #177245 !important;
+    border-color: #35a86d !important;
+    color: #fff !important;
+  }
+  #authState.web051-unified-connection.disconnected {
+    background: #a52828 !important;
+    border-color: #d84c4c !important;
+    color: #fff !important;
+  }
+
+  body[data-ux-page="home"] .hero { display: none !important; }
+  #webDashboardSection .web055-legacy-home-hidden { display: none !important; }
+  #webDashboardSection {
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .web055-home-root { display: grid; gap: 16px; }
+  .web055-home-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .web055-sport-switch { display: flex; gap: 8px; flex-wrap: wrap; }
+  .web055-card {
+    border: 1px solid var(--border, rgba(255,255,255,.14));
+    border-radius: 17px;
+    background: var(--surface, #101511);
+    padding: 16px;
+  }
+  .web055-card-heading {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; margin-bottom: 12px;
+  }
+  .web055-card-heading h3 { margin: 0; }
+
+  .web055-period-rows { display: grid; gap: 7px; }
+  .web055-period-row {
+    display: grid;
+    grid-template-columns: minmax(150px, 1.15fr) repeat(5, minmax(112px, 1fr));
+    align-items: center; gap: 10px; padding: 11px 12px;
+    border-radius: 13px;
+    border: 1px solid rgba(210,180,95,.20);
+    background: rgba(255,255,255,.018);
+  }
+  .web055-period-name { font-size: .96rem; }
+  .web055-period-cell { display: grid; gap: 2px; }
+  .web055-period-cell strong { font-size: .93rem; white-space: nowrap; }
+  .web055-period-cell span {
+    color: var(--muted, #9ca89f); font-size: .73rem;
+  }
+
+  .web055-goal-headline { font-size: 1.08rem; margin-bottom: 8px; }
+  .web055-goal-gauge {
+    display: flex; width: 100%; height: 11px; overflow: hidden;
+    border-radius: 999px; background: rgba(210,214,210,.18);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .web055-goal-achieved { display: block; height: 100%; background: #1f9653; }
+  .web055-goal-deficit { display: block; height: 100%; background: #cd3838; }
+  .web055-goal-status { margin-top: 7px; font-weight: 700; font-size: .88rem; }
+  .web055-goal-status.ahead { color: #55c985; }
+  .web055-goal-status.behind { color: #ec6767; }
+  .web055-goal-details {
+    display: grid; grid-template-columns: repeat(4, minmax(145px, 1fr));
+    gap: 9px; margin-top: 12px;
+  }
+  .web055-goal-details > div {
+    display: grid; gap: 3px; padding: 9px 10px;
+    border-radius: 11px; background: rgba(255,255,255,.025);
+  }
+  .web055-goal-details span, .web055-empty, .web055-summary-two-lines span {
+    color: var(--muted, #9ca89f); font-size: .78rem;
+  }
+
+  .web055-threshold-label {
+    display: flex; align-items: center; gap: 7px;
+    color: var(--muted, #9ca89f); font-size: .82rem;
+  }
+  #web055RegularityThreshold { width: 76px; min-height: 36px; padding: 5px 8px; }
+  .web055-summary-two-lines { display: grid; gap: 3px; margin-bottom: 8px; }
+  .web055-compare-select { min-width: 145px; }
+  #web055RegularityChart, #web055ComparisonChart {
+    display: block; width: 100%; max-width: 100%;
+  }
+
+  #activityDirectorySection summary,
+  #activityDirectorySection summary *,
+  body.ux-activities-page #activityDirectorySection summary,
+  body.ux-activities-page #activityDirectorySection summary * {
+    writing-mode: horizontal-tb !important;
+    text-orientation: mixed !important;
+    transform: none !important;
+    rotate: 0deg !important;
+    direction: ltr !important;
+  }
+
+  @media (max-width: 980px) {
+    .web055-period-row {
+      grid-template-columns: 1fr repeat(2, minmax(120px, 1fr));
+    }
+    .web055-period-name { grid-column: 1 / -1; }
+    .web055-goal-details {
+      grid-template-columns: repeat(2, minmax(140px, 1fr));
+    }
+  }
+  @media (max-width: 620px) {
+    .web055-home-head, .web055-card-heading {
+      align-items: stretch; flex-direction: column;
+    }
+    .web055-period-row, .web055-goal-details { grid-template-columns: 1fr; }
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -1578,7 +1701,7 @@ select {
     <div class="auth-actions">
 <span id="interopCompactStatus" class="pill ok hidden">Intéropérabilité OK</span>
       <span id="web049InteropStatus" class="pill ok hidden">Intéropérabilité OK</span>
-      <span id="authState" class="pill neutral">Non connecté</span>
+      <span id="authState" class="pill auth-pill web051-unified-connection disconnected">Non connecté</span>
       <button id="loginButton" class="primary">Se connecter avec Google</button>
       <button id="logoutButton" class="secondary hidden">Déconnexion</button>
     </div>
@@ -3011,7 +3134,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB054-WEBSUBSPORT001"></script>
+  <script type="module" src="./app.js?v=WEB055-WEBHOME003-WEBSTATUS002-WEBUX009"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

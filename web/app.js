@@ -142,6 +142,13 @@ let dashboardDrilldownEndMs = 0;
 let dashboardDrilldownText = "";
 let dashboardRefreshTimer = null;
 
+/* WEB055 · WEBSTATUS002 / WEBHOME003 */
+let web055FirestoreConnected = false;
+let web055HomeRows = [];
+let web055HomeGeneration = 0;
+let web055CompareMetric = "distance";
+
+
 let sportGoals = new Map();
 let journalEntries = new Map();
 let selectedGoalSport = 1;
@@ -290,6 +297,9 @@ window.addEventListener("online", renderUnifiedConnectionBadgeWeb051, { passive:
 window.addEventListener("offline", renderUnifiedConnectionBadgeWeb051, { passive: true });
 
 initUxNavigation();
+/* WEB055_HOME_BOOT */
+queueMicrotask(() => installWeb055HomeLayout());
+
 initializeWebStravaModule();
 installWeb049UiContract();
 queueMicrotask(() => installEquipmentMappingEditorWeb050());
@@ -1237,7 +1247,7 @@ onAuthStateChanged(auth, async (user) => {
     );
     return;
   }
-ui.authState.textContent = "Firebase connecté";
+ui.authState.textContent = "Non connecté";
   ui.authState.className = "pill ok auth-pill";
   ui.loginButton.classList.add("hidden");
   ui.logoutButton.classList.remove("hidden");
@@ -1293,8 +1303,12 @@ async function reloadAll() {
     renderTrash();
     await loadNextPage();
     await loadWebDashboard();
+    web055FirestoreConnected = true;
+    renderUnifiedConnectionBadgeWeb055();
     setMessage("WEB018 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
   } catch (error) {
+    web055FirestoreConnected = false;
+    renderUnifiedConnectionBadgeWeb055();
     handleError(error, "Lecture Firestore impossible");
   }
 
@@ -1676,7 +1690,769 @@ function setDashboardDelta(node, current, previous, enabled = true) {
   node.classList.add(delta.direction);
 }
 
+
+function web055StartOfDay(value = Date.now()) {
+  const d = new Date(value);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function web055StartOfWeek(value = Date.now()) {
+  const d = new Date(web055StartOfDay(value));
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.getTime();
+}
+
+function web055StartOfMonth(value = Date.now()) {
+  const d = new Date(value);
+  return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+}
+
+function web055StartOfYear(value = Date.now()) {
+  const d = new Date(value);
+  return new Date(d.getFullYear(), 0, 1).getTime();
+}
+
+function web055ActivityDurationMs(activity) {
+  const timer = Number(activity?.timer_time_ms);
+  if (Number.isFinite(timer) && timer > 0) return timer;
+  const elapsed = Number(activity?.elapsed_time_ms);
+  return Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
+}
+
+function web055FormatHms(ms) {
+  let seconds = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  seconds -= hours * 3600;
+  const minutes = Math.floor(seconds / 60);
+  seconds -= minutes * 60;
+  return `${hours.toLocaleString("fr-FR")} h ${String(minutes).padStart(2, "0")} min ${String(seconds).padStart(2, "0")} s`;
+}
+
+function web055Metrics(rows) {
+  const metrics = {
+    distance: 0,
+    duration: 0,
+    ascent: 0,
+    load: 0,
+    loadKnown: false,
+    gapWeighted: 0,
+    gapDistance: 0
+  };
+
+  for (const row of rows || []) {
+    if (!row || row.deleted_at_ms != null) continue;
+
+    const distance = Math.max(0, Number(row.distance_m) || 0);
+    metrics.distance += distance;
+    metrics.duration += web055ActivityDurationMs(row);
+    metrics.ascent += Math.max(0, Number(row.ascent_m) || 0);
+
+    const charge = activityChargePresentation(row);
+    if (Number.isFinite(Number(charge?.score))) {
+      metrics.load += Math.max(0, Number(charge.score));
+      metrics.loadKnown = true;
+    }
+
+    if (Number(dashboardSport) === 1) {
+      const gap = storedGapSecondsPerKm(row);
+      if (Number.isFinite(gap) && gap > 0) {
+        const weight = distance > 0 ? distance : 1;
+        metrics.gapWeighted += gap * weight;
+        metrics.gapDistance += weight;
+      }
+    }
+  }
+
+  metrics.gap = metrics.gapDistance > 0
+    ? metrics.gapWeighted / metrics.gapDistance
+    : null;
+
+  return metrics;
+}
+
+function web055PeriodRows(nowMs = Date.now()) {
+  const specs = [
+    ["Semaine en cours", web055StartOfWeek(nowMs)],
+    ["Mois en cours", web055StartOfMonth(nowMs)],
+    ["Année en cours", web055StartOfYear(nowMs)],
+    ["Total", null]
+  ];
+
+  return specs.map(([label, start]) => {
+    const rows = start == null
+      ? web055HomeRows
+      : web055HomeRows.filter((row) => Number(row.start_time_ms) >= start);
+
+    return { label, metrics: web055Metrics(rows) };
+  });
+}
+
+function web055PeriodMetricCell(value, label) {
+  const cell = document.createElement("div");
+  cell.className = "web055-period-cell";
+
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+
+  const small = document.createElement("span");
+  small.textContent = label;
+
+  cell.append(strong, small);
+  return cell;
+}
+
+function renderWeb055Periods() {
+  const container = document.getElementById("web055PeriodRows");
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  for (const period of web055PeriodRows()) {
+    const row = document.createElement("div");
+    row.className = "web055-period-row";
+
+    const name = document.createElement("strong");
+    name.className = "web055-period-name";
+    name.textContent = period.label;
+
+    row.appendChild(name);
+    row.appendChild(web055PeriodMetricCell(formatDistance(period.metrics.distance), "Distance"));
+    row.appendChild(web055PeriodMetricCell(web055FormatHms(period.metrics.duration), "Temps"));
+    row.appendChild(web055PeriodMetricCell(formatMeters(period.metrics.ascent), "D+"));
+    row.appendChild(web055PeriodMetricCell(
+      period.metrics.loadKnown ? Math.round(period.metrics.load).toLocaleString("fr-FR") : "—",
+      "Charge"
+    ));
+    row.appendChild(web055PeriodMetricCell(
+      Number.isFinite(period.metrics.gap) ? formatPaceFromSeconds(period.metrics.gap) : "—",
+      "GAP"
+    ));
+
+    container.appendChild(row);
+  }
+}
+
+function web055DaysInYear(year) {
+  return new Date(year + 1, 0, 0).getDate();
+}
+
+function web055DayOfYear(date = new Date()) {
+  const start = new Date(date.getFullYear(), 0, 1);
+  return Math.floor((web055StartOfDay(date) - start.getTime()) / 86400000) + 1;
+}
+
+function web055RemainingDaysInclusive(date = new Date()) {
+  const today = web055StartOfDay(date);
+  const end = new Date(date.getFullYear(), 11, 31).getTime();
+  return Math.max(1, Math.round((end - today) / 86400000) + 1);
+}
+
+function renderWeb055Goal() {
+  const container = document.getElementById("web055GoalContent");
+  const meta = document.getElementById("web055GoalMeta");
+  if (!container || !meta) return;
+
+  container.innerHTML = "";
+
+  const goal = sportGoals.get(String(dashboardSport));
+  const target = Math.max(0, Number(goal?.annual_distance_km) || 0);
+
+  if (!(target > 0)) {
+    meta.textContent = String(new Date().getFullYear());
+    container.innerHTML =
+      '<div class="web055-empty">Aucun objectif annuel de distance configuré pour ce sport. Configuration disponible dans Analyse → Objectifs.</div>';
+    return;
+  }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const yearStart = new Date(year, 0, 1).getTime();
+  const yearRows = web055HomeRows.filter((row) => Number(row.start_time_ms) >= yearStart);
+
+  const actual = web055Metrics(yearRows).distance / 1000;
+  const expectedRatio = web055DayOfYear(now) / web055DaysInYear(year);
+  const expected = target * expectedRatio;
+  const delta = actual - expected;
+  const actualRatio = Math.max(0, Math.min(1, actual / target));
+  const deficitRatio = Math.max(0, Math.min(1 - actualRatio, expectedRatio - actualRatio));
+  const remaining = Math.max(0, target - actual);
+  const remainingDays = web055RemainingDaysInclusive(now);
+  const daily = remaining / remainingDays;
+
+  meta.textContent = `${year} · objectif au 31 décembre`;
+
+  const headline = document.createElement("div");
+  headline.className = "web055-goal-headline";
+  headline.innerHTML =
+    `<strong>${actual.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} / ${target.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</strong>`;
+
+  const gauge = document.createElement("div");
+  gauge.className = "web055-goal-gauge";
+
+  const achieved = document.createElement("span");
+  achieved.className = "web055-goal-achieved";
+  achieved.style.width = `${actualRatio * 100}%`;
+
+  const deficit = document.createElement("span");
+  deficit.className = "web055-goal-deficit";
+  deficit.style.width = `${deficitRatio * 100}%`;
+
+  gauge.append(achieved, deficit);
+
+  const status = document.createElement("div");
+  status.className = `web055-goal-status ${delta >= 0 ? "ahead" : "behind"}`;
+  status.textContent =
+    Math.abs(delta) < 0.005
+      ? "Dans le rythme théorique"
+      : delta > 0
+        ? `En avance de ${Math.abs(delta).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km`
+        : `Retard de ${Math.abs(delta).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km`;
+
+  const details = document.createElement("div");
+  details.className = "web055-goal-details";
+  details.innerHTML = `
+    <div><span>Cap théorique aujourd’hui</span><strong>${expected.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</strong></div>
+    <div><span>Reste jusqu’au 31 décembre</span><strong>${remaining.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</strong></div>
+    <div><span>Rythme désormais nécessaire</span><strong>${daily.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km / jour</strong></div>
+    <div><span>Jours restants</span><strong>${remainingDays}</strong></div>
+  `;
+
+  container.append(headline, gauge, status, details);
+}
+
+function web055LocalDateKey(ms) {
+  const d = new Date(Number(ms));
+  if (!Number.isFinite(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function web055DailyDistanceMap() {
+  const result = new Map();
+
+  for (const row of web055HomeRows) {
+    const key = web055LocalDateKey(row.start_time_ms);
+    if (!key) continue;
+
+    const km = Math.max(0, Number(row.distance_m) || 0) / 1000;
+    result.set(key, (result.get(key) || 0) + km);
+  }
+
+  return result;
+}
+
+function web055RegularityData(threshold) {
+  const daily = web055DailyDistanceMap();
+  const now = new Date();
+  const currentYear = now.getFullYear();
+
+  const yearsFromRows = web055HomeRows
+    .map((row) => new Date(Number(row.start_time_ms)).getFullYear())
+    .filter((year) => Number.isFinite(year));
+
+  const firstYear = Math.max(
+    2012,
+    yearsFromRows.length ? Math.min(...yearsFromRows) : currentYear
+  );
+
+  const result = [];
+
+  for (let year = firstYear; year <= currentYear; year++) {
+    const start = new Date(year, 0, 1);
+    const end = year === currentYear
+      ? new Date(web055StartOfDay(now))
+      : new Date(year, 11, 31);
+
+    let count = 0;
+    let streak = 0;
+    let maxStreak = 0;
+
+    for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+      const qualified = (daily.get(key) || 0) > threshold;
+
+      if (qualified) {
+        count++;
+        streak++;
+        maxStreak = Math.max(maxStreak, streak);
+      } else {
+        streak = 0;
+      }
+    }
+
+    result.push({ year, count, maxStreak });
+  }
+
+  return result;
+}
+
+function drawWeb055RegularityChart(data) {
+  const canvas = document.getElementById("web055RegularityChart");
+  if (!canvas || !data.length) return;
+
+  const width = Math.max(320, canvas.parentElement?.clientWidth || 720);
+  const height = 190;
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  canvas.style.width = width + "px";
+  canvas.style.height = height + "px";
+
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+
+  const left = 38;
+  const right = 14;
+  const top = 14;
+  const bottom = 30;
+  const plotW = width - left - right;
+  const plotH = height - top - bottom;
+  const max = Math.max(1, ...data.map((item) => item.count));
+
+  ctx.strokeStyle = "rgba(180,180,180,.18)";
+  ctx.lineWidth = 1;
+
+  for (let i = 0; i <= 4; i++) {
+    const y = top + (plotH * i) / 4;
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(width - right, y);
+    ctx.stroke();
+  }
+
+  const step = plotW / Math.max(1, data.length);
+  const barW = Math.max(5, Math.min(28, step * 0.62));
+
+  data.forEach((item, index) => {
+    const h = (item.count / max) * plotH;
+    const x = left + step * index + (step - barW) / 2;
+    const y = top + plotH - h;
+
+    ctx.fillStyle = "#a7ff2a";
+    ctx.fillRect(x, y, barW, h);
+
+    if (data.length <= 10 || index === 0 || index === data.length - 1 || item.year % 2 === 0) {
+      ctx.fillStyle = "rgba(235,235,225,.72)";
+      ctx.font = "10px Comfortaa, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(String(item.year), x + barW / 2, height - 9);
+    }
+  });
+}
+
+function renderWeb055Regularity() {
+  const input = document.getElementById("web055RegularityThreshold");
+  const summary = document.getElementById("web055RegularitySummary");
+  if (!input || !summary) return;
+
+  const threshold = Math.max(0, Number(String(input.value).replace(",", ".")) || 0);
+  const data = web055RegularityData(threshold);
+  const current = data[data.length - 1] || {
+    year: new Date().getFullYear(),
+    count: 0,
+    maxStreak: 0
+  };
+
+  const record = data.reduce(
+    (best, item) => item.count > best.count ? item : best,
+    { year: current.year, count: -1, maxStreak: 0 }
+  );
+
+  summary.innerHTML =
+    `<strong>${current.year} : ${current.count} jour(s) &gt; ${threshold.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} km</strong>` +
+    `<span>Série record cette année : ${current.maxStreak} jour(s) · record annuel : ${Math.max(0, record.count)} jour(s) en ${record.year}</span>`;
+
+  drawWeb055RegularityChart(data);
+}
+
+function web055ComparisonValue(row, metric) {
+  if (metric === "ascent") return Math.max(0, Number(row.ascent_m) || 0);
+  if (metric === "time") return web055ActivityDurationMs(row) / 3600000;
+  if (metric === "load") {
+    const charge = activityChargePresentation(row);
+    return Number.isFinite(Number(charge?.score)) ? Math.max(0, Number(charge.score)) : 0;
+  }
+  return Math.max(0, Number(row.distance_m) || 0) / 1000;
+}
+
+function web055MonthDayKey(date) {
+  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function web055ComparisonSeries(metric) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const previousYear = currentYear - 1;
+
+  const dailyCurrent = new Map();
+  const dailyPrevious = new Map();
+
+  for (const row of web055HomeRows) {
+    const d = new Date(Number(row.start_time_ms));
+    const value = web055ComparisonValue(row, metric);
+    if (!(value > 0) || !Number.isFinite(d.getTime())) continue;
+
+    const key = web055MonthDayKey(d);
+
+    if (d.getFullYear() === currentYear) {
+      dailyCurrent.set(key, (dailyCurrent.get(key) || 0) + value);
+    } else if (d.getFullYear() === previousYear) {
+      dailyPrevious.set(key, (dailyPrevious.get(key) || 0) + value);
+    }
+  }
+
+  const cursor = new Date(currentYear, 0, 1);
+  const nextYear = new Date(currentYear + 1, 0, 1);
+  const current = [];
+  const previous = [];
+  const monthStarts = [];
+
+  let c = 0;
+  let p = 0;
+  let todayIndex = 0;
+  let index = 0;
+
+  while (cursor < nextYear) {
+    const key = web055MonthDayKey(cursor);
+
+    c += dailyCurrent.get(key) || 0;
+    p += dailyPrevious.get(key) || 0;
+
+    current.push(c);
+    previous.push(p);
+
+    if (cursor.getDate() === 1) {
+      monthStarts.push({
+        index,
+        label: cursor.toLocaleDateString("fr-FR", { month: "short" }).replace(".", "")
+      });
+    }
+
+    if (cursor.getMonth() === now.getMonth() && cursor.getDate() === now.getDate()) {
+      todayIndex = index;
+    }
+
+    cursor.setDate(cursor.getDate() + 1);
+    index++;
+  }
+
+  return {
+    currentYear,
+    previousYear,
+    current,
+    previous,
+    monthStarts,
+    todayIndex
+  };
+}
+
+function web055ComparisonMetricMeta(metric) {
+  if (metric === "ascent") return { label: "D+", unit: "m", decimals: 0 };
+  if (metric === "time") return { label: "Temps", unit: "h", decimals: 1 };
+  if (metric === "load") return { label: "Charge", unit: "", decimals: 0 };
+  return { label: "Distance", unit: "km", decimals: 1 };
+}
+
+function web055FormatComparisonValue(value, meta) {
+  const text = Number(value || 0).toLocaleString("fr-FR", {
+    minimumFractionDigits: meta.decimals,
+    maximumFractionDigits: meta.decimals
+  });
+
+  return meta.unit ? `${text} ${meta.unit}` : text;
+}
+
+function drawWeb055ComparisonChart(data, metric) {
+  const canvas = document.getElementById("web055ComparisonChart");
+  if (!canvas || !data.current.length) return;
+
+  const width = Math.max(320, canvas.parentElement?.clientWidth || 760);
+  const height = 260;
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  canvas.style.width = width + "px";
+  canvas.style.height = height + "px";
+
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+
+  const left = 42;
+  const right = 16;
+  const top = 38;
+  const bottom = 34;
+  const plotW = width - left - right;
+  const plotH = height - top - bottom;
+
+  let max = 1;
+
+  for (let i = 0; i < data.previous.length; i++) max = Math.max(max, data.previous[i]);
+  for (let i = 0; i <= data.todayIndex && i < data.current.length; i++) max = Math.max(max, data.current[i]);
+
+  ctx.strokeStyle = "rgba(180,180,180,.18)";
+  ctx.lineWidth = 1;
+
+  for (let row = 0; row <= 4; row++) {
+    const y = top + (plotH * row) / 4;
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(width - right, y);
+    ctx.stroke();
+  }
+
+  for (const month of data.monthStarts) {
+    const x = left + (month.index / Math.max(1, data.current.length - 1)) * plotW;
+    ctx.fillStyle = "rgba(235,235,225,.65)";
+    ctx.font = "10px Comfortaa, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(month.label, x, height - 10);
+  }
+
+  function point(index, value) {
+    return {
+      x: left + (index / Math.max(1, data.current.length - 1)) * plotW,
+      y: top + plotH - (Math.max(0, value) / max) * plotH
+    };
+  }
+
+  function drawSeries(values, start, end, color, dashed = false) {
+    if (end <= start) return;
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.3;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.setLineDash(dashed ? [7, 6] : []);
+    ctx.beginPath();
+
+    for (let i = start; i <= end; i++) {
+      const p = point(i, values[i]);
+      if (i === start) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawSeries(data.previous, 0, data.todayIndex, "#d8ae48");
+  drawSeries(data.previous, data.todayIndex, data.previous.length - 1, "#d8ae48", true);
+  drawSeries(data.current, 0, data.todayIndex, "#a7ff2a");
+
+  const todayX = point(data.todayIndex, 0).x;
+  ctx.strokeStyle = "rgba(255,255,255,.34)";
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  ctx.moveTo(todayX, top);
+  ctx.lineTo(todayX, top + plotH);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.font = "11px Comfortaa, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#a7ff2a";
+  ctx.fillText("● " + data.currentYear, left, 18);
+  ctx.fillStyle = "#d8ae48";
+  ctx.fillText("● " + data.previousYear, left + 82, 18);
+
+  const meta = web055ComparisonMetricMeta(metric);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(235,235,225,.75)";
+  ctx.fillText(meta.label, width - right, 18);
+}
+
+function renderWeb055Comparison() {
+  const select = document.getElementById("web055CompareMetric");
+  const summary = document.getElementById("web055ComparisonSummary");
+  if (!select || !summary) return;
+
+  web055CompareMetric = select.value || "distance";
+
+  const data = web055ComparisonSeries(web055CompareMetric);
+  const meta = web055ComparisonMetricMeta(web055CompareMetric);
+
+  const currentValue = data.current[data.todayIndex] || 0;
+  const previousValue = data.previous[data.todayIndex] || 0;
+  const delta = currentValue - previousValue;
+  const percent = previousValue > 0 ? (delta / previousValue) * 100 : null;
+
+  summary.innerHTML =
+    `<strong>${data.currentYear} : ${web055FormatComparisonValue(currentValue, meta)}</strong>` +
+    `<span>${data.previousYear} à la même date : ${web055FormatComparisonValue(previousValue, meta)} · ` +
+    `${delta >= 0 ? "+" : "−"}${web055FormatComparisonValue(Math.abs(delta), meta)}` +
+    `${percent == null ? "" : " · " + (percent >= 0 ? "+" : "") + percent.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " %"}</span>`;
+
+  drawWeb055ComparisonChart(data, web055CompareMetric);
+}
+
+function renderWeb055Home() {
+  renderWeb055Periods();
+  renderWeb055Goal();
+  renderWeb055Regularity();
+  renderWeb055Comparison();
+}
+
+function web055SetSport(sport) {
+  dashboardSport = Number(sport) === 2 ? 2 : 1;
+
+  document.getElementById("web055RunningButton")?.classList.toggle("active", dashboardSport === 1);
+  document.getElementById("web055CyclingButton")?.classList.toggle("active", dashboardSport === 2);
+}
+
+function installWeb055HomeLayout() {
+  const section = ui.webDashboardSection;
+  if (!section) return;
+  if (document.getElementById("web055HomeRoot")) return;
+
+  for (const child of [...section.children]) child.classList.add("web055-legacy-home-hidden");
+
+  const root = document.createElement("div");
+  root.id = "web055HomeRoot";
+  root.className = "web055-home-root";
+
+  root.innerHTML = `
+    <div class="web055-home-head">
+      <div class="web055-sport-switch" aria-label="Sport de l'accueil">
+        <button id="web055RunningButton" class="secondary dashboard-choice active" type="button">Course à pied</button>
+        <button id="web055CyclingButton" class="secondary dashboard-choice" type="button">Vélo</button>
+      </div>
+    </div>
+
+    <section class="web055-card web055-period-card">
+      <div id="web055PeriodRows" class="web055-period-rows"></div>
+    </section>
+
+    <section class="web055-card">
+      <div class="web055-card-heading">
+        <h3>Objectifs</h3>
+        <span id="web055GoalMeta" class="muted"></span>
+      </div>
+      <div id="web055GoalContent"></div>
+    </section>
+
+    <section class="web055-card">
+      <div class="web055-card-heading">
+        <h3>Régularité</h3>
+        <label class="web055-threshold-label">
+          Jours à plus de
+          <input id="web055RegularityThreshold" type="number" min="0" step="0.5" value="10">
+          km
+        </label>
+      </div>
+      <div id="web055RegularitySummary" class="web055-summary-two-lines"></div>
+      <canvas id="web055RegularityChart" aria-label="Nombre annuel de jours au-dessus du seuil"></canvas>
+    </section>
+
+    <section class="web055-card">
+      <div class="web055-card-heading">
+        <h3>Comparaison année N / N−1</h3>
+        <select id="web055CompareMetric" class="web055-compare-select">
+          <option value="distance">Distance</option>
+          <option value="ascent">D+</option>
+          <option value="time">Temps</option>
+          <option value="load">Charge</option>
+        </select>
+      </div>
+      <div id="web055ComparisonSummary" class="web055-summary-two-lines"></div>
+      <canvas id="web055ComparisonChart" aria-label="Comparaison cumulative de l'année en cours avec l'année précédente"></canvas>
+    </section>
+  `;
+
+  section.appendChild(root);
+  web055SetSport(1);
+
+  document.getElementById("web055RunningButton")?.addEventListener("click", () => {
+    web055SetSport(1);
+    void loadWebDashboard();
+  });
+
+  document.getElementById("web055CyclingButton")?.addEventListener("click", () => {
+    web055SetSport(2);
+    void loadWebDashboard();
+  });
+
+  const threshold = document.getElementById("web055RegularityThreshold");
+  if (threshold) {
+    const stored = localStorage.getItem("sport_web_web055_regularity_threshold");
+    if (stored != null && stored !== "") threshold.value = stored;
+
+    threshold.addEventListener("input", () => {
+      localStorage.setItem("sport_web_web055_regularity_threshold", threshold.value);
+      renderWeb055Regularity();
+    });
+  }
+
+  document.getElementById("web055CompareMetric")?.addEventListener("change", renderWeb055Comparison);
+
+  window.addEventListener("resize", () => {
+    if (document.body.dataset.uxPage !== "home") return;
+    renderWeb055Regularity();
+    renderWeb055Comparison();
+  }, { passive: true });
+
+  document.querySelectorAll("[data-ux-page]").forEach((button) => {
+    if (button.dataset.web055RefreshBound === "1") return;
+    button.dataset.web055RefreshBound = "1";
+
+    button.addEventListener("click", () => {
+      if (!currentUser) return;
+      if (button.dataset.uxPage === "home") web055SetSport(1);
+      window.setTimeout(() => { void reloadAll(); }, 0);
+    });
+  });
+}
+
+async function loadWeb055Home() {
+  if (!currentUser) {
+    web055FirestoreConnected = false;
+    renderUnifiedConnectionBadgeWeb055();
+    return;
+  }
+
+  installWeb055HomeLayout();
+
+  const generation = ++web055HomeGeneration;
+
+  try {
+    const snapshot = await getDocs(
+      query(
+        userCollection("activities"),
+        where("sport", "==", Number(dashboardSport))
+      )
+    );
+
+    const rows = [];
+    snapshot.forEach((item) => {
+      const row = { __docId: item.id, ...item.data() };
+      if (row.deleted_at_ms == null) rows.push(row);
+    });
+
+    if (generation !== web055HomeGeneration) return;
+
+    web055HomeRows = rows;
+    web055FirestoreConnected = true;
+    renderUnifiedConnectionBadgeWeb055();
+    renderWeb055Home();
+  } catch (error) {
+    if (generation !== web055HomeGeneration) return;
+
+    web055FirestoreConnected = false;
+    renderUnifiedConnectionBadgeWeb055();
+    handleError(error, "Accueil SPORT Web indisponible");
+  }
+}
+
+
 async function loadWebDashboard() {
+  return loadWeb055Home();
+}
+
+async function loadWebDashboardLegacyWeb055() {
   if (!currentUser) return;
   const generation = ++dashboardLoadGeneration;
   renderDashboardChoices();
@@ -7571,22 +8347,27 @@ async function webStravaFetch(action,options={}) {
 }
 
 
-function renderUnifiedConnectionBadgeWeb051() {
+
+function renderUnifiedConnectionBadgeWeb055() {
   if (!ui.authState) return;
 
-  const googleFirebaseOk = Boolean(currentUser);
+  const googleOk = Boolean(currentUser);
+  const firestoreOk = Boolean(web055FirestoreConnected);
   const stravaOk = Boolean(webStravaConnected);
   const networkOk = navigator.onLine !== false;
-  const allConnected = googleFirebaseOk && stravaOk && networkOk;
+  const connected = googleOk && firestoreOk && stravaOk && networkOk;
 
-  ui.authState.textContent = allConnected ? "Connecté" : "Non connecté";
-  ui.authState.className =
-    allConnected
-      ? "pill auth-pill web051-unified-connection connected"
-      : "pill auth-pill web051-unified-connection disconnected";
+  ui.authState.textContent = connected ? "Connecté" : "Non connecté";
+  ui.authState.className = connected
+    ? "pill auth-pill web051-unified-connection connected"
+    : "pill auth-pill web051-unified-connection disconnected";
 
   ui.authState.title =
-    `Google/Firebase : ${googleFirebaseOk ? "OK" : "NON"} · Strava : ${stravaOk ? "OK" : "NON"} · Réseau : ${networkOk ? "OK" : "NON"}`;
+    `Google : ${googleOk ? "OK" : "NON"} · Firestore : ${firestoreOk ? "OK" : "NON"} · Strava : ${stravaOk ? "OK" : "NON"}`;
+}
+
+function renderUnifiedConnectionBadgeWeb051() {
+  return renderUnifiedConnectionBadgeWeb055();
 }
 
 function renderWebStravaState() {
@@ -7599,6 +8380,8 @@ function renderWebStravaState() {
   renderWebStravaCandidates();
 
   renderUnifiedConnectionBadgeWeb051();
+
+  renderUnifiedConnectionBadgeWeb055();
 }
 
 async function testWebStravaBackend() {
