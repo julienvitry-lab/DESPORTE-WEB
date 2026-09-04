@@ -1729,6 +1729,90 @@ function web055FormatHms(ms) {
   return `${hours.toLocaleString("fr-FR")} h ${String(minutes).padStart(2, "0")} min ${String(seconds).padStart(2, "0")} s`;
 }
 
+
+/* WEB055-FIX2 · HOMERENDER002 */
+function web055FormatDistance(valueMeters) {
+  const km = Math.max(0, Number(valueMeters) || 0) / 1000;
+  return km.toLocaleString("fr-FR", {
+    minimumFractionDigits: km < 100 ? 2 : 1,
+    maximumFractionDigits: km < 100 ? 2 : 1
+  }) + " km";
+}
+
+function web055FormatAscent(valueMeters) {
+  return Math.round(Math.max(0, Number(valueMeters) || 0))
+    .toLocaleString("fr-FR") + " m";
+}
+
+function web055FormatPace(valueSecondsPerKm) {
+  const value = Number(valueSecondsPerKm);
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  const total = Math.round(value);
+  return Math.floor(total / 60) + ":" +
+    String(total % 60).padStart(2, "0") + " /km";
+}
+
+function web055SafeChargeScore(activity) {
+  try {
+    if (typeof activityChargePresentation === "function") {
+      const score = Number(activityChargePresentation(activity)?.score);
+      if (Number.isFinite(score)) return Math.max(0, score);
+    }
+  } catch (_) {}
+
+  for (const raw of [
+    activity?.training_load,
+    activity?.trainingLoad,
+    activity?.load,
+    activity?.activity_load,
+    activity?.activityLoad,
+    activity?.trimp
+  ]) {
+    const value = Number(raw);
+    if (Number.isFinite(value)) return Math.max(0, value);
+  }
+  return null;
+}
+
+function web055SafeGapSecondsPerKm(activity) {
+  try {
+    if (typeof storedGapSecondsPerKm === "function") {
+      const value = Number(storedGapSecondsPerKm(activity));
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+  } catch (_) {}
+
+  for (const raw of [
+    activity?.gap_seconds_per_km,
+    activity?.gap_s_per_km,
+    activity?.gapSecondsPerKm,
+    activity?.grade_adjusted_pace_s_per_km
+  ]) {
+    const value = Number(raw);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
+}
+
+function web055SafeSportGoal() {
+  try {
+    if (typeof sportGoals !== "undefined" && sportGoals?.get) {
+      return sportGoals.get(String(dashboardSport)) || null;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function web055SafeRender(name, renderer) {
+  try {
+    renderer();
+    return true;
+  } catch (error) {
+    console.error("WEB055-FIX2 · " + name, error);
+    return false;
+  }
+}
+
 function web055Metrics(rows) {
   const metrics = {
     distance: 0,
@@ -1748,14 +1832,14 @@ function web055Metrics(rows) {
     metrics.duration += web055ActivityDurationMs(row);
     metrics.ascent += Math.max(0, Number(row.ascent_m) || 0);
 
-    const charge = activityChargePresentation(row);
-    if (Number.isFinite(Number(charge?.score))) {
-      metrics.load += Math.max(0, Number(charge.score));
+    const chargeScore = web055SafeChargeScore(row);
+    if (Number.isFinite(chargeScore)) {
+      metrics.load += chargeScore;
       metrics.loadKnown = true;
     }
 
     if (Number(dashboardSport) === 1) {
-      const gap = storedGapSecondsPerKm(row);
+      const gap = web055SafeGapSecondsPerKm(row);
       if (Number.isFinite(gap) && gap > 0) {
         const weight = distance > 0 ? distance : 1;
         metrics.gapWeighted += gap * weight;
@@ -1817,15 +1901,15 @@ function renderWeb055Periods() {
     name.textContent = period.label;
 
     row.appendChild(name);
-    row.appendChild(web055PeriodMetricCell(formatDistance(period.metrics.distance), "Distance"));
+    row.appendChild(web055PeriodMetricCell(web055FormatDistance(period.metrics.distance), "Distance"));
     row.appendChild(web055PeriodMetricCell(web055FormatHms(period.metrics.duration), "Temps"));
-    row.appendChild(web055PeriodMetricCell(formatMeters(period.metrics.ascent), "D+"));
+    row.appendChild(web055PeriodMetricCell(web055FormatAscent(period.metrics.ascent), "D+"));
     row.appendChild(web055PeriodMetricCell(
       period.metrics.loadKnown ? Math.round(period.metrics.load).toLocaleString("fr-FR") : "—",
       "Charge"
     ));
     row.appendChild(web055PeriodMetricCell(
-      Number.isFinite(period.metrics.gap) ? formatPaceFromSeconds(period.metrics.gap) : "—",
+      Number.isFinite(period.metrics.gap) ? web055FormatPace(period.metrics.gap) : "—",
       "GAP"
     ));
 
@@ -1855,7 +1939,7 @@ function renderWeb055Goal() {
 
   container.innerHTML = "";
 
-  const goal = sportGoals.get(String(dashboardSport));
+  const goal = web055SafeSportGoal();
   const target = Math.max(0, Number(goal?.annual_distance_km) || 0);
 
   if (!(target > 0)) {
@@ -2291,10 +2375,21 @@ function renderWeb055Comparison() {
 }
 
 function renderWeb055Home() {
-  renderWeb055Periods();
-  renderWeb055Goal();
-  renderWeb055Regularity();
-  renderWeb055Comparison();
+  const results = [
+    web055SafeRender("Périodes", renderWeb055Periods),
+    web055SafeRender("Objectifs", renderWeb055Goal),
+    web055SafeRender("Régularité", renderWeb055Regularity),
+    web055SafeRender("Comparaison", renderWeb055Comparison)
+  ];
+
+  const status = document.getElementById("web055HomeStatus");
+  if (status) {
+    const ok = results.filter(Boolean).length;
+    status.textContent =
+      ok === results.length
+        ? `Mis à jour à ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+        : `Accueil partiellement affiché · ${ok}/${results.length} blocs`;
+  }
 }
 
 function web055SetSport(sport) {
@@ -2740,7 +2835,7 @@ function renderDashboardTrends(rows, nowMs) {
 }
 
 function renderDashboardGoal(rows, nowMs) {
-  const goal = sportGoals.get(String(dashboardSport));
+  const goal = web055SafeSportGoal();
   ui.dashboardGoalSummary.innerHTML = "";
   if (!goal || !goalConfigured(goal)) {
     ui.dashboardGoalMeta.textContent = "non configuré";
