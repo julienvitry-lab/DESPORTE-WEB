@@ -6402,17 +6402,18 @@ function web061RenderSingleMetricRow(activity) {
   const iconCard = document.createElement("div");
   iconCard.className = "web061-sport-card";
 
-  const svg = original.querySelector("svg");
-
-  if (svg) {
-    iconCard.appendChild(svg.cloneNode(true));
-  } else {
-    const fallback = document.createElement("strong");
-    fallback.textContent = Number(activity?.sport) === 2 ? "🚲" : "🏃";
-    iconCard.appendChild(fallback);
-  }
-
   const sport = Number(activity?.sport);
+
+  const sportIcon = document.createElement("img");
+  sportIcon.className = "web066-exact-sport-icon";
+  sportIcon.alt = "";
+  sportIcon.decoding = "async";
+  sportIcon.src =
+    sport === 2
+      ? "./assets/icons/sport-bike-v1-exact.png"
+      : "./assets/icons/sport-running-c1-exact.png";
+
+  iconCard.replaceChildren(sportIcon);
 
   const motionLabel =
     sport === 1 ? "Allure" :
@@ -16879,20 +16880,30 @@ function formatMeters(value) {
     : "—";
 }
 
-function formatDuration(value) {
-  const ms = Number(value);
-  if (!Number.isFinite(ms) || ms < 0) return "—";
+function formatDuration(ms) {
+  const totalMs = Number(ms);
 
-  const totalSeconds = Math.round(ms / 1000);
+  if (!Number.isFinite(totalMs) || totalMs <= 0) {
+    return "0 s";
+  }
+
+  const totalSeconds = Math.round(totalMs / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
 
+  const mm = String(minutes).padStart(2, "0");
+  const ss = String(seconds).padStart(2, "0");
+
   if (hours > 0) {
-    return `${hours} h ${String(minutes).padStart(2, "0")} min`;
+    return hours + " h " + mm + " min " + ss + " s";
   }
 
-  return `${minutes} min ${String(seconds).padStart(2, "0")} s`;
+  if (minutes > 0) {
+    return minutes + " min " + ss + " s";
+  }
+
+  return seconds + " s";
 }
 
 function formatHeartRate(value) {

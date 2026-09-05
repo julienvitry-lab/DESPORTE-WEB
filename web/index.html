@@ -3501,6 +3501,55 @@ select {
   }
 </style>
 
+
+<style id="web066-fix1-css">
+  /* WEB066 FIX1 · DURATIONSECONDS001 / SPORTICONS002 */
+
+  #web061SingleMetricRow {
+    grid-template-columns:
+      76px
+      150px
+      110px
+      minmax(145px, 1fr)
+      minmax(185px, 1.2fr)
+      115px
+      minmax(145px, 1fr)
+      135px
+      !important;
+  }
+
+  #web061SingleMetricRow .web061-sport-card {
+    padding: 4px !important;
+    overflow: hidden !important;
+  }
+
+  #web061SingleMetricRow .web066-exact-sport-icon {
+    display: block !important;
+    width: 64px !important;
+    height: 64px !important;
+    max-width: calc(100% - 4px) !important;
+    max-height: calc(100% - 4px) !important;
+    object-fit: contain !important;
+    object-position: center !important;
+    margin: auto !important;
+  }
+
+  #web061SingleMetricRow .web061-metric-card > strong {
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  @media (max-width: 1079px) {
+    #web061SingleMetricRow {
+      width: 1130px !important;
+      min-width: 1130px !important;
+      grid-template-columns:
+        76px 150px 110px 150px 190px 115px 150px 135px
+        !important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -4944,7 +4993,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB065-DETAILTOP021-STICKYRESERVE"></script>
+  <script type="module" src="./app.js?v=WEB066-FIX1-DURATIONSECONDS-SPORTICONS"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
