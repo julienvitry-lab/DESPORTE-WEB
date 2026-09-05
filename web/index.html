@@ -3300,6 +3300,98 @@ select {
   }
 </style>
 
+
+<style id="web064-ux-css">
+  /* WEB064 · DETAILTOP020 */
+
+  #detailView #web064DirectDetailToolbar {
+    position: sticky !important;
+    top: var(--web059-sticky-top, 0px) !important;
+    z-index: 100 !important;
+
+    display: grid !important;
+    grid-template-columns:
+      auto
+      1fr
+      auto
+      1fr
+      auto
+      auto
+      !important;
+    align-items: center !important;
+    gap: 10px !important;
+
+    width: 100% !important;
+    min-height: 54px !important;
+    box-sizing: border-box !important;
+
+    margin: 0 0 10px !important;
+    padding: 5px 10px !important;
+
+    background: var(--surface, #111713) !important;
+    border: 1px solid rgba(128,128,128,.24) !important;
+    border-radius: 14px !important;
+  }
+
+  #web064DirectDetailToolbar #backToCatalogButton {
+    grid-column: 1 !important;
+  }
+
+  #web064DirectDetailToolbar #trashCurrentActivityButton {
+    grid-column: 3 !important;
+    justify-self: center !important;
+  }
+
+  #web064DirectDetailToolbar #previousActivityButton {
+    grid-column: 5 !important;
+    justify-self: end !important;
+  }
+
+  #web064DirectDetailToolbar #nextActivityButton {
+    grid-column: 6 !important;
+    justify-self: end !important;
+  }
+
+  #web064DirectDetailToolbar > button {
+    margin: 0 !important;
+    align-self: center !important;
+  }
+
+  #detailView > #web061SingleMetricRow {
+    position: relative !important;
+    top: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+
+    z-index: 1 !important;
+    clear: both !important;
+
+    margin-top: 0 !important;
+    margin-bottom: 10px !important;
+  }
+
+  #detailView .web064-obsolete-toolbar {
+    display: none !important;
+  }
+
+  /*
+   * Neutraliser les anciens toolbars qui n'abritent plus les boutons.
+   */
+  #detailView .web059-detail-toolbar:not(#web064DirectDetailToolbar) {
+    position: static !important;
+    top: auto !important;
+    z-index: auto !important;
+  }
+
+  /*
+   * La mono-ligne WEB061 reste non négociable.
+   */
+  #detailView > #web061SingleMetricRow {
+    grid-auto-flow: column !important;
+    white-space: nowrap !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -4743,7 +4835,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB063-DETAILTOP019-MOVINGCACHE003"></script>
+  <script type="module" src="./app.js?v=WEB064-DETAILTOP020-STRUCTURAL"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

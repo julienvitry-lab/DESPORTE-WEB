@@ -6107,36 +6107,95 @@ function web061FindOriginalHeroRow() {
 /* WEB063 · DETAILTOP019 */
 function web063ResolveDetailToolbarOverlap() {
   const row = document.getElementById("web061SingleMetricRow");
+  if (!row) return;
 
-  const toolbar =
-    ui.detailView?.querySelector(".web059-detail-toolbar") ||
-    ui.backToCatalogButton?.parentElement ||
-    null;
-
-  if (!row || !toolbar || toolbar === ui.detailView) return;
-
-  row.style.marginTop = "0px";
-
-  window.requestAnimationFrame(() => {
-    const toolbarRect = toolbar.getBoundingClientRect();
-    const rowRect = row.getBoundingClientRect();
-
-    const requiredTop = toolbarRect.bottom + 8;
-    const overlap = Math.ceil(requiredTop - rowRect.top);
-
-    if (overlap > 0) {
-      row.style.marginTop = overlap + "px";
-      row.dataset.web063OverlapFix = String(overlap);
-    } else {
-      row.style.marginTop = "0px";
-      row.dataset.web063OverlapFix = "0";
-    }
-  });
+  row.style.marginTop = "";
+  row.dataset.web063OverlapFix = "disabled-by-WEB064";
 }
 
 function web063ScheduleDetailToolbarOverlapFix() {
   window.requestAnimationFrame(() => {
     web063ResolveDetailToolbarOverlap();
+  });
+}
+
+
+
+/* WEB064 · DETAILTOP020 */
+function web064EnsureDirectDetailTop() {
+  if (!ui.detailView) return;
+
+  const row = document.getElementById("web061SingleMetricRow");
+  if (!row) return;
+
+  let toolbar = document.getElementById("web064DirectDetailToolbar");
+
+  if (!toolbar) {
+    toolbar = document.createElement("div");
+    toolbar.id = "web064DirectDetailToolbar";
+    toolbar.className = "web064-direct-detail-toolbar";
+  }
+
+  const oldParents = new Set();
+
+  const buttons = [
+    ui.backToCatalogButton,
+    ui.trashCurrentActivityButton,
+    ui.previousActivityButton,
+    ui.nextActivityButton
+  ].filter(Boolean);
+
+  for (const button of buttons) {
+    if (
+      button.parentElement &&
+      button.parentElement !== toolbar
+    ) {
+      oldParents.add(button.parentElement);
+    }
+  }
+
+  /*
+   * Ordre métier demandé :
+   * Répertoire | Corbeille | ... | Activité précédente | Activité suivante
+   */
+  for (const button of buttons) {
+    toolbar.appendChild(button);
+  }
+
+  const anchor =
+    ui.detailView.firstElementChild || null;
+
+  if (toolbar.parentElement !== ui.detailView) {
+    ui.detailView.insertBefore(toolbar, anchor);
+  }
+
+  if (row.parentElement !== ui.detailView) {
+    toolbar.insertAdjacentElement("afterend", row);
+  } else if (toolbar.nextElementSibling !== row) {
+    toolbar.insertAdjacentElement("afterend", row);
+  }
+
+  for (const parent of oldParents) {
+    if (
+      parent !== ui.detailView &&
+      !parent.querySelector("button:not([hidden])") &&
+      !String(parent.textContent || "").trim()
+    ) {
+      parent.classList.add("web064-obsolete-toolbar");
+    }
+  }
+
+  /*
+   * Les hacks dynamiques WEB063 ne sont plus nécessaires :
+   * la structure DOM garantit désormais le placement.
+   */
+  row.style.marginTop = "";
+  row.dataset.web063OverlapFix = "structural-web064";
+}
+
+function web064ScheduleDirectDetailTop() {
+  window.requestAnimationFrame(() => {
+    web064EnsureDirectDetailTop();
   });
 }
 
@@ -6248,6 +6307,7 @@ function web061RenderSingleMetricRow(activity) {
   original.classList.add("web061-original-hero-hidden");
 
   row.dataset.activityKey = String(activityKey(activity) || "");
+  web064ScheduleDirectDetailTop();
   web063ScheduleDetailToolbarOverlapFix();
 }
 
