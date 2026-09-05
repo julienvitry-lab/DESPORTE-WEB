@@ -1033,7 +1033,7 @@ function uxPageConfig() {
     analysis: {
       title: "Analyse",
       eyebrow: "",
-      subs: [["goals","Objectifs & poids"],["landmarks","Repères"],["records","Records"]]
+      subs: [["goals","Objectifs"],["weight","Poids"],["landmarks","Repères"],["records","Records"]]
     },
     equipment: {
       title: "Matériel",
@@ -1112,6 +1112,48 @@ function renderUxSecondaryNav(page, activeSub) {
   ui.uxSecondaryNav.appendChild(inner);
 }
 
+
+/* WEB058 · ANALYSIS006 */
+function web058ApplyGoalWeightSubpage(subpage) {
+  const goalInput = document.getElementById("goalDistanceInput");
+  const weightInput = document.getElementById("weightDateInput");
+
+  const goalCard = goalInput?.closest(".personal-sync-card");
+  const weightCard = weightInput?.closest(".personal-sync-card");
+
+  if (!goalCard || !weightCard) return;
+
+  const showWeight = subpage === "weight";
+
+  goalCard.classList.toggle("hidden", showWeight);
+  weightCard.classList.toggle("hidden", !showWeight);
+
+  const hiddenGoalIds = [
+    "goalDurationInput",
+    "goalTargetNameInput",
+    "goalTargetDateInput",
+    "goalPrepDistanceInput",
+    "goalPrepAscentInput"
+  ];
+
+  hiddenGoalIds.forEach((id) => {
+    document
+      .getElementById(id)
+      ?.closest("label")
+      ?.classList.add("web058-objective-hidden");
+  });
+
+  document
+    .getElementById("goalSaveStatus")
+    ?.closest(".autosave-row")
+    ?.classList.add("web058-objective-hidden");
+
+  document
+    .getElementById("goalProgress")
+    ?.classList.add("web058-objective-hidden");
+}
+
+
 function navigateUx(page, subpage = null, options = {}) {
   if (page === "maps") { page = "more"; subpage = "maps"; }
   const config = uxPageConfig();
@@ -1178,6 +1220,10 @@ function navigateUx(page, subpage = null, options = {}) {
   if (!options.keepScroll) window.scrollTo({top:0,behavior:"smooth"});
   sessionStorage.setItem("sport_web_ux_page", page);
   sessionStorage.setItem("sport_web_ux_subpage", sub);
+
+  if (page === "analysis" && (sub === "goals" || sub === "weight")) {
+    web058ApplyGoalWeightSubpage(sub);
+  }
 }
 
 function initUxNavigation() {
@@ -2388,9 +2434,9 @@ function web055Metrics(rows) {
 
 function web055PeriodRows(nowMs = Date.now()) {
   const specs = [
-    ["Semaine en cours", web055StartOfWeek(nowMs)],
-    ["Mois en cours", web055StartOfMonth(nowMs)],
-    ["Année en cours", web055StartOfYear(nowMs)],
+    ["Semaine", web055StartOfWeek(nowMs)],
+    ["Mois", web055StartOfMonth(nowMs)],
+    ["Année", web055StartOfYear(nowMs)],
     ["Total", null]
   ];
 
@@ -2423,29 +2469,50 @@ function renderWeb055Periods() {
 
   container.innerHTML = "";
 
-  for (const period of web055PeriodRows()) {
-    const row = document.createElement("div");
-    row.className = "web055-period-row";
+  const periods = web055PeriodRows();
+  const table = document.createElement("table");
+  table.className = "web058-period-table";
 
-    const name = document.createElement("strong");
-    name.className = "web055-period-name";
-    name.textContent = period.label;
+  table.innerHTML =
+    '<thead><tr>' +
+      '<th scope="col">Période</th>' +
+      '<th scope="col">Distance</th>' +
+      '<th scope="col">Temps</th>' +
+      '<th scope="col">D+</th>' +
+      '<th scope="col">Charge</th>' +
+      '<th scope="col">GAP</th>' +
+    '</tr></thead>' +
+    '<tbody></tbody>';
 
-    row.appendChild(name);
-    row.appendChild(web055PeriodMetricCell(web055FormatDistance(period.metrics.distance), "Distance"));
-    row.appendChild(web055PeriodMetricCell(web055FormatHms(period.metrics.duration), "Temps"));
-    row.appendChild(web055PeriodMetricCell(web055FormatAscent(period.metrics.ascent), "D+"));
-    row.appendChild(web055PeriodMetricCell(
-      period.metrics.loadKnown ? Math.round(period.metrics.load).toLocaleString("fr-FR") : "—",
-      "Charge"
-    ));
-    row.appendChild(web055PeriodMetricCell(
-      Number.isFinite(period.metrics.gap) ? web055FormatPace(period.metrics.gap) : "—",
-      "GAP"
-    ));
+  const tbody = table.querySelector("tbody");
 
-    container.appendChild(row);
+  for (const period of periods) {
+    const row = document.createElement("tr");
+
+    const values = [
+      period.label,
+      web055FormatDistance(period.metrics.distance),
+      web055FormatHms(period.metrics.duration),
+      web055FormatAscent(period.metrics.ascent),
+      period.metrics.loadKnown
+        ? Math.round(period.metrics.load).toLocaleString("fr-FR")
+        : "—",
+      Number.isFinite(period.metrics.gap)
+        ? web055FormatPace(period.metrics.gap)
+        : "—"
+    ];
+
+    values.forEach((value, index) => {
+      const cell = document.createElement(index === 0 ? "th" : "td");
+      if (index === 0) cell.scope = "row";
+      cell.textContent = value;
+      row.appendChild(cell);
+    });
+
+    tbody.appendChild(row);
   }
+
+  container.appendChild(table);
 }
 
 function web055DaysInYear(year) {
@@ -2999,23 +3066,29 @@ function web055ComparisonDateLabel(data, index) {
 }
 
 function web055RenderComparisonSummary(data, metric, index) {
-  const summary = document.getElementById('web055ComparisonSummary');
+  const summary = document.getElementById("web055ComparisonSummary");
   if (!summary) return;
-  const safeIndex = Math.max(0, Math.min(data.todayIndex, Number(index) || 0));
+
+  const safeIndex = Math.max(
+    0,
+    Math.min(data.todayIndex, Number(index) || 0)
+  );
+
   const meta = web055ComparisonMetricMeta(metric);
   const currentValue = data.current[safeIndex] || 0;
   const previousValue = data.previous[safeIndex] || 0;
   const delta = currentValue - previousValue;
-  const percent = previousValue > 0 ? (delta / previousValue) * 100 : null;
   const dateLabel = web055ComparisonDateLabel(data, safeIndex);
 
-  summary.innerHTML = '<strong>' + dateLabel + ' · ' + data.currentYear + ' : ' +
-    web055FormatComparisonValue(currentValue, meta) + '</strong>' +
+  summary.innerHTML =
+    '<strong>' + dateLabel + ' · ' + data.currentYear + ' : ' +
+      web055FormatComparisonValue(currentValue, meta) +
+    '</strong>' +
     '<span>' + data.previousYear + ' à la même date : ' +
-    web055FormatComparisonValue(previousValue, meta) + ' · ' +
-    (delta >= 0 ? '+' : '−') + web055FormatComparisonValue(Math.abs(delta), meta) +
-    (percent == null ? '' : ' · ' + (percent >= 0 ? '+' : '') +
-      percent.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %') + '</span>';
+      web055FormatComparisonValue(previousValue, meta) + ' · ' +
+      (delta >= 0 ? '+' : '−') +
+      web055FormatComparisonValue(Math.abs(delta), meta) +
+    '</span>';
 }
 
 function web055MoveComparisonCursor(event) {
@@ -3946,6 +4019,70 @@ function formatTrashDate(ms) {
   }).format(new Date(number));
 }
 
+
+/* WEB058 · ACTIVITYDELETE003 */
+function web058ReturnNearDeletedActivity(startTimeMs) {
+  const deletedTime = Number(startTimeMs) || 0;
+
+  let nearest = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const row of filteredActivities) {
+    const rowTime = Number(row?.start_time_ms);
+    if (!Number.isFinite(rowTime)) continue;
+
+    const distance = Math.abs(rowTime - deletedTime);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = row;
+    }
+  }
+
+  if (!nearest) {
+    showCatalog(false);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: Math.max(0, catalogScrollY), behavior: "auto" });
+    });
+    return;
+  }
+
+  const nearestKey = activityKey(nearest);
+  const nearestIndex = filteredActivities.findIndex(
+    (row) => activityKey(row) === nearestKey
+  );
+
+  if (nearestIndex >= activityVisibleLimit) {
+    activityVisibleLimit =
+      Math.ceil((nearestIndex + 1) / 20) * 20;
+    renderActivities();
+  }
+
+  showCatalog(false);
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      const card = [...ui.activityList.querySelectorAll(".activity-card")]
+        .find((node) =>
+          String(node.dataset.activityKeyWeb058 || "") === String(nearestKey)
+        );
+
+      if (card) {
+        card.scrollIntoView({
+          block: "center",
+          inline: "nearest",
+          behavior: "auto"
+        });
+      } else {
+        window.scrollTo({
+          top: Math.max(0, catalogScrollY),
+          behavior: "auto"
+        });
+      }
+    });
+  });
+}
+
+
 async function trashActivityFromWeb(activity) {
   if (!activity || trashMutationRunning) return;
 
@@ -3955,6 +4092,7 @@ async function trashActivityFromWeb(activity) {
   }
 
   const key = activityKey(activity);
+  const deletedStartTimeWeb058 = Number(activity.start_time_ms) || 0;
   if (!key) return;
 
   const confirmed = window.confirm(
@@ -3987,7 +4125,7 @@ async function trashActivityFromWeb(activity) {
     applyFiltersAndRender();
     renderTrash();
 
-    showCatalog(false);
+    web058ReturnNearDeletedActivity(deletedStartTimeWeb058);
     setMessage(
       "WEB018 · activité mise à la corbeille et propagée vers téléphone + tablette.",
       "success"
@@ -4341,6 +4479,7 @@ function renderActivities() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "activity-card";
+    button.dataset.activityKeyWeb058 = activityKey(activity);
     button.dataset.subSportWeb054 = activitySubSportValueWeb054(activity);
     button.addEventListener("click", () => showActivity(activity));
 
@@ -5195,7 +5334,7 @@ function renderDetail(activity) {
 
   ui.detailDateLine.innerHTML =
     '<span class="detail-start-stat-web049 hero-metric summary-chip web057-date-metric"><span>Date</span><strong>' + formatActivityDateWeb049(activity.start_time_ms) + '</strong></span>' +
-    '<span class="detail-start-stat-web049 hero-metric summary-chip web057-date-metric"><span>Départ</span><strong>' + formatActivityTimeWeb049(activity.start_time_ms) + '</strong></span>';
+    '<span class="detail-start-stat-web049 hero-metric summary-chip web057-date-metric"><span>Heure</span><strong>' + formatActivityTimeWeb049(activity.start_time_ms) + '</strong></span>';
 
   renderHeroMetrics(activity);
   renderSummary(activity);
@@ -5554,7 +5693,7 @@ async function renderCartography(activity) {
     try { renderRouteAnalysis(route); }
     catch (error) { console.warn("WEB025-FIX2 route analysis", error); }
 
-    try { renderKilometerAnalysis(route); }
+    try { renderKilometerAnalysis(route, activity); }
     catch (error) { console.warn("WEB025-FIX2 kilometer analysis", error); }
 
     try {
@@ -6032,99 +6171,182 @@ function routePointGapSecondsPerKm(point) {
 
 function kilometerPerformanceValues(segment) {
   const points = segment?.points || [];
-  if (!points.length) return {pace:null, gap:null, avgHr:null};
+  if (!points.length) {
+    return { pace: null, gap: null, avgHr: null };
+  }
 
-  const first = points[0], last = points[points.length-1];
-  const t0 = routePointTimeMs(first), t1 = routePointTimeMs(last);
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  const t0 = routePointTimeMs(first);
+  const t1 = routePointTimeMs(last);
+
   let pace = null;
 
-  if (Number.isFinite(t0) && Number.isFinite(t1) && t1 > t0 && segment.distanceMeters > 0) {
-    pace = ((t1-t0)/1000) / (segment.distanceMeters/1000);
+  if (
+    Number.isFinite(t0) &&
+    Number.isFinite(t1) &&
+    t1 > t0 &&
+    segment.distanceMeters > 0
+  ) {
+    pace =
+      ((t1 - t0) / 1000) /
+      (segment.distanceMeters / 1000);
   } else {
-    const speeds = points.map(routePointSpeedMps).filter(Number.isFinite);
+    const speeds = points
+      .map(routePointSpeedMps)
+      .filter(Number.isFinite);
+
     if (speeds.length) {
-      const avgSpeed = speeds.reduce((a,b)=>a+b,0)/speeds.length;
+      const avgSpeed =
+        speeds.reduce((a, b) => a + b, 0) /
+        speeds.length;
+
       pace = 1000 / avgSpeed;
     }
   }
 
-  const hrs = points.map(routePointHeartRate).filter(Number.isFinite);
-  const avgHr = hrs.length ? hrs.reduce((a,b)=>a+b,0)/hrs.length : null;
-  const gaps = points.map(routePointGapSecondsPerKm).filter(Number.isFinite);
-  const gap = gaps.length ? gaps.reduce((a,b)=>a+b,0)/gaps.length : null;
+  const hrs = points
+    .map(routePointHeartRate)
+    .filter(Number.isFinite);
 
-  return {pace, gap, avgHr};
+  const avgHr = hrs.length
+    ? hrs.reduce((a, b) => a + b, 0) / hrs.length
+    : null;
+
+  const gaps = points
+    .map(routePointGapSecondsPerKm)
+    .filter(Number.isFinite);
+
+  let gap = gaps.length
+    ? gaps.reduce((a, b) => a + b, 0) / gaps.length
+    : null;
+
+  if (
+    !Number.isFinite(gap) &&
+    typeof web055RouteAverageGap === "function"
+  ) {
+    gap = web055RouteAverageGap({ points });
+  }
+
+  return { pace, gap, avgHr };
 }
 
-function renderKilometerAnalysis(route) {
+
+/* WEB058 · KMUX004 */
+function web058FormatKilometerMotion(secondsPerKm, cycling) {
+  if (!Number.isFinite(secondsPerKm) || secondsPerKm <= 0) return "—";
+
+  if (cycling) {
+    const kmh = 3600 / secondsPerKm;
+    return kmh.toLocaleString("fr-FR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }) + " km/h";
+  }
+
+  return formatPaceFromSeconds(secondsPerKm);
+}
+
+
+function renderKilometerAnalysis(
+  route,
+  activity = currentDetailActivity()
+) {
   if (!ui.routeKmAnalysisList || !ui.routeKmAnalysisMeta) return;
+
   const segments = buildKilometerSegments(route);
   route.kilometerSegments = segments;
+
   ui.routeKmAnalysisList.innerHTML = "";
-  ui.routeKmAnalysisMeta.textContent = `${segments.length} tronçon(s)`;
-  if (ui.routeKmClearButton) ui.routeKmClearButton.disabled = true;
+  ui.routeKmAnalysisMeta.textContent =
+    `${segments.length} tronçon(s)`;
+
+  if (ui.routeKmClearButton) {
+    ui.routeKmClearButton.disabled = true;
+  }
 
   if (!segments.length) {
-    ui.routeKmAnalysisList.innerHTML = '<div class="muted">Aucun tronçon kilométrique exploitable.</div>';
+    ui.routeKmAnalysisList.innerHTML =
+      '<div class="muted">Aucun tronçon kilométrique exploitable.</div>';
     return;
   }
 
+  const cycling = Number(activity?.sport) === 2;
+
   const table = document.createElement("table");
-  table.className = "route-km-table";
-  table.classList.add("route-km-performance-table");
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th>Km</th>
-        <th>Allure moy.</th>
-        <th>GAP</th>
-        <th>D+</th>
-        <th>D−</th>
-        <th>FC moy.</th>
-      </tr>
-    </thead>
-    <tbody></tbody>`;
+  table.className =
+    "route-km-table route-km-performance-table";
+
+  table.innerHTML =
+    '<thead><tr>' +
+      '<th>Km</th>' +
+      '<th>' + (cycling ? 'Vitesse moy.' : 'Allure moy.') + '</th>' +
+      '<th>GAP</th>' +
+      '<th>D+</th>' +
+      '<th>D−</th>' +
+      '<th>FC moy.</th>' +
+    '</tr></thead>' +
+    '<tbody></tbody>';
+
   const tbody = table.querySelector("tbody");
 
-  let detailedPace = false;
+  let detailedMotion = false;
+  let detailedGap = false;
   let detailedHr = false;
 
   for (const segment of segments) {
     const perf = kilometerPerformanceValues(segment);
-    if (Number.isFinite(perf.pace)) detailedPace = true;
+
+    if (Number.isFinite(perf.pace)) detailedMotion = true;
+    if (Number.isFinite(perf.gap)) detailedGap = true;
     if (Number.isFinite(perf.avgHr)) detailedHr = true;
 
     const row = document.createElement("tr");
     row.className = "route-km-row";
     row.dataset.segmentId = segment.id;
     row.tabIndex = 0;
-    const kmLabel = segment.distanceMeters >= 995 ? String(segment.rank) : `${segment.rank}*`;
 
-    row.innerHTML = `
-      <th scope="row">${kmLabel}</th>
-      <td>${formatPaceFromSeconds(perf.pace)}</td>
-      <td>${formatPaceFromSeconds(perf.gap)}</td>
-      <td>+${Math.round(segment.gainMeters)} m</td>
-      <td>−${Math.round(segment.lossMeters)} m</td>
-      <td>${Number.isFinite(perf.avgHr) ? `${Math.round(perf.avgHr)} bpm` : "—"}</td>`;
+    const kmLabel =
+      segment.distanceMeters >= 995
+        ? String(segment.rank)
+        : `${segment.rank}*`;
 
-    row.addEventListener("click", () => selectKilometerSegment(segment));
+    row.innerHTML =
+      '<th scope="row">' + kmLabel + '</th>' +
+      '<td>' + web058FormatKilometerMotion(perf.pace, cycling) + '</td>' +
+      '<td>' + web058FormatKilometerMotion(perf.gap, cycling) + '</td>' +
+      '<td>+' + Math.round(segment.gainMeters) + ' m</td>' +
+      '<td>−' + Math.round(segment.lossMeters) + ' m</td>' +
+      '<td>' +
+        (Number.isFinite(perf.avgHr)
+          ? Math.round(perf.avgHr) + ' bpm'
+          : '—') +
+      '</td>';
+
+    row.addEventListener(
+      "click",
+      () => selectKilometerSegment(segment)
+    );
+
     row.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         selectKilometerSegment(segment);
       }
     });
+
     tbody.appendChild(row);
   }
 
   ui.routeKmAnalysisList.appendChild(table);
 
-  if (!detailedPace || !detailedHr) {
+  if (!detailedMotion || !detailedGap || !detailedHr) {
     const note = document.createElement("p");
     note.className = "map-help route-km-data-note";
     note.textContent =
-      "Allure, GAP et FC par km nécessitent les séries point-par-point publiées dans activity_routes. Le GAP n’est jamais estimé par le Web : il reste vide tant qu’une série GAP fiable n’est pas fournie. D+ et D− restent disponibles.";
+      "GAP : série publiée lorsqu’elle existe ; sinon estimation vitesse + pente, avec le même moteur que l’Accueil. " +
+      "Les autres valeurs restent affichées dès qu’elles sont disponibles.";
     ui.routeKmAnalysisList.appendChild(note);
   }
 }
@@ -7900,6 +8122,106 @@ function landmarkAllowedForActivityWeb056(activity, code) {
   );
 }
 
+
+/* WEB058 · ISSUE001 */
+let web058ProblemNoteTimer = null;
+
+async function web058PersistProblemNote(activity, value) {
+  const key = activityKey(activity);
+  if (!key) return;
+
+  const note = String(value || "").trim();
+  const numericId = Number(activity.id ?? key);
+
+  const patch = {
+    problem_note: note || null
+  };
+
+  if (Number.isFinite(numericId) && numericId > 0) {
+    patch.id = numericId;
+  }
+
+  try {
+    await commitWebMutation({
+      table: "activities",
+      rowKey: key,
+      operation: "UPSERT",
+      row: patch,
+      materializedCollection: "activities",
+      materializedData: patch
+    });
+
+    Object.assign(activity, patch);
+    setInteropStatus(
+      note
+        ? "Problème X enregistré automatiquement"
+        : "Description du problème effacée",
+      "ok"
+    );
+  } catch (error) {
+    console.error(error);
+    handleError(
+      error,
+      "Enregistrement de la description du problème impossible"
+    );
+  }
+}
+
+function renderProblemNoteWeb058(
+  activity,
+  links = linksForActivity(activity)
+) {
+  if (!ui.quickLandmarkButtons) return;
+
+  const hasProblemX = (links || []).some((link) =>
+    String(link?.landmark_code || "")
+      .trim()
+      .toUpperCase() === "X" &&
+    Math.max(0, numberOrZero(link?.occurrences)) > 0
+  );
+
+  if (!hasProblemX) return;
+
+  const line = document.createElement("div");
+  line.className = "web058-problem-note";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "web058-problem-note-input";
+  input.placeholder =
+    "Décris le problème rencontré pour traitement ultérieur…";
+  input.value = String(activity?.problem_note || "");
+  input.setAttribute(
+    "aria-label",
+    "Description du problème repéré par X"
+  );
+
+  const schedule = () => {
+    if (web058ProblemNoteTimer) {
+      window.clearTimeout(web058ProblemNoteTimer);
+    }
+
+    web058ProblemNoteTimer = window.setTimeout(() => {
+      web058ProblemNoteTimer = null;
+      void web058PersistProblemNote(activity, input.value);
+    }, 700);
+  };
+
+  input.addEventListener("input", schedule);
+
+  input.addEventListener("change", () => {
+    if (web058ProblemNoteTimer) {
+      window.clearTimeout(web058ProblemNoteTimer);
+      web058ProblemNoteTimer = null;
+    }
+    void web058PersistProblemNote(activity, input.value);
+  });
+
+  line.appendChild(input);
+  ui.quickLandmarkButtons.appendChild(line);
+}
+
+
 function renderQuickLandmarkButtons(activity, links = linksForActivity(activity)) {
   if (!ui.quickLandmarkButtons) return;
   ui.quickLandmarkButtons.innerHTML = "";
@@ -7968,6 +8290,8 @@ function renderQuickLandmarkButtons(activity, links = linksForActivity(activity)
     wrap.append(plus, minus);
     ui.quickLandmarkButtons.appendChild(wrap);
   });
+
+  renderProblemNoteWeb058(activity, links);
 }
 
 function rebuildAddLandmarkSelect(links, activity = null) {

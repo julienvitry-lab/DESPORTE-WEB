@@ -2496,6 +2496,180 @@ select {
   }
 </style>
 
+
+<style id="web058-ux-css">
+  /* WEB058 · HOME007 / ACTIVITYUX014 / ANALYSIS006 / EQUIPMENT006 / ISSUE001 */
+
+  /* ---------------------------------------------------------------
+     PJ1 : tableau des 4 périodes, libellés statistiques une seule fois.
+     --------------------------------------------------------------- */
+  #web055PeriodRows {
+    display: block !important;
+  }
+
+  .web058-period-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 7px;
+    table-layout: fixed;
+  }
+
+  .web058-period-table thead th {
+    padding: 0 12px 4px;
+    color: var(--muted, #9ca89f);
+    font-size: .78rem;
+    font-weight: 500;
+    text-align: center;
+  }
+
+  .web058-period-table thead th:first-child {
+    text-align: left;
+  }
+
+  .web058-period-table tbody th,
+  .web058-period-table tbody td {
+    padding: 11px 12px;
+    background: rgba(255,255,255,.018);
+    border-top: 1px solid rgba(210,180,95,.20);
+    border-bottom: 1px solid rgba(210,180,95,.20);
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .web058-period-table tbody th {
+    text-align: left;
+    font-weight: 700;
+  }
+
+  .web058-period-table tbody tr > :first-child {
+    border-left: 1px solid rgba(210,180,95,.20);
+    border-radius: 13px 0 0 13px;
+  }
+
+  .web058-period-table tbody tr > :last-child {
+    border-right: 1px solid rgba(210,180,95,.20);
+    border-radius: 0 13px 13px 0;
+  }
+
+  /* ---------------------------------------------------------------
+     PJ2 : tous les textes des contrôles Régularité = taille de Distance.
+     --------------------------------------------------------------- */
+  .web055-fix5-regularity-controls,
+  .web055-fix5-regularity-controls *,
+  #web055RegularityAdvanced,
+  #web055RegularityAdvanced *,
+  #web055RegularitySummary,
+  #web055RegularitySummary * {
+    font-size: 1rem !important;
+  }
+
+  .web055-fix5-regularity-controls select,
+  .web055-fix5-regularity-controls input,
+  .web055-fix5-regularity-controls button,
+  #web055RegularityAdvanced select,
+  #web055RegularityAdvanced input {
+    font-size: 1rem !important;
+  }
+
+  /* ---------------------------------------------------------------
+     PJ5 : Date et Heure = mêmes proportions que Distance/Durée/D+.
+     --------------------------------------------------------------- */
+  @media (min-width: 1051px) {
+    #detailView .detail-hero-two-lines > .detail-summary-row {
+      display: grid !important;
+      grid-template-columns:
+        80px
+        repeat(7, minmax(0, 1fr))
+        !important;
+      gap: 8px !important;
+      align-items: stretch !important;
+    }
+
+    #detailView #detailDateLine,
+    #detailView .detail-summary-row > #detailHeroMetrics {
+      display: contents !important;
+    }
+  }
+
+  #detailView .web057-date-metric {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 78px !important;
+    margin: 0 !important;
+    padding: 8px !important;
+  }
+
+  #detailView .web057-date-metric > span {
+    font-size: .78rem !important;
+    line-height: 1.15 !important;
+    opacity: .72 !important;
+    margin: 0 0 5px !important;
+  }
+
+  #detailView .web057-date-metric > strong {
+    font-size: 1.35rem !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+  }
+
+  /* PJ7 : suppression de la ligne Distance tracé / D+ profil / altitude / pente. */
+  #detailView #routeStats {
+    display: none !important;
+  }
+
+  /* ---------------------------------------------------------------
+     PJ9/PJ10 : Objectifs et Poids séparés ; champs Objectifs superflus masqués.
+     --------------------------------------------------------------- */
+  .web058-objective-hidden {
+    display: none !important;
+  }
+
+  /* ---------------------------------------------------------------
+     PJ11 : suppression visuelle VELO 1 / VELO 2 / CHAUSSURES 1...
+     --------------------------------------------------------------- */
+  .equipment-profile-slot-web058 {
+    display: none !important;
+  }
+
+  .equipment-profile-row-web058 {
+    grid-template-columns:
+      minmax(240px, 1fr)
+      minmax(320px, 1.7fr)
+      !important;
+  }
+
+  /* ---------------------------------------------------------------
+     PJ12 : texte libre sous X sur toute la largeur.
+     --------------------------------------------------------------- */
+  .web058-problem-note {
+    flex: 1 0 100% !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    margin-top: 7px;
+  }
+
+  .web058-problem-note-input {
+    display: block !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  @media (max-width: 850px) {
+    .web058-period-table {
+      min-width: 760px;
+    }
+
+    #web055PeriodRows {
+      overflow-x: auto;
+    }
+
+    .equipment-profile-row-web058 {
+      grid-template-columns: 1fr !important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -3530,9 +3704,9 @@ select {
             <button id="trashCurrentActivityButton" class="secondary trash-detail-button" type="button">🗑 Corbeille</button>
           </div>
           <div class="detail-nav">
-            <button id="previousActivityButton" class="secondary">← Activité suivante</button>
+            <button id="previousActivityButton" class="secondary">Activité suivante →</button>
             <span id="detailPosition" class="pill neutral">—</span>
-            <button id="nextActivityButton" class="secondary">Activité précédente →</button>
+            <button id="nextActivityButton" class="secondary">← Activité précédente</button>
           </div>
         </div>
 
@@ -3926,9 +4100,9 @@ select {
 
 
         <div class="detail-bottom-nav">
-          <button id="previousActivityBottomButton" class="secondary">← Activité suivante</button>
+          <button id="previousActivityBottomButton" class="secondary">Activité suivante →</button>
           <button id="backToCatalogBottomButton" class="primary">Répertoire</button>
-          <button id="nextActivityBottomButton" class="secondary">Activité précédente →</button>
+          <button id="nextActivityBottomButton" class="secondary">← Activité précédente</button>
         </div>
       </section>
     </section>
@@ -3939,7 +4113,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB057-ACTIVITYUX013-CHART005-DIRECTORY007-IMPORTUX002"></script>
+  <script type="module" src="./app.js?v=WEB058-HOME007-ACTIVITYUX014-ANALYSIS006-EQUIPMENT006-ISSUE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
