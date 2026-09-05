@@ -41,47 +41,89 @@ jobs:
           echo "VALIDATION SPORT WEB COURANT"
           echo "======================================================"
 
-          test -f web/index.html
-          test -f web/styles.css
-          test -f web/app.js
+          req_file() {
+            local file="$1"
+            local label="$2"
+            if [ -f "$file" ]; then
+              echo "✓ $label"
+            else
+              echo "❌ $label : $file absent"
+              exit 40
+            fi
+          }
+
+          req() {
+            local file="$1"
+            local token="$2"
+            local label="$3"
+
+            if grep -Fq "$token" "$file"; then
+              echo "✓ $label"
+            else
+              echo "❌ $label"
+              echo "  Fichier : $file"
+              echo "  Token   : $token"
+              exit 41
+            fi
+          }
+
+          req_re() {
+            local file="$1"
+            local regex="$2"
+            local label="$3"
+
+            if grep -Eq "$regex" "$file"; then
+              echo "✓ $label"
+            else
+              echo "❌ $label"
+              echo "  Fichier : $file"
+              echo "  Regex   : $regex"
+              exit 42
+            fi
+          }
+
+          req_file web/index.html "web/index.html"
+          req_file web/styles.css "web/styles.css"
+          req_file web/app.js "web/app.js"
 
           node --check web/app.js
+          echo "✓ Syntaxe web/app.js"
 
           if [ -f functions/index.js ]; then
             node --check functions/index.js
+            echo "✓ Syntaxe functions/index.js"
           fi
 
           if [ -f scripts/deploy_strava_backend.sh ]; then
             bash -n scripts/deploy_strava_backend.sh
+            echo "✓ Syntaxe deploy_strava_backend.sh"
           fi
 
-          # Socle fonctionnel actuel.
-          grep -Fq 'function renderActivities()' web/app.js
-          grep -Fq 'function renderDetail(activity)' web/app.js
-          grep -Fq 'function renderCartography(activity)' web/app.js
-          grep -Fq 'await signInWithPopup(auth, provider);' web/app.js
-          grep -Fq 'function commitWebMutationOnline' web/app.js
+          # Socle fonctionnel durable.
+          req web/app.js 'function renderActivities()' 'Répertoire'
+          req web/app.js 'function renderDetail(activity)' 'Détail activité'
+          req web/app.js 'function renderCartography(activity)' 'Cartographie'
+          req web/app.js 'await signInWithPopup(auth, provider);' 'Authentification Google'
+          req web/app.js 'function commitWebMutationOnline' 'Mutations Firebase'
 
-          # Acquis récents à préserver.
-          grep -Fq 'function web060MovingTimeMs(activity)' web/app.js
-          grep -Fq 'function web061RenderSingleMetricRow(activity)' web/app.js
-          grep -Fq 'async function web063PersistMovingAudit(activity, audit)' web/app.js
-          grep -Fq 'function web064EnsureDirectDetailTop()' web/app.js
-          grep -Fq 'WEB064-DETAILTOP020-STRUCTURAL' web/index.html
+          # Acquis fonctionnels récents : on contrôle les fonctions,
+          # pas le numéro de cache-bust de la dernière version.
+          req web/app.js 'function web060MovingTimeMs(activity)' 'MOVINGTIME001'
+          req web/app.js 'function web061RenderSingleMetricRow(activity)' 'Détail mono-ligne'
+          req web/app.js 'async function web063PersistMovingAudit(activity, audit)' 'MOVINGCACHE003'
+          req web/app.js 'function web064EnsureDirectDetailTop()' 'Structure toolbar détail'
+          req web/app.js 'function web065EnsureToolbarGroups()' 'Toolbar flex WEB065'
+          req web/app.js 'function web065ReserveStickyOffset()' 'Réservation sticky WEB065'
+
+          # Cache-bust présent, mais sans exiger un numéro de version précis.
+          req_re web/index.html 'src="\./app\.js\?v=[^"]+"' 'Cache-bust app.js'
 
           # Garde-fou performance.
-          test "$(grep -c 'new MutationObserver' web/app.js || true)" = "0"
-
-          # Le workflow ne doit plus imposer des éléments UI historiques
-          # supprimés volontairement (découpe manuelle, ancien texte GAP, etc.).
-          echo "✓ Fichiers Web présents"
-          echo "✓ Syntaxe JavaScript valide"
-          echo "✓ Auth conservée"
-          echo "✓ Répertoire / détail / cartographie conservés"
-          echo "✓ MOVINGTIME001 conservé"
-          echo "✓ Mono-ligne détail conservée"
-          echo "✓ MOVINGCACHE003 conservé"
-          echo "✓ DETAILTOP020 conservé"
+          MUT="$(grep -c 'new MutationObserver' web/app.js || true)"
+          if [ "$MUT" != "0" ]; then
+            echo "❌ MutationObserver = $MUT"
+            exit 43
+          fi
           echo "✓ MutationObserver = 0"
 
           echo "======================================================"
