@@ -4716,6 +4716,7 @@ function web060ApplyMovingAudit(activity, route) {
    * On le rafraîchit immédiatement avec le résultat audité.
    */
   renderHeroMetrics(activity);
+  web061RefreshSingleMetricRow(activity);
 
   try {
     renderSummary(activity);
@@ -5773,6 +5774,183 @@ function moveDetail(delta) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+
+/* WEB061 · DETAILGRID017 */
+function web061FormatDate(timestampMs) {
+  const value = Number(timestampMs);
+
+  if (!Number.isFinite(value)) return "—";
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(new Date(value));
+}
+
+function web061FormatTime(timestampMs) {
+  const value = Number(timestampMs);
+
+  if (!Number.isFinite(value)) return "—";
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(new Date(value));
+}
+
+function web061MetricCard(label, value, chartKind, activity) {
+  const card = document.createElement(chartKind ? "button" : "div");
+
+  card.className =
+    "web061-metric-card" +
+    (chartKind ? " web061-metric-clickable" : "");
+
+  if (chartKind) {
+    card.type = "button";
+    card.title = "Afficher le graphique " + label.toLowerCase();
+    card.addEventListener("click", () => {
+      renderMetricChart(activity, chartKind);
+    });
+  }
+
+  const span = document.createElement("span");
+  span.textContent = label;
+
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+
+  card.append(span, strong);
+  return card;
+}
+
+function web061FindOriginalHeroRow() {
+  if (!ui.detailDateLine || !ui.detailHeroMetrics) return null;
+
+  const dateRow = ui.detailDateLine.closest(".detail-summary-row");
+  const metricRow = ui.detailHeroMetrics.closest(".detail-summary-row");
+
+  if (dateRow && dateRow === metricRow) return dateRow;
+  if (dateRow) return dateRow;
+  if (metricRow) return metricRow;
+
+  let candidate = ui.detailDateLine.parentElement;
+
+  while (candidate && candidate !== ui.detailView) {
+    if (candidate.contains(ui.detailHeroMetrics)) return candidate;
+    candidate = candidate.parentElement;
+  }
+
+  return null;
+}
+
+function web061RenderSingleMetricRow(activity) {
+  if (!activity || !ui.detailView) return;
+
+  const original = web061FindOriginalHeroRow();
+
+  if (!original) {
+    console.warn("WEB061 : bandeau métriques historique introuvable");
+    return;
+  }
+
+  let row = document.getElementById("web061SingleMetricRow");
+
+  if (!row) {
+    row = document.createElement("div");
+    row.id = "web061SingleMetricRow";
+    row.className = "web061-single-metric-row";
+    original.insertAdjacentElement("beforebegin", row);
+  }
+
+  row.innerHTML = "";
+
+  const iconCard = document.createElement("div");
+  iconCard.className = "web061-sport-card";
+
+  const svg = original.querySelector("svg");
+
+  if (svg) {
+    iconCard.appendChild(svg.cloneNode(true));
+  } else {
+    const fallback = document.createElement("strong");
+    fallback.textContent = Number(activity?.sport) === 2 ? "🚲" : "🏃";
+    iconCard.appendChild(fallback);
+  }
+
+  const sport = Number(activity?.sport);
+
+  const motionLabel =
+    sport === 1 ? "Allure" :
+    sport === 2 ? "Vitesse" :
+    "Allure / vitesse";
+
+  const motionValue = primarySpeedMetric(activity);
+
+  const cards = [
+    web061MetricCard(
+      "Date",
+      web061FormatDate(activity.start_time_ms),
+      null,
+      activity
+    ),
+    web061MetricCard(
+      "Heure",
+      web061FormatTime(activity.start_time_ms),
+      null,
+      activity
+    ),
+    web061MetricCard(
+      "Distance",
+      formatDistance(activity.distance_m),
+      null,
+      activity
+    ),
+    web061MetricCard(
+      "Durée",
+      formatDuration(web060MovingTimeMs(activity)),
+      null,
+      activity
+    ),
+    web061MetricCard(
+      "D+",
+      formatMeters(activity.ascent_m),
+      null,
+      activity
+    ),
+    web061MetricCard(
+      motionLabel,
+      motionValue,
+      "pace",
+      activity
+    ),
+    web061MetricCard(
+      "FC moy.",
+      formatHeartRate(activity.avg_hr),
+      "hr",
+      activity
+    )
+  ];
+
+  row.append(iconCard, ...cards);
+
+  /*
+   * Le DOM historique reste présent pour ne casser aucun autre module,
+   * mais il ne participe plus du tout au layout.
+   */
+  original.classList.add("web061-original-hero-hidden");
+
+  row.dataset.activityKey = String(activityKey(activity) || "");
+}
+
+function web061RefreshSingleMetricRow(activity) {
+  window.requestAnimationFrame(() => {
+    web061RenderSingleMetricRow(activity);
+  });
+}
+
+
 function renderDetail(activity) {
   const index = filteredActivities.findIndex((row) => activityKey(row) === activityKey(activity));
   const total = filteredActivities.length;
@@ -5822,6 +6000,7 @@ function renderDetail(activity) {
   renderLinkedRecords(activity);
 
   document.title = `${title} · SPORT Web`;
+  web061RefreshSingleMetricRow(activity);
 
   web059InstallDetailSticky();
   web059RefreshStickyTop();

@@ -3101,6 +3101,142 @@ select {
   }
 </style>
 
+
+<style id="web061-ux-css">
+  /* WEB061 · DETAILGRID017 */
+
+  #detailView .web061-original-hero-hidden {
+    display: none !important;
+  }
+
+  #web061SingleMetricRow {
+    display: grid !important;
+    grid-template-columns:
+      76px
+      150px
+      110px
+      minmax(145px, 1fr)
+      minmax(145px, 1fr)
+      115px
+      minmax(145px, 1fr)
+      135px
+      !important;
+    gap: 10px !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    min-width: 1080px !important;
+    box-sizing: border-box !important;
+    margin: 0 0 8px !important;
+    padding: 0 !important;
+  }
+
+  /*
+   * Aucune deuxième ligne n'est autorisée.
+   * Sur un écran inférieur à 1080 px, on garde UNE ligne et on défile.
+   */
+  #detailView:has(#web061SingleMetricRow) {
+    overflow-x: auto !important;
+  }
+
+  #web061SingleMetricRow > * {
+    min-width: 0 !important;
+    height: 78px !important;
+    min-height: 78px !important;
+    max-height: 78px !important;
+    box-sizing: border-box !important;
+  }
+
+  .web061-sport-card,
+  .web061-metric-card {
+    border: 1px solid rgba(128,128,128,.28) !important;
+    border-radius: 12px !important;
+    background: rgba(255,255,255,.018) !important;
+  }
+
+  .web061-sport-card {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: hidden !important;
+    padding: 5px !important;
+  }
+
+  .web061-sport-card svg {
+    width: 58px !important;
+    height: 58px !important;
+    max-width: 58px !important;
+    max-height: 58px !important;
+    display: block !important;
+  }
+
+  .web061-metric-card {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    padding: 7px 8px !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    text-align: center !important;
+    appearance: none !important;
+  }
+
+  button.web061-metric-card {
+    cursor: pointer;
+  }
+
+  .web061-metric-card > span {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    color: var(--muted, #9ca89f) !important;
+    font-size: .78rem !important;
+    line-height: 1.05 !important;
+    font-weight: 500 !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .web061-metric-card > strong {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    color: var(--accent, #9cff22) !important;
+    font-size: clamp(1.02rem, 1.45vw, 1.36rem) !important;
+    line-height: 1.05 !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: clip !important;
+  }
+
+  /*
+   * Neutralisation explicite des anciens layouts WEB057/059/060.
+   * Ils peuvent rester dans le fichier, mais le bandeau visible est WEB061.
+   */
+  #detailView .detail-hero-two-lines > .detail-summary-row.web061-original-hero-hidden,
+  #detailView .detail-summary-row.web061-original-hero-hidden {
+    display: none !important;
+    grid-template-columns: none !important;
+    position: static !important;
+  }
+
+  @media (max-width: 1079px) {
+    #web061SingleMetricRow {
+      width: 1080px !important;
+      min-width: 1080px !important;
+      max-width: none !important;
+      grid-template-columns:
+        76px 150px 110px 150px 150px 115px 150px 135px
+        !important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -4544,7 +4680,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB060-MOVINGTIME001-DETAILGRID016"></script>
+  <script type="module" src="./app.js?v=WEB061-DETAILGRID017-SINGLEROW"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
