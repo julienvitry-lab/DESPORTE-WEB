@@ -3392,6 +3392,115 @@ select {
   }
 </style>
 
+
+<style id="web065-ux-css">
+  /* WEB065 · DETAILTOP021 */
+
+  #web065DetailStickySpacer {
+    display: block !important;
+    width: 100% !important;
+    height: 0;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    pointer-events: none !important;
+  }
+
+  #detailView #web064DirectDetailToolbar {
+    position: sticky !important;
+    top: var(--web059-sticky-top, 0px) !important;
+    z-index: 100 !important;
+
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+
+    width: 100% !important;
+    min-height: 54px !important;
+    height: auto !important;
+
+    margin: 0 0 10px !important;
+    padding: 5px 10px !important;
+
+    box-sizing: border-box !important;
+    overflow: visible !important;
+  }
+
+  #detailView #web064DirectDetailToolbar.web065-measuring-static {
+    position: relative !important;
+    top: auto !important;
+  }
+
+  #web064DirectDetailToolbar .web065-toolbar-group {
+    display: flex !important;
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    align-items: center !important;
+    gap: 10px !important;
+    flex-wrap: nowrap !important;
+  }
+
+  #web064DirectDetailToolbar .web065-toolbar-left {
+    justify-content: flex-start !important;
+  }
+
+  #web064DirectDetailToolbar .web065-toolbar-center {
+    justify-content: center !important;
+  }
+
+  #web064DirectDetailToolbar .web065-toolbar-right {
+    justify-content: flex-end !important;
+  }
+
+  #web064DirectDetailToolbar .web065-toolbar-group > button {
+    position: static !important;
+    inset: auto !important;
+
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+
+    margin: 0 !important;
+    transform: none !important;
+
+    white-space: nowrap !important;
+  }
+
+  /*
+   * Neutralisation des anciennes règles grid-column de WEB064.
+   */
+  #web064DirectDetailToolbar #backToCatalogButton,
+  #web064DirectDetailToolbar #trashCurrentActivityButton,
+  #web064DirectDetailToolbar #previousActivityButton,
+  #web064DirectDetailToolbar #nextActivityButton {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    justify-self: auto !important;
+  }
+
+  #detailView > #web061SingleMetricRow {
+    position: relative !important;
+    top: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+
+    z-index: 1 !important;
+
+    margin-top: 0 !important;
+    margin-bottom: 10px !important;
+  }
+
+  /*
+   * UNE SEULE LIGNE pour les métriques, toujours.
+   */
+  #detailView > #web061SingleMetricRow {
+    grid-auto-flow: column !important;
+    white-space: nowrap !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -4835,7 +4944,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB064-DETAILTOP020-STRUCTURAL"></script>
+  <script type="module" src="./app.js?v=WEB065-DETAILTOP021-STICKYRESERVE"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

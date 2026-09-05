@@ -6122,6 +6122,173 @@ function web063ScheduleDetailToolbarOverlapFix() {
 
 
 /* WEB064 · DETAILTOP020 */
+
+/* WEB065 · DETAILTOP021 */
+let web065ResizeInstalled = false;
+let web065ReserveToken = 0;
+
+function web065ToolbarGroup(id, className) {
+  let node = document.getElementById(id);
+
+  if (!node) {
+    node = document.createElement("div");
+    node.id = id;
+    node.className = className;
+  }
+
+  return node;
+}
+
+function web065EnsureToolbarGroups() {
+  const toolbar = document.getElementById("web064DirectDetailToolbar");
+  if (!toolbar) return null;
+
+  const left = web065ToolbarGroup(
+    "web065ToolbarLeft",
+    "web065-toolbar-group web065-toolbar-left"
+  );
+
+  const center = web065ToolbarGroup(
+    "web065ToolbarCenter",
+    "web065-toolbar-group web065-toolbar-center"
+  );
+
+  const right = web065ToolbarGroup(
+    "web065ToolbarRight",
+    "web065-toolbar-group web065-toolbar-right"
+  );
+
+  if (ui.backToCatalogButton) {
+    left.appendChild(ui.backToCatalogButton);
+  }
+
+  if (ui.trashCurrentActivityButton) {
+    center.appendChild(ui.trashCurrentActivityButton);
+  }
+
+  if (ui.previousActivityButton) {
+    right.appendChild(ui.previousActivityButton);
+  }
+
+  if (ui.nextActivityButton) {
+    right.appendChild(ui.nextActivityButton);
+  }
+
+  toolbar.replaceChildren(left, center, right);
+
+  return toolbar;
+}
+
+function web065EnsureStickySpacer(toolbar) {
+  if (!toolbar || !ui.detailView) return null;
+
+  let spacer = document.getElementById("web065DetailStickySpacer");
+
+  if (!spacer) {
+    spacer = document.createElement("div");
+    spacer.id = "web065DetailStickySpacer";
+    spacer.setAttribute("aria-hidden", "true");
+  }
+
+  if (spacer.parentElement !== ui.detailView) {
+    ui.detailView.insertBefore(spacer, toolbar);
+  } else if (spacer.nextElementSibling !== toolbar) {
+    ui.detailView.insertBefore(spacer, toolbar);
+  }
+
+  return spacer;
+}
+
+function web065StickyTopPx() {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--web059-sticky-top");
+
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function web065ReserveStickyOffset() {
+  const token = ++web065ReserveToken;
+
+  const toolbar = web065EnsureToolbarGroups();
+  const row = document.getElementById("web061SingleMetricRow");
+
+  if (!toolbar || !row || !ui.detailView) return;
+
+  const spacer = web065EnsureStickySpacer(toolbar);
+  if (!spacer) return;
+
+  /*
+   * Mesure du toolbar à sa position NORMALE, sans sticky.
+   */
+  spacer.style.height = "0px";
+  toolbar.classList.add("web065-measuring-static");
+
+  window.requestAnimationFrame(() => {
+    if (token !== web065ReserveToken) return;
+
+    const desiredTop = web065StickyTopPx();
+    const normalTop = toolbar.getBoundingClientRect().top;
+
+    const reserve = Math.max(
+      0,
+      Math.ceil(desiredTop - normalTop)
+    );
+
+    spacer.style.height = reserve + "px";
+    spacer.dataset.reservePx = String(reserve);
+
+    toolbar.classList.remove("web065-measuring-static");
+
+    /*
+     * Contrôle post-layout : si une ancienne règle résiduelle crée encore
+     * un chevauchement, on augmente le spacer de la différence exacte.
+     */
+    window.requestAnimationFrame(() => {
+      if (token !== web065ReserveToken) return;
+
+      const toolbarRect = toolbar.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+
+      const missing = Math.ceil(
+        toolbarRect.bottom + 8 - rowRect.top
+      );
+
+      if (missing > 0) {
+        const current =
+          Number.parseFloat(spacer.style.height) || 0;
+
+        spacer.style.height =
+          Math.ceil(current + missing) + "px";
+
+        spacer.dataset.reservePx =
+          String(Math.ceil(current + missing));
+      }
+
+      row.style.marginTop = "0px";
+    });
+  });
+}
+
+function web065InstallDetailTop() {
+  const toolbar = web065EnsureToolbarGroups();
+  if (!toolbar) return;
+
+  web065EnsureStickySpacer(toolbar);
+  web065ReserveStickyOffset();
+
+  if (!web065ResizeInstalled) {
+    web065ResizeInstalled = true;
+
+    window.addEventListener(
+      "resize",
+      () => web065ReserveStickyOffset(),
+      { passive: true }
+    );
+  }
+}
+
+
 function web064EnsureDirectDetailTop() {
   if (!ui.detailView) return;
 
@@ -6191,6 +6358,7 @@ function web064EnsureDirectDetailTop() {
    */
   row.style.marginTop = "";
   row.dataset.web063OverlapFix = "structural-web064";
+  web065InstallDetailTop();
 }
 
 function web064ScheduleDirectDetailTop() {
