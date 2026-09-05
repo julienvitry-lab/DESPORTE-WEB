@@ -2930,6 +2930,177 @@ select {
   }
 </style>
 
+
+<style id="web060-ux-css">
+  /* WEB060 · MOVINGTIME001 / DETAILGRID016 */
+
+  /*
+   * Règle forte : les deux groupes restent de vrais conteneurs.
+   * Cela neutralise le display:contents de WEB059 qui provoquait
+   * le chevauchement visible Date / Heure / Distance.
+   */
+  @media (min-width: 1051px) {
+    #detailView .detail-hero-two-lines > .detail-summary-row {
+      display: grid !important;
+      grid-template-columns:
+        84px
+        minmax(245px, 1.55fr)
+        minmax(0, 5fr)
+        !important;
+      column-gap: 10px !important;
+      row-gap: 0 !important;
+      align-items: stretch !important;
+      width: 100% !important;
+      min-width: 0 !important;
+    }
+
+    #detailView #detailDateLine {
+      display: grid !important;
+      grid-template-columns:
+        minmax(145px, 1.25fr)
+        minmax(90px, .75fr)
+        !important;
+      gap: 10px !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      align-items: stretch !important;
+    }
+
+    #detailView #detailHeroMetrics {
+      display: grid !important;
+      grid-template-columns:
+        repeat(5, minmax(0, 1fr))
+        !important;
+      gap: 10px !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      align-items: stretch !important;
+    }
+  }
+
+  #detailView #detailDateLine,
+  #detailView #detailHeroMetrics,
+  #detailView .web057-date-metric,
+  #detailView .hero-metric.summary-chip {
+    box-sizing: border-box !important;
+  }
+
+  #detailView .web057-date-metric,
+  #detailView .hero-metric.summary-chip {
+    position: relative !important;
+    inset: auto !important;
+    transform: none !important;
+    float: none !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 78px !important;
+    height: 78px !important;
+    margin: 0 !important;
+    padding: 8px 7px !important;
+    overflow: hidden !important;
+  }
+
+  #detailView .web057-date-metric > span,
+  #detailView .hero-metric.summary-chip > span {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    text-align: center !important;
+    font-size: .78rem !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  #detailView .web057-date-metric > strong,
+  #detailView .hero-metric.summary-chip > strong {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    text-align: center !important;
+    font-size: clamp(1rem, 1.45vw, 1.35rem) !important;
+    line-height: 1.08 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: clip !important;
+  }
+
+  /*
+   * L'icône sport ne peut plus déborder sur Date.
+   */
+  #detailView .detail-sport-icon-web049,
+  #detailView .detail-sport-icon-web048,
+  #detailView .detail-sport-icon-web046,
+  #detailView .detail-summary-row > :first-child {
+    max-width: 84px !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  #detailView .detail-sport-icon-web049 svg,
+  #detailView .detail-sport-icon-web048 svg,
+  #detailView .detail-sport-icon-web046 svg {
+    max-width: 64px !important;
+    max-height: 64px !important;
+  }
+
+  /*
+   * À largeur intermédiaire, on préfère deux rangées propres à tout
+   * chevauchement. Jamais de superposition.
+   */
+  @media (min-width: 760px) and (max-width: 1050px) {
+    #detailView .detail-hero-two-lines > .detail-summary-row {
+      display: grid !important;
+      grid-template-columns:
+        80px
+        minmax(230px, 1fr)
+        !important;
+      gap: 10px !important;
+      align-items: stretch !important;
+    }
+
+    #detailView #detailDateLine {
+      display: grid !important;
+      grid-template-columns: minmax(140px, 1.2fr) minmax(85px, .8fr) !important;
+      gap: 10px !important;
+    }
+
+    #detailView #detailHeroMetrics {
+      grid-column: 1 / -1 !important;
+      display: grid !important;
+      grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+      gap: 10px !important;
+    }
+  }
+
+  @media (max-width: 759px) {
+    #detailView .detail-hero-two-lines > .detail-summary-row {
+      display: grid !important;
+      grid-template-columns: 70px minmax(0, 1fr) !important;
+      gap: 8px !important;
+    }
+
+    #detailView #detailDateLine {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr !important;
+      gap: 8px !important;
+    }
+
+    #detailView #detailHeroMetrics {
+      grid-column: 1 / -1 !important;
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 8px !important;
+    }
+
+    #detailView #detailHeroMetrics > :last-child {
+      grid-column: 1 / -1 !important;
+    }
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -4373,7 +4544,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB059-DIRECTORY008-DETAIL015-TIME005"></script>
+  <script type="module" src="./app.js?v=WEB060-MOVINGTIME001-DETAILGRID016"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

@@ -4458,19 +4458,275 @@ function applyFiltersAndRender() {
 
 
 /* WEB059 · DIRECTORY008 / DETAIL015 / TIME005 */
-function web059MovingTimeMs(activity) {
-  const candidates = [
-    Number(activity?.timer_time_ms),
-    Number(activity?.moving_time_ms),
-    Number(activity?.moving_time) * 1000,
-    Number(activity?.elapsed_time_ms)
-  ];
 
-  const value = candidates.find((candidate) =>
-    Number.isFinite(candidate) && candidate > 0
+/* WEB060 · MOVINGTIME001 */
+const web060MovingAuditCache = new Map();
+
+function web060FinitePositive(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function web060Median(values) {
+  const rows = values
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+
+  if (!rows.length) return null;
+
+  const mid = Math.floor(rows.length / 2);
+  return rows.length % 2
+    ? rows[mid]
+    : (rows[mid - 1] + rows[mid]) / 2;
+}
+
+function web060RouteTimerAudit(route) {
+  const points = Array.isArray(route?.points) ? route.points : [];
+
+  const times = points
+    .map((point) => routePointTimeMs(point))
+    .filter(Number.isFinite);
+
+  if (times.length < 3) {
+    return {
+      movingMs: null,
+      spanMs: null,
+      pauseMs: 0,
+      pauseCount: 0,
+      cadenceMs: null,
+      gapThresholdMs: null
+    };
+  }
+
+  const intervals = [];
+
+  for (let i = 1; i < times.length; i += 1) {
+    const dt = times[i] - times[i - 1];
+
+    if (
+      Number.isFinite(dt) &&
+      dt >= 200 &&
+      dt <= 30000
+    ) {
+      intervals.push(dt);
+    }
+  }
+
+  const cadenceMs = web060Median(intervals);
+
+  if (!Number.isFinite(cadenceMs)) {
+    return {
+      movingMs: null,
+      spanMs: times[times.length - 1] - times[0],
+      pauseMs: 0,
+      pauseCount: 0,
+      cadenceMs: null,
+      gapThresholdMs: null
+    };
+  }
+
+  /*
+   * FIT normal : cadence souvent proche de 1 s.
+   * Smart recording : cadence plus irrégulière.
+   * Un trou > 4 cadences est considéré comme STOP/START, avec un plancher
+   * de 5 s et un plafond de 20 s. Ce n'est PAS une règle "pause 15 min".
+   */
+  const gapThresholdMs = Math.max(
+    5000,
+    Math.min(20000, cadenceMs * 4)
   );
 
-  return Number.isFinite(value) ? value : 0;
+  let movingMs = 0;
+  let pauseMs = 0;
+  let pauseCount = 0;
+
+  for (let i = 1; i < times.length; i += 1) {
+    const dt = times[i] - times[i - 1];
+
+    if (!Number.isFinite(dt) || dt <= 0) continue;
+
+    if (dt <= gapThresholdMs) {
+      movingMs += dt;
+    } else {
+      pauseMs += dt;
+      pauseCount += 1;
+    }
+  }
+
+  const spanMs = times[times.length - 1] - times[0];
+
+  return {
+    movingMs: movingMs > 0 ? movingMs : null,
+    spanMs: spanMs > 0 ? spanMs : null,
+    pauseMs,
+    pauseCount,
+    cadenceMs,
+    gapThresholdMs
+  };
+}
+
+function web060MovingAudit(activity, route = null) {
+  const key = activityKey(activity);
+  const elapsedMs = web060FinitePositive(activity?.elapsed_time_ms);
+  const timerMs = web060FinitePositive(activity?.timer_time_ms);
+  const routeAudit = route
+    ? web060RouteTimerAudit(route)
+    : null;
+
+  const routeMs = web060FinitePositive(routeAudit?.movingMs);
+
+  let movingMs = null;
+  let source = "NONE";
+
+  /*
+   * Cas normal Garmin : STOP/START réduit total_timer_time.
+   * C'est la source prioritaire, comme demandé.
+   */
+  if (
+    timerMs &&
+    elapsedMs &&
+    timerMs <= elapsedMs - 1000
+  ) {
+    movingMs = timerMs;
+    source = "FIT_TIMER";
+  }
+
+  /*
+   * Cas historique/problématique :
+   * timer == elapsed alors que les timestamps du tracé montrent des trous.
+   * On ne substitue le tracé que si l'écart est significatif.
+   */
+  if (
+    !movingMs &&
+    routeMs &&
+    elapsedMs &&
+    routeMs < elapsedMs - Math.max(30000, elapsedMs * 0.01)
+  ) {
+    movingMs = routeMs;
+    source = "ROUTE_STOP_GAPS";
+  }
+
+  if (!movingMs && timerMs) {
+    movingMs = timerMs;
+    source = "FIT_TIMER";
+  }
+
+  if (!movingMs && routeMs) {
+    movingMs = routeMs;
+    source = "ROUTE_TIMELINE";
+  }
+
+  if (!movingMs && elapsedMs) {
+    movingMs = elapsedMs;
+    source = "ELAPSED_FALLBACK";
+  }
+
+  const result = {
+    movingMs: movingMs || 0,
+    source,
+    elapsedMs,
+    timerMs,
+    routeMs,
+    pauseMs: Number(routeAudit?.pauseMs) || 0,
+    pauseCount: Number(routeAudit?.pauseCount) || 0,
+    cadenceMs: Number(routeAudit?.cadenceMs) || null,
+    gapThresholdMs: Number(routeAudit?.gapThresholdMs) || null
+  };
+
+  if (key) {
+    web060MovingAuditCache.set(String(key), result);
+  }
+
+  if (activity && result.movingMs > 0) {
+    activity.moving_time_computed_ms = result.movingMs;
+    activity.moving_time_source = result.source;
+    activity.moving_pause_ms = result.pauseMs;
+  }
+
+  return result;
+}
+
+function web060MovingTimeMs(activity) {
+  const key = activityKey(activity);
+
+  if (key) {
+    const cached = web060MovingAuditCache.get(String(key));
+    if (cached?.movingMs > 0) return cached.movingMs;
+  }
+
+  const computed = web060FinitePositive(
+    activity?.moving_time_computed_ms
+  );
+
+  if (computed) return computed;
+
+  const timer = web060FinitePositive(activity?.timer_time_ms);
+  if (timer) return timer;
+
+  const elapsed = web060FinitePositive(activity?.elapsed_time_ms);
+  return elapsed || 0;
+}
+
+function web060MovingSourceLabel(activity) {
+  const key = activityKey(activity);
+  const cached = key
+    ? web060MovingAuditCache.get(String(key))
+    : null;
+
+  const source =
+    cached?.source ||
+    activity?.moving_time_source ||
+    "FIT_TIMER";
+
+  if (source === "ROUTE_STOP_GAPS") {
+    return "STOP/START détectés dans le tracé";
+  }
+
+  if (source === "ROUTE_TIMELINE") {
+    return "chronologie du tracé";
+  }
+
+  if (source === "ELAPSED_FALLBACK") {
+    return "durée écoulée (secours)";
+  }
+
+  return "chrono Garmin/FIT";
+}
+
+function web060ApplyMovingAudit(activity, route) {
+  if (!activity || !route?.points?.length) return;
+
+  const result = web060MovingAudit(activity, route);
+
+  console.info(
+    "WEB060 MOVINGTIME001",
+    {
+      activity: activityKey(activity),
+      source: result.source,
+      elapsedMs: result.elapsedMs,
+      timerMs: result.timerMs,
+      routeMs: result.routeMs,
+      pauseMs: result.pauseMs,
+      pauseCount: result.pauseCount
+    }
+  );
+
+  /*
+   * Le header a été rendu avant le chargement asynchrone du tracé.
+   * On le rafraîchit immédiatement avec le résultat audité.
+   */
+  renderHeroMetrics(activity);
+
+  try {
+    renderSummary(activity);
+  } catch (error) {
+    console.warn("WEB060 summary refresh", error);
+  }
+}
+
+
+function web059MovingTimeMs(activity) {
+  return web060MovingTimeMs(activity);
 }
 
 function web059RefreshStickyTop() {
@@ -5812,6 +6068,12 @@ function renderHeroMetrics(activity) {
     const strong = document.createElement("strong");
     strong.textContent = value;
 
+    if (label === "Durée") {
+      box.title =
+        "Temps de course hors pauses · " +
+        web060MovingSourceLabel(activity);
+    }
+
     box.append(span, strong);
     ui.detailHeroMetrics.appendChild(box);
   }
@@ -5896,6 +6158,7 @@ async function renderCartography(activity) {
 
     // ----- Socle cartographique : identique au chemin validé WEB019 -----
     activeRoute = route;
+    web060ApplyMovingAudit(activity, route);
     renderLeafletMap(route);
     renderElevationProfile(route);
 
@@ -15929,11 +16192,18 @@ function formatCadence(value) {
 }
 
 function averageSpeedKmh(activity) {
-  const distance = Number(activity.distance_m);
-  const duration = Number(activity.timer_time_ms || activity.elapsed_time_ms);
-  if (!Number.isFinite(distance) || !Number.isFinite(duration) || distance <= 0 || duration <= 0) {
+  const distance = Number(activity?.distance_m);
+  const duration = web060MovingTimeMs(activity);
+
+  if (
+    !Number.isFinite(distance) ||
+    !Number.isFinite(duration) ||
+    distance <= 0 ||
+    duration <= 0
+  ) {
     return null;
   }
+
   return (distance / 1000) / (duration / 3600000);
 }
 
