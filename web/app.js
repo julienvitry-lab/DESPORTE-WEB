@@ -4693,6 +4693,76 @@ function web060MovingSourceLabel(activity) {
   return "chrono Garmin/FIT";
 }
 
+
+/* WEB063 · MOVINGCACHE003 */
+const web063MovingPersistPending = new Map();
+
+async function web063PersistMovingAudit(activity, audit) {
+  if (!activity || !audit?.movingMs) return;
+
+  const key = String(activityKey(activity) || "");
+  if (!key) return;
+
+  const movingMs = Math.round(Number(audit.movingMs) || 0);
+  if (movingMs <= 0) return;
+
+  const current = Number(activity?.moving_time_computed_ms);
+
+  if (
+    Number.isFinite(current) &&
+    Math.abs(current - movingMs) < 1000 &&
+    String(activity?.moving_time_source || "") === String(audit.source || "")
+  ) {
+    return;
+  }
+
+  if (web063MovingPersistPending.has(key)) {
+    return web063MovingPersistPending.get(key);
+  }
+
+  const task = (async () => {
+    const patch = {
+      moving_time_computed_ms: movingMs,
+      moving_time_source: String(audit.source || "UNKNOWN"),
+      moving_pause_ms: Math.max(0, Math.round(Number(audit.pauseMs) || 0)),
+      moving_pause_count: Math.max(0, Math.round(Number(audit.pauseCount) || 0))
+    };
+
+    const numericId = Number(activity.id ?? key);
+    if (Number.isFinite(numericId) && numericId > 0) {
+      patch.id = numericId;
+    }
+
+    await commitWebMutation({
+      table: "activities",
+      rowKey: key,
+      operation: "UPSERT",
+      row: patch,
+      materializedCollection: "activities",
+      materializedData: patch
+    });
+
+    Object.assign(activity, patch);
+
+    web062UpdateDirectoryDuration(activity);
+  })();
+
+  web063MovingPersistPending.set(key, task);
+
+  try {
+    await task;
+  } catch (error) {
+    console.warn(
+      "WEB063 MOVINGCACHE003 persistance ignorée",
+      key,
+      error
+    );
+  } finally {
+    web063MovingPersistPending.delete(key);
+  }
+}
+
+
 function web060ApplyMovingAudit(activity, route) {
   if (!activity || !route?.points?.length) return;
 
@@ -4716,6 +4786,7 @@ function web060ApplyMovingAudit(activity, route) {
    * On le rafraîchit immédiatement avec le résultat audité.
    */
   renderHeroMetrics(activity);
+  void web063PersistMovingAudit(activity, result);
   web061RefreshSingleMetricRow(activity);
 
   try {
@@ -5053,7 +5124,8 @@ async function web062AuditDirectoryActivity(activity) {
   const route = await web062LoadRouteForMoving(activity);
 
   if (route?.points?.length >= 2) {
-    web060MovingAudit(activity, route);
+    const audit = web060MovingAudit(activity, route);
+    await web063PersistMovingAudit(activity, audit);
   }
 
   web062UpdateDirectoryDuration(activity);
@@ -6031,6 +6103,44 @@ function web061FindOriginalHeroRow() {
   return null;
 }
 
+
+/* WEB063 · DETAILTOP019 */
+function web063ResolveDetailToolbarOverlap() {
+  const row = document.getElementById("web061SingleMetricRow");
+
+  const toolbar =
+    ui.detailView?.querySelector(".web059-detail-toolbar") ||
+    ui.backToCatalogButton?.parentElement ||
+    null;
+
+  if (!row || !toolbar || toolbar === ui.detailView) return;
+
+  row.style.marginTop = "0px";
+
+  window.requestAnimationFrame(() => {
+    const toolbarRect = toolbar.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+
+    const requiredTop = toolbarRect.bottom + 8;
+    const overlap = Math.ceil(requiredTop - rowRect.top);
+
+    if (overlap > 0) {
+      row.style.marginTop = overlap + "px";
+      row.dataset.web063OverlapFix = String(overlap);
+    } else {
+      row.style.marginTop = "0px";
+      row.dataset.web063OverlapFix = "0";
+    }
+  });
+}
+
+function web063ScheduleDetailToolbarOverlapFix() {
+  window.requestAnimationFrame(() => {
+    web063ResolveDetailToolbarOverlap();
+  });
+}
+
+
 function web061RenderSingleMetricRow(activity) {
   if (!activity || !ui.detailView) return;
 
@@ -6138,6 +6248,7 @@ function web061RenderSingleMetricRow(activity) {
   original.classList.add("web061-original-hero-hidden");
 
   row.dataset.activityKey = String(activityKey(activity) || "");
+  web063ScheduleDetailToolbarOverlapFix();
 }
 
 function web061RefreshSingleMetricRow(activity) {
