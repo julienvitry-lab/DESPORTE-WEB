@@ -4927,6 +4927,190 @@ function web059InstallUx() {
 }
 
 
+
+/* WEB062 · MOVINGDIR002 */
+const web062MovingRouteCache = new Map();
+const web062MovingPending = new Map();
+
+async function web062LoadRouteForMoving(activity) {
+  if (!activity || !currentUser) return null;
+
+  const key = String(activityKey(activity) || "");
+
+  if (key && web062MovingRouteCache.has(key)) {
+    return web062MovingRouteCache.get(key);
+  }
+
+  if (key && web062MovingPending.has(key)) {
+    return web062MovingPending.get(key);
+  }
+
+  const task = (async () => {
+    const candidates = [...new Set([
+      activity?.id,
+      activity?.__docId,
+      activityKey(activity)
+    ]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean))];
+
+    for (const candidate of candidates) {
+      try {
+        const snapshot = await getDoc(
+          doc(
+            db,
+            ROOT,
+            currentUser.uid,
+            "activity_routes",
+            candidate
+          )
+        );
+
+        if (!snapshot.exists()) continue;
+
+        const route = normalizeRoute(snapshot.data());
+
+        if (route?.points?.length >= 2) {
+          if (key) web062MovingRouteCache.set(key, route);
+          return route;
+        }
+      } catch (error) {
+        console.warn(
+          "WEB062 MOVINGDIR002 route ignorée",
+          candidate,
+          error
+        );
+      }
+    }
+
+    if (key) web062MovingRouteCache.set(key, null);
+    return null;
+  })();
+
+  if (key) web062MovingPending.set(key, task);
+
+  try {
+    return await task;
+  } finally {
+    if (key) web062MovingPending.delete(key);
+  }
+}
+
+function web062FindDurationCell(card) {
+  if (!card) return null;
+
+  for (const cell of card.querySelectorAll(".datum")) {
+    const labels = [...cell.querySelectorAll("span")]
+      .map((node) => String(node.textContent || "").trim().toUpperCase());
+
+    if (
+      labels.includes("DURÉE") ||
+      labels.includes("DUREE") ||
+      labels.includes("TEMPS")
+    ) {
+      return cell;
+    }
+  }
+
+  /*
+   * Fallback sur la structure tableau WEB059 :
+   * icône, date, heure, distance, D+, temps, matériel, repères.
+   */
+  const datums = [...card.querySelectorAll(".datum")];
+  return datums[4] || null;
+}
+
+function web062UpdateDirectoryDuration(activity) {
+  if (!ui.activityList || !activity) return;
+
+  const key = String(activityKey(activity) || "");
+  if (!key) return;
+
+  const card = [...ui.activityList.querySelectorAll(".activity-card")]
+    .find((node) =>
+      String(node.dataset.activityKeyWeb058 || "") === key
+    );
+
+  if (!card) return;
+
+  const cell = web062FindDurationCell(card);
+  const strong = cell?.querySelector("strong");
+
+  if (!strong) return;
+
+  strong.textContent = formatDuration(
+    web060MovingTimeMs(activity)
+  );
+
+  cell.title =
+    "Temps de course hors pauses · " +
+    web060MovingSourceLabel(activity);
+}
+
+async function web062AuditDirectoryActivity(activity) {
+  if (!activity) return;
+
+  const route = await web062LoadRouteForMoving(activity);
+
+  if (route?.points?.length >= 2) {
+    web060MovingAudit(activity, route);
+  }
+
+  web062UpdateDirectoryDuration(activity);
+}
+
+async function web062EnrichVisibleMovingTimes() {
+  if (!ui.activityList || !currentUser) return;
+
+  const cards = [...ui.activityList.querySelectorAll(".activity-card")];
+
+  const visibleKeys = new Set(
+    cards
+      .map((card) => String(card.dataset.activityKeyWeb058 || ""))
+      .filter(Boolean)
+  );
+
+  const rows = filteredActivities.filter((activity) =>
+    visibleKeys.has(String(activityKey(activity) || ""))
+  );
+
+  /*
+   * Concurrence volontairement limitée pour ne pas saturer Firestore.
+   */
+  let index = 0;
+
+  async function worker() {
+    while (true) {
+      const current = index++;
+      if (current >= rows.length) return;
+
+      try {
+        await web062AuditDirectoryActivity(rows[current]);
+      } catch (error) {
+        console.warn(
+          "WEB062 MOVINGDIR002 activité ignorée",
+          activityKey(rows[current]),
+          error
+        );
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(4, Math.max(1, rows.length)) },
+      () => worker()
+    )
+  );
+}
+
+function web062ScheduleDirectoryMovingAudit() {
+  window.setTimeout(() => {
+    void web062EnrichVisibleMovingTimes();
+  }, 0);
+}
+
+
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;
   ui.loadedLabel.textContent =
@@ -4992,6 +5176,8 @@ function renderActivities() {
 
   web059HideRepeatedActivityLabels();
   web059AlignDirectoryLoadButtons();
+
+  web062ScheduleDirectoryMovingAudit();
 }
 
 function activitySportIconMarkupLegacy(activity) {
@@ -5861,7 +6047,17 @@ function web061RenderSingleMetricRow(activity) {
     row = document.createElement("div");
     row.id = "web061SingleMetricRow";
     row.className = "web061-single-metric-row";
-    original.insertAdjacentElement("beforebegin", row);
+
+    const toolbar =
+      ui.detailView.querySelector(".web059-detail-toolbar") ||
+      ui.backToCatalogButton?.parentElement ||
+      null;
+
+    if (toolbar && toolbar !== ui.detailView) {
+      toolbar.insertAdjacentElement("afterend", row);
+    } else {
+      original.insertAdjacentElement("beforebegin", row);
+    }
   }
 
   row.innerHTML = "";

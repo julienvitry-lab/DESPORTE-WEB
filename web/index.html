@@ -3237,6 +3237,50 @@ select {
   }
 </style>
 
+
+<style id="web062-ux-css">
+  /* WEB062 · DETAILTOP018 / MOVINGDIR002 */
+
+  #detailView .web059-detail-toolbar {
+    position: sticky !important;
+    top: var(--web059-sticky-top, 0px) !important;
+    z-index: 80 !important;
+    display: flex !important;
+    align-items: center !important;
+    background: var(--surface, #111713) !important;
+    margin: 0 0 10px !important;
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+    box-sizing: border-box !important;
+  }
+
+  #web061SingleMetricRow {
+    position: relative !important;
+    top: auto !important;
+    z-index: 1 !important;
+    clear: both !important;
+    margin-top: 0 !important;
+    margin-bottom: 10px !important;
+  }
+
+  /*
+   * Le bandeau de métriques ne peut jamais se glisser sous le toolbar
+   * au chargement initial.
+   */
+  #detailView .web059-detail-toolbar + #web061SingleMetricRow {
+    margin-top: 0 !important;
+  }
+
+  /*
+   * La ligne mono-ligne de WEB061 reste inchangée.
+   * Aucun wrap n'est réintroduit.
+   */
+  #web061SingleMetricRow {
+    grid-auto-flow: column !important;
+    align-items: stretch !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -4680,7 +4724,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB061-DETAILGRID017-SINGLEROW"></script>
+  <script type="module" src="./app.js?v=WEB062-DETAILTOP018-MOVINGDIR002"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
