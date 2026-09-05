@@ -2352,6 +2352,150 @@ select {
   }
 </style>
 
+
+<style id="web057-ux-css">
+  /* WEB057 · ACTIVITYUX013 / CHART005 / DIRECTORY007 / IMPORTUX002 */
+
+  /* Navigation : Activité précédente avant Activité suivante.
+     WEB056 a déjà donné le bon sens chronologique aux boutons :
+     nextActivityButton = précédente ; previousActivityButton = suivante. */
+  #detailView .detail-nav {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  #detailView #nextActivityButton {
+    order: 1 !important;
+  }
+
+  #detailView #previousActivityButton {
+    order: 2 !important;
+  }
+
+  #detailView #detailPosition {
+    display: none !important;
+  }
+
+  #detailView .detail-bottom-nav {
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  #detailView #nextActivityBottomButton {
+    order: 1 !important;
+  }
+
+  #detailView #backToCatalogBottomButton {
+    order: 2 !important;
+  }
+
+  #detailView #previousActivityBottomButton {
+    order: 3 !important;
+  }
+
+  /* Découpage automatique : plus de commande manuelle. */
+  #detailView #splitActivityButton,
+  #detailView #splitActivityPanel {
+    display: none !important;
+  }
+
+  /* Le compteur 1/N n'est plus utile. */
+  #detailView #detailPosition {
+    display: none !important;
+  }
+
+  /* Comparaison de tracé/profil supprimée de la fiche activité. */
+  #detailView #routeComparisonPanel {
+    display: none !important;
+  }
+
+  /* Date et Départ = présentation identique aux métriques Distance / FC. */
+  #detailView #detailDateLine {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    align-items: stretch !important;
+  }
+
+  #detailView .web057-date-metric,
+  #detailView .hero-metric.summary-chip {
+    min-width: 0 !important;
+    min-height: 78px !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    box-sizing: border-box !important;
+  }
+
+  #detailView .web057-date-metric > span,
+  #detailView .web057-date-metric > strong {
+    width: 100% !important;
+    text-align: center !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  /* Année de comparaison : 4 chiffres toujours visibles. */
+  #web055CompareYear,
+  select.web055-fix4-year-select {
+    width: 122px !important;
+    min-width: 122px !important;
+    padding-right: 32px !important;
+  }
+
+  /* Répertoire : +1 cm de chaque côté sur écran large.
+     L'espace gagné est attribué principalement à Matériel. */
+  @media (min-width: 1050px) {
+    body.ux-activities-page #activityDirectorySection {
+      width: calc(100% + 2cm) !important;
+      max-width: none !important;
+      margin-left: -1cm !important;
+      margin-right: -1cm !important;
+      overflow: visible !important;
+    }
+
+    #activityList .activity-card {
+      grid-template-columns:
+        70px
+        minmax(116px,.70fr)
+        minmax(88px,.52fr)
+        minmax(108px,.62fr)
+        minmax(78px,.48fr)
+        minmax(116px,.66fr)
+        minmax(240px,1.28fr)
+        minmax(96px,.58fr)
+        !important;
+    }
+
+    /* 7e colonne = Matériel */
+    #activityList .activity-card > .datum:nth-child(7) {
+      min-width: 240px !important;
+    }
+
+    #activityList .activity-card > .datum:nth-child(7) strong {
+      white-space: nowrap !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+    }
+  }
+
+  /* Import : centrage réel de "Choisir des fichiers". */
+  #webImportSection .web-import-file-label {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    line-height: 1.2 !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -3795,7 +3939,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB056-ACTIVITYUX012-GOAL007-FILTERUX006-GAP005"></script>
+  <script type="module" src="./app.js?v=WEB057-ACTIVITYUX013-CHART005-DIRECTORY007-IMPORTUX002"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

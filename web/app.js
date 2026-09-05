@@ -2694,7 +2694,7 @@ function drawWeb055RegularityChart(data) {
   const left = 38;
   const right = 14;
   const top = 14;
-  const bottom = 38;
+  const bottom = 44;
   const plotW = width - left - right;
   const plotH = height - top - bottom;
   const max = Math.max(1, ...data.map((item) => item.count));
@@ -2721,7 +2721,7 @@ function drawWeb055RegularityChart(data) {
     ctx.fillRect(x, y, barW, h);
 
     ctx.fillStyle = "rgba(235,235,225,.78)";
-    ctx.font = data.length > 16 ? "8px Comfortaa, sans-serif" : "9px Comfortaa, sans-serif";
+    ctx.font = data.length > 16 ? "12px Comfortaa, sans-serif" : "13.5px Comfortaa, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(String(item.year), x + barW / 2, height - 10);
 
@@ -5194,8 +5194,8 @@ function renderDetail(activity) {
   ui.detailSportLine.setAttribute("aria-label", sportLabel);
 
   ui.detailDateLine.innerHTML =
-    '<span class="detail-start-stat-web049"><span>Date</span><strong>' + formatActivityDateWeb049(activity.start_time_ms) + '</strong></span>' +
-    '<span class="detail-start-stat-web049"><span>Départ</span><strong>' + formatActivityTimeWeb049(activity.start_time_ms) + '</strong></span>';
+    '<span class="detail-start-stat-web049 hero-metric summary-chip web057-date-metric"><span>Date</span><strong>' + formatActivityDateWeb049(activity.start_time_ms) + '</strong></span>' +
+    '<span class="detail-start-stat-web049 hero-metric summary-chip web057-date-metric"><span>Départ</span><strong>' + formatActivityTimeWeb049(activity.start_time_ms) + '</strong></span>';
 
   renderHeroMetrics(activity);
   renderSummary(activity);
