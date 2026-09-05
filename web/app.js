@@ -303,6 +303,7 @@ queueMicrotask(() => installWeb055HomeLayout());
 initializeWebStravaModule();
 installWeb049UiContract();
 queueMicrotask(() => installEquipmentMappingEditorWeb050());
+queueMicrotask(() => web059InstallUx());
 queueMicrotask(() => installProgressiveActivityFiltersWeb056());
 /* WEB053_PROFILE_EDITOR_BOOT */
 queueMicrotask(() => installEquipmentProfileEditorWeb053());
@@ -4455,6 +4456,220 @@ function applyFiltersAndRender() {
   markGlobalMapStale();
 }
 
+
+/* WEB059 · DIRECTORY008 / DETAIL015 / TIME005 */
+function web059MovingTimeMs(activity) {
+  const candidates = [
+    Number(activity?.timer_time_ms),
+    Number(activity?.moving_time_ms),
+    Number(activity?.moving_time) * 1000,
+    Number(activity?.elapsed_time_ms)
+  ];
+
+  const value = candidates.find((candidate) =>
+    Number.isFinite(candidate) && candidate > 0
+  );
+
+  return Number.isFinite(value) ? value : 0;
+}
+
+function web059RefreshStickyTop() {
+  let top = 0;
+
+  for (const node of [ui.uxPrimaryNav, ui.uxSecondaryNav]) {
+    if (!node || node.classList.contains("hidden")) continue;
+
+    const style = window.getComputedStyle(node);
+    const rect = node.getBoundingClientRect();
+
+    if (
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      rect.height > 0
+    ) {
+      top += rect.height;
+    }
+  }
+
+  document.documentElement.style.setProperty(
+    "--web059-sticky-top",
+    Math.max(0, Math.round(top)) + "px"
+  );
+}
+
+function web059DirectoryGridTemplate() {
+  return [
+    "58px",
+    "minmax(116px,.72fr)",
+    "minmax(86px,.54fr)",
+    "minmax(108px,.64fr)",
+    "minmax(78px,.48fr)",
+    "minmax(118px,.70fr)",
+    "minmax(250px,1.42fr)",
+    "minmax(96px,.58fr)"
+  ].join(" ");
+}
+
+function web059EnsureDirectoryHeader() {
+  if (!ui.activityList) return null;
+
+  let header = document.getElementById("activityDirectoryHeaderWeb059");
+
+  if (!header) {
+    header = document.createElement("div");
+    header.id = "activityDirectoryHeaderWeb059";
+    header.className = "web059-activity-header";
+    header.innerHTML =
+      '<span aria-hidden="true"></span>' +
+      '<strong>Date</strong>' +
+      '<strong>Heure</strong>' +
+      '<strong>Distance</strong>' +
+      '<strong>D+</strong>' +
+      '<strong>Temps</strong>' +
+      '<strong>Matériel</strong>' +
+      '<strong>Repères</strong>';
+
+    ui.activityList.insertAdjacentElement("beforebegin", header);
+  }
+
+  header.style.gridTemplateColumns = web059DirectoryGridTemplate();
+  web059RefreshStickyTop();
+
+  return header;
+}
+
+function web059HideRepeatedActivityLabels() {
+  if (!ui.activityList) return;
+
+  const labels = new Set([
+    "DATE",
+    "DÉPART",
+    "DEPART",
+    "HEURE",
+    "DISTANCE",
+    "D+",
+    "DURÉE",
+    "DUREE",
+    "TEMPS",
+    "MATÉRIEL",
+    "MATERIEL",
+    "REPÈRES",
+    "REPERES"
+  ]);
+
+  for (const card of ui.activityList.querySelectorAll(".activity-card")) {
+    for (const node of card.querySelectorAll("span")) {
+      const text = String(node.textContent || "")
+        .trim()
+        .toUpperCase();
+
+      if (labels.has(text)) {
+        node.classList.add("web059-row-label-hidden");
+      }
+    }
+  }
+}
+
+function web059AlignDirectoryLoadButtons() {
+  if (!ui.activityList) return;
+
+  let actions = document.getElementById("activityLoadActionsWeb059");
+
+  if (!actions) {
+    actions = document.createElement("div");
+    actions.id = "activityLoadActionsWeb059";
+    actions.className = "web059-load-actions";
+    ui.activityList.insertAdjacentElement("afterend", actions);
+  }
+
+  const localMore = [...ui.activityList.querySelectorAll("button")]
+    .find((button) =>
+      /^Affichers+20s+des+plus/i.test(
+        String(button.textContent || "").trim()
+      )
+    );
+
+  for (const button of [
+    localMore,
+    ui.loadMoreButton,
+    ui.loadAllButton
+  ]) {
+    if (button && button.parentElement !== actions) {
+      actions.appendChild(button);
+    }
+  }
+
+  const footer = ui.activityList.querySelector(
+    ".activity-directory-footer"
+  );
+
+  if (footer) {
+    footer.classList.add("web059-directory-footer-clean");
+  }
+}
+
+function web059CommonAncestor(nodes) {
+  const valid = nodes.filter(Boolean);
+  if (!valid.length) return null;
+
+  let candidate = valid[0].parentElement;
+
+  while (candidate) {
+    if (valid.every((node) => candidate.contains(node))) {
+      return candidate;
+    }
+    candidate = candidate.parentElement;
+  }
+
+  return null;
+}
+
+function web059InstallDetailSticky() {
+  if (!ui.detailView) return;
+
+  web059RefreshStickyTop();
+
+  const detailButtons = [
+    ui.backToCatalogButton,
+    ui.trashCurrentActivityButton,
+    ui.previousActivityButton,
+    ui.nextActivityButton
+  ].filter(Boolean);
+
+  let toolbar = web059CommonAncestor(detailButtons);
+
+  if (!toolbar || toolbar === ui.detailView) {
+    toolbar = ui.backToCatalogButton?.parentElement || null;
+  }
+
+  if (toolbar && toolbar !== ui.detailView) {
+    toolbar.classList.add("web059-detail-toolbar");
+  }
+
+  let node = ui.detailHeroMetrics?.parentElement || null;
+
+  while (node && node !== ui.detailView) {
+    if (node !== toolbar) {
+      node.classList.add("web059-detail-no-sticky");
+    }
+    node = node.parentElement;
+  }
+
+  const bottom = ui.backToCatalogBottomButton?.parentElement;
+  if (bottom && bottom !== ui.detailView) {
+    bottom.classList.add("web059-detail-bottom-nav");
+  }
+}
+
+function web059InstallUx() {
+  web059EnsureDirectoryHeader();
+  web059HideRepeatedActivityLabels();
+  web059AlignDirectoryLoadButtons();
+  web059InstallDetailSticky();
+  web059RefreshStickyTop();
+}
+
+
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;
   ui.loadedLabel.textContent =
@@ -4462,6 +4677,7 @@ function renderActivities() {
     `${formatNumber(activeLoadedCount)} activités chargées`;
 
   ui.activityList.innerHTML = "";
+  web059EnsureDirectoryHeader();
 
   if (!filteredActivities.length) {
     const empty = document.createElement("div");
@@ -4488,7 +4704,7 @@ function renderActivities() {
     button.appendChild(datum("Départ", formatActivityTimeWeb049(activity.start_time_ms), "activity-time-datum"));
     button.appendChild(datum("Distance", formatDistance(activity.distance_m)));
     button.appendChild(datum("D+", formatMeters(activity.ascent_m), "hide-sm"));
-    button.appendChild(datum("Durée", formatDuration(activity.elapsed_time_ms), "hide-sm"));
+    button.appendChild(datum("Durée", formatDuration(web059MovingTimeMs(activity)), "hide-sm"));
     button.appendChild(datum("Matériel", activity.equipment_name || "—", "hide-md hide-sm"));
     button.appendChild(datum("Repères", markerSummary(activity), "hide-md hide-sm"));
 
@@ -4516,6 +4732,9 @@ function renderActivities() {
   }
 
   queueMicrotask(() => applyWeb049UiContract());
+
+  web059HideRepeatedActivityLabels();
+  web059AlignDirectoryLoadButtons();
 }
 
 function activitySportIconMarkupLegacy(activity) {
@@ -5347,6 +5566,9 @@ function renderDetail(activity) {
   renderLinkedRecords(activity);
 
   document.title = `${title} · SPORT Web`;
+
+  web059InstallDetailSticky();
+  web059RefreshStickyTop();
 }
 
 
@@ -5568,7 +5790,7 @@ function renderHeroMetrics(activity) {
 
   const metrics = [
     ["Distance", formatDistance(activity.distance_m), null],
-    ["Durée", formatDuration(activity.elapsed_time_ms), null],
+    ["Durée", formatDuration(web059MovingTimeMs(activity)), null],
     ["D+", formatMeters(activity.ascent_m), null],
     [movementLabel, movementValue, "pace"],
     ["FC moy.", formatHeartRate(activity.avg_hr), "hr"]
@@ -5602,8 +5824,7 @@ function renderSummary(activity) {
   addDetailItem(ui.detailSummaryGrid, "Sport", sportName(activity.sport));
   addDetailItem(ui.detailSummaryGrid, "Sous-sport", subSportName(activity.sub_sport));
   addDetailItem(ui.detailSummaryGrid, "Distance", formatDistance(activity.distance_m));
-  addDetailItem(ui.detailSummaryGrid, "Durée écoulée", formatDuration(activity.elapsed_time_ms));
-  addDetailItem(ui.detailSummaryGrid, "Temps actif", formatDuration(activity.timer_time_ms));
+  addDetailItem(ui.detailSummaryGrid, "Temps en mouvement", formatDuration(activity.timer_time_ms));
   addDetailItem(ui.detailSummaryGrid, "Dénivelé +", formatMeters(activity.ascent_m));
   addDetailItem(ui.detailSummaryGrid, "Dénivelé −", formatMeters(activity.descent_m));
   const calories = activityCaloriesPresentation(activity);
@@ -6171,38 +6392,73 @@ function routePointGapSecondsPerKm(point) {
 
 function kilometerPerformanceValues(segment) {
   const points = segment?.points || [];
+
   if (!points.length) {
     return { pace: null, gap: null, avgHr: null };
   }
 
-  const first = points[0];
-  const last = points[points.length - 1];
+  let movingSeconds = 0;
+  let movingDistance = 0;
 
-  const t0 = routePointTimeMs(first);
-  const t1 = routePointTimeMs(last);
+  for (let i = 1; i < points.length; i += 1) {
+    const previous = points[i - 1];
+    const current = points[i];
+
+    const d1 = Number(previous?.distanceMeters);
+    const d2 = Number(current?.distanceMeters);
+    const dx = d2 - d1;
+
+    const t1 = routePointTimeMs(previous);
+    const t2 = routePointTimeMs(current);
+    const dt =
+      Number.isFinite(t1) &&
+      Number.isFinite(t2) &&
+      t2 > t1
+        ? (t2 - t1) / 1000
+        : null;
+
+    if (
+      !Number.isFinite(dx) ||
+      dx <= 0 ||
+      !Number.isFinite(dt) ||
+      dt <= 0 ||
+      dt > 300
+    ) {
+      continue;
+    }
+
+    const inferredSpeed = dx / dt;
+
+    /*
+     * Une longue pause peut se trouver entre deux points valides.
+     * On ne compte l'intervalle que si le déplacement moyen indique
+     * réellement du mouvement.
+     */
+    if (inferredSpeed < 0.35) continue;
+
+    movingSeconds += dt;
+    movingDistance += dx;
+  }
 
   let pace = null;
 
-  if (
-    Number.isFinite(t0) &&
-    Number.isFinite(t1) &&
-    t1 > t0 &&
-    segment.distanceMeters > 0
-  ) {
-    pace =
-      ((t1 - t0) / 1000) /
-      (segment.distanceMeters / 1000);
+  if (movingSeconds > 0 && movingDistance > 0) {
+    pace = movingSeconds / (movingDistance / 1000);
   } else {
     const speeds = points
       .map(routePointSpeedMps)
-      .filter(Number.isFinite);
+      .filter((value) =>
+        Number.isFinite(value) &&
+        value > 0.35 &&
+        value < 30
+      );
 
     if (speeds.length) {
-      const avgSpeed =
+      const average =
         speeds.reduce((a, b) => a + b, 0) /
         speeds.length;
 
-      pace = 1000 / avgSpeed;
+      pace = 1000 / average;
     }
   }
 
