@@ -2028,8 +2028,22 @@ function web055StartOfYear(value = Date.now()) {
 }
 
 function web055ActivityDurationMs(activity) {
+  /* WEB067 · HOME_MOVINGTIME002 */
+  try {
+    if (typeof web060MovingTimeMs === "function") {
+      const moving = Number(web060MovingTimeMs(activity));
+      if (Number.isFinite(moving) && moving > 0) return moving;
+    }
+  } catch (error) {
+    console.warn("WEB067 web060MovingTimeMs", error);
+  }
+
+  const computed = Number(activity?.moving_time_computed_ms);
+  if (Number.isFinite(computed) && computed > 0) return computed;
+
   const timer = Number(activity?.timer_time_ms);
   if (Number.isFinite(timer) && timer > 0) return timer;
+
   const elapsed = Number(activity?.elapsed_time_ms);
   return Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
 }
@@ -2390,6 +2404,170 @@ function web055ScheduleGapEnrichment() {
     }
   });
 }
+
+
+/* WEB067 · HOME_MOVINGTIME002 */
+let web067HomeAuditToken = 0;
+const web067HomeAuditSession = new Set();
+
+function web067HomeNeedsMovingAudit(activity) {
+  if (!activity || activity.deleted_at_ms != null) return false;
+
+  const key = String(activityKey(activity) || "");
+  if (!key || web067HomeAuditSession.has(key)) return false;
+
+  const computed = Number(activity?.moving_time_computed_ms);
+  if (Number.isFinite(computed) && computed > 0) return false;
+
+  const elapsed = Number(activity?.elapsed_time_ms);
+  const timer = Number(activity?.timer_time_ms);
+
+  if (
+    Number.isFinite(timer) &&
+    timer > 0 &&
+    Number.isFinite(elapsed) &&
+    elapsed > 0 &&
+    timer < elapsed - Math.max(1000, elapsed * 0.005)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+async function web067AuditOneHomeActivity(activity, token) {
+  if (!web067HomeNeedsMovingAudit(activity)) return false;
+  if (token !== web067HomeAuditToken) return false;
+
+  const key = String(activityKey(activity) || "");
+  if (key) web067HomeAuditSession.add(key);
+
+  try {
+    const route = await web062LoadRouteForMoving(activity);
+
+    if (
+      token !== web067HomeAuditToken ||
+      !route?.points?.length
+    ) {
+      return false;
+    }
+
+    const audit = web060MovingAudit(activity, route);
+
+    if (audit?.movingMs > 0) {
+      await web063PersistMovingAudit(activity, audit);
+      return true;
+    }
+  } catch (error) {
+    console.warn(
+      "WEB067 audit Accueil ignoré",
+      key,
+      error
+    );
+  }
+
+  return false;
+}
+
+async function web067AuditHomeBatch(rows, token) {
+  const queue = (rows || [])
+    .filter(web067HomeNeedsMovingAudit)
+    .sort(
+      (a, b) =>
+        Number(b?.start_time_ms || 0) -
+        Number(a?.start_time_ms || 0)
+    );
+
+  if (!queue.length) return 0;
+
+  let index = 0;
+  let changed = 0;
+
+  async function worker() {
+    while (true) {
+      const i = index++;
+      if (i >= queue.length) return;
+      if (token !== web067HomeAuditToken) return;
+
+      const updated =
+        await web067AuditOneHomeActivity(queue[i], token);
+
+      if (updated) changed += 1;
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(4, queue.length) },
+      () => worker()
+    )
+  );
+
+  return changed;
+}
+
+async function web067AuditHomeCurrentMonth(generation) {
+  if (!currentUser || !web055HomeRows?.length) return;
+
+  const token = ++web067HomeAuditToken;
+  const monthStart = web055StartOfMonth(Date.now());
+
+  const rows = web055HomeRows.filter(
+    (row) =>
+      Number(row?.start_time_ms || 0) >= monthStart
+  );
+
+  await web067AuditHomeBatch(rows, token);
+
+  if (
+    generation !== web055HomeGeneration ||
+    token !== web067HomeAuditToken
+  ) {
+    return;
+  }
+}
+
+function web067ScheduleHomeHistoryAudit(generation) {
+  if (!currentUser || !web055HomeRows?.length) return;
+
+  const token = web067HomeAuditToken;
+
+  queueMicrotask(async () => {
+    const monthStart = web055StartOfMonth(Date.now());
+
+    const remaining = web055HomeRows.filter(
+      (row) =>
+        Number(row?.start_time_ms || 0) < monthStart &&
+        web067HomeNeedsMovingAudit(row)
+    );
+
+    const batchSize = 24;
+
+    for (let i = 0; i < remaining.length; i += batchSize) {
+      if (
+        generation !== web055HomeGeneration ||
+        token !== web067HomeAuditToken
+      ) {
+        return;
+      }
+
+      const batch = remaining.slice(i, i + batchSize);
+      const changed =
+        await web067AuditHomeBatch(batch, token);
+
+      if (changed > 0) {
+        renderWeb055Periods();
+        renderWeb055Goal();
+        renderWeb055Comparison();
+      }
+
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, 0)
+      );
+    }
+  });
+}
+
 
 function web055Metrics(rows) {
   const metrics = {
@@ -3381,9 +3559,14 @@ async function loadWeb055Home() {
     if (generation !== web055HomeGeneration) return;
 
     web055HomeRows = rows;
+
+    await web067AuditHomeCurrentMonth(generation);
+    if (generation !== web055HomeGeneration) return;
+
     web055FirestoreConnected = true;
     renderUnifiedConnectionBadgeWeb055();
     renderWeb055Home();
+    web067ScheduleHomeHistoryAudit(generation);
   } catch (error) {
     if (generation !== web055HomeGeneration) return;
 
