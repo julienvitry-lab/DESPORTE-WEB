@@ -1,0 +1,534 @@
+name: WEB067 - Accueil moving time identique Activites
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verifier base WEB066 MOVINGTIME001
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+
+          grep -Fq 'function web055ActivityDurationMs(activity)' web/app.js
+          grep -Fq 'function web055Metrics(rows)' web/app.js
+          grep -Fq 'function web060MovingTimeMs(activity)' web/app.js
+          grep -Fq 'async function web062LoadRouteForMoving(activity)' web/app.js
+          grep -Fq 'function web060MovingAudit(activity, route = null)' web/app.js
+          grep -Fq 'async function web063PersistMovingAudit(activity, audit)' web/app.js
+          grep -Fq 'async function loadWeb055Home()' web/app.js
+
+          echo "✓ Base compatible WEB067"
+
+      - name: Appliquer WEB067 HOME MOVINGTIME002
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+
+          const appFile = "web/app.js";
+          const htmlFile = "web/index.html";
+
+          let app = fs.readFileSync(appFile, "utf8");
+          let html = fs.readFileSync(htmlFile, "utf8");
+
+          function fail(message) {
+            console.error("ERREUR WEB067 :", message);
+            process.exit(30);
+          }
+
+          function findFunctionBounds(source, functionName) {
+            const asyncMarker = `async function ${functionName}(`;
+            const plainMarker = `function ${functionName}(`;
+
+            let start = source.indexOf(asyncMarker);
+            if (start < 0) start = source.indexOf(plainMarker);
+            if (start < 0) fail(`fonction ${functionName} introuvable`);
+
+            const openParen = source.indexOf("(", start);
+            if (openParen < 0) fail(`parenthèse ${functionName} introuvable`);
+
+            let parenDepth = 0;
+            let quote = null;
+            let escaped = false;
+            let lineComment = false;
+            let blockComment = false;
+            let closeParen = -1;
+
+            for (let i = openParen; i < source.length; i += 1) {
+              const ch = source[i];
+              const next = source[i + 1];
+
+              if (lineComment) {
+                if (ch === "\n") lineComment = false;
+                continue;
+              }
+
+              if (blockComment) {
+                if (ch === "*" && next === "/") {
+                  blockComment = false;
+                  i += 1;
+                }
+                continue;
+              }
+
+              if (quote) {
+                if (escaped) {
+                  escaped = false;
+                  continue;
+                }
+                if (ch === "\\") {
+                  escaped = true;
+                  continue;
+                }
+                if (ch === quote) quote = null;
+                continue;
+              }
+
+              if (ch === "/" && next === "/") {
+                lineComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "/" && next === "*") {
+                blockComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "'" || ch === '"' || ch === "`") {
+                quote = ch;
+                continue;
+              }
+
+              if (ch === "(") parenDepth += 1;
+              else if (ch === ")") {
+                parenDepth -= 1;
+                if (parenDepth === 0) {
+                  closeParen = i;
+                  break;
+                }
+              }
+            }
+
+            if (closeParen < 0) fail(`fin signature ${functionName} introuvable`);
+
+            let brace = closeParen + 1;
+            while (brace < source.length && /\s/.test(source[brace])) brace += 1;
+
+            if (source[brace] !== "{") {
+              fail(`accolade corps ${functionName} introuvable`);
+            }
+
+            let depth = 0;
+            quote = null;
+            escaped = false;
+            lineComment = false;
+            blockComment = false;
+
+            for (let i = brace; i < source.length; i += 1) {
+              const ch = source[i];
+              const next = source[i + 1];
+
+              if (lineComment) {
+                if (ch === "\n") lineComment = false;
+                continue;
+              }
+
+              if (blockComment) {
+                if (ch === "*" && next === "/") {
+                  blockComment = false;
+                  i += 1;
+                }
+                continue;
+              }
+
+              if (quote) {
+                if (escaped) {
+                  escaped = false;
+                  continue;
+                }
+                if (ch === "\\") {
+                  escaped = true;
+                  continue;
+                }
+                if (ch === quote) quote = null;
+                continue;
+              }
+
+              if (ch === "/" && next === "/") {
+                lineComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "/" && next === "*") {
+                blockComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "'" || ch === '"' || ch === "`") {
+                quote = ch;
+                continue;
+              }
+
+              if (ch === "{") depth += 1;
+              else if (ch === "}") {
+                depth -= 1;
+                if (depth === 0) return { start, end: i + 1 };
+              }
+            }
+
+            fail(`fin ${functionName} introuvable`);
+          }
+
+          function replaceFunction(source, functionName, replacement) {
+            const b = findFunctionBounds(source, functionName);
+            return source.slice(0, b.start) + replacement + source.slice(b.end);
+          }
+
+          function patchFunction(source, functionName, transform) {
+            const b = findFunctionBounds(source, functionName);
+            const current = source.slice(b.start, b.end);
+            const next = transform(current);
+
+            if (next === current) {
+              fail(`aucune modification dans ${functionName}`);
+            }
+
+            return source.slice(0, b.start) + next + source.slice(b.end);
+          }
+
+          function insertBeforeFunction(source, functionName, code, marker) {
+            if (marker && source.includes(marker)) return source;
+
+            const b = findFunctionBounds(source, functionName);
+            return source.slice(0, b.start) + code + "\n\n" + source.slice(b.start);
+          }
+
+          const durationFunction = `function web055ActivityDurationMs(activity) {
+            /* WEB067 · HOME_MOVINGTIME002 */
+            try {
+              if (typeof web060MovingTimeMs === "function") {
+                const moving = Number(web060MovingTimeMs(activity));
+                if (Number.isFinite(moving) && moving > 0) return moving;
+              }
+            } catch (error) {
+              console.warn("WEB067 web060MovingTimeMs", error);
+            }
+
+            const computed = Number(activity?.moving_time_computed_ms);
+            if (Number.isFinite(computed) && computed > 0) return computed;
+
+            const timer = Number(activity?.timer_time_ms);
+            if (Number.isFinite(timer) && timer > 0) return timer;
+
+            const elapsed = Number(activity?.elapsed_time_ms);
+            return Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
+          }`;
+
+          app = replaceFunction(app, "web055ActivityDurationMs", durationFunction);
+
+          const homeAuditModule = `
+          /* WEB067 · HOME_MOVINGTIME002 */
+          let web067HomeAuditToken = 0;
+          const web067HomeAuditSession = new Set();
+
+          function web067HomeNeedsMovingAudit(activity) {
+            if (!activity || activity.deleted_at_ms != null) return false;
+
+            const key = String(activityKey(activity) || "");
+            if (!key || web067HomeAuditSession.has(key)) return false;
+
+            const computed = Number(activity?.moving_time_computed_ms);
+            if (Number.isFinite(computed) && computed > 0) return false;
+
+            const elapsed = Number(activity?.elapsed_time_ms);
+            const timer = Number(activity?.timer_time_ms);
+
+            if (
+              Number.isFinite(timer) &&
+              timer > 0 &&
+              Number.isFinite(elapsed) &&
+              elapsed > 0 &&
+              timer < elapsed - Math.max(1000, elapsed * 0.005)
+            ) {
+              return false;
+            }
+
+            return true;
+          }
+
+          async function web067AuditOneHomeActivity(activity, token) {
+            if (!web067HomeNeedsMovingAudit(activity)) return false;
+            if (token !== web067HomeAuditToken) return false;
+
+            const key = String(activityKey(activity) || "");
+            if (key) web067HomeAuditSession.add(key);
+
+            try {
+              const route = await web062LoadRouteForMoving(activity);
+
+              if (
+                token !== web067HomeAuditToken ||
+                !route?.points?.length
+              ) {
+                return false;
+              }
+
+              const audit = web060MovingAudit(activity, route);
+
+              if (audit?.movingMs > 0) {
+                await web063PersistMovingAudit(activity, audit);
+                return true;
+              }
+            } catch (error) {
+              console.warn(
+                "WEB067 audit Accueil ignoré",
+                key,
+                error
+              );
+            }
+
+            return false;
+          }
+
+          async function web067AuditHomeBatch(rows, token) {
+            const queue = (rows || [])
+              .filter(web067HomeNeedsMovingAudit)
+              .sort(
+                (a, b) =>
+                  Number(b?.start_time_ms || 0) -
+                  Number(a?.start_time_ms || 0)
+              );
+
+            if (!queue.length) return 0;
+
+            let index = 0;
+            let changed = 0;
+
+            async function worker() {
+              while (true) {
+                const i = index++;
+                if (i >= queue.length) return;
+                if (token !== web067HomeAuditToken) return;
+
+                const updated =
+                  await web067AuditOneHomeActivity(queue[i], token);
+
+                if (updated) changed += 1;
+              }
+            }
+
+            await Promise.all(
+              Array.from(
+                { length: Math.min(4, queue.length) },
+                () => worker()
+              )
+            );
+
+            return changed;
+          }
+
+          async function web067AuditHomeCurrentMonth(generation) {
+            if (!currentUser || !web055HomeRows?.length) return;
+
+            const token = ++web067HomeAuditToken;
+            const monthStart = web055StartOfMonth(Date.now());
+
+            const rows = web055HomeRows.filter(
+              (row) =>
+                Number(row?.start_time_ms || 0) >= monthStart
+            );
+
+            await web067AuditHomeBatch(rows, token);
+
+            if (
+              generation !== web055HomeGeneration ||
+              token !== web067HomeAuditToken
+            ) {
+              return;
+            }
+          }
+
+          function web067ScheduleHomeHistoryAudit(generation) {
+            if (!currentUser || !web055HomeRows?.length) return;
+
+            const token = web067HomeAuditToken;
+
+            queueMicrotask(async () => {
+              const monthStart = web055StartOfMonth(Date.now());
+
+              const remaining = web055HomeRows.filter(
+                (row) =>
+                  Number(row?.start_time_ms || 0) < monthStart &&
+                  web067HomeNeedsMovingAudit(row)
+              );
+
+              const batchSize = 24;
+
+              for (let i = 0; i < remaining.length; i += batchSize) {
+                if (
+                  generation !== web055HomeGeneration ||
+                  token !== web067HomeAuditToken
+                ) {
+                  return;
+                }
+
+                const batch = remaining.slice(i, i + batchSize);
+                const changed =
+                  await web067AuditHomeBatch(batch, token);
+
+                if (changed > 0) {
+                  renderWeb055Periods();
+                  renderWeb055Goal();
+                  renderWeb055Comparison();
+                }
+
+                await new Promise((resolve) =>
+                  window.setTimeout(resolve, 0)
+                );
+              }
+            });
+          }
+          `;
+
+          app = insertBeforeFunction(
+            app,
+            "web055Metrics",
+            homeAuditModule,
+            "let web067HomeAuditToken"
+          );
+
+          app = patchFunction(app, "loadWeb055Home", (fn) => {
+            let next = fn;
+
+            if (!next.includes("await web067AuditHomeCurrentMonth(generation);")) {
+              const marker = `web055HomeRows = rows;
+              web055FirestoreConnected = true;`;
+
+              if (!next.includes(marker)) {
+                fail("loadWeb055Home : point web055HomeRows introuvable");
+              }
+
+              next = next.replace(
+                marker,
+                `web055HomeRows = rows;
+
+              await web067AuditHomeCurrentMonth(generation);
+              if (generation !== web055HomeGeneration) return;
+
+              web055FirestoreConnected = true;`
+              );
+            }
+
+            if (!next.includes("web067ScheduleHomeHistoryAudit(generation);")) {
+              const marker = "renderWeb055Home();";
+
+              if (!next.includes(marker)) {
+                fail("loadWeb055Home : renderWeb055Home introuvable");
+              }
+
+              next = next.replace(
+                marker,
+                marker +
+                "\n    web067ScheduleHomeHistoryAudit(generation);"
+              );
+            }
+
+            return next;
+          });
+
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB067-HOME-MOVINGTIME002"'
+          );
+
+          fs.writeFileSync(appFile, app, "utf8");
+          fs.writeFileSync(htmlFile, html, "utf8");
+
+          console.log("✓ Accueil utilise web060MovingTimeMs()");
+          console.log("✓ Semaine/Mois audités avant affichage");
+          console.log("✓ Année/Total corrigés en arrière-plan");
+          NODE
+
+      - name: Valider WEB067
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+          npx --yes acorn@8.15.0 --ecma2022 --module web/app.js >/dev/null
+
+          node <<'NODE'
+          const fs = require("fs");
+
+          for (const file of ["web/app.js", "web/index.html"]) {
+            let text = fs.readFileSync(file, "utf8");
+            text = text
+              .split(/\r?\n/)
+              .map((line) => line.replace(/[ \t]+$/g, ""))
+              .join("\n");
+            fs.writeFileSync(file, text, "utf8");
+          }
+          NODE
+
+          git diff --check
+
+          grep -Fq 'WEB067 · HOME_MOVINGTIME002' web/app.js
+          grep -Fq 'typeof web060MovingTimeMs === "function"' web/app.js
+          grep -Fq 'await web067AuditHomeCurrentMonth(generation);' web/app.js
+          grep -Fq 'web067ScheduleHomeHistoryAudit(generation);' web/app.js
+          grep -Fq 'WEB067-HOME-MOVINGTIME002' web/index.html
+
+          echo "======================================================"
+          echo "✅ WEB067 VALIDE"
+          echo "ACCUEIL : TEMPS DE DEPLACEMENT"
+          echo "SEMAINE/MOIS : CORRIGES AVANT AFFICHAGE"
+          echo "ANNEE/TOTAL  : CORRECTION PROGRESSIVE"
+          echo "======================================================"
+
+      - name: Commit et push WEB067
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "julienvitry-lab"
+          git config user.email "julienvitry-lab@users.noreply.github.com"
+
+          git add web/app.js web/index.html
+
+          if git diff --cached --quiet; then
+            echo "✓ WEB067 déjà présent : aucun commit nécessaire"
+            exit 0
+          fi
+
+          git commit -m "WEB067 aligne temps Accueil sur moving time Activites"
+          git push origin main
+
+          echo "======================================================"
+          echo "✅ WEB067 PUSHÉ SUR MAIN"
+          echo "======================================================"
