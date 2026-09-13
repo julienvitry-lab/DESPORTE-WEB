@@ -3550,6 +3550,32 @@ select {
   }
 </style>
 
+
+<style id="web068-home-refresh-css">
+  /* WEB068 · HOME_REFRESH001 */
+
+  .web068-history-refreshing {
+    position: relative;
+  }
+
+  .web068-history-badge {
+    display: inline-block;
+    margin-left: 9px;
+    color: var(--muted, #9ca89f);
+    font-size: .68rem;
+    font-weight: 500;
+    line-height: 1;
+    vertical-align: middle;
+    white-space: nowrap;
+    opacity: .85;
+  }
+
+  .web068-history-refreshing
+  .web055-period-cell {
+    transition: none !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -4993,7 +5019,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB067-HOME-MOVINGTIME002"></script>
+  <script type="module" src="./app.js?v=WEB068-HOME-REFRESH001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

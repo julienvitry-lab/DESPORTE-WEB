@@ -2527,13 +2527,132 @@ async function web067AuditHomeCurrentMonth(generation) {
   }
 }
 
+
+/* WEB068 · HOME_REFRESH001 */
+let web068HistoryRefreshActive = false;
+const web068FrozenHistoryRows = new Map();
+
+function web068PeriodRowKey(row) {
+  if (!row) return "";
+
+  const name =
+    row.querySelector(".web055-period-name") ||
+    row.firstElementChild;
+
+  const text = String(name?.textContent || "")
+    .replace(/Mise à jour…/gi, "")
+    .trim();
+
+  if (/^Année$/i.test(text)) return "Année";
+  if (/^Total$/i.test(text)) return "Total";
+  return "";
+}
+
+function web068CaptureHistoryRows() {
+  const container =
+    document.getElementById("web055PeriodRows");
+
+  if (!container) return;
+
+  web068FrozenHistoryRows.clear();
+
+  for (
+    const row of
+    container.querySelectorAll(".web055-period-row")
+  ) {
+    const key = web068PeriodRowKey(row);
+    if (!key) continue;
+
+    web068FrozenHistoryRows.set(
+      key,
+      row.innerHTML
+    );
+  }
+}
+
+function web068RestoreFrozenHistoryRows() {
+  if (!web068HistoryRefreshActive) return;
+
+  const container =
+    document.getElementById("web055PeriodRows");
+
+  if (!container) return;
+
+  for (
+    const row of
+    container.querySelectorAll(".web055-period-row")
+  ) {
+    const key = web068PeriodRowKey(row);
+    if (!key) continue;
+
+    const frozen =
+      web068FrozenHistoryRows.get(key);
+
+    if (frozen != null) {
+      row.innerHTML = frozen;
+    }
+
+    row.classList.add(
+      "web068-history-refreshing"
+    );
+
+    const name =
+      row.querySelector(".web055-period-name") ||
+      row.firstElementChild;
+
+    if (
+      name &&
+      !name.querySelector(".web068-history-badge")
+    ) {
+      const badge =
+        document.createElement("span");
+
+      badge.className =
+        "web068-history-badge";
+      badge.textContent = "Mise à jour…";
+
+      name.appendChild(badge);
+    }
+  }
+}
+
+function web068BeginHistoryRefresh() {
+  if (web068HistoryRefreshActive) return;
+
+  web068CaptureHistoryRows();
+  web068HistoryRefreshActive = true;
+  web068RestoreFrozenHistoryRows();
+}
+
+function web068CancelHistoryRefresh() {
+  web068HistoryRefreshActive = false;
+  web068FrozenHistoryRows.clear();
+}
+
+function web068FinishHistoryRefresh(changed) {
+  web068HistoryRefreshActive = false;
+  web068FrozenHistoryRows.clear();
+
+  renderWeb055Periods();
+
+  if (changed) {
+    renderWeb055Goal();
+    renderWeb055Comparison();
+  }
+}
+
+
 function web067ScheduleHomeHistoryAudit(generation) {
-  if (!currentUser || !web055HomeRows?.length) return;
+  if (!currentUser || !web055HomeRows?.length) {
+    web068CancelHistoryRefresh();
+    return;
+  }
 
   const token = web067HomeAuditToken;
 
   queueMicrotask(async () => {
-    const monthStart = web055StartOfMonth(Date.now());
+    const monthStart =
+      web055StartOfMonth(Date.now());
 
     const remaining = web055HomeRows.filter(
       (row) =>
@@ -2541,30 +2660,72 @@ function web067ScheduleHomeHistoryAudit(generation) {
         web067HomeNeedsMovingAudit(row)
     );
 
-    const batchSize = 24;
-
-    for (let i = 0; i < remaining.length; i += batchSize) {
-      if (
-        generation !== web055HomeGeneration ||
-        token !== web067HomeAuditToken
-      ) {
-        return;
-      }
-
-      const batch = remaining.slice(i, i + batchSize);
-      const changed =
-        await web067AuditHomeBatch(batch, token);
-
-      if (changed > 0) {
-        renderWeb055Periods();
-        renderWeb055Goal();
-        renderWeb055Comparison();
-      }
-
-      await new Promise((resolve) =>
-        window.setTimeout(resolve, 0)
-      );
+    if (!remaining.length) {
+      web068CancelHistoryRefresh();
+      return;
     }
+
+    web068BeginHistoryRefresh();
+
+    const batchSize = 24;
+    let changedTotal = 0;
+    let aborted = false;
+
+    try {
+      for (
+        let i = 0;
+        i < remaining.length;
+        i += batchSize
+      ) {
+        if (
+          generation !== web055HomeGeneration ||
+          token !== web067HomeAuditToken
+        ) {
+          aborted = true;
+          break;
+        }
+
+        const batch =
+          remaining.slice(i, i + batchSize);
+
+        const changed =
+          await web067AuditHomeBatch(
+            batch,
+            token
+          );
+
+        changedTotal +=
+          Math.max(0, Number(changed) || 0);
+
+        /*
+         * WEB068 :
+         * volontairement AUCUN render ici.
+         * L'utilisateur garde des chiffres stables.
+         */
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, 0)
+        );
+      }
+    } catch (error) {
+      console.warn(
+        "WEB068 audit historique interrompu",
+        error
+      );
+      aborted = true;
+    }
+
+    if (
+      aborted ||
+      generation !== web055HomeGeneration ||
+      token !== web067HomeAuditToken
+    ) {
+      web068CancelHistoryRefresh();
+      return;
+    }
+
+    web068FinishHistoryRefresh(
+      changedTotal > 0
+    );
   });
 }
 
@@ -2692,6 +2853,10 @@ function renderWeb055Periods() {
   }
 
   container.appendChild(table);
+
+  if (web068HistoryRefreshActive) {
+    web068RestoreFrozenHistoryRows();
+  }
 }
 
 function web055DaysInYear(year) {
