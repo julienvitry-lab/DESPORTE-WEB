@@ -4273,6 +4273,8 @@ async function loadTrashActivities() {
     console.error(error);
     ui.trashMeta.textContent = "Lecture de la corbeille impossible";
   }
+
+  web069ScheduleSplitEquipmentRepair();
 }
 
 function renderTrash() {
@@ -4720,6 +4722,273 @@ function rebuildSimpleSelect(select, entries, firstLabel) {
   }
 }
 
+
+/* WEB069 · SPLIT_EQUIPMENT002 */
+let web069SplitEquipmentRepairRunning = false;
+let web069SplitEquipmentRepairQueued = false;
+const web069SplitEquipmentDone = new Set();
+
+function web069IsSplitActivity(activity) {
+  if (!activity || activity.deleted_at_ms != null) return false;
+
+  const source =
+    String(activity.import_source || "").trim().toUpperCase();
+
+  const profile =
+    String(activity.import_profile || "").trim().toUpperCase();
+
+  return Boolean(
+    String(activity.split_parent_activity_id || "").trim() ||
+    String(activity.split_parent_strava_activity_id || "").trim() ||
+    String(activity.split_parent_id || "").trim() ||
+    source.includes("SPLIT") ||
+    profile.includes("WEBSPLIT")
+  );
+}
+
+function web069SplitParentCandidates(activity) {
+  if (!activity) return [];
+
+  return [
+    activity.split_parent_activity_id,
+    activity.split_parent_id,
+    activity.split_parent_strava_activity_id
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
+function web069RowMatchesSplitParent(row, candidates) {
+  if (!row || !candidates.length) return false;
+
+  const keys = [
+    activityKey(row),
+    row.id,
+    row.__docId,
+    row.strava_activity_id,
+    row.strava_id,
+    row.source_activity_id
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+
+  return candidates.some((candidate) => keys.includes(candidate));
+}
+
+function web069SplitParentActivityLocal(activity) {
+  const candidates = web069SplitParentCandidates(activity);
+  if (!candidates.length) return null;
+
+  const active = activities.find((row) =>
+    web069RowMatchesSplitParent(row, candidates)
+  );
+  if (active) return active;
+
+  if (
+    trashActivities &&
+    typeof trashActivities.values === "function"
+  ) {
+    for (const row of trashActivities.values()) {
+      if (web069RowMatchesSplitParent(row, candidates)) {
+        return row;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function web069SplitParentActivity(activity) {
+  const local = web069SplitParentActivityLocal(activity);
+  if (local) return local;
+
+  if (!currentUser) return null;
+
+  const candidates = web069SplitParentCandidates(activity);
+
+  for (const candidate of candidates) {
+    try {
+      const snapshot = await getDoc(
+        doc(db, ROOT, currentUser.uid, "activities", candidate)
+      );
+
+      if (snapshot.exists()) {
+        return {
+          __docId: snapshot.id,
+          ...snapshot.data()
+        };
+      }
+    } catch (error) {
+      console.warn(
+        "WEB069 parent split illisible",
+        candidate,
+        error
+      );
+    }
+  }
+
+  return null;
+}
+
+async function web069DesiredEquipment(activity) {
+  if (!activity) return null;
+
+  /* Priorité 1 : matériel réellement porté par l'activité source. */
+  const parent = await web069SplitParentActivity(activity);
+  const parentName = String(parent?.equipment_name || "").trim();
+
+  if (parentName) {
+    const manual = numberOrZero(parent?.equipment_manual) === 1 ? 1 : 0;
+
+    return {
+      equipment_name: parentName,
+      equipment_manual: manual,
+      equipment_mapping_id:
+        manual ? null : (parent?.equipment_mapping_id || null),
+      equipment_assignment_source: "WEB069_SPLIT_PARENT"
+    };
+  }
+
+  /* Priorité 2 : le profil automatique actuellement configuré. */
+  const rule = resolveAutomaticEquipmentMapping(activity);
+  const mappedName = String(rule?.equipment_name || "").trim();
+
+  if (!rule || rule.enabled === false || !mappedName) {
+    return null;
+  }
+
+  return {
+    equipment_name: mappedName,
+    equipment_manual: 0,
+    equipment_mapping_id: rule.__docId || null,
+    equipment_assignment_source: "WEB069_SPLIT_MAPPING"
+  };
+}
+
+function web069NeedsSplitEquipmentRepair(activity) {
+  if (!web069IsSplitActivity(activity)) return false;
+
+  const key = String(activityKey(activity) || "");
+  if (!key) return false;
+  if (web069SplitEquipmentDone.has(key)) return false;
+
+  /* Une affectation manuelle reste souveraine. */
+  if (numberOrZero(activity.equipment_manual) === 1) {
+    web069SplitEquipmentDone.add(key);
+    return false;
+  }
+
+  /* Aucun matériel déjà présent n'est écrasé. */
+  if (String(activity.equipment_name || "").trim()) {
+    web069SplitEquipmentDone.add(key);
+    return false;
+  }
+
+  return true;
+}
+
+async function web069RepairOneSplitEquipment(activity) {
+  if (!web069NeedsSplitEquipmentRepair(activity)) {
+    return false;
+  }
+
+  const key = String(activityKey(activity) || "");
+  const desired = await web069DesiredEquipment(activity);
+
+  /* Pas encore de source/mapping disponible : une prochaine passe réessaiera. */
+  if (!desired?.equipment_name) return false;
+
+  const patch = {
+    equipment_name: desired.equipment_name,
+    equipment_manual: desired.equipment_manual,
+    equipment_mapping_id: desired.equipment_mapping_id ?? null,
+    equipment_assignment_source: desired.equipment_assignment_source,
+    equipment_assignment_version: "WEB069-SPLIT_EQUIPMENT002"
+  };
+
+  const numericId = Number(activity.id ?? key);
+  if (Number.isFinite(numericId) && numericId > 0) {
+    patch.id = numericId;
+  }
+
+  /*
+   * L'événement /changes transporte la ligne complète pour conserver
+   * l'interopérabilité Android, tandis que le document métier est fusionné
+   * uniquement avec le patch matériel.
+   */
+  const eventRow = { ...activity, ...patch };
+  delete eventRow.__docId;
+
+  await commitWebMutation({
+    table: "activities",
+    rowKey: key,
+    operation: "UPSERT",
+    row: eventRow,
+    materializedCollection: "activities",
+    materializedData: patch
+  });
+
+  Object.assign(activity, patch);
+  web069SplitEquipmentDone.add(key);
+  return true;
+}
+
+async function web069RepairSplitEquipment() {
+  if (
+    web069SplitEquipmentRepairRunning ||
+    !currentUser ||
+    !Array.isArray(activities) ||
+    !activities.length
+  ) {
+    return;
+  }
+
+  web069SplitEquipmentRepairRunning = true;
+  let changed = 0;
+
+  try {
+    const rows = activities.filter(web069NeedsSplitEquipmentRepair);
+
+    for (const activity of rows) {
+      try {
+        if (await web069RepairOneSplitEquipment(activity)) {
+          changed += 1;
+        }
+      } catch (error) {
+        console.warn(
+          "WEB069 matériel split ignoré",
+          activityKey(activity),
+          error
+        );
+      }
+    }
+  } finally {
+    web069SplitEquipmentRepairRunning = false;
+  }
+
+  if (changed > 0) {
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+
+    console.info(
+      "WEB069 SPLIT_EQUIPMENT002",
+      changed + " activité(s) réparée(s)"
+    );
+  }
+}
+
+function web069ScheduleSplitEquipmentRepair() {
+  if (web069SplitEquipmentRepairQueued) return;
+
+  web069SplitEquipmentRepairQueued = true;
+
+  window.setTimeout(() => {
+    web069SplitEquipmentRepairQueued = false;
+    void web069RepairSplitEquipment();
+  }, 0);
+}
+
+
 function applyFiltersAndRender() {
   const needle = ui.searchInput.value.trim().toLowerCase();
   const sport = ui.sportFilter.value;
@@ -4802,6 +5071,8 @@ function applyFiltersAndRender() {
 
   renderActivities();
   markGlobalMapStale();
+
+  web069ScheduleSplitEquipmentRepair();
 }
 
 
@@ -11052,6 +11323,8 @@ async function saveEquipmentProfileWeb058(profileKey, equipmentName) {
       : "WEBEQUIPMAP005 · " + profile.label + " désactivé.",
     "success"
   );
+
+  web069ScheduleSplitEquipmentRepair();
 }
 
 function ensureEquipmentProfilePanelWeb058() {
@@ -13638,8 +13911,25 @@ function automaticSplitPartsFromRawRoute(rawRoute, sourceActivity, sessions=[]) 
     child.sport=Number.isFinite(Number(session.sport))?Number(session.sport):Number(sourceActivity.sport)||0;
     child.sub_sport=Number.isFinite(Number(session.sub_sport))?Number(session.sub_sport):Number(sourceActivity.sub_sport)||0;
     const explicitEquipment=splitSessionEquipmentName(session);
-    if (explicitEquipment) child.equipment_name=explicitEquipment;
-    else applyAutomaticEquipmentMappingToDraft(child);
+    const sourceEquipment=String(sourceActivity.equipment_name || "").trim();
+    if (explicitEquipment) {
+      child.equipment_name=explicitEquipment;
+      child.equipment_manual=0;
+      child.equipment_mapping_id=null;
+      child.equipment_assignment_source="WEB069_SPLIT_SESSION";
+      child.equipment_assignment_version="WEB069-SPLIT_EQUIPMENT002";
+    } else if (sourceEquipment) {
+      child.equipment_name=sourceEquipment;
+      child.equipment_manual=numberOrZero(sourceActivity.equipment_manual)===1 ? 1 : 0;
+      child.equipment_assignment_source="WEB069_SPLIT_SOURCE";
+      child.equipment_assignment_version="WEB069-SPLIT_EQUIPMENT002";
+    } else {
+      applyAutomaticEquipmentMappingToDraft(child);
+      if (String(child.equipment_name || "").trim()) {
+        child.equipment_assignment_source="WEB069_SPLIT_MAPPING";
+        child.equipment_assignment_version="WEB069-SPLIT_EQUIPMENT002";
+      }
+    }
     child.gps_point_count=partPoints.filter((point)=>Number.isFinite(Number(point.latitude))&&Number.isFinite(Number(point.longitude))).length;
     child.record_count=partPoints.length;
     child.import_source=sourceActivity.import_source;
