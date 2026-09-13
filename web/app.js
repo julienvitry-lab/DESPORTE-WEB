@@ -5532,23 +5532,53 @@ function web059HideRepeatedActivityLabels() {
 }
 
 function web059AlignDirectoryLoadButtons() {
+  /* WEB070 · DIRECTORY_PAGING001 */
   if (!ui.activityList) return;
 
-  let actions = document.getElementById("activityLoadActionsWeb059");
+  let actions =
+    document.getElementById("activityLoadActionsWeb059");
 
   if (!actions) {
     actions = document.createElement("div");
     actions.id = "activityLoadActionsWeb059";
     actions.className = "web059-load-actions";
-    ui.activityList.insertAdjacentElement("afterend", actions);
+    ui.activityList.insertAdjacentElement(
+      "afterend",
+      actions
+    );
   }
 
-  const localMore = [...ui.activityList.querySelectorAll("button")]
-    .find((button) =>
-      /^Affichers+20s+des+plus/i.test(
-        String(button.textContent || "").trim()
-      )
-    );
+  /*
+   * Le bouton local de la passe précédente a été déplacé hors
+   * de #activityList. Il faut donc le retirer explicitement avant
+   * d'installer celui du nouveau rendu.
+   */
+  for (const stale of [
+    ...actions.querySelectorAll(
+      'button[data-web070-directory-paging="1"]'
+    )
+  ]) {
+    if (
+      stale !== ui.loadMoreButton &&
+      stale !== ui.loadAllButton
+    ) {
+      stale.remove();
+    }
+  }
+
+  const localMore = [
+    ...ui.activityList.querySelectorAll(
+      ".activity-directory-footer button"
+    )
+  ].find((button) =>
+    /^Afficher\s+\d+\s+de\s+plus$/i.test(
+      String(button.textContent || "").trim()
+    )
+  );
+
+  if (localMore) {
+    localMore.dataset.web070DirectoryPaging = "1";
+  }
 
   for (const button of [
     localMore,
@@ -5560,12 +5590,18 @@ function web059AlignDirectoryLoadButtons() {
     }
   }
 
+  /*
+   * Le footer d'origine ne contient plus que son texte informatif.
+   * WEB059 le masquait déjà : ce comportement est conservé.
+   */
   const footer = ui.activityList.querySelector(
     ".activity-directory-footer"
   );
 
   if (footer) {
-    footer.classList.add("web059-directory-footer-clean");
+    footer.classList.add(
+      "web059-directory-footer-clean"
+    );
   }
 }
 
@@ -5830,6 +5866,7 @@ function renderActivities() {
     empty.className = "empty";
     empty.textContent = "Aucune activité parmi les données actuellement chargées.";
     ui.activityList.appendChild(empty);
+    web059AlignDirectoryLoadButtons();
     queueMicrotask(() => applyWeb049UiContract());
     return;
   }
