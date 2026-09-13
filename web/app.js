@@ -1432,7 +1432,10 @@ function wireEvents() {
   ui.editEquipmentSelect.addEventListener("change", () => {
     void saveImmediateActivityFields({
       equipment_name: ui.editEquipmentSelect.value || null,
-      equipment_manual: 1
+      equipment_manual: 1,
+      equipment_mapping_id: null,
+      equipment_assignment_source: null,
+      equipment_assignment_version: null
     }, "Matériel synchronisé");
   });
 
@@ -1611,6 +1614,21 @@ async function reloadAll() {
   resetFilterOptions();
   showCatalog(false);
   setMessage("Lecture Firestore en cours…", "info");
+  let web069CleanupResult = null;
+  try {
+    web069CleanupResult =
+      await web069RollbackLegacyEquipmentOnce();
+  } catch (error) {
+    console.error(
+      "WEB069 FIX2 purge équipement incomplète",
+      error
+    );
+    web069CleanupResult = {
+      completed: false,
+      cleaned: 0,
+      error
+    };
+  }
 
   try {
     await Promise.all([loadMeta(), loadReferenceCollections(), loadPersonalSyncData(), loadTrashActivities()]);
@@ -1619,7 +1637,26 @@ async function reloadAll() {
     await loadWebDashboard();
     web055FirestoreConnected = true;
     renderUnifiedConnectionBadgeWeb055();
-    setMessage("WEB018 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    if (
+      web069CleanupResult?.completed &&
+      !web069CleanupResult?.skipped
+    ) {
+      setMessage(
+        "WEB069 FIX2 · purge terminée : " +
+          web069CleanupResult.cleaned +
+          " activité(s) débarrassée(s) des affectations matériel WEB069 historiques. " +
+          "Les futures découpes restent automatiques.",
+        "success"
+      );
+    } else if (web069CleanupResult?.error) {
+      setMessage(
+        "WEB069 FIX2 · purge historique non terminée. " +
+          "Recharge la page connecté pour réessayer.",
+        "error"
+      );
+    } else {
+      setMessage("WEB018 connecté · interopérabilité Web ↔ téléphone ↔ tablette active.", "success");
+    }
   } catch (error) {
     web055FirestoreConnected = false;
     renderUnifiedConnectionBadgeWeb055();
@@ -4274,7 +4311,6 @@ async function loadTrashActivities() {
     ui.trashMeta.textContent = "Lecture de la corbeille impossible";
   }
 
-  web069ScheduleSplitEquipmentRepair();
 }
 
 function renderTrash() {
@@ -4723,269 +4759,248 @@ function rebuildSimpleSelect(select, entries, firstLabel) {
 }
 
 
-/* WEB069 · SPLIT_EQUIPMENT002 */
-let web069SplitEquipmentRepairRunning = false;
-let web069SplitEquipmentRepairQueued = false;
-const web069SplitEquipmentDone = new Set();
+/* WEB069 FIX2 · SPLIT_EQUIPMENT003
+ * FORWARD ONLY.
+ * Aucun balayage automatique des activités historiques.
+ * Le bloc de purge ci-dessous ne cible que les écritures WEB069 antérieures
+ * et s'arrête définitivement après son exécution réussie.
+ */
 
-function web069IsSplitActivity(activity) {
-  if (!activity || activity.deleted_at_ms != null) return false;
+
+const WEB069_EQUIPMENT_CLEANUP_DOC =
+  "web069_split_equipment_cleanup_003";
+let web069EquipmentCleanupPromise = null;
+let web069EquipmentCleanupLastResult = null;
+
+function web069IsLegacyEquipmentWrite(row) {
+  if (!row) return false;
+
+  const version =
+    String(row.equipment_assignment_version || "")
+      .trim()
+      .toUpperCase();
 
   const source =
-    String(activity.import_source || "").trim().toUpperCase();
+    String(row.equipment_assignment_source || "")
+      .trim()
+      .toUpperCase();
 
-  const profile =
-    String(activity.import_profile || "").trim().toUpperCase();
-
-  return Boolean(
-    String(activity.split_parent_activity_id || "").trim() ||
-    String(activity.split_parent_strava_activity_id || "").trim() ||
-    String(activity.split_parent_id || "").trim() ||
-    source.includes("SPLIT") ||
-    profile.includes("WEBSPLIT")
-  );
-}
-
-function web069SplitParentCandidates(activity) {
-  if (!activity) return [];
-
-  return [
-    activity.split_parent_activity_id,
-    activity.split_parent_id,
-    activity.split_parent_strava_activity_id
-  ]
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean);
-}
-
-function web069RowMatchesSplitParent(row, candidates) {
-  if (!row || !candidates.length) return false;
-
-  const keys = [
-    activityKey(row),
-    row.id,
-    row.__docId,
-    row.strava_activity_id,
-    row.strava_id,
-    row.source_activity_id
-  ]
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean);
-
-  return candidates.some((candidate) => keys.includes(candidate));
-}
-
-function web069SplitParentActivityLocal(activity) {
-  const candidates = web069SplitParentCandidates(activity);
-  if (!candidates.length) return null;
-
-  const active = activities.find((row) =>
-    web069RowMatchesSplitParent(row, candidates)
-  );
-  if (active) return active;
-
-  if (
-    trashActivities &&
-    typeof trashActivities.values === "function"
-  ) {
-    for (const row of trashActivities.values()) {
-      if (web069RowMatchesSplitParent(row, candidates)) {
-        return row;
-      }
-    }
-  }
-
-  return null;
-}
-
-async function web069SplitParentActivity(activity) {
-  const local = web069SplitParentActivityLocal(activity);
-  if (local) return local;
-
-  if (!currentUser) return null;
-
-  const candidates = web069SplitParentCandidates(activity);
-
-  for (const candidate of candidates) {
-    try {
-      const snapshot = await getDoc(
-        doc(db, ROOT, currentUser.uid, "activities", candidate)
-      );
-
-      if (snapshot.exists()) {
-        return {
-          __docId: snapshot.id,
-          ...snapshot.data()
-        };
-      }
-    } catch (error) {
-      console.warn(
-        "WEB069 parent split illisible",
-        candidate,
-        error
-      );
-    }
-  }
-
-  return null;
-}
-
-async function web069DesiredEquipment(activity) {
-  if (!activity) return null;
-
-  /* Priorité 1 : matériel réellement porté par l'activité source. */
-  const parent = await web069SplitParentActivity(activity);
-  const parentName = String(parent?.equipment_name || "").trim();
-
-  if (parentName) {
-    const manual = numberOrZero(parent?.equipment_manual) === 1 ? 1 : 0;
-
-    return {
-      equipment_name: parentName,
-      equipment_manual: manual,
-      equipment_mapping_id:
-        manual ? null : (parent?.equipment_mapping_id || null),
-      equipment_assignment_source: "WEB069_SPLIT_PARENT"
-    };
-  }
-
-  /* Priorité 2 : le profil automatique actuellement configuré. */
-  const rule = resolveAutomaticEquipmentMapping(activity);
-  const mappedName = String(rule?.equipment_name || "").trim();
-
-  if (!rule || rule.enabled === false || !mappedName) {
-    return null;
-  }
-
-  return {
-    equipment_name: mappedName,
-    equipment_manual: 0,
-    equipment_mapping_id: rule.__docId || null,
-    equipment_assignment_source: "WEB069_SPLIT_MAPPING"
-  };
-}
-
-function web069NeedsSplitEquipmentRepair(activity) {
-  if (!web069IsSplitActivity(activity)) return false;
-
-  const key = String(activityKey(activity) || "");
-  if (!key) return false;
-  if (web069SplitEquipmentDone.has(key)) return false;
-
-  /* Une affectation manuelle reste souveraine. */
-  if (numberOrZero(activity.equipment_manual) === 1) {
-    web069SplitEquipmentDone.add(key);
+  /*
+   * SPLIT_EQUIPMENT003 est le nouveau contrat FORWARD ONLY.
+   * Il ne doit JAMAIS être effacé par la purge historique.
+   */
+  if (version === "WEB069-SPLIT_EQUIPMENT003") {
     return false;
-  }
-
-  /* Aucun matériel déjà présent n'est écrasé. */
-  if (String(activity.equipment_name || "").trim()) {
-    web069SplitEquipmentDone.add(key);
-    return false;
-  }
-
-  return true;
-}
-
-async function web069RepairOneSplitEquipment(activity) {
-  if (!web069NeedsSplitEquipmentRepair(activity)) {
-    return false;
-  }
-
-  const key = String(activityKey(activity) || "");
-  const desired = await web069DesiredEquipment(activity);
-
-  /* Pas encore de source/mapping disponible : une prochaine passe réessaiera. */
-  if (!desired?.equipment_name) return false;
-
-  const patch = {
-    equipment_name: desired.equipment_name,
-    equipment_manual: desired.equipment_manual,
-    equipment_mapping_id: desired.equipment_mapping_id ?? null,
-    equipment_assignment_source: desired.equipment_assignment_source,
-    equipment_assignment_version: "WEB069-SPLIT_EQUIPMENT002"
-  };
-
-  const numericId = Number(activity.id ?? key);
-  if (Number.isFinite(numericId) && numericId > 0) {
-    patch.id = numericId;
   }
 
   /*
-   * L'événement /changes transporte la ligne complète pour conserver
-   * l'interopérabilité Android, tandis que le document métier est fusionné
-   * uniquement avec le patch matériel.
+   * Volontairement large : l'utilisateur demande d'annuler TOUTES
+   * les écritures équipement historiques identifiables comme WEB069,
+   * qu'elles aient été correctes ou non.
    */
-  const eventRow = { ...activity, ...patch };
-  delete eventRow.__docId;
-
-  await commitWebMutation({
-    table: "activities",
-    rowKey: key,
-    operation: "UPSERT",
-    row: eventRow,
-    materializedCollection: "activities",
-    materializedData: patch
-  });
-
-  Object.assign(activity, patch);
-  web069SplitEquipmentDone.add(key);
-  return true;
+  return (
+    version.startsWith("WEB069-") ||
+    source.startsWith("WEB069_")
+  );
 }
 
-async function web069RepairSplitEquipment() {
-  if (
-    web069SplitEquipmentRepairRunning ||
-    !currentUser ||
-    !Array.isArray(activities) ||
-    !activities.length
-  ) {
-    return;
+function web069ClearedEquipmentRow(row) {
+  const clean = {
+    ...row,
+    equipment_name: null,
+    equipment_manual: 0,
+    equipment_mapping_id: null,
+    equipment_assignment_source: null,
+    equipment_assignment_version: null
+  };
+
+  delete clean.__docId;
+  delete clean.__sportKey;
+  delete clean.__updatedAtMs;
+
+  return clean;
+}
+
+async function web069RollbackLegacyEquipmentOnce() {
+  if (!currentUser) {
+    return { completed: false, cleaned: 0, skipped: true };
   }
 
-  web069SplitEquipmentRepairRunning = true;
-  let changed = 0;
+  if (web069EquipmentCleanupPromise) {
+    return web069EquipmentCleanupPromise;
+  }
 
-  try {
-    const rows = activities.filter(web069NeedsSplitEquipmentRepair);
+  web069EquipmentCleanupPromise = (async () => {
+    const rootBase = [ROOT, currentUser.uid];
 
-    for (const activity of rows) {
-      try {
-        if (await web069RepairOneSplitEquipment(activity)) {
-          changed += 1;
-        }
-      } catch (error) {
-        console.warn(
-          "WEB069 matériel split ignoré",
-          activityKey(activity),
-          error
-        );
-      }
+    const cleanupRef = doc(
+      db,
+      ...rootBase,
+      "meta",
+      WEB069_EQUIPMENT_CLEANUP_DOC
+    );
+
+    /*
+     * Après une exécution réussie, plus aucun scan des années précédentes.
+     */
+    const cleanupSnapshot = await getDoc(cleanupRef);
+    if (cleanupSnapshot.exists() &&
+        cleanupSnapshot.data()?.completed === true) {
+      const previous = cleanupSnapshot.data();
+      const result = {
+        completed: true,
+        cleaned: Number(previous.cleaned_count || 0),
+        skipped: true
+      };
+      web069EquipmentCleanupLastResult = result;
+      return result;
     }
-  } finally {
-    web069SplitEquipmentRepairRunning = false;
-  }
 
-  if (changed > 0) {
-    rebuildDynamicFilters();
-    applyFiltersAndRender();
+    if (!navigator.onLine) {
+      const result = {
+        completed: false,
+        cleaned: 0,
+        skipped: true,
+        offline: true
+      };
+      web069EquipmentCleanupLastResult = result;
+      return result;
+    }
+
+    /*
+     * Scan exhaustif de Firestore, indépendamment du nombre d'activités
+     * chargé dans le répertoire Web.
+     */
+    const snapshot = await getDocs(userCollection("activities"));
+    const targets = snapshot.docs.filter((item) =>
+      web069IsLegacyEquipmentWrite(item.data())
+    );
+
+    let cleaned = 0;
+    const chunkSize = 180;
+
+    for (let start = 0; start < targets.length; start += chunkSize) {
+      const chunk = targets.slice(start, start + chunkSize);
+      const batch = writeBatch(db);
+      const now = Date.now();
+
+      for (const item of chunk) {
+        const key = String(item.id);
+        const previous = item.data();
+        const cleanRow = web069ClearedEquipmentRow(previous);
+
+        const patch = {
+          equipment_name: null,
+          equipment_manual: 0,
+          equipment_mapping_id: null,
+          equipment_assignment_source: null,
+          equipment_assignment_version: null,
+          __sportKey: key,
+          __updatedAtMs: now
+        };
+
+        batch.set(
+          doc(db, ...rootBase, "activities", key),
+          patch,
+          { merge: true }
+        );
+
+        /*
+         * Événement compensatoire complet :
+         * téléphone et tablette reçoivent eux aussi l'absence de matériel.
+         */
+        const seq = nextWebFirebaseSeq();
+        const eventId = makeWebEventId(seq);
+
+        batch.set(
+          doc(db, ...rootBase, "changes", eventId),
+          {
+            eventId,
+            deviceId: webDeviceId,
+            firebaseSeq: seq,
+            sourceChangeSeq: 0,
+            table: "activities",
+            rowKey: key,
+            operation: "UPSERT",
+            changedAtMs: now,
+            publishedAt: serverTimestamp(),
+            androidVersion: 0,
+            webVersion: "WEB069-FIX2-SPLIT_EQUIPMENT003",
+            row: cleanRow
+          }
+        );
+
+        cleaned += 1;
+      }
+
+      batch.set(
+        doc(db, ...rootBase, "meta", "state"),
+        {
+          updatedAtMs: now,
+          sourceDeviceId: webDeviceId,
+          webVersion: "WEB069-FIX2-SPLIT_EQUIPMENT003"
+        },
+        { merge: true }
+      );
+
+      await batch.commit();
+    }
+
+    /*
+     * Marqueur écrit UNIQUEMENT lorsque tous les lots ont réussi.
+     * En cas d'interruption, un prochain chargement reprend : les lignes
+     * déjà purgées ne portent plus de marqueur WEB069 et sont ignorées.
+     */
+    const finalBatch = writeBatch(db);
+    const finishedAt = Date.now();
+
+    finalBatch.set(
+      cleanupRef,
+      {
+        completed: true,
+        cleaned_count: cleaned,
+        completed_at_ms: finishedAt,
+        policy: "PURGE_ALL_LEGACY_WEB069_EQUIPMENT",
+        preserved_forward_version:
+          "WEB069-SPLIT_EQUIPMENT003"
+      },
+      { merge: true }
+    );
+
+    finalBatch.set(
+      doc(db, ...rootBase, "meta", "state"),
+      {
+        updatedAtMs: finishedAt,
+        sourceDeviceId: webDeviceId,
+        webVersion: "WEB069-FIX2-SPLIT_EQUIPMENT003"
+      },
+      { merge: true }
+    );
+
+    await finalBatch.commit();
+
+    const result = {
+      completed: true,
+      cleaned,
+      skipped: false
+    };
+
+    web069EquipmentCleanupLastResult = result;
 
     console.info(
-      "WEB069 SPLIT_EQUIPMENT002",
-      changed + " activité(s) réparée(s)"
+      "WEB069 FIX2 purge équipement terminée :",
+      cleaned,
+      "activité(s)"
     );
+
+    return result;
+  })();
+
+  try {
+    return await web069EquipmentCleanupPromise;
+  } finally {
+    web069EquipmentCleanupPromise = null;
   }
-}
-
-function web069ScheduleSplitEquipmentRepair() {
-  if (web069SplitEquipmentRepairQueued) return;
-
-  web069SplitEquipmentRepairQueued = true;
-
-  window.setTimeout(() => {
-    web069SplitEquipmentRepairQueued = false;
-    void web069RepairSplitEquipment();
-  }, 0);
 }
 
 
@@ -5072,7 +5087,6 @@ function applyFiltersAndRender() {
   renderActivities();
   markGlobalMapStale();
 
-  web069ScheduleSplitEquipmentRepair();
 }
 
 
@@ -11324,7 +11338,6 @@ async function saveEquipmentProfileWeb058(profileKey, equipmentName) {
     "success"
   );
 
-  web069ScheduleSplitEquipmentRepair();
 }
 
 function ensureEquipmentProfilePanelWeb058() {
@@ -13876,6 +13889,68 @@ function sessionForTime(sessions,timeMs,fallback={}) {
   return chosen || fallback || {};
 }
 
+
+function web069ApplyFutureSplitEquipment(
+  child,
+  sourceActivity,
+  session = null
+) {
+  if (!child) return child;
+
+  /*
+   * Ne jamais recopier un ancien marqueur WEB069 depuis une source.
+   */
+  child.equipment_assignment_source = null;
+  child.equipment_assignment_version = null;
+
+  const explicitEquipment =
+    session ? splitSessionEquipmentName(session) : "";
+
+  const sourceEquipment =
+    String(sourceActivity?.equipment_name || "").trim();
+
+  if (explicitEquipment) {
+    child.equipment_name = explicitEquipment;
+    child.equipment_manual = 0;
+    child.equipment_mapping_id = null;
+    child.equipment_assignment_source =
+      "WEB069_SPLIT_SESSION";
+  } else if (sourceEquipment) {
+    child.equipment_name = sourceEquipment;
+    child.equipment_manual =
+      numberOrZero(sourceActivity?.equipment_manual) === 1
+        ? 1
+        : 0;
+
+    child.equipment_mapping_id =
+      child.equipment_manual === 1
+        ? null
+        : (sourceActivity?.equipment_mapping_id || null);
+
+    child.equipment_assignment_source =
+      "WEB069_SPLIT_SOURCE";
+  } else {
+    child.equipment_name = null;
+    child.equipment_manual = 0;
+    child.equipment_mapping_id = null;
+
+    applyAutomaticEquipmentMappingToDraft(child);
+
+    if (String(child.equipment_name || "").trim()) {
+      child.equipment_assignment_source =
+        "WEB069_SPLIT_MAPPING";
+    }
+  }
+
+  if (String(child.equipment_name || "").trim()) {
+    child.equipment_assignment_version =
+      "WEB069-SPLIT_EQUIPMENT003";
+  }
+
+  return child;
+}
+
+
 function automaticSplitPartsFromRawRoute(rawRoute, sourceActivity, sessions=[]) {
   const normalized=normalizeSplitRoute(rawRoute);
   const points=normalized.points;
@@ -13910,26 +13985,11 @@ function automaticSplitPartsFromRawRoute(rawRoute, sourceActivity, sessions=[]) 
     );
     child.sport=Number.isFinite(Number(session.sport))?Number(session.sport):Number(sourceActivity.sport)||0;
     child.sub_sport=Number.isFinite(Number(session.sub_sport))?Number(session.sub_sport):Number(sourceActivity.sub_sport)||0;
-    const explicitEquipment=splitSessionEquipmentName(session);
-    const sourceEquipment=String(sourceActivity.equipment_name || "").trim();
-    if (explicitEquipment) {
-      child.equipment_name=explicitEquipment;
-      child.equipment_manual=0;
-      child.equipment_mapping_id=null;
-      child.equipment_assignment_source="WEB069_SPLIT_SESSION";
-      child.equipment_assignment_version="WEB069-SPLIT_EQUIPMENT002";
-    } else if (sourceEquipment) {
-      child.equipment_name=sourceEquipment;
-      child.equipment_manual=numberOrZero(sourceActivity.equipment_manual)===1 ? 1 : 0;
-      child.equipment_assignment_source="WEB069_SPLIT_SOURCE";
-      child.equipment_assignment_version="WEB069-SPLIT_EQUIPMENT002";
-    } else {
-      applyAutomaticEquipmentMappingToDraft(child);
-      if (String(child.equipment_name || "").trim()) {
-        child.equipment_assignment_source="WEB069_SPLIT_MAPPING";
-        child.equipment_assignment_version="WEB069-SPLIT_EQUIPMENT002";
-      }
-    }
+    web069ApplyFutureSplitEquipment(
+      child,
+      sourceActivity,
+      session
+    );
     child.gps_point_count=partPoints.filter((point)=>Number.isFinite(Number(point.latitude))&&Number.isFinite(Number(point.longitude))).length;
     child.record_count=partPoints.length;
     child.import_source=sourceActivity.import_source;
@@ -14113,6 +14173,8 @@ async function commitSplitActivity() {
 
     const childA=buildSplitChild(source,parts.statsA,idA,ui.splitActivityTitleA.value,1,totalDuration);
     const childB=buildSplitChild(source,parts.statsB,idB,ui.splitActivityTitleB.value,2,totalDuration);
+    web069ApplyFutureSplitEquipment(childA,source,null);
+    web069ApplyFutureSplitEquipment(childB,source,null);
     const routeA=splitRouteDocument(parts.pointsA);
     const routeB=splitRouteDocument(parts.pointsB);
 
