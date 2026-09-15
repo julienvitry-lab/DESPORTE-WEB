@@ -3579,131 +3579,113 @@ select {
 
 
 
-<style id="web071-fix2-icon-indoor-css">
-  /* WEB071 FIX2 · ICON_INDOOR003 */
+
+<style id="web071-fix3-icon-balance-css">
+  /* WEB071 FIX3 · ICON_BALANCE001 */
 
   #activityList .web071-fix1-activity-main {
     position: relative !important;
     align-self: stretch !important;
     justify-self: stretch !important;
-    min-height: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 0 !important;
+    height: 100% !important;
     padding: 0 !important;
     margin: 0 !important;
     overflow: visible !important;
   }
 
   #activityList .web071-fix1-sport-icon {
-    position: absolute !important;
-    inset: 0 !important;
-
+    position: relative !important;
+    inset: auto !important;
+    width: 44px !important;
+    height: 38px !important;
+    min-width: 44px !important;
+    min-height: 38px !important;
+    max-width: 44px !important;
+    max-height: 38px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-
-    width: auto !important;
-    height: auto !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
-
     padding: 0 !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     line-height: 1 !important;
     overflow: visible !important;
+    box-sizing: border-box !important;
   }
 
-  /* Base commune : aucun débordement vertical. */
   #activityList .web071-fix1-sport-icon img,
   #activityList .web071-fix1-sport-icon svg,
   #activityList .web071-fix1-sport-icon .sport-icon-c1v1 {
-    display: block !important;
     position: static !important;
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
     align-self: center !important;
-    margin: auto !important;
-    object-position: center center !important;
+    justify-self: center !important;
+    object-fit: contain !important;
+    object-position: 50% 50% !important;
     vertical-align: middle !important;
-    transform-origin: center center !important;
+    transform-origin: 50% 50% !important;
   }
 
-  /*
-   * COURSE :
-   * l'ancien pictogramme est visuellement plus haut que le vélo.
-   * On le réduit pour qu'il respire dans le bandeau.
-   */
   #activityList .web071-fix1-sport-icon img[src*="sport-running"],
   #activityList .web071-fix1-sport-icon img[alt*="Course"],
   #activityList .web071-fix1-sport-icon img[alt*="course"] {
-    max-height: 34px !important;
-    max-width: 34px !important;
-    width: auto !important;
-    height: auto !important;
-    transform: translateY(0) scale(.88) !important;
+    width: 28px !important;
+    height: 28px !important;
+    max-width: 28px !important;
+    max-height: 28px !important;
+    transform: translateY(1px) !important;
   }
 
-  /*
-   * VELO :
-   * léger décalage vers le bas car le dessin laisse plus de vide
-   * sous son axe optique que l'icône course.
-   */
   #activityList .web071-fix1-sport-icon img[src*="sport-bike"],
   #activityList .web071-fix1-sport-icon img[alt*="Vélo"],
   #activityList .web071-fix1-sport-icon img[alt*="velo"],
   #activityList .web071-fix1-sport-icon img[alt*="Velo"] {
-    max-height: 32px !important;
-    max-width: 42px !important;
-    width: auto !important;
-    height: auto !important;
-    transform: translateY(2px) !important;
+    width: 34px !important;
+    height: 25px !important;
+    max-width: 34px !important;
+    max-height: 25px !important;
+    transform: translateY(1px) !important;
   }
 
-  .web071-fix1-sport-icon,
-  .web071-fix1-detail-sport-card {
-    position: relative !important;
-  }
-
-  /*
-   * INDOOR :
-   * abandon du badge "IN".
-   * Un éclair seul, petit et discret, placé en haut à droite.
-   */
   .web071-indoor-badge.web071-indoor-lightning {
     position: absolute !important;
-    right: -2px !important;
-    top: -2px !important;
+    top: 0 !important;
+    right: 0 !important;
     bottom: auto !important;
+    left: auto !important;
     z-index: 30 !important;
-
     min-width: 0 !important;
     width: auto !important;
     height: auto !important;
+    margin: 0 !important;
     padding: 0 !important;
-
     display: block !important;
-
     border: 0 !important;
     border-radius: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
-
-    color: #d9ff79 !important;
-
-    font-size: 15px !important;
+    color: #f7c548 !important;
+    font-size: 13px !important;
     font-weight: 800 !important;
     line-height: 1 !important;
-    letter-spacing: 0 !important;
-
+    transform: none !important;
     text-shadow:
       0 1px 2px rgba(0,0,0,.95),
-      0 0 3px rgba(0,0,0,.75) !important;
-
+      0 0 3px rgba(0,0,0,.70) !important;
     pointer-events: none !important;
   }
 
-  #web061SingleMetricRow
-  .web071-indoor-badge.web071-indoor-lightning {
-    right: 4px !important;
+  #web061SingleMetricRow .web071-indoor-badge.web071-indoor-lightning {
     top: 4px !important;
-    bottom: auto !important;
-    font-size: 17px !important;
+    right: 4px !important;
+    font-size: 16px !important;
   }
 </style>
 
@@ -5150,7 +5132,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB071-FIX2-ICON-INDOOR003"></script>
+  <script type="module" src="./app.js?v=WEB071-FIX3-ICON-BALANCE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
