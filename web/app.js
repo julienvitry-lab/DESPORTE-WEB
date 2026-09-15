@@ -6162,58 +6162,38 @@ function installActivitySubSportFilterWeb054() {
 /* WEB071 · ICON_INDOOR001 */
 function web071IsIndoorActivity(activity) {
   if (!activity || activity.deleted_at_ms != null) return false;
+  const sport=Number(activity.sport)||0;
+  const subSport=Number(activity.sub_sport)||0;
 
-  const sport = Number(activity.sport) || 0;
-  const subSport = Number(activity.sub_sport) || 0;
+  if (activity?.indoor===true || activity?.is_indoor===true ||
+      activity?.trainer===true || activity?.is_trainer===true ||
+      activity?.virtual===true || activity?.is_virtual===true) return true;
 
-  let profile = "";
-  let meta = "";
+  let profile="", meta="";
+  try { profile=String(equipmentProfileKeyFromActivityWeb058(activity)||"").trim().toUpperCase(); } catch(_) {}
+  try { meta=String(equipmentProfileMetadataWeb058(activity)||"").toUpperCase(); } catch(_) {}
+  if (profile==="HOME_TRAINER") profile="TRAINER";
+  if (["TRAINER","TREADMILL","KINOMAP"].includes(profile)) return true;
 
-  try {
-    profile =
-      String(
-        equipmentProfileKeyFromActivityWeb058(activity) || ""
-      ).toUpperCase();
-  } catch (_) {}
-
-  try {
-    meta =
-      String(
-        equipmentProfileMetadataWeb058(activity) || ""
-      ).toUpperCase();
-  } catch (_) {}
-
-  const explicitIndoor =
-    activity?.indoor === true ||
-    activity?.is_indoor === true ||
-    activity?.trainer === true ||
-    activity?.is_trainer === true ||
-    activity?.virtual === true ||
-    activity?.is_virtual === true;
-
-  if (explicitIndoor) return true;
-
-  if (
-    profile === "HOME_TRAINER" ||
-    profile === "KINOMAP"
-  ) {
-    return true;
+  const mappingId=String(activity?.equipment_mapping_id||"").trim();
+  if (mappingId && Array.isArray(equipmentMappingRows)) {
+    const rule=equipmentMappingRows.find(r=>String(r?.__docId||"").trim()===mappingId);
+    let k=String(rule?.profile_key||"").trim().toUpperCase();
+    if(k==="HOME_TRAINER") k="TRAINER";
+    if(["TRAINER","TREADMILL","KINOMAP"].includes(k)) return true;
   }
 
-  if (sport === 1) {
-    return Boolean(
-      subSport === 1 ||
-      /TREADMILL|TAPIS|INDOOR|VIRTUALRUN|VIRTUAL RUN|KINOMAP/.test(meta)
-    );
+  // Fallback sûr : matériel associé à un seul profil métier, lui-même indoor.
+  const equipment=String(activity?.equipment_name||"").trim();
+  if (equipment && Array.isArray(equipmentMappingRows)) {
+    const keys=[...new Set(equipmentMappingRows
+      .filter(r=>r?.enabled!==false && String(r?.equipment_name||"").trim()===equipment && String(r?.profile_key||"").trim())
+      .map(r=>{const k=String(r.profile_key).trim().toUpperCase();return k==="HOME_TRAINER"?"TRAINER":k;}))];
+    if(keys.length===1 && ["TRAINER","TREADMILL","KINOMAP"].includes(keys[0])) return true;
   }
 
-  if (sport === 2) {
-    return Boolean(
-      [5, 6, 58].includes(subSport) ||
-      /HOME.?TRAINER|\bTRAINER\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE|KINOMAP|ROUVY|BKOO?L/.test(meta)
-    );
-  }
-
+  if(sport===1) return [1,21,45].includes(subSport) || /TREADMILL|TAPIS|INDOOR|VIRTUALRUN|VIRTUAL RUN|KINOMAP/.test(meta);
+  if(sport===2) return [5,6,58].includes(subSport) || /HOME.?TRAINER|\bTRAINER\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE|KINOMAP|ROUVY|BKOO?L/.test(meta);
   return false;
 }
 
@@ -6227,52 +6207,26 @@ function web071IndoorBadge() {
 }
 
 function web071DecorateDetailIndoor(activity) {
-  const row = document.getElementById("web061SingleMetricRow");
-  if (!row) return;
-
-  const sportCard = row.querySelector(".web061-sport-card");
-  if (!sportCard) return;
-
-  sportCard.classList.add("web071-detail-sport-card");
-
-  for (
-    const old of
-    sportCard.querySelectorAll(".web071-indoor-badge")
-  ) {
-    old.remove();
-  }
-
-  if (web071IsIndoorActivity(activity)) {
-    sportCard.appendChild(web071IndoorBadge());
-    sportCard.title =
-      (sportCard.title ? sportCard.title + " · " : "") +
-      "Indoor";
-  }
+  const row=document.getElementById("web061SingleMetricRow");
+  if(!row) return;
+  const sportCard=row.querySelector(".web061-sport-card") || row.querySelector(".web066-sport-card") || row.firstElementChild;
+  if(!sportCard) return;
+  sportCard.classList.add("web071-detail-sport-card","web071-fix1-detail-sport-card");
+  sportCard.querySelectorAll(".web071-indoor-badge").forEach(n=>n.remove());
+  if(web071IsIndoorActivity(activity)) sportCard.appendChild(web071IndoorBadge());
 }
 
 
 function activityMain(activity) {
-  const cell = document.createElement("div");
-  cell.className =
-    "activity-main activity-main-web048 web071-activity-main";
-
-  const icon = document.createElement("span");
-  icon.className =
-    "activity-sport-icon activity-sport-icon-web048 web071-sport-icon-wrap";
-  icon.innerHTML = activitySportIconMarkup(activity);
-  icon.setAttribute(
-    "aria-label",
-    sportName(activity.sport) +
-      (web071IsIndoorActivity(activity) ? " indoor" : "")
-  );
-  icon.title =
-    sportName(activity.sport) +
-    (web071IsIndoorActivity(activity) ? " · Indoor" : "");
-
-  if (web071IsIndoorActivity(activity)) {
-    icon.appendChild(web071IndoorBadge());
-  }
-
+  const cell=document.createElement("div");
+  cell.className="activity-main activity-main-web048 web071-activity-main web071-fix1-activity-main";
+  const icon=document.createElement("span");
+  icon.className="activity-sport-icon activity-sport-icon-web048 web071-sport-icon-wrap web071-fix1-sport-icon";
+  icon.innerHTML=activitySportIconMarkup(activity);
+  const indoor=web071IsIndoorActivity(activity);
+  icon.setAttribute("aria-label",sportName(activity.sport)+(indoor?" indoor":""));
+  icon.title=sportName(activity.sport)+(indoor?" · Indoor":"");
+  if(indoor) icon.appendChild(web071IndoorBadge());
   cell.append(icon);
   return cell;
 }
@@ -11364,7 +11318,7 @@ function equipmentProfileKeyFromActivityWeb058(activity) {
       explicitIndoorFlag ||
       [5, 6, 58].includes(subSport) ||
       /HOME.?TRAINER|\bTRAINER\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE|KINOMAP|ROUVY|BKOO?L/.test(meta)
-    ) return "HOME_TRAINER";
+    ) return "TRAINER";
 
     if (
       [7, 8, 47].includes(subSport) ||
