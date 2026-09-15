@@ -6199,8 +6199,8 @@ function web071IsIndoorActivity(activity) {
 
 function web071IndoorBadge() {
   const badge = document.createElement("span");
-  badge.className = "web071-indoor-badge";
-  badge.textContent = "IN";
+  badge.className = "web071-indoor-badge web071-indoor-lightning";
+  badge.textContent = "⚡";
   badge.title = "Activité indoor";
   badge.setAttribute("aria-label", "Activité indoor");
   return badge;
