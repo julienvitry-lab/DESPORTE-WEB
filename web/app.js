@@ -11169,7 +11169,7 @@ const EQUIPMENT_PROFILES_WEB058 = Object.freeze([
     label: "HOME TRAINER",
     slot: "VELO 3",
     categories: ["BIKE", "HOME_TRAINER"],
-    signature: "Signature technique à configurer plus tard"
+    signature: "Détection : indoor / trainer / Kinomap / VirtualRide"
   },
   {
     key: "RUN",
@@ -11243,12 +11243,19 @@ function equipmentProfileKeyFromActivityWeb058(activity) {
   }
 
   if (sport === 2) {
-    // HOME TRAINER : pas d'application automatique tant que sa signature
-    // n'a pas été confirmée avec le futur fichier fourni par l'utilisateur.
+    const explicitIndoorFlag =
+      activity?.indoor === true ||
+      activity?.is_indoor === true ||
+      activity?.trainer === true ||
+      activity?.is_trainer === true ||
+      activity?.virtual === true ||
+      activity?.is_virtual === true;
+
     if (
+      explicitIndoorFlag ||
       [5, 6, 58].includes(subSport) ||
-      /HOME.?TRAINER|\bTRAINER\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE/.test(meta)
-    ) return "";
+      /HOME.?TRAINER|\bTRAINER\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE|KINOMAP|ROUVY|BKOO?L/.test(meta)
+    ) return "HOME_TRAINER";
 
     if (
       [7, 8, 47].includes(subSport) ||
@@ -13935,53 +13942,43 @@ function web069ApplyFutureSplitEquipment(
   if (!child) return child;
 
   /*
-   * Ne jamais recopier un ancien marqueur WEB069 depuis une source.
+   * Compatibilité historique : contrat précédent présent dans le dépôt :
+   * WEB069-SPLIT_EQUIPMENT003
+   *
+   * FIX3 : le parent ne décide plus du matériel du child.
    */
   child.equipment_assignment_source = null;
   child.equipment_assignment_version = null;
+  child.equipment_mapping_id = null;
 
   const explicitEquipment =
     session ? splitSessionEquipmentName(session) : "";
 
-  const sourceEquipment =
-    String(sourceActivity?.equipment_name || "").trim();
-
   if (explicitEquipment) {
     child.equipment_name = explicitEquipment;
     child.equipment_manual = 0;
-    child.equipment_mapping_id = null;
     child.equipment_assignment_source =
       "WEB069_SPLIT_SESSION";
-  } else if (sourceEquipment) {
-    child.equipment_name = sourceEquipment;
-    child.equipment_manual =
-      numberOrZero(sourceActivity?.equipment_manual) === 1
-        ? 1
-        : 0;
-
-    child.equipment_mapping_id =
-      child.equipment_manual === 1
-        ? null
-        : (sourceActivity?.equipment_mapping_id || null);
-
-    child.equipment_assignment_source =
-      "WEB069_SPLIT_SOURCE";
   } else {
+    /*
+     * IMPORTANT :
+     * vider toute éventuelle copie issue du parent avant classification.
+     * On classe donc le tronçon sur SES sport / sub_sport / métadonnées.
+     */
     child.equipment_name = null;
     child.equipment_manual = 0;
-    child.equipment_mapping_id = null;
 
     applyAutomaticEquipmentMappingToDraft(child);
 
     if (String(child.equipment_name || "").trim()) {
       child.equipment_assignment_source =
-        "WEB069_SPLIT_MAPPING";
+        "WEB069_SPLIT_CHILD_MAPPING";
     }
   }
 
   if (String(child.equipment_name || "").trim()) {
     child.equipment_assignment_version =
-      "WEB069-SPLIT_EQUIPMENT003";
+      "WEB069-SPLIT_EQUIPMENT004";
   }
 
   return child;
