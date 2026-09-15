@@ -1,0 +1,690 @@
+name: WEB071 - ICON_INDOOR001
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Vérifier la base actuelle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+
+          require_token() {
+            local file="$1"
+            local token="$2"
+            local label="$3"
+
+            if grep -Fq "$token" "$file"; then
+              echo "✓ $label"
+            else
+              echo "❌ $label"
+              echo "Fichier : $file"
+              echo "Token absent : $token"
+              exit 20
+            fi
+          }
+
+          require_token web/app.js \
+            'function activityMain(activity)' \
+            'rendu Répertoire présent'
+
+          require_token web/app.js \
+            'function activitySportIconMarkup(' \
+            'icônes sport présentes'
+
+          require_token web/app.js \
+            'function web061RenderSingleMetricRow(activity)' \
+            'bandeau détail mono-ligne présent'
+
+          require_token web/app.js \
+            'function equipmentProfileKeyFromActivityWeb058(activity)' \
+            'classifieur matériel présent'
+
+          require_token web/app.js \
+            'function equipmentProfileMetadataWeb058(activity)' \
+            'métadonnées activité présentes'
+
+          require_token web/app.js \
+            'WEB069-SPLIT_EQUIPMENT004' \
+            'WEB069 FIX3 préservé'
+
+          require_token web/app.js \
+            'WEB070 · DIRECTORY_PAGING001' \
+            'WEB070 préservé'
+
+          echo "✓ Base compatible"
+
+      - name: Appliquer WEB071 ICON_INDOOR001
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+
+          const appFile = "web/app.js";
+          const htmlFile = "web/index.html";
+
+          let app = fs.readFileSync(appFile, "utf8");
+          let html = fs.readFileSync(htmlFile, "utf8");
+
+          function fail(message) {
+            console.error("ERREUR WEB071 :", message);
+            process.exit(30);
+          }
+
+          function findFunctionBounds(source, functionName) {
+            const asyncMarker = `async function ${functionName}(`;
+            const plainMarker = `function ${functionName}(`;
+
+            let start = source.indexOf(asyncMarker);
+            if (start < 0) start = source.indexOf(plainMarker);
+            if (start < 0) fail(`fonction ${functionName} introuvable`);
+
+            const openParen = source.indexOf("(", start);
+            if (openParen < 0) fail(`parenthèse ${functionName} introuvable`);
+
+            let parenDepth = 0;
+            let quote = null;
+            let escaped = false;
+            let lineComment = false;
+            let blockComment = false;
+            let closeParen = -1;
+
+            for (let i = openParen; i < source.length; i += 1) {
+              const ch = source[i];
+              const next = source[i + 1];
+
+              if (lineComment) {
+                if (ch === "\n") lineComment = false;
+                continue;
+              }
+
+              if (blockComment) {
+                if (ch === "*" && next === "/") {
+                  blockComment = false;
+                  i += 1;
+                }
+                continue;
+              }
+
+              if (quote) {
+                if (escaped) {
+                  escaped = false;
+                  continue;
+                }
+                if (ch === "\\") {
+                  escaped = true;
+                  continue;
+                }
+                if (ch === quote) quote = null;
+                continue;
+              }
+
+              if (ch === "/" && next === "/") {
+                lineComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "/" && next === "*") {
+                blockComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "'" || ch === '"' || ch === "`") {
+                quote = ch;
+                continue;
+              }
+
+              if (ch === "(") parenDepth += 1;
+              else if (ch === ")") {
+                parenDepth -= 1;
+                if (parenDepth === 0) {
+                  closeParen = i;
+                  break;
+                }
+              }
+            }
+
+            if (closeParen < 0) fail(`fin signature ${functionName} introuvable`);
+
+            let brace = closeParen + 1;
+            while (brace < source.length && /\s/.test(source[brace])) brace += 1;
+
+            if (source[brace] !== "{") {
+              fail(`accolade corps ${functionName} introuvable`);
+            }
+
+            let depth = 0;
+            quote = null;
+            escaped = false;
+            lineComment = false;
+            blockComment = false;
+
+            for (let i = brace; i < source.length; i += 1) {
+              const ch = source[i];
+              const next = source[i + 1];
+
+              if (lineComment) {
+                if (ch === "\n") lineComment = false;
+                continue;
+              }
+
+              if (blockComment) {
+                if (ch === "*" && next === "/") {
+                  blockComment = false;
+                  i += 1;
+                }
+                continue;
+              }
+
+              if (quote) {
+                if (escaped) {
+                  escaped = false;
+                  continue;
+                }
+                if (ch === "\\") {
+                  escaped = true;
+                  continue;
+                }
+                if (ch === quote) quote = null;
+                continue;
+              }
+
+              if (ch === "/" && next === "/") {
+                lineComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "/" && next === "*") {
+                blockComment = true;
+                i += 1;
+                continue;
+              }
+
+              if (ch === "'" || ch === '"' || ch === "`") {
+                quote = ch;
+                continue;
+              }
+
+              if (ch === "{") depth += 1;
+              else if (ch === "}") {
+                depth -= 1;
+                if (depth === 0) {
+                  return {
+                    start,
+                    end: i + 1,
+                    bodyStart: brace + 1
+                  };
+                }
+              }
+            }
+
+            fail(`fin ${functionName} introuvable`);
+          }
+
+          function replaceFunction(source, functionName, replacement) {
+            const b = findFunctionBounds(source, functionName);
+            return source.slice(0, b.start) + replacement + source.slice(b.end);
+          }
+
+          function insertBeforeFunction(source, functionName, code, marker) {
+            if (marker && source.includes(marker)) return source;
+            const b = findFunctionBounds(source, functionName);
+            return source.slice(0, b.start) + code + "\n\n" + source.slice(b.start);
+          }
+
+          function injectFunctionStart(source, functionName, injection, marker) {
+            const b = findFunctionBounds(source, functionName);
+            const fn = source.slice(b.start, b.end);
+
+            if (marker && fn.includes(marker)) return source;
+
+            const relativeBodyStart = b.bodyStart - b.start;
+
+            const next =
+              fn.slice(0, relativeBodyStart) +
+              "\n" + injection + "\n" +
+              fn.slice(relativeBodyStart);
+
+            return source.slice(0, b.start) + next + source.slice(b.end);
+          }
+
+          const indoorModule = `
+          /* WEB071 · ICON_INDOOR001 */
+          function web071IsIndoorActivity(activity) {
+            if (!activity || activity.deleted_at_ms != null) return false;
+
+            const sport = Number(activity.sport) || 0;
+            const subSport = Number(activity.sub_sport) || 0;
+
+            let profile = "";
+            let meta = "";
+
+            try {
+              profile =
+                String(
+                  equipmentProfileKeyFromActivityWeb058(activity) || ""
+                ).toUpperCase();
+            } catch (_) {}
+
+            try {
+              meta =
+                String(
+                  equipmentProfileMetadataWeb058(activity) || ""
+                ).toUpperCase();
+            } catch (_) {}
+
+            const explicitIndoor =
+              activity?.indoor === true ||
+              activity?.is_indoor === true ||
+              activity?.trainer === true ||
+              activity?.is_trainer === true ||
+              activity?.virtual === true ||
+              activity?.is_virtual === true;
+
+            if (explicitIndoor) return true;
+
+            if (
+              profile === "HOME_TRAINER" ||
+              profile === "KINOMAP"
+            ) {
+              return true;
+            }
+
+            if (sport === 1) {
+              return Boolean(
+                subSport === 1 ||
+                /TREADMILL|TAPIS|INDOOR|VIRTUALRUN|VIRTUAL RUN|KINOMAP/.test(meta)
+              );
+            }
+
+            if (sport === 2) {
+              return Boolean(
+                [5, 6, 58].includes(subSport) ||
+                /HOME.?TRAINER|\\bTRAINER\\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE|KINOMAP|ROUVY|BKOO?L/.test(meta)
+              );
+            }
+
+            return false;
+          }
+
+          function web071IndoorBadge() {
+            const badge = document.createElement("span");
+            badge.className = "web071-indoor-badge";
+            badge.textContent = "IN";
+            badge.title = "Activité indoor";
+            badge.setAttribute("aria-label", "Activité indoor");
+            return badge;
+          }
+
+          function web071DecorateDetailIndoor(activity) {
+            const row = document.getElementById("web061SingleMetricRow");
+            if (!row) return;
+
+            const sportCard = row.querySelector(".web061-sport-card");
+            if (!sportCard) return;
+
+            sportCard.classList.add("web071-detail-sport-card");
+
+            for (
+              const old of
+              sportCard.querySelectorAll(".web071-indoor-badge")
+            ) {
+              old.remove();
+            }
+
+            if (web071IsIndoorActivity(activity)) {
+              sportCard.appendChild(web071IndoorBadge());
+              sportCard.title =
+                (sportCard.title ? sportCard.title + " · " : "") +
+                "Indoor";
+            }
+          }
+          `;
+
+          app = insertBeforeFunction(
+            app,
+            "activityMain",
+            indoorModule,
+            "function web071IsIndoorActivity("
+          );
+
+          const activityMain = `function activityMain(activity) {
+            const cell = document.createElement("div");
+            cell.className =
+              "activity-main activity-main-web048 web071-activity-main";
+
+            const icon = document.createElement("span");
+            icon.className =
+              "activity-sport-icon activity-sport-icon-web048 web071-sport-icon-wrap";
+            icon.innerHTML = activitySportIconMarkup(activity);
+            icon.setAttribute(
+              "aria-label",
+              sportName(activity.sport) +
+                (web071IsIndoorActivity(activity) ? " indoor" : "")
+            );
+            icon.title =
+              sportName(activity.sport) +
+              (web071IsIndoorActivity(activity) ? " · Indoor" : "");
+
+            if (web071IsIndoorActivity(activity)) {
+              icon.appendChild(web071IndoorBadge());
+            }
+
+            cell.append(icon);
+            return cell;
+          }`;
+
+          app = replaceFunction(
+            app,
+            "activityMain",
+            activityMain
+          );
+
+          app = injectFunctionStart(
+            app,
+            "web061RenderSingleMetricRow",
+            `  /* WEB071_DETAIL_INDOOR */
+            queueMicrotask(() => {
+              web071DecorateDetailIndoor(activity);
+            });`,
+            "WEB071_DETAIL_INDOOR"
+          );
+
+          html = html.replace(
+            /<style id=["']web071-icon-indoor-css["']>[\s\S]*?<\/style>\s*/g,
+            ""
+          );
+
+          const css = `
+          <style id="web071-icon-indoor-css">
+            /* WEB071 · ICON_INDOOR001 */
+
+            #activityList .web071-activity-main {
+              align-self: stretch !important;
+              height: 100% !important;
+              min-height: 100% !important;
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+              padding: 0 !important;
+              margin: 0 !important;
+            }
+
+            #activityList .web071-sport-icon-wrap {
+              position: relative !important;
+              align-self: stretch !important;
+              width: 100% !important;
+              height: 100% !important;
+              min-height: 100% !important;
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+              line-height: 1 !important;
+              padding: 0 !important;
+              margin: 0 !important;
+              overflow: visible !important;
+            }
+
+            #activityList .web071-sport-icon-wrap
+            .sport-icon-c1v1,
+            #activityList .web071-sport-icon-wrap img,
+            #activityList .web071-sport-icon-wrap svg {
+              align-self: center !important;
+              margin: auto !important;
+              object-position: center center !important;
+              transform: none !important;
+            }
+
+            .web071-detail-sport-card {
+              position: relative !important;
+              overflow: visible !important;
+            }
+
+            .web071-indoor-badge {
+              position: absolute !important;
+              right: 1px !important;
+              bottom: 1px !important;
+              z-index: 5 !important;
+              min-width: 19px !important;
+              height: 15px !important;
+              padding: 0 4px !important;
+              display: inline-flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+              box-sizing: border-box !important;
+              border: 1px solid rgba(190, 255, 55, .78) !important;
+              border-radius: 7px !important;
+              background: rgba(10, 14, 11, .96) !important;
+              color: #d9ff79 !important;
+              font-size: 8px !important;
+              font-weight: 800 !important;
+              line-height: 1 !important;
+              letter-spacing: .4px !important;
+              pointer-events: none !important;
+              box-shadow: 0 1px 4px rgba(0,0,0,.45) !important;
+            }
+
+            #web061SingleMetricRow .web071-indoor-badge {
+              right: 4px !important;
+              bottom: 4px !important;
+              min-width: 21px !important;
+              height: 16px !important;
+              font-size: 8.5px !important;
+            }
+          </style>
+          `;
+
+          if (!html.includes("</head>")) {
+            fail("</head> introuvable");
+          }
+
+          html = html.replace(
+            "</head>",
+            css + "\n</head>"
+          );
+
+          html = html.replace(
+            /src=["']\.\/app\.js(?:\?v=[^"']*)?["']/,
+            'src="./app.js?v=WEB071-ICON-INDOOR001"'
+          );
+
+          fs.writeFileSync(appFile, app, "utf8");
+          fs.writeFileSync(htmlFile, html, "utf8");
+
+          console.log("✓ icônes Répertoire centrées verticalement");
+          console.log("✓ badge IN Répertoire");
+          console.log("✓ badge IN détail Activité");
+          console.log("✓ Home Trainer / tapis / Kinomap / virtual détectés");
+          console.log("✓ aucune donnée activité modifiée");
+          NODE
+
+      - name: Valider WEB071
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node --check web/app.js
+          npx --yes acorn@8.15.0 --ecma2022 --module web/app.js >/dev/null
+
+          node <<'NODE'
+          const fs = require("fs");
+
+          for (const file of ["web/app.js", "web/index.html"]) {
+            let text = fs.readFileSync(file, "utf8");
+            text = text
+              .split(/\r?\n/)
+              .map((line) => line.replace(/[ \t]+$/g, ""))
+              .join("\n");
+            fs.writeFileSync(file, text, "utf8");
+          }
+          NODE
+
+          git diff --check
+
+          grep -Fq 'WEB071 · ICON_INDOOR001' web/app.js
+          grep -Fq 'function web071IsIndoorActivity(activity)' web/app.js
+          grep -Fq 'function web071IndoorBadge()' web/app.js
+          grep -Fq 'WEB071_DETAIL_INDOOR' web/app.js
+          grep -Fq 'web071-icon-indoor-css' web/index.html
+          grep -Fq 'WEB071-ICON-INDOOR001' web/index.html
+
+          grep -Fq 'WEB069-SPLIT_EQUIPMENT004' web/app.js
+          grep -Fq 'WEB070 · DIRECTORY_PAGING001' web/app.js
+          grep -Fq 'sport-running-c1-exact.png' web/app.js
+          grep -Fq 'sport-bike-v1-exact.png' web/app.js
+
+          echo "======================================================"
+          echo "✅ WEB071 VALIDE"
+          echo "REPERTOIRE : ICONES CENTREES VERTICALEMENT"
+          echo "INDOOR     : BADGE IN SUR REPERTOIRE + DETAIL"
+          echo "OUTDOOR    : AUCUN BADGE"
+          echo "DONNEES    : AUCUNE MUTATION"
+          echo "WEB069/070 : PRESERVES"
+          echo "======================================================"
+
+      - name: Créer le déploiement Cloud Shell WEB071
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p scripts
+
+          cat > scripts/deploy_web071_cloudshell.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "======================================================"
+          echo "WEB071 - DEPLOIEMENT FIREBASE"
+          echo "======================================================"
+
+          git fetch origin
+          git checkout main
+          git reset --hard origin/main
+
+          node --check web/app.js
+
+          grep -Fq 'WEB071 · ICON_INDOOR001' web/app.js
+          grep -Fq 'function web071IsIndoorActivity(activity)' web/app.js
+          grep -Fq 'WEB071_DETAIL_INDOOR' web/app.js
+          grep -Fq 'WEB071-ICON-INDOOR001' web/index.html
+
+          cat > firebase.hosting.web071.json <<'JSON'
+          {
+            "hosting": {
+              "site": "sport-505813",
+              "public": "web",
+              "ignore": [
+                "firebase.json",
+                "**/.*",
+                "**/node_modules/**"
+              ],
+              "headers": [
+                {
+                  "source": "**",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "no-cache, no-store, must-revalidate"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          JSON
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --only hosting \
+            --project sport-505813 \
+            --config firebase.hosting.web071.json
+
+          echo
+          echo "======================================================"
+          echo "✅ WEB071 DEPLOYE"
+          echo "https://sport-505813.web.app"
+          echo "======================================================"
+          EOF
+
+          chmod +x scripts/deploy_web071_cloudshell.sh
+
+          cat > firebase.hosting.web071.json <<'JSON'
+          {
+            "hosting": {
+              "site": "sport-505813",
+              "public": "web",
+              "ignore": [
+                "firebase.json",
+                "**/.*",
+                "**/node_modules/**"
+              ],
+              "headers": [
+                {
+                  "source": "**",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "no-cache, no-store, must-revalidate"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          JSON
+
+          echo "✓ Script Cloud Shell créé"
+          echo "✓ Config Firebase créée"
+
+      - name: Commit et push WEB071
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "julienvitry-lab"
+          git config user.email "julienvitry-lab@users.noreply.github.com"
+
+          git add \
+            web/app.js \
+            web/index.html \
+            scripts/deploy_web071_cloudshell.sh \
+            firebase.hosting.web071.json
+
+          if git diff --cached --quiet; then
+            echo "✓ WEB071 déjà présent : aucun commit nécessaire"
+            exit 0
+          fi
+
+          git commit -m "WEB071 centre icones sport et distingue indoor"
+          git push origin main
+
+          echo
+          echo "======================================================"
+          echo "✅ WEB071 PUSHÉ SUR MAIN"
+          echo "Cloud Shell :"
+          echo "bash scripts/deploy_web071_cloudshell.sh"
+          echo "======================================================"
