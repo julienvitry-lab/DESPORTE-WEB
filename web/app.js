@@ -6158,19 +6158,123 @@ function installActivitySubSportFilterWeb054() {
   applyActivitySubSportFilterWeb054();
 }
 
+
+/* WEB071 · ICON_INDOOR001 */
+function web071IsIndoorActivity(activity) {
+  if (!activity || activity.deleted_at_ms != null) return false;
+
+  const sport = Number(activity.sport) || 0;
+  const subSport = Number(activity.sub_sport) || 0;
+
+  let profile = "";
+  let meta = "";
+
+  try {
+    profile =
+      String(
+        equipmentProfileKeyFromActivityWeb058(activity) || ""
+      ).toUpperCase();
+  } catch (_) {}
+
+  try {
+    meta =
+      String(
+        equipmentProfileMetadataWeb058(activity) || ""
+      ).toUpperCase();
+  } catch (_) {}
+
+  const explicitIndoor =
+    activity?.indoor === true ||
+    activity?.is_indoor === true ||
+    activity?.trainer === true ||
+    activity?.is_trainer === true ||
+    activity?.virtual === true ||
+    activity?.is_virtual === true;
+
+  if (explicitIndoor) return true;
+
+  if (
+    profile === "HOME_TRAINER" ||
+    profile === "KINOMAP"
+  ) {
+    return true;
+  }
+
+  if (sport === 1) {
+    return Boolean(
+      subSport === 1 ||
+      /TREADMILL|TAPIS|INDOOR|VIRTUALRUN|VIRTUAL RUN|KINOMAP/.test(meta)
+    );
+  }
+
+  if (sport === 2) {
+    return Boolean(
+      [5, 6, 58].includes(subSport) ||
+      /HOME.?TRAINER|\bTRAINER\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE|KINOMAP|ROUVY|BKOO?L/.test(meta)
+    );
+  }
+
+  return false;
+}
+
+function web071IndoorBadge() {
+  const badge = document.createElement("span");
+  badge.className = "web071-indoor-badge";
+  badge.textContent = "IN";
+  badge.title = "Activité indoor";
+  badge.setAttribute("aria-label", "Activité indoor");
+  return badge;
+}
+
+function web071DecorateDetailIndoor(activity) {
+  const row = document.getElementById("web061SingleMetricRow");
+  if (!row) return;
+
+  const sportCard = row.querySelector(".web061-sport-card");
+  if (!sportCard) return;
+
+  sportCard.classList.add("web071-detail-sport-card");
+
+  for (
+    const old of
+    sportCard.querySelectorAll(".web071-indoor-badge")
+  ) {
+    old.remove();
+  }
+
+  if (web071IsIndoorActivity(activity)) {
+    sportCard.appendChild(web071IndoorBadge());
+    sportCard.title =
+      (sportCard.title ? sportCard.title + " · " : "") +
+      "Indoor";
+  }
+}
+
+
 function activityMain(activity) {
   const cell = document.createElement("div");
-  cell.className = "activity-main activity-main-web049";
+  cell.className =
+    "activity-main activity-main-web048 web071-activity-main";
 
   const icon = document.createElement("span");
-  icon.className = "activity-sport-icon-web049";
-  icon.innerHTML = activitySportIconMarkupWeb049(activity);
-  icon.title = sportName(activity.sport);
-  icon.setAttribute("aria-label", sportName(activity.sport));
+  icon.className =
+    "activity-sport-icon activity-sport-icon-web048 web071-sport-icon-wrap";
+  icon.innerHTML = activitySportIconMarkup(activity);
+  icon.setAttribute(
+    "aria-label",
+    sportName(activity.sport) +
+      (web071IsIndoorActivity(activity) ? " indoor" : "")
+  );
+  icon.title =
+    sportName(activity.sport) +
+    (web071IsIndoorActivity(activity) ? " · Indoor" : "");
+
+  if (web071IsIndoorActivity(activity)) {
+    icon.appendChild(web071IndoorBadge());
+  }
 
   cell.append(icon);
   return cell;
-
 }
 
 function datum(label, value, extraClass = "") {
@@ -7039,6 +7143,11 @@ function web064ScheduleDirectDetailTop() {
 
 
 function web061RenderSingleMetricRow(activity) {
+  /* WEB071_DETAIL_INDOOR */
+  queueMicrotask(() => {
+    web071DecorateDetailIndoor(activity);
+  });
+
   if (!activity || !ui.detailView) return;
 
   const original = web061FindOriginalHeroRow();
