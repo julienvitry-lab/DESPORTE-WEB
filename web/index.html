@@ -4626,49 +4626,25 @@ body.ux-activities-page main{
 }
 </style>
 
-<style id="cgweb083-fix9-headercenter-css">
-/* CGWEB083 FIX9 · HEADERCENTER001 */
+
+<style id="cgweb083-fix10-headervaluecenter-css">
+/* CGWEB083 FIX10 · HEADERVALUECENTER001 */
 
 /*
- * LE HOST N'EST PAS TOUCHE :
- * son ancrage sticky actuel reste exactement celui qui fonctionne.
+ * On ne modifie PAS le host sticky ni sa marge de 2 mm.
+ * Seulement les titres du header mesuré.
  */
-
-#cgweb083CustomActivityHeader
-.cgweb083-custom-header-grid{
-  /*
-   * Les titres sont désormais positionnés sur les centres réels
-   * des cellules d'activité. On neutralise seulement la grille interne.
-   */
-  display:block!important;
-  position:relative!important;
-
-  padding-left:0!important;
-  padding-right:0!important;
-
-  column-gap:0!important;
-}
-
-#cgweb083CustomActivityHeader
-.cgweb083-header-spacer{
-  display:none!important;
-}
-
-#cgweb083CustomActivityHeader
-.cgweb083-custom-header-grid
-> strong{
+#cgweb083MeasuredActivityHeader
+.cgweb083-measured-track > strong{
   position:absolute!important;
 
   top:50%!important;
 
   width:auto!important;
-  max-width:none!important;
+  height:auto!important;
 
   margin:0!important;
   padding:0!important;
-
-  justify-self:auto!important;
-  align-self:auto!important;
 
   text-align:center!important;
   white-space:nowrap!important;
@@ -6169,7 +6145,7 @@ body.ux-activities-page main{
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB083-FIX9-HEADERCENTER001"></script>
+  <script type="module" src="./app.js?v=CGWEB083-FIX10-HEADERVALUECENTER001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

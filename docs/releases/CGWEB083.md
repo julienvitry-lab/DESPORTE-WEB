@@ -1,57 +1,62 @@
-# CGWEB083 · FIX9 · HEADERCENTER001
+# CGWEB083 · FIX10 · HEADERVALUECENTER001
 
-## Objectif
+## Diagnostic
 
-Conserver l'ancrage de la barre de titre, désormais satisfaisant,
-et corriger uniquement le centrage horizontal des libellés.
+Les lignes d'activités sont organisées par grille, mais le contenu
+des `.datum` est aligné à gauche.
 
-## Principe
+Les versions précédentes centraient donc correctement le titre dans
+la case CSS complète, ce qui produisait un décalage visuel par rapport
+aux valeurs affichées.
 
-Les activités sont déjà correctement disposées dans leurs
-« colonnes invisibles ».
+## Correction
 
-FIX9 ne reconstruit donc plus cette grille.
+Le header `#cgweb083MeasuredActivityHeader` et son ancrage sont conservés.
 
-Il mesure directement les huit cellules `.datum` de la première
-activité visible :
+Pour chacune des huit colonnes :
 
-1. Date
-2. Heure / Départ
-3. Distance
-4. D+
-5. Temps / Durée
-6. Matériel
-7. Repères
-8. Charge
+- Date
+- Heure
+- Distance
+- D+
+- Temps
+- Matériel
+- Repères
+- Charge
 
-Pour chaque cellule :
+FIX10 récupère le `<strong>` réellement visible dans la première activité,
+mesure son rectangle à l'écran et calcule :
 
-`centre = left réel + width réelle / 2`
+`centreX = left + width / 2`
 
-Le titre correspondant est placé exactement sur ce centre avec :
+Le titre correspondant est positionné exactement sur ce centre avec :
 
-`transform: translate(-50%, -50%)`
+`translate(-50%, -50%)`
 
-## Synchronisation
+## Correction de coordonnées
 
-WEB072 FIX11 réapplique sa grille après le rendu.
+La piste du header étant absolue dans son host, son `left` est maintenant
+calculé en coordonnées locales :
 
-FIX9 se recale :
-- immédiatement ;
-- après 40 ms ;
-- après 150 ms ;
-- après 320 ms ;
-- et juste après `web072Fix11AlignDirectoryHeader()`.
+`card.left - host.left`
 
-Ainsi le calcul utilise la géométrie définitive des lignes.
+et non plus directement avec une coordonnée viewport.
+
+## Nettoyage
+
+L'ancien `HEADERCENTER001`, qui ciblait un host FIX8 désormais supprimé,
+est retiré.
+
+WEB072 FIX11 appelle directement le moteur mesuré unique.
 
 ## Inchangé
 
-- ancrage de la barre ;
-- espacement vertical 2 mm ;
+- ancrage sticky ;
+- écart 2 mm ;
+- lignes d'activités ;
 - Tri des activités ;
 - 100 activités au démarrage ;
-- « Afficher 20 de plus » ;
+- Afficher 20 de plus ;
 - pictogramme FIT ;
 - pipeline FIT ;
 - backend.
