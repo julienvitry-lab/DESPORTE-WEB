@@ -3691,14 +3691,20 @@ select {
 
 
 
-<style id="web072-detail-nav003-icon-layout004-css">
-  /* WEB072 FIX4 · DETAIL_NAV003 / ICON_LAYOUT004 */
 
-  /*
-   * A — Course : réduction franche, sans déplacer le centre de la cellule.
-   * Le cadre conserve le centrage vertical acquis.
-   */
+<style id="web072-fix5-ui-stability-css">
+  /* WEB072 FIX5 · UI_STABILITY001 / DISTANCE002 */
+
+  /* Répertoire : cellule sport parfaitement centrée. */
+  #activityList .web071-fix1-activity-main {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: visible !important;
+  }
+
   #activityList .web071-fix1-sport-icon {
+    position: relative !important;
     width: 44px !important;
     height: 38px !important;
     min-width: 44px !important;
@@ -3708,125 +3714,96 @@ select {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    margin: auto !important;
+    padding: 0 !important;
     overflow: visible !important;
   }
 
-  #activityList .web071-fix1-sport-icon img[src*="sport-running"],
-  #activityList .web071-fix1-sport-icon img[alt*="Course"],
-  #activityList .web071-fix1-sport-icon img[alt*="course"] {
-    width: 18px !important;
-    height: 18px !important;
-    max-width: 18px !important;
-    max-height: 18px !important;
-    margin: auto !important;
-    transform: none !important;
-    object-fit: contain !important;
-  }
-
   /*
-   * Le vélo garde sa taille WEB072, qui ne déborde plus.
+   * A — sélecteurs indépendants du type de fichier image :
+   * la classe est posée sur la cellule à partir de aria-label.
    */
-  #activityList .web071-fix1-sport-icon img[src*="sport-bike"],
-  #activityList .web071-fix1-sport-icon img[alt*="Vélo"],
-  #activityList .web071-fix1-sport-icon img[alt*="velo"],
-  #activityList .web071-fix1-sport-icon img[alt*="Velo"] {
-    width: 27px !important;
-    height: 19px !important;
-    max-width: 27px !important;
-    max-height: 19px !important;
-    margin: auto !important;
-    transform: none !important;
+  #activityList .web072-run-cell .web071-fix1-sport-icon img,
+  #activityList .web072-run-cell .web071-fix1-sport-icon svg,
+  #activityList .web072-run-cell .web071-fix1-sport-icon .sport-icon-c1v1 {
+    width: 24px !important;
+    height: 24px !important;
+    max-width: 24px !important;
+    max-height: 24px !important;
     object-fit: contain !important;
+    object-position: center center !important;
+    margin: auto !important;
+    padding: 0 !important;
+    transform: none !important;
+  }
+
+  #activityList .web072-bike-cell .web071-fix1-sport-icon img,
+  #activityList .web072-bike-cell .web071-fix1-sport-icon svg,
+  #activityList .web072-bike-cell .web071-fix1-sport-icon .sport-icon-c1v1 {
+    width: 30px !important;
+    height: 21px !important;
+    max-width: 30px !important;
+    max-height: 21px !important;
+    object-fit: contain !important;
+    object-position: center center !important;
+    margin: auto !important;
+    padding: 0 !important;
+    transform: none !important;
   }
 
   /*
-   * B — éclair : environ 2 mm plus à gauche et 2 mm plus haut.
+   * B — éclair 2 mm vers la droite par rapport au FIX1,
+   * en conservant le décalage vertical vers le haut.
    */
   .web071-indoor-badge.web071-indoor-lightning {
-    left: -20px !important;
+    left: -12px !important;
     right: auto !important;
     top: calc(50% - 8px) !important;
     bottom: auto !important;
     transform: translateY(-50%) !important;
-    font-size: 14px !important;
   }
 
-  #web061SingleMetricRow
-  .web071-indoor-badge.web071-indoor-lightning {
-    left: -18px !important;
-    right: auto !important;
-    top: calc(50% - 8px) !important;
-    bottom: auto !important;
-    transform: translateY(-50%) !important;
-    font-size: 16px !important;
+  /* E — titres du Répertoire réellement centrés dans chaque colonne. */
+  .web072-fix5-directory-header {
+    align-items: center !important;
   }
 
-  /*
-   * C — aucune transformation des cartes métriques :
-   * les stats reviennent au rendu WEB061/066.
-   */
-  #web061SingleMetricRow {
-    position: relative !important;
-    top: auto !important;
-    z-index: 1 !important;
-    clear: both !important;
-  }
-
-  /*
-   * D — LE vrai bandeau sticky :
-   * Répertoire / corbeille / ajout manuel / précédent / suivant.
-   */
-  #detailView .web059-detail-toolbar,
-  #detailView .web072-fixed-detail-toolbar {
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 200 !important;
-
+  .web072-fix5-directory-header > * {
     display: flex !important;
     align-items: center !important;
-    gap: 10px !important;
-
-    background: rgba(8, 14, 10, .99) !important;
-    backdrop-filter: blur(5px) !important;
-
-    padding-top: 7px !important;
-    padding-bottom: 7px !important;
-    margin-bottom: 8px !important;
-
-    box-sizing: border-box !important;
-    overflow: visible !important;
+    justify-content: center !important;
+    width: 100% !important;
+    text-align: center !important;
+    justify-self: stretch !important;
   }
 
-  #detailView .web072-fixed-detail-toolbar > button,
-  #detailView .web072-fixed-detail-toolbar > a,
-  #detailView .web072-fixed-detail-toolbar button,
-  #detailView .web072-fixed-detail-toolbar a {
-    flex: 0 0 auto !important;
-    white-space: nowrap !important;
+  .web072-fix5-header-spacer {
+    visibility: hidden !important;
+    pointer-events: none !important;
   }
 
-  .web072-manual-add-btn {
+  /*
+   * C — le bandeau de navigation est porté en FIXED par JS.
+   * Un spacer réserve sa place dans le flux.
+   */
+  .web072-fix5-toolbar-fixed {
+    position: fixed !important;
+    z-index: 9000 !important;
     margin: 0 !important;
-    flex: 0 0 auto !important;
-    white-space: nowrap !important;
+    box-sizing: border-box !important;
+    background: rgba(8, 14, 10, .995) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
   }
 
-  /*
-   * E/F — aucun bandeau Ajout manuel isolé et aucune navigation du bas.
-   */
+  .web072-fix5-toolbar-spacer {
+    display: block !important;
+    width: 100% !important;
+    pointer-events: none !important;
+  }
+
   .web072-orphan-manual-toolbar,
-  .web072-bottom-nav-duplicate {
-    display: none !important;
-  }
-
-  /*
-   * Barre fine inutile sous les métriques.
-   */
-  #web061SingleMetricRow + hr,
-  #web061SingleMetricRow + .divider,
-  #web061SingleMetricRow + .separator,
-  #web061SingleMetricRow + .toolbar-separator,
-  #web061SingleMetricRow + .web-divider,
+  .web072-bottom-nav-duplicate,
   .web072-hide-divider {
     display: none !important;
   }
@@ -5275,7 +5252,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-FIX4-DETAIL-NAV003-ICON-LAYOUT004"></script>
+  <script type="module" src="./app.js?v=WEB072-FIX5-UI-STABILITY001-DISTANCE002"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

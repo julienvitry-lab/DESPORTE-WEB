@@ -2097,12 +2097,12 @@ function web055FormatHms(ms) {
 
 /* WEB055-FIX2 · HOMERENDER002 */
 function web055FormatDistance(valueMeters) {
-  const km = Math.max(0, Number(valueMeters) || 0) / 1000;
-  return km.toLocaleString("fr-FR", {
-    minimumFractionDigits: km < 100 ? 2 : 1,
-    maximumFractionDigits: km < 100 ? 2 : 1
-  }) + " km";
-}
+    const km = Math.max(0, Number(valueMeters) || 0) / 1000;
+    return km.toLocaleString("fr-FR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }) + " km";
+  }
 
 function web055FormatAscent(valueMeters) {
   return Math.round(Math.max(0, Number(valueMeters) || 0))
@@ -3307,7 +3307,7 @@ function web055ComparisonMetricMeta(metric) {
   if (metric === "ascent") return { label: "D+", unit: "m", decimals: 0 };
   if (metric === "time") return { label: "Temps", unit: "h", decimals: 1 };
   if (metric === "load") return { label: "Charge", unit: "", decimals: 0 };
-  return { label: "Distance", unit: "km", decimals: 1 };
+  return { label: "Distance", unit: "km", decimals: 2 };
 }
 
 function web055FormatComparisonValue(value, meta) {
@@ -3549,8 +3549,22 @@ function renderWeb055Home() {
 function web055SetSport(sport) {
   dashboardSport = Number(sport) === 2 ? 2 : 1;
 
-  document.getElementById("web055RunningButton")?.classList.toggle("active", dashboardSport === 1);
-  document.getElementById("web055CyclingButton")?.classList.toggle("active", dashboardSport === 2);
+  try {
+    localStorage.setItem(
+      "sport_web_web055_home_sport",
+      String(dashboardSport)
+    );
+  } catch (_) {}
+
+  document.getElementById("web055RunningButton")?.classList.toggle(
+    "active",
+    dashboardSport === 1
+  );
+
+  document.getElementById("web055CyclingButton")?.classList.toggle(
+    "active",
+    dashboardSport === 2
+  );
 }
 
 function installWeb055HomeLayout() {
@@ -3604,7 +3618,10 @@ function installWeb055HomeLayout() {
   ].join('');
 
   section.appendChild(root);
-  web055SetSport(1);
+  const web072StoredSport = Number(
+    localStorage.getItem("sport_web_web055_home_sport")
+  );
+  web055SetSport(web072StoredSport === 2 ? 2 : 1);
 
   document.getElementById('web055RunningButton')?.addEventListener('click', () => {
     web055SetSport(1);
@@ -17666,7 +17683,10 @@ function formatDateLong(value) {
 function formatDistance(value) {
   const number = Number(value);
   return Number.isFinite(number)
-    ? `${(number / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km`
+    ? `${(number / 1000).toLocaleString("fr-FR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })} km`
     : "—";
 }
 
@@ -17868,46 +17888,156 @@ function localeSort(a, b) {
 
 
 
-/* WEB072_FIX4_DETAIL_NAV003_START */
 
-function web072Fix4Text(el) {
-  return String(el?.textContent || "").replace(/\s+/g, " ").trim();
+
+
+/* WEB072_FIX5_UI_STABILITY001_START */
+
+function web072Fix5Text(el) {
+  return String(el?.textContent || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function web072Fix4Controls(root) {
-  return Array.from(
-    root.querySelectorAll("button, a")
+function web072Fix5DecorateSportCells() {
+  document
+    .querySelectorAll("#activityList .web071-fix1-activity-main")
+    .forEach((cell) => {
+      const icon =
+        cell.querySelector(".web071-fix1-sport-icon");
+
+      const label =
+        String(icon?.getAttribute("aria-label") || "")
+          .toLowerCase();
+
+      cell.classList.remove(
+        "web072-run-cell",
+        "web072-bike-cell"
+      );
+
+      if (
+        /vélo|velo|bike|cycling|vtt/.test(label)
+      ) {
+        cell.classList.add("web072-bike-cell");
+      } else {
+        cell.classList.add("web072-run-cell");
+      }
+    });
+}
+
+function web072Fix5FindDirectoryHeader() {
+  const list = document.getElementById("activityList");
+  if (!list) return null;
+
+  const root =
+    list.closest("#activityDirectorySection") ||
+    list.parentElement?.parentElement ||
+    document.body;
+
+  const wanted = [
+    "Date",
+    "Heure",
+    "Distance",
+    "D+",
+    "Temps",
+    "Matériel",
+    "Repères"
+  ];
+
+  for (const el of root.querySelectorAll("div")) {
+    const texts =
+      Array.from(el.children)
+        .map((child) => web072Fix5Text(child));
+
+    if (
+      wanted.every((label) => texts.includes(label)) &&
+      texts.length <= 9
+    ) {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+function web072Fix5AlignDirectoryHeader() {
+  const list = document.getElementById("activityList");
+  const sportCell =
+    list?.querySelector(".web071-fix1-activity-main");
+  const row = sportCell?.parentElement;
+  const header = web072Fix5FindDirectoryHeader();
+
+  if (!row || !header) return;
+
+  const texts =
+    Array.from(header.children)
+      .map((child) => web072Fix5Text(child));
+
+  if (
+    texts[0] === "Date" &&
+    !header.querySelector(".web072-fix5-header-spacer")
+  ) {
+    const spacer = document.createElement("span");
+    spacer.className = "web072-fix5-header-spacer";
+    spacer.setAttribute("aria-hidden", "true");
+    header.prepend(spacer);
+  }
+
+  const style = getComputedStyle(row);
+
+  header.classList.add(
+    "web072-fix5-directory-header"
   );
+
+  header.style.display = "grid";
+
+  if (
+    style.gridTemplateColumns &&
+    style.gridTemplateColumns !== "none"
+  ) {
+    header.style.gridTemplateColumns =
+      style.gridTemplateColumns;
+  }
+
+  header.style.columnGap =
+    style.columnGap || "0px";
+  header.style.paddingLeft =
+    style.paddingLeft || "0px";
+  header.style.paddingRight =
+    style.paddingRight || "0px";
 }
 
-function web072Fix4FindToolbar() {
+function web072Fix5FindToolbar() {
   const detail = document.getElementById("detailView");
-  if (!detail) return null;
+  if (!detail || detail.classList.contains("hidden")) {
+    return null;
+  }
 
-  const controls = web072Fix4Controls(detail);
+  const controls =
+    Array.from(detail.querySelectorAll("button, a"));
 
-  const repo = controls.find((el) =>
-    /Répertoire/i.test(web072Fix4Text(el))
-  );
+  const repo =
+    controls.find((el) =>
+      /^.*Répertoire.*$/i.test(web072Fix5Text(el))
+    );
 
-  const trash = controls.find((el) =>
-    /Mettre à la corbeille/i.test(web072Fix4Text(el))
-  );
+  const trash =
+    controls.find((el) =>
+      /Mettre à la corbeille/i.test(web072Fix5Text(el))
+    );
 
-  const prev = controls.find((el) =>
-    /Activité précédente/i.test(web072Fix4Text(el))
-  );
+  const prev =
+    controls.find((el) =>
+      /Activité précédente/i.test(web072Fix5Text(el))
+    );
 
-  const next = controls.find((el) =>
-    /Activité suivante/i.test(web072Fix4Text(el))
-  );
+  const next =
+    controls.find((el) =>
+      /Activité suivante/i.test(web072Fix5Text(el))
+    );
 
   if (!repo || !trash || !prev || !next) return null;
 
-  /*
-   * On part du bouton corbeille (présent uniquement dans le bandeau du haut)
-   * et on remonte jusqu'au plus petit ancêtre contenant les 4 actions.
-   */
   let node = trash.parentElement;
 
   while (node && node !== detail) {
@@ -17926,161 +18056,294 @@ function web072Fix4FindToolbar() {
   return null;
 }
 
-function web072Fix4EnsureManualButton(toolbar) {
+function web072Fix5EnsureManual(toolbar) {
   if (!toolbar) return;
 
-  /*
-   * Supprime tous les anciens boutons WEB072 situés ailleurs.
-   */
-  for (const old of document.querySelectorAll(".web072-manual-add-btn")) {
+  for (
+    const old of
+    document.querySelectorAll(".web072-manual-add-btn")
+  ) {
     if (!toolbar.contains(old)) old.remove();
   }
 
-  let button = toolbar.querySelector(".web072-manual-add-btn");
+  if (
+    toolbar.querySelector(".web072-manual-add-btn")
+  ) {
+    return;
+  }
 
-  if (!button) {
-    const template =
-      Array.from(toolbar.querySelectorAll("button, a"))
-        .find((el) =>
-          /Mettre à la corbeille/i.test(web072Fix4Text(el))
-        ) ||
-      toolbar.querySelector("button");
+  const template =
+    Array.from(toolbar.querySelectorAll("button, a"))
+      .find((el) =>
+        /Mettre à la corbeille/i.test(web072Fix5Text(el))
+      ) ||
+    toolbar.querySelector("button");
 
-    button = document.createElement("button");
-    button.type = "button";
-    button.className =
-      ((template?.className || "secondary") + " web072-manual-add-btn").trim();
-    button.textContent = "Ajout manuel";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className =
+    ((template?.className || "secondary") +
+      " web072-manual-add-btn")
+      .trim();
 
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
+  button.textContent = "Ajout manuel";
 
-      try {
-        navigateUx("more", "manual");
-      } catch (_) {}
-    });
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    navigateUx("more", "manual");
+  });
 
-    const trash =
-      Array.from(toolbar.querySelectorAll("button, a"))
-        .find((el) =>
-          /Mettre à la corbeille/i.test(web072Fix4Text(el))
-        );
+  const trash =
+    Array.from(toolbar.querySelectorAll("button, a"))
+      .find((el) =>
+        /Mettre à la corbeille/i.test(web072Fix5Text(el))
+      );
 
-    if (trash) {
-      trash.insertAdjacentElement("afterend", button);
-    } else {
-      toolbar.appendChild(button);
-    }
+  if (trash) {
+    trash.insertAdjacentElement(
+      "beforebegin",
+      button
+    );
+  } else {
+    toolbar.appendChild(button);
   }
 }
 
-function web072Fix4HideDuplicates(toolbar) {
+function web072Fix5HideDuplicates(toolbar) {
   const detail = document.getElementById("detailView");
   if (!detail || !toolbar) return;
 
-  /*
-   * F — navigation du bas :
-   * repère chaque autre groupe contenant Répertoire + précédent + suivant.
-   */
+  for (
+    const el of
+    Array.from(detail.querySelectorAll("button, a"))
+  ) {
+    if (toolbar.contains(el)) continue;
+
+    const text = web072Fix5Text(el);
+
+    if (/^Ajout manuel$/i.test(text)) {
+      const host = el.parentElement;
+
+      if (
+        host &&
+        host.querySelectorAll("button, a").length === 1
+      ) {
+        host.classList.add(
+          "web072-orphan-manual-toolbar"
+        );
+      } else {
+        el.remove();
+      }
+    }
+  }
+
   const repoButtons =
-    web072Fix4Controls(detail).filter((el) =>
-      /Répertoire/i.test(web072Fix4Text(el)) &&
-      !toolbar.contains(el)
-    );
+    Array.from(detail.querySelectorAll("button, a"))
+      .filter((el) =>
+        /Répertoire/i.test(web072Fix5Text(el)) &&
+        !toolbar.contains(el)
+      );
 
   for (const repo of repoButtons) {
     let node = repo.parentElement;
-    let steps = 0;
+    let depth = 0;
 
-    while (node && node !== detail && steps < 6) {
-      const text = web072Fix4Text(node);
+    while (node && node !== detail && depth < 7) {
+      const text = web072Fix5Text(node);
 
       if (
         /Activité précédente/i.test(text) &&
         /Activité suivante/i.test(text) &&
         /Répertoire/i.test(text)
       ) {
-        node.classList.add("web072-bottom-nav-duplicate");
+        node.classList.add(
+          "web072-bottom-nav-duplicate"
+        );
         break;
       }
 
       node = node.parentElement;
-      steps += 1;
-    }
-  }
-
-  /*
-   * E — ancien bandeau contenant uniquement Ajout manuel.
-   */
-  const manuals =
-    web072Fix4Controls(detail).filter((el) =>
-      /^Ajout manuel$/i.test(web072Fix4Text(el)) &&
-      !toolbar.contains(el)
-    );
-
-  for (const manual of manuals) {
-    let host = manual.parentElement;
-
-    if (
-      host &&
-      web072Fix4Controls(host).length === 1
-    ) {
-      host.classList.add("web072-orphan-manual-toolbar");
-    } else {
-      manual.remove();
+      depth++;
     }
   }
 }
 
-function web072Fix4HideThinDivider() {
-  const row = document.getElementById("web061SingleMetricRow");
-  if (!row) return;
+function web072Fix5TopOffset() {
+  let top = 0;
 
-  const next = row.nextElementSibling;
-  if (!next) return;
+  for (
+    const el of [
+      document.querySelector(".topbar"),
+      document.getElementById("uxPrimaryNav")
+    ]
+  ) {
+    if (!el) continue;
 
-  const rect = next.getBoundingClientRect();
+    const style = getComputedStyle(el);
+
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden"
+    ) {
+      continue;
+    }
+
+    top += Math.ceil(
+      el.getBoundingClientRect().height
+    );
+  }
+
+  return top;
+}
+
+function web072Fix5SyncFixedToolbar() {
+  const detail = document.getElementById("detailView");
+  const toolbar = web072Fix5FindToolbar();
+
+  const previous =
+    document.querySelector(".web072-fix5-toolbar-fixed");
+
+  if (!detail || !toolbar) {
+    if (previous) {
+      previous.classList.remove(
+        "web072-fix5-toolbar-fixed"
+      );
+
+      for (const property of [
+        "top",
+        "left",
+        "width"
+      ]) {
+        previous.style.removeProperty(property);
+      }
+    }
+
+    document
+      .querySelectorAll(".web072-fix5-toolbar-spacer")
+      .forEach((el) => el.remove());
+
+    return;
+  }
+
+  web072Fix5EnsureManual(toolbar);
+  web072Fix5HideDuplicates(toolbar);
+
+  let spacer =
+    toolbar.previousElementSibling;
+
+  if (
+    !spacer ||
+    !spacer.classList.contains(
+      "web072-fix5-toolbar-spacer"
+    )
+  ) {
+    spacer = document.createElement("div");
+    spacer.className =
+      "web072-fix5-toolbar-spacer";
+
+    toolbar.insertAdjacentElement(
+      "beforebegin",
+      spacer
+    );
+  }
+
+  const toolbarHeight =
+    Math.ceil(toolbar.getBoundingClientRect().height) ||
+    58;
+
+  spacer.style.height =
+    toolbarHeight + "px";
+
+  const detailRect =
+    detail.getBoundingClientRect();
+
+  toolbar.classList.add(
+    "web072-fix5-toolbar-fixed"
+  );
+
+  toolbar.style.top =
+    web072Fix5TopOffset() + "px";
+  toolbar.style.left =
+    Math.max(0, detailRect.left) + "px";
+  toolbar.style.width =
+    Math.max(0, detailRect.width) + "px";
+}
+
+function web072Fix5HideThinDivider() {
+  const row =
+    document.getElementById("web061SingleMetricRow");
+
+  const next =
+    row?.nextElementSibling;
+
+  if (!row || !next) return;
+
+  const rect =
+    next.getBoundingClientRect();
 
   if (
     next.tagName === "HR" ||
-    /divider|separator/i.test(String(next.className || "")) ||
+    /divider|separator/i.test(
+      String(next.className || "")
+    ) ||
     (
       rect.height > 0 &&
       rect.height <= 16 &&
-      rect.width >= row.getBoundingClientRect().width * .75
+      rect.width >=
+        row.getBoundingClientRect().width * .75
     )
   ) {
     next.classList.add("web072-hide-divider");
   }
 }
 
-function web072Fix4Apply() {
+function web072Fix5Apply() {
   try {
-    const toolbar = web072Fix4FindToolbar();
-
-    if (toolbar) {
-      toolbar.classList.add("web072-fixed-detail-toolbar");
-      web072Fix4EnsureManualButton(toolbar);
-      web072Fix4HideDuplicates(toolbar);
-    }
-
-    web072Fix4HideThinDivider();
+    web072Fix5DecorateSportCells();
+    web072Fix5AlignDirectoryHeader();
+    web072Fix5SyncFixedToolbar();
+    web072Fix5HideThinDivider();
   } catch (_) {}
 }
 
-if (!window.__web072Fix4Installed) {
-  window.__web072Fix4Installed = true;
+if (!window.__web072Fix5Installed) {
+  window.__web072Fix5Installed = true;
 
-  const refresh = () => {
-    setTimeout(web072Fix4Apply, 0);
-    setTimeout(web072Fix4Apply, 350);
-  };
+  const refresh = () =>
+    requestAnimationFrame(web072Fix5Apply);
 
-  document.addEventListener("DOMContentLoaded", refresh);
-  document.addEventListener("click", refresh, true);
-  document.addEventListener("change", refresh, true);
+  document.addEventListener(
+    "DOMContentLoaded",
+    refresh
+  );
 
-  setInterval(web072Fix4Apply, 1800);
+  document.addEventListener(
+    "click",
+    () => setTimeout(refresh, 0),
+    true
+  );
+
+  document.addEventListener(
+    "change",
+    () => setTimeout(refresh, 0),
+    true
+  );
+
+  window.addEventListener(
+    "resize",
+    refresh,
+    { passive: true }
+  );
+
+  window.addEventListener(
+    "scroll",
+    refresh,
+    { passive: true, capture: true }
+  );
+
+  setTimeout(refresh, 100);
+  setTimeout(refresh, 600);
+  setTimeout(refresh, 1500);
 }
 
-/* WEB072_FIX4_DETAIL_NAV003_END */
+/* WEB072_FIX5_UI_STABILITY001_END */
