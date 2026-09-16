@@ -13152,6 +13152,231 @@ async function uploadMissingOriginalsToDrive() {
   }
 }
 
+/* CGWEB080_FITDRIVE001_APP_START */
+const V080_FIT_DRIVE_ROOT = "FIT";
+const v080DriveFolderCache = new Map();
+
+function v080DriveEscapeQuery(value) {
+  return String(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function v080DriveSafeProp(value, max = 120) {
+  return String(value ?? "").trim().slice(0, max);
+}
+
+function v080CloudFitDateParts(row) {
+  const name = String(row?.file_name || "");
+  const match = name.match(/^(\d{4})_(\d{2})_/);
+  if (match) return {year: match[1], month: match[2]};
+
+  const ms = Number(row?.start_time_ms || 0);
+  if (Number.isFinite(ms) && ms > 0) {
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) {
+      return {
+        year: String(d.getUTCFullYear()),
+        month: String(d.getUTCMonth() + 1).padStart(2, "0")
+      };
+    }
+  }
+
+  return {year: "INCONNU", month: "00"};
+}
+
+async function v080EnsureDriveConnected() {
+  if (!webDriveAccessToken) await connectWebDrive();
+  if (!webDriveAccessToken) {
+    throw new Error("Google Drive n’est pas connecté pour cette session.");
+  }
+  return true;
+}
+
+async function v080FindChildFolder(parentId, name, role) {
+  const q = [
+    `'${v080DriveEscapeQuery(parentId)}' in parents`,
+    "mimeType = 'application/vnd.google-apps.folder'",
+    "trashed = false",
+    `name = '${v080DriveEscapeQuery(name)}'`,
+    "appProperties has { key='sport_app' and value='DESPORTE' }",
+    `appProperties has { key='sport_role' and value='${v080DriveEscapeQuery(role)}' }`
+  ].join(" and ");
+
+  const result = await driveApiFetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,parents,createdTime,appProperties)&pageSize=10`
+  );
+  return result?.files?.[0] || null;
+}
+
+async function v080CreateChildFolder(parentId, name, role, extraProps = {}) {
+  return driveApiFetch(
+    "https://www.googleapis.com/drive/v3/files?fields=id,name,parents,createdTime,webViewLink,appProperties",
+    {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        name,
+        parents: [parentId],
+        mimeType: "application/vnd.google-apps.folder",
+        appProperties: {
+          sport_app: "DESPORTE",
+          sport_role: role,
+          ...extraProps
+        }
+      })
+    }
+  );
+}
+
+async function v080EnsureChildFolder(parentId, name, role, extraProps = {}) {
+  const key = `${parentId}|${name}|${role}`;
+  const cached = v080DriveFolderCache.get(key);
+  if (cached) return cached;
+
+  let folder = await v080FindChildFolder(parentId, name, role);
+  if (!folder) folder = await v080CreateChildFolder(parentId, name, role, extraProps);
+  if (!folder?.id) throw new Error(`Dossier Drive introuvable : ${name}`);
+
+  v080DriveFolderCache.set(key, folder.id);
+  return folder.id;
+}
+
+async function v080EnsureFitCloudFolder(row) {
+  await v080EnsureDriveConnected();
+  const sportRoot = await ensureWebDriveFolder();
+  const {year, month} = v080CloudFitDateParts(row);
+
+  const fitRoot = await v080EnsureChildFolder(
+    sportRoot,
+    V080_FIT_DRIVE_ROOT,
+    "fit_cloud_root",
+    {sport_storage: "FITDRIVE001"}
+  );
+  const yearFolder = await v080EnsureChildFolder(
+    fitRoot,
+    year,
+    "fit_cloud_year",
+    {sport_year: year}
+  );
+  const monthFolder = await v080EnsureChildFolder(
+    yearFolder,
+    month,
+    "fit_cloud_month",
+    {sport_year: year, sport_month: month}
+  );
+
+  return {
+    folderId: monthFolder,
+    path: `${WEB_DRIVE_FOLDER_NAME}/${V080_FIT_DRIVE_ROOT}/${year}/${month}`,
+    year,
+    month
+  };
+}
+
+async function v080FindDriveFileByShaAnywhere(sha256) {
+  const safeSha = v080DriveEscapeQuery(String(sha256 || "").toLowerCase());
+  const q = [
+    "trashed = false",
+    "appProperties has { key='sport_app' and value='DESPORTE' }",
+    `appProperties has { key='sport_sha256' and value='${safeSha}' }`
+  ].join(" and ");
+
+  const result = await driveApiFetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,size,parents,createdTime,webViewLink,appProperties)&pageSize=20`
+  );
+  return result?.files?.[0] || null;
+}
+
+async function v080Sha256Blob(blob) {
+  const buffer = await blob.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function v080UploadCloudFitBlob(row, blob) {
+  await v080EnsureDriveConnected();
+
+  const sha256 = String(row?.sha256 || "").trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(sha256)) {
+    throw new Error("FITDRIVE001 : SHA-256 Cloud invalide.");
+  }
+  if (!(blob instanceof Blob)) {
+    throw new Error("FITDRIVE001 : binaire FIT Cloud absent.");
+  }
+
+  const digest = await v080Sha256Blob(blob);
+  if (digest !== sha256) {
+    throw new Error("FITDRIVE001 : intégrité SHA-256 incorrecte avant envoi Drive.");
+  }
+
+  const existing = await v080FindDriveFileByShaAnywhere(sha256);
+  if (existing) {
+    return {
+      ...existing,
+      reused: true,
+      drive_path: existing?.appProperties?.sport_path || "SPORT (fichier déjà présent)"
+    };
+  }
+
+  const target = await v080EnsureFitCloudFolder(row);
+  const boundary = `sport_fitdrive_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const metadata = {
+    name: driveSafeFileName(row?.file_name || `${sha256}.fit`),
+    parents: [target.folderId],
+    mimeType: "application/octet-stream",
+    appProperties: {
+      sport_app: "DESPORTE",
+      sport_kind: "fit_cloud",
+      sport_storage: "FITDRIVE001",
+      sport_sha256: sha256,
+      sport_activity_id: v080DriveSafeProp(row?.activity_id, 100),
+      sport_version_index: v080DriveSafeProp(row?.version_index, 20),
+      sport_path: target.path
+    }
+  };
+
+  const prefix =
+    `--${boundary}\r\n` +
+    "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+    `${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\n` +
+    "Content-Type: application/octet-stream\r\n\r\n";
+  const suffix = `\r\n--${boundary}--`;
+  const body = new Blob([prefix, blob, suffix], {
+    type: `multipart/related; boundary=${boundary}`
+  });
+
+  const remote = await driveApiFetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,parents,createdTime,webViewLink,appProperties",
+    {
+      method: "POST",
+      headers: {"Content-Type": `multipart/related; boundary=${boundary}`},
+      body
+    }
+  );
+
+  return {
+    ...remote,
+    reused: false,
+    drive_path: target.path,
+    drive_folder_id: target.folderId
+  };
+}
+
+window.SPORT_FIT_DRIVE = Object.freeze({
+  version: "FITDRIVE001",
+  scope: WEB_DRIVE_SCOPE,
+  isConnected: () => Boolean(webDriveAccessToken),
+  connect: v080EnsureDriveConnected,
+  backupCloudFitBlob: v080UploadCloudFitBlob,
+  pathFor: (row) => {
+    const {year, month} = v080CloudFitDateParts(row);
+    return `${WEB_DRIVE_FOLDER_NAME}/${V080_FIT_DRIVE_ROOT}/${year}/${month}`;
+  }
+});
+/* CGWEB080_FITDRIVE001_APP_END */
+
 // -----------------------------------------------------------------------------
 // WEB038 · WEBFILES001 — coffre de fichiers local + relations activité/fichier
 // -----------------------------------------------------------------------------

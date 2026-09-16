@@ -4545,11 +4545,13 @@ select {
                 <p class="eyebrow">WEB074 · FITCLOUD001</p>
                 <strong>Coffre FIT Cloud</strong>
                 <span id="webFitCloudStatus" class="muted">Non initialisé.</span>
-                <span id="webFitAuthorityStatus" class="muted">Pipeline FIT : SPORT Web maître · Android lecture / synchronisation Firebase</span>
+                <span id="webFitAuthorityStatus" class="muted">Pipeline FIT : SPORT Web maître · Coffre FIT Cloud actif</span>
+                <span id="webFitDriveState" class="muted">Drive non connecté · aucune sauvegarde automatique tant que Drive n’est pas connecté</span>
               </div>
               <div class="web-fit-cloud-actions">
                 <span id="webFitCloudBadge" class="pill neutral">Cloud —</span>
                 <button id="webFitCloudRefreshButton" class="secondary compact" type="button">Actualiser Cloud</button>
+                <button id="webFitDriveBackupMissingButton" class="secondary compact" type="button">Sauvegarder Drive</button>
                 <button id="webFitWriterTestButton" class="secondary compact" type="button">Tester FIT Writer</button>
                 <button id="webFitRoundTripButton" class="secondary compact" type="button">Tester Round Trip</button>
               </div>
@@ -4589,7 +4591,7 @@ select {
               <div class="web-drive-actions">
                 <span id="webDriveBadge" class="pill neutral">Déconnecté</span>
                 <button id="webDriveConnectButton" class="secondary" type="button">Connecter Drive</button>
-                <button id="webDriveUploadMissingButton" class="primary" type="button" disabled>Sauvegarder les originaux manquants</button>
+                <button id="webDriveUploadMissingButton" class="primary" type="button" disabled>Sauvegarder les originaux locaux manquants</button>
               </div>
             </div>
             <div id="webDriveFolderMeta" class="web-drive-folder muted">
@@ -5656,6 +5658,6 @@ select {
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB079-FITCUTOVER001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB080-FITDRIVE001"></script>
 </body>
 </html>

@@ -1266,6 +1266,72 @@ function createFitVault() {
           });
         }
         /* CGWEB078_FITVERSION001_ACTION_END */
+/* CGWEB080_FITDRIVE001_ACTION_START */
+        if (action === "drive_mark") {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+
+          let body = req.body;
+          if (Buffer.isBuffer(body)) {
+            try { body = JSON.parse(body.toString("utf8")); }
+            catch { body = null; }
+          }
+          if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
+
+          const sha = String(body.sha256 || "").trim().toLowerCase();
+          const driveSha = String(body.drive_sha256 || sha).trim().toLowerCase();
+          const driveFileId = String(body.drive_file_id || "").trim();
+
+          if (!/^[a-f0-9]{64}$/.test(sha)) {
+            return res.status(400).json({error: "FITDRIVE001 : sha256 invalide."});
+          }
+          if (driveSha !== sha) {
+            return res.status(409).json({error: "FITDRIVE001 : SHA Drive différent du SHA Cloud."});
+          }
+          if (!driveFileId || driveFileId.length > 300) {
+            return res.status(400).json({error: "FITDRIVE001 : drive_file_id invalide."});
+          }
+
+          const ref = fileDoc(uid, sha);
+          const snap = await ref.get();
+          if (!snap.exists) {
+            return res.status(404).json({error: "FITDRIVE001 : FIT Cloud introuvable."});
+          }
+          const current = snap.data() || {};
+          if (current.deleted_at_ms != null) {
+            return res.status(409).json({error: "FITDRIVE001 : FIT Cloud supprimé."});
+          }
+
+          const clean = (value, max = 500) => String(value ?? "").trim().slice(0, max);
+          const link = clean(body.drive_web_view_link, 1200);
+          const patch = {
+            drive_file_id: driveFileId,
+            drive_file_name: clean(body.drive_file_name, 300) || current.file_name || `${sha}.fit`,
+            drive_folder_id: clean(body.drive_folder_id, 300) || null,
+            drive_path: clean(body.drive_path, 600) || null,
+            drive_web_view_link: /^https:\/\//i.test(link) ? link : null,
+            drive_sha256: sha,
+            drive_backup_state: "OK",
+            drive_backup_version: "FITDRIVE001",
+            drive_reused: Boolean(body.drive_reused),
+            drive_uploaded_at_ms: Date.now(),
+            last_seen_at_ms: Date.now()
+          };
+
+          await ref.set(patch, {merge: true});
+          const updated = await ref.get();
+
+          return res.json({
+            ok: true,
+            service: "FITDRIVE001",
+            file: updated.data() || {...current, ...patch},
+            activities_created: 0,
+            activities_modified: 0
+          });
+        }
+        /* CGWEB080_FITDRIVE001_ACTION_END */
+
 
 
         if (action === "upload") {

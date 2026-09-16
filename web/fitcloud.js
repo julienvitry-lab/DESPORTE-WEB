@@ -149,7 +149,8 @@ async function uploadHistorical() {
     selectedFiles = [];
     if (node("webFitCloudFiles")) node("webFitCloudFiles").value = "";
     if (node("webFitCloudFolder")) node("webFitCloudFolder").value = "";
-    selectionChanged([]);
+    v080RenderDriveState();
+  selectionChanged([]);
     await renderCloud();
   } finally {
     busy = false;
@@ -278,6 +279,7 @@ async function v078CreateVersion(row) {
     })
   });
 
+  await v080MaybeAutoBackupResult(result);
   await renderCloud();
 
   if (status) {
@@ -290,6 +292,186 @@ async function v078CreateVersion(row) {
   return result;
 }
 /* CGWEB078_FITVERSION001_WEB_END */
+
+/* CGWEB080_FITDRIVE001_WEB_START */
+let v080DriveBulkBusy = false;
+const v080DriveInFlight = new Set();
+
+function v080DriveApi() {
+  return window.SPORT_FIT_DRIVE || null;
+}
+
+function v080DriveBacked(row) {
+  const sha = String(row?.sha256 || "").toLowerCase();
+  return Boolean(
+    row?.drive_file_id &&
+    sha &&
+    String(row?.drive_sha256 || "").toLowerCase() === sha
+  );
+}
+
+function v080DriveSuffix(row) {
+  return v080DriveBacked(row) ? " · Drive ✓" : " · Drive —";
+}
+
+function v080DriveButtonLabel(row) {
+  return v080DriveBacked(row) ? "Drive ✓" : "Sauvegarder Drive";
+}
+
+function v080RenderDriveState() {
+  const state = node("webFitDriveState");
+  const button = node("webFitDriveBackupMissingButton");
+  const drive = v080DriveApi();
+  const missing = rows.filter((row) => !v080DriveBacked(row)).length;
+  const connected = Boolean(drive?.isConnected?.());
+
+  if (state) {
+    state.textContent = connected
+      ? `Drive connecté · auto nouveaux FIT actif · ${missing} manquant(s)`
+      : `Drive non connecté · ${missing} FIT Cloud sans sauvegarde Drive connue`;
+  }
+  if (button) {
+    button.disabled = v080DriveBulkBusy || !rows.length;
+    button.textContent = missing ? `Sauvegarder Drive (${missing})` : "Drive ✓";
+  }
+}
+
+async function v080MarkDrive(row, remote) {
+  const sha = String(row?.sha256 || "").trim().toLowerCase();
+  const drive = v080DriveApi();
+  const path = String(remote?.drive_path || drive?.pathFor?.(row) || "");
+  const result = await request("drive_mark", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      sha256: sha,
+      drive_sha256: sha,
+      drive_file_id: remote?.id || "",
+      drive_file_name: remote?.name || row?.file_name || `${sha}.fit`,
+      drive_folder_id: remote?.drive_folder_id || remote?.parents?.[0] || "",
+      drive_path: path,
+      drive_web_view_link: remote?.webViewLink || "",
+      drive_reused: Boolean(remote?.reused)
+    })
+  });
+
+  if (result?.file) Object.assign(row, result.file);
+  return result;
+}
+
+async function v080BackupCloudRow(row, {interactive = true} = {}) {
+  if (!row?.sha256) throw new Error("FITDRIVE001 : FIT Cloud sans SHA-256.");
+  if (v080DriveBacked(row)) return {ok: true, alreadyMarked: true, file: row};
+
+  const sha = String(row.sha256).toLowerCase();
+  if (v080DriveInFlight.has(sha)) return {ok: true, inFlight: true};
+
+  const drive = v080DriveApi();
+  if (!drive?.backupCloudFitBlob) {
+    if (interactive) throw new Error("FITDRIVE001 : module Google Drive indisponible.");
+    return {ok: false, skipped: "drive_module_unavailable"};
+  }
+
+  if (!drive.isConnected?.()) {
+    if (!interactive) return {ok: false, skipped: "drive_not_connected"};
+    await drive.connect();
+  }
+  if (!drive.isConnected?.()) {
+    throw new Error("Google Drive n’est pas connecté.");
+  }
+
+  v080DriveInFlight.add(sha);
+  try {
+    const blob = await request("download", {
+      query: {sha256: sha},
+      binaryResponse: true
+    });
+    const remote = await drive.backupCloudFitBlob(row, blob);
+    await v080MarkDrive(row, remote);
+    v080RenderDriveState();
+    return {ok: true, remote, file: row};
+  } finally {
+    v080DriveInFlight.delete(sha);
+  }
+}
+
+async function v080MaybeAutoBackupResult(result) {
+  const row = result?.file;
+  const drive = v080DriveApi();
+  if (!row?.sha256 || !drive?.isConnected?.()) return {skipped: true};
+
+  try {
+    return await v080BackupCloudRow(row, {interactive: false});
+  } catch (error) {
+    console.warn("FITDRIVE001 auto backup", error);
+    return {ok: false, error: String(error?.message || error)};
+  }
+}
+
+async function v080BackupMissingCloudFits() {
+  if (v080DriveBulkBusy) return;
+  const drive = v080DriveApi();
+  if (!drive?.backupCloudFitBlob) {
+    throw new Error("FITDRIVE001 : module Google Drive indisponible.");
+  }
+
+  if (!drive.isConnected?.()) await drive.connect();
+  if (!drive.isConnected?.()) return;
+
+  const missing = rows.filter((row) => !v080DriveBacked(row));
+  if (!missing.length) {
+    const status = node("webFitCloudStatus");
+    if (status) status.textContent = "Drive OK · tous les FIT Cloud connus sont sauvegardés.";
+    v080RenderDriveState();
+    return;
+  }
+
+  const ok = window.confirm(
+    `Sauvegarder ${missing.length} FIT Cloud manquant(s) dans Google Drive ?\n\n` +
+    "Arborescence : SPORT/FIT/AAAA/MM\n" +
+    "Déduplication : SHA-256\n\n" +
+    "Cette action ne modifie aucune activité SPORT."
+  );
+  if (!ok) return;
+
+  v080DriveBulkBusy = true;
+  v080RenderDriveState();
+  const status = node("webFitCloudStatus");
+  let success = 0;
+  let reused = 0;
+  let failed = 0;
+
+  try {
+    for (let i = 0; i < missing.length; i += 1) {
+      const row = missing[i];
+      if (status) {
+        status.textContent = `Drive ${i + 1}/${missing.length} · ${row.file_name || row.sha256}`;
+      }
+      try {
+        const result = await v080BackupCloudRow(row, {interactive: false});
+        if (result?.remote?.reused) reused += 1;
+        success += 1;
+      } catch (error) {
+        failed += 1;
+        console.error("FITDRIVE001 batch", row?.file_name, error);
+      }
+      renderList();
+      v080RenderDriveState();
+    }
+
+    if (status) {
+      status.textContent =
+        `Drive terminé · ${success} sauvegardé(s)` +
+        (reused ? ` · ${reused} déjà présent(s)` : "") +
+        (failed ? ` · ${failed} échec(s)` : "") +
+        ".";
+    }
+  } finally {
+    v080DriveBulkBusy = false;
+    v080RenderDriveState();
+  }
+}
+/* CGWEB080_FITDRIVE001_WEB_END */
 
 function renderList() {
   const host = node("webFitCloudList");
@@ -306,16 +488,37 @@ function renderList() {
       <div class="web-fit-cloud-card-main">
         <div>
           <strong>${bridge().escapeHtml(row.file_name || "activity.fit")}</strong>
-          <small>${bridge().escapeHtml(bridge().formatBytes(row.size_bytes))} · ${bridge().escapeHtml(linkLabel(row))}${bridge().escapeHtml(v078VersionText(row))}</small>
+          <small>${bridge().escapeHtml(bridge().formatBytes(row.size_bytes))} · ${bridge().escapeHtml(linkLabel(row))}${bridge().escapeHtml(v078VersionText(row))}${bridge().escapeHtml(v080DriveSuffix(row))}</small>
         </div>
         <span class="web-file-sha" title="${bridge().escapeHtml(row.sha256 || "")}">${bridge().escapeHtml(String(row.sha256 || "").slice(0, 14))}…</span>
       </div>
       <div class="web-fit-cloud-card-actions">
         <button class="secondary compact web074-download" type="button">Télécharger</button>
         <button class="secondary compact web078-version" type="button">Créer version</button>
+        <button class="secondary compact web080-drive" type="button">${bridge().escapeHtml(v080DriveButtonLabel(row))}</button>
         <button class="secondary compact danger-soft web074-delete" type="button">Supprimer Cloud</button>
       </div>`;
     card.querySelector(".web074-download")?.addEventListener("click", () => void download(row));
+    const driveButtonNode = card.querySelector(".web080-drive");
+    if (driveButtonNode) {
+      driveButtonNode.disabled = v080DriveBacked(row);
+      driveButtonNode.addEventListener("click", () => {
+        driveButtonNode.disabled = true;
+        driveButtonNode.textContent = "Drive…";
+        void v080BackupCloudRow(row, {interactive: true})
+          .then(() => {
+            driveButtonNode.textContent = "Drive ✓";
+            renderList();
+            v080RenderDriveState();
+          })
+          .catch((error) => {
+            const status = node("webFitCloudStatus");
+            if (status) status.textContent = `Drive en erreur : ${error?.message || error}`;
+            driveButtonNode.disabled = false;
+            driveButtonNode.textContent = "Réessayer Drive";
+          });
+      });
+    }
     const versionButtonNode = card.querySelector(".web078-version");
     if (versionButtonNode) {
       versionButtonNode.disabled = !row?.activity_id;
@@ -349,6 +552,7 @@ async function renderCloud() {
     badge.className = rows.length ? "pill ok" : "pill neutral";
     status.textContent = `${rows.length} FIT distant(s) · ${health?.service || "FITCLOUD001"} privé.`;
     renderList();
+    v080RenderDriveState();
   } catch (error) {
     badge.textContent = "Cloud indisponible";
     badge.className = "pill error";
@@ -718,6 +922,8 @@ async function fp077GenerateStravaFit(activity, route) {
       `${result?.deduplicated ? "dédupliqué" : "stocké"} · intégrité OK.`;
   }
 
+  await v080MaybeAutoBackupResult(result);
+
   return result;
 }
 
@@ -764,6 +970,8 @@ async function fp077StoreImportedOriginalFit(file, activity) {
       `${result?.deduplicated ? "dédupliqué" : "stocké"}.`;
   }
 
+  await v080MaybeAutoBackupResult(result);
+
   return result;
 }
 
@@ -793,8 +1001,8 @@ window.SPORT_FIT_AUTHORITY = SPORT_FIT_AUTHORITY;
 function v079RenderFitAuthority() {
   const status = node("webFitAuthorityStatus");
   if (!status) return;
-  status.textContent = "Pipeline FIT : SPORT Web maître · Android lecture / synchronisation Firebase";
-  status.title = "FITCUTOVER001 · aucune acquisition FIT/Strava sur Android · aucun backfill historique";
+  status.textContent = "Pipeline FIT : SPORT Web maître · Coffre FIT Cloud actif";
+  status.title = "FITCUTOVER001 · pipeline FIT géré côté Web · aucun backfill historique";
 }
 /* CGWEB079_FITCUTOVER001_END */
 
@@ -803,6 +1011,14 @@ function init() {
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudUploadButton")?.addEventListener("click", () => void uploadHistorical());
   node("webFitCloudRefreshButton")?.addEventListener("click", () => void renderCloud());
+  node("webFitDriveBackupMissingButton")?.addEventListener("click", () => {
+    void v080BackupMissingCloudFits().catch((error) => {
+      const status = node("webFitCloudStatus");
+      if (status) status.textContent = `Drive en erreur : ${error?.message || error}`;
+      v080DriveBulkBusy = false;
+      v080RenderDriveState();
+    });
+  });
   v079RenderFitAuthority();
   node("webFitWriterTestButton")?.addEventListener("click", () => void testFitWriter());
   node("webFitRoundTripButton")?.addEventListener("click", () => void testFitRoundTrip());
