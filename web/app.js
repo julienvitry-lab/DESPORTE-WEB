@@ -12670,6 +12670,48 @@ function normalizeStravaDetail(payload) {
   return {activity,route};
 }
 
+/* CGWEB077_FITPIPELINE001_APP_START */
+
+async function cgweb077FitPipelineCall(method, ...args) {
+  const pipeline = window.SPORT_FIT_PIPELINE;
+
+  if (
+    !pipeline ||
+    pipeline.version !== "FITPIPELINE001" ||
+    typeof pipeline[method] !== "function"
+  ) {
+    const error = new Error("FITPIPELINE001 indisponible.");
+    console.error("CGWEB077", error);
+    return {ok:false, error:error.message, skipped:true};
+  }
+
+  try {
+    const result = await pipeline[method](...args);
+    return {ok:true, result};
+  } catch (error) {
+    console.error(`CGWEB077 ${method}`, error);
+    return {
+      ok:false,
+      error:error?.message || String(error),
+      skipped:false
+    };
+  }
+}
+
+async function cgweb077PersistStravaFit(activity, route) {
+  return cgweb077FitPipelineCall("generateStravaFit", activity, route);
+}
+
+async function cgweb077PersistImportedFit(candidate, activity) {
+  return cgweb077FitPipelineCall(
+    "storeImportedOriginalFit",
+    candidate?.file,
+    activity
+  );
+}
+
+/* CGWEB077_FITPIPELINE001_APP_END */
+
 async function commitOneWebStravaActivity(candidate) {
   const payload=await webStravaFetch("activity",{query:{id:candidate.summary.id}});
   const normalized=normalizeStravaDetail(payload);
@@ -12693,6 +12735,12 @@ async function commitOneWebStravaActivity(candidate) {
         materializedCollection:"activity_routes",materializedData:route
       });
     }
+    /* CGWEB077_FITPIPELINE001_STRAVA_HOOK_START */
+    const cgweb077FitResult = await cgweb077PersistStravaFit(activity,route);
+    if (!cgweb077FitResult?.ok) {
+      console.warn("CGWEB077 FIT Strava non stocké", activity.id, cgweb077FitResult?.error);
+    }
+    /* CGWEB077_FITPIPELINE001_STRAVA_HOOK_END */
     activities.push({...activity,__docId:key});
     created.push(activity);
   }
@@ -15357,6 +15405,14 @@ async function commitOneWebImport(candidate) {
     activities.push({...activity,__docId:key});
     created.push(activity);
   }
+  /* CGWEB077_FITPIPELINE001_IMPORT_HOOK_START */
+  if (created.length) {
+    const cgweb077FitResult = await cgweb077PersistImportedFit(candidate,created[0]);
+    if (!cgweb077FitResult?.ok) {
+      console.warn("CGWEB077 FIT original non stocké", candidate?.file?.name, cgweb077FitResult?.error);
+    }
+  }
+  /* CGWEB077_FITPIPELINE001_IMPORT_HOOK_END */
   return created;
 }
 

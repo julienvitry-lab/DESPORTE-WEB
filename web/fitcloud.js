@@ -372,6 +372,283 @@ async function testFitRoundTrip() {
 }
 /* CGWEB076_FITROUNDTRIP001_WEB_END */
 
+/* CGWEB077_FITPIPELINE001_WEB_START */
+
+function fp077Finite(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function fp077FirstFinite(...values) {
+  for (const value of values) {
+    const n = fp077Finite(value);
+    if (n != null) return n;
+  }
+  return null;
+}
+
+function fp077Array(route, ...keys) {
+  for (const key of keys) {
+    const value = route?.[key];
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
+function fp077DurationMs(activity) {
+  const elapsed = fp077FirstFinite(
+    activity?.elapsed_time_ms,
+    activity?.duration_ms,
+    activity?.timer_time_ms,
+    activity?.moving_time_ms
+  );
+  return elapsed != null && elapsed >= 0 ? elapsed : 0;
+}
+
+function fp077TimerMs(activity, elapsedMs) {
+  const timer = fp077FirstFinite(
+    activity?.timer_time_ms,
+    activity?.moving_time_ms,
+    elapsedMs
+  );
+  return timer != null && timer >= 0 ? timer : elapsedMs;
+}
+
+function fp077BuildWriterPayload(activity, route, origin = "STRAVA_WEB") {
+  const activityId = String(activity?.id ?? activity?.__docId ?? "").trim();
+  const startMs = fp077Finite(activity?.start_time_ms);
+  const sport = fp077Finite(activity?.sport);
+  const subSport = fp077FirstFinite(activity?.sub_sport, activity?.subSport, 0) ?? 0;
+
+  if (!activityId) throw new Error("FITPIPELINE001 : id activité absent.");
+  if (startMs == null || startMs <= 0) throw new Error("FITPIPELINE001 : start_time_ms absent.");
+  if (sport == null) throw new Error("FITPIPELINE001 : sport absent.");
+
+  const elapsedMs = fp077DurationMs(activity);
+  const timerMs = fp077TimerMs(activity, elapsedMs);
+  const totalDistance = Math.max(0, fp077FirstFinite(activity?.distance_m, 0) ?? 0);
+
+  const lat = fp077Array(route, "lat", "latitude", "latitudes");
+  const lon = fp077Array(route, "lon", "lng", "longitude", "longitudes");
+  const alt = fp077Array(route, "alt_m", "altitude_m", "altitude", "altitudes");
+  const dist = fp077Array(route, "distance_m", "distance", "distances");
+  const times = fp077Array(route, "time_ms", "timestamp_ms", "timestamps_ms");
+  const hrs = fp077Array(route, "hr_bpm", "heart_rate_bpm", "heart_rate", "hr");
+  const cadence = fp077Array(route, "cadence", "cadence_rpm");
+  const power = fp077Array(route, "power", "watts", "power_w");
+  const speed = fp077Array(route, "speed_mps", "enhanced_speed_mps", "speed");
+
+  const count = Math.max(
+    lat.length,
+    lon.length,
+    alt.length,
+    dist.length,
+    times.length,
+    hrs.length,
+    cadence.length,
+    power.length,
+    speed.length,
+    0
+  );
+
+  const finiteTimes = times
+    .map(fp077Finite)
+    .filter((value) => value != null);
+
+  const useRouteTiming =
+    finiteTimes.length >= 2 &&
+    finiteTimes[finiteTimes.length - 1] > finiteTimes[0];
+
+  const routeStart = useRouteTiming ? finiteTimes[0] : null;
+  const routeSpan = useRouteTiming
+    ? finiteTimes[finiteTimes.length - 1] - finiteTimes[0]
+    : null;
+
+  const finiteDistances = dist
+    .map(fp077Finite)
+    .filter((value) => value != null && value >= 0);
+
+  const routeLastDistance = finiteDistances.length
+    ? finiteDistances[finiteDistances.length - 1]
+    : null;
+
+  const points = [];
+
+  for (let i = 0; i < count; i += 1) {
+    const progress = count > 1 ? i / (count - 1) : 0;
+
+    let relative = progress;
+    const rawTime = fp077Finite(times[i]);
+    if (useRouteTiming && rawTime != null && routeSpan > 0) {
+      relative = Math.max(0, Math.min(1, (rawTime - routeStart) / routeSpan));
+    }
+
+    let pointDistance = fp077Finite(dist[i]);
+    if (routeLastDistance != null && routeLastDistance > 0 && pointDistance != null) {
+      pointDistance = Math.max(0, pointDistance * (totalDistance / routeLastDistance));
+    } else {
+      pointDistance = totalDistance * relative;
+    }
+
+    const latitude = fp077Finite(lat[i]);
+    const longitude = fp077Finite(lon[i]);
+
+    const point = {
+      timestamp_ms: startMs + Math.round(elapsedMs * relative),
+      distance_m: pointDistance,
+      altitude_m: fp077Finite(alt[i]),
+      heart_rate: fp077Finite(hrs[i]),
+      cadence: fp077Finite(cadence[i]),
+      power: fp077Finite(power[i]),
+      speed_mps: fp077Finite(speed[i])
+    };
+
+    if (
+      latitude != null && longitude != null &&
+      latitude >= -90 && latitude <= 90 &&
+      longitude >= -180 && longitude <= 180
+    ) {
+      point.lat = latitude;
+      point.lon = longitude;
+    }
+
+    for (const key of Object.keys(point)) {
+      if (point[key] == null) delete point[key];
+    }
+
+    points.push(point);
+  }
+
+  /*
+   * Strava peut fournir une activité indoor sans lat/lon, voire sans stream.
+   * Le FIT reste valide : deux records de synthèse portent la chronologie
+   * et la distance de session, sans inventer de coordonnées GPS.
+   */
+  if (!points.length) {
+    points.push({
+      timestamp_ms: startMs,
+      distance_m: 0,
+      heart_rate: fp077Finite(activity?.avg_hr)
+    });
+
+    if (elapsedMs > 0) {
+      points.push({
+        timestamp_ms: startMs + elapsedMs,
+        distance_m: totalDistance,
+        heart_rate: fp077FirstFinite(activity?.max_hr, activity?.avg_hr)
+      });
+    }
+  } else {
+    points[0].timestamp_ms = startMs;
+    if (elapsedMs > 0) {
+      if (points.length === 1) {
+        points.push({
+          ...points[0],
+          timestamp_ms: startMs + elapsedMs,
+          distance_m: totalDistance
+        });
+      } else {
+        points[points.length - 1].timestamp_ms = startMs + elapsedMs;
+        points[points.length - 1].distance_m = totalDistance;
+      }
+    }
+  }
+
+  return {
+    activity_id: activityId,
+    start_time_ms: startMs,
+    sport,
+    sub_sport: subSport,
+    duration_s: elapsedMs / 1000,
+    total_timer_time_s: timerMs / 1000,
+    distance_m: totalDistance,
+    total_ascent_m: fp077Finite(activity?.ascent_m),
+    avg_hr: fp077Finite(activity?.avg_hr),
+    max_hr: fp077Finite(activity?.max_hr),
+    points,
+    pipeline_source: String(origin || "STRAVA_WEB"),
+    fitpipeline_version: "FITPIPELINE001"
+  };
+}
+
+async function fp077GenerateStravaFit(activity, route) {
+  const payload = fp077BuildWriterPayload(activity, route, "STRAVA_WEB");
+  const status = node("webFitCloudStatus");
+
+  if (status) {
+    status.textContent = `FIT auto : génération Strava #${payload.activity_id}…`;
+  }
+
+  const result = await request("generate", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  if (status) {
+    status.textContent =
+      `FIT auto OK · ${result?.file?.file_name || "FIT canonique"} · ` +
+      `${bridge().formatBytes(result?.file?.size_bytes || 0)} · ` +
+      `${result?.deduplicated ? "dédupliqué" : "stocké"} · intégrité OK.`;
+  }
+
+  return result;
+}
+
+async function fp077StoreImportedOriginalFit(file, activity) {
+  if (!file || typeof file.arrayBuffer !== "function") {
+    throw new Error("FITPIPELINE001 : fichier FIT source absent.");
+  }
+
+  const activityId = String(activity?.id ?? activity?.__docId ?? "").trim();
+  if (!activityId) throw new Error("FITPIPELINE001 : id activité importée absent.");
+
+  const buffer = await file.arrayBuffer();
+  const startMs = fp077Finite(activity?.start_time_ms);
+  const sport = fp077Finite(activity?.sport);
+  const subSport = fp077FirstFinite(activity?.sub_sport, activity?.subSport, 0) ?? 0;
+
+  const headers = {
+    "Content-Type": "application/vnd.ant.fit",
+    "X-Sport-Filename": String(file.name || "activity.fit"),
+    "X-Sport-Source": "WEB_MANUAL_FIT_FUTURE",
+    "X-Sport-Mode": "FUTURE_IMPORT_ORIGINAL",
+    "X-Sport-Activity-Id": activityId
+  };
+
+  if (startMs != null) headers["X-Sport-Start-Ms"] = String(startMs);
+  if (sport != null) headers["X-Sport-Sport"] = String(sport);
+  headers["X-Sport-Sub-Sport"] = String(subSport);
+
+  const status = node("webFitCloudStatus");
+  if (status) {
+    status.textContent = `FIT auto : archivage original ${file.name || "FIT"}…`;
+  }
+
+  const result = await request("upload", {
+    method: "POST",
+    headers,
+    body: buffer
+  });
+
+  if (status) {
+    status.textContent =
+      `FIT original Cloud OK · ${file.name || "activity.fit"} · ` +
+      `${bridge().formatBytes(file.size || buffer.byteLength || 0)} · ` +
+      `${result?.deduplicated ? "dédupliqué" : "stocké"}.`;
+  }
+
+  return result;
+}
+
+window.SPORT_FIT_PIPELINE = Object.freeze({
+  version: "FITPIPELINE001",
+  generateStravaFit: fp077GenerateStravaFit,
+  storeImportedOriginalFit: fp077StoreImportedOriginalFit
+});
+
+/* CGWEB077_FITPIPELINE001_WEB_END */
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
