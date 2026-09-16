@@ -6425,8 +6425,22 @@ function cgweb083Fix9SyncActivityHeader() {
         valueRect.width / 2;
     }
 
+    /* CGWEB083_FIX11_FIX1_HEADEROFFSET002_START */
+    /*
+     * Calibration demandée :
+     * titres 1 à 7 = 1 cm vers la gauche.
+     * Charge (index 7) reste exactement à sa position calculée.
+     */
+    const headerOffsetLeft =
+      index < 7
+        ? cgweb083Fix9Mm2Px(10)
+        : 0;
+
     const localCenter =
-      centerX - trackRect.left;
+      centerX -
+      trackRect.left -
+      headerOffsetLeft;
+    /* CGWEB083_FIX11_FIX1_HEADEROFFSET002_END */
 
     title.style.setProperty(
       "display",
