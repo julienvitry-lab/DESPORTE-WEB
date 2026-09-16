@@ -18522,3 +18522,522 @@ if (!window.__web072Fix9Installed) {
 }
 
 /* WEB072_FIX9D_STICKY_ALIGN004_END */
+
+
+/* WEB072_FIX10_DETAIL_STICKY005_START */
+
+function web072Fix10Text(el) {
+  return String(el?.textContent || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/*
+ * Cible EXCLUSIVEMENT le bandeau demandé :
+ * Répertoire + Ajout manuel + Corbeille + Précédente + Suivante.
+ */
+function web072Fix10FindStickyToolbar() {
+  const detail =
+    document.getElementById("detailView");
+
+  if (!detail) return null;
+
+  const candidates =
+    Array.from(detail.querySelectorAll("div, nav, section"));
+
+  for (const candidate of candidates) {
+    const text = web072Fix10Text(candidate);
+
+    if (
+      /Répertoire/i.test(text) &&
+      /Ajout manuel/i.test(text) &&
+      /Mettre à la corbeille/i.test(text) &&
+      /Activité précédente/i.test(text) &&
+      /Activité suivante/i.test(text)
+    ) {
+      const nestedSame =
+        Array.from(candidate.children || [])
+          .some((child) => {
+            const childText =
+              web072Fix10Text(child);
+
+            return (
+              /Répertoire/i.test(childText) &&
+              /Ajout manuel/i.test(childText) &&
+              /Mettre à la corbeille/i.test(childText) &&
+              /Activité précédente/i.test(childText) &&
+              /Activité suivante/i.test(childText)
+            );
+          });
+
+      if (!nestedSame) {
+        return candidate;
+      }
+    }
+  }
+
+  /*
+   * Fallback sur le finder FIX9D déjà validé.
+   */
+  try {
+    return web072Fix9FindToolbar?.() || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/*
+ * Top sticky :
+ * - 2 mm du haut si les onglets défilent ;
+ * - 2 mm sous les onglets s'ils sont eux-mêmes sticky/fixed.
+ */
+function web072Fix10StickyTop() {
+  let bottom = 0;
+
+  const candidates = [
+    document.querySelector(".topbar"),
+    document.getElementById("uxPrimaryNav")
+  ].filter(Boolean);
+
+  for (const el of candidates) {
+    const style =
+      getComputedStyle(el);
+
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden"
+    ) {
+      continue;
+    }
+
+    if (
+      style.position === "fixed" ||
+      style.position === "sticky"
+    ) {
+      const rect =
+        el.getBoundingClientRect();
+
+      if (
+        rect.height > 0 &&
+        rect.bottom > 0 &&
+        rect.top < window.innerHeight
+      ) {
+        bottom =
+          Math.max(
+            bottom,
+            Math.ceil(rect.bottom)
+          );
+      }
+    }
+  }
+
+  /*
+   * 2 mm en CSS, convertis par le navigateur.
+   * On mesure un élément temporaire pour garder exactement l'unité demandée.
+   */
+  let probe =
+    document.getElementById(
+      "web072Fix10MmProbe"
+    );
+
+  if (!probe) {
+    probe =
+      document.createElement("div");
+
+    probe.id =
+      "web072Fix10MmProbe";
+
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.pointerEvents = "none";
+    probe.style.width = "2mm";
+    probe.style.height = "2mm";
+
+    document.body.appendChild(probe);
+  }
+
+  const gap =
+    probe.getBoundingClientRect().height || 8;
+
+  return bottom + gap;
+}
+
+/*
+ * Marque les rubriques majeures du détail.
+ * On ne touche pas à leur contenu interne.
+ */
+function web072Fix10ApplySectionSpacing() {
+  const detail =
+    document.getElementById("detailView");
+
+  if (!detail) return;
+
+  detail.classList.add(
+    "web072-fix10-spacing"
+  );
+
+  const children =
+    Array.from(detail.children);
+
+  for (const child of children) {
+    child.classList.remove(
+      "web072-fix10-major-section"
+    );
+
+    if (
+      child.classList.contains(
+        "web072-fix10-toolbar-anchor"
+      ) ||
+      child.classList.contains(
+        "web072-fix10-toolbar-placeholder"
+      )
+    ) {
+      continue;
+    }
+
+    const style =
+      getComputedStyle(child);
+
+    const rect =
+      child.getBoundingClientRect();
+
+    if (
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      rect.height > 0
+    ) {
+      child.classList.add(
+        "web072-fix10-major-section"
+      );
+    }
+  }
+}
+
+/*
+ * Suppression de la petite barre située entre les statistiques
+ * et la rubrique Matériel/Repères.
+ */
+function web072Fix10HideIntermediateBar() {
+  const detail =
+    document.getElementById("detailView");
+
+  const stats =
+    document.getElementById(
+      "web061SingleMetricRow"
+    );
+
+  if (!detail || !stats) return;
+
+  let node =
+    stats.nextElementSibling;
+
+  const statsRect =
+    stats.getBoundingClientRect();
+
+  for (
+    let i = 0;
+    node && i < 4;
+    i += 1, node = node.nextElementSibling
+  ) {
+    const rect =
+      node.getBoundingClientRect();
+
+    const signature =
+      String(node.id || "") +
+      " " +
+      String(node.className || "");
+
+    const thinWide =
+      rect.height > 0 &&
+      rect.height <= 18 &&
+      rect.width >= statsRect.width * 0.70;
+
+    const named =
+      /divider|separator|progress|status|sync|bar/i.test(
+        signature
+      );
+
+    if (thinWide || named) {
+      node.classList.add(
+        "web072-fix10-hide-intermediate-bar"
+      );
+      break;
+    }
+  }
+}
+
+/*
+ * Polyfill sticky robuste.
+ *
+ * Le bandeau reste dans le flux tant que son ancre est sous le seuil.
+ * Dès que l'ancre atteint le seuil, le bandeau devient FIXED.
+ * Le placeholder garde exactement sa hauteur, donc aucune remontée
+ * du bandeau de statistiques.
+ */
+function web072Fix10SyncStickyToolbar() {
+  const detail =
+    document.getElementById("detailView");
+
+  const toolbar =
+    web072Fix10FindStickyToolbar();
+
+  if (!detail || !toolbar) return;
+
+  /*
+   * Neutralise le sticky FIX9D pour que le seuil soit mesurable.
+   */
+  toolbar.classList.remove(
+    "web072-fix10-toolbar-fixed"
+  );
+
+  let anchor =
+    toolbar.previousElementSibling;
+
+  if (
+    !anchor ||
+    !anchor.classList.contains(
+      "web072-fix10-toolbar-anchor"
+    )
+  ) {
+    anchor =
+      document.createElement("div");
+
+    anchor.className =
+      "web072-fix10-toolbar-anchor";
+
+    toolbar.insertAdjacentElement(
+      "beforebegin",
+      anchor
+    );
+  }
+
+  let placeholder =
+    anchor.previousElementSibling;
+
+  if (
+    !placeholder ||
+    !placeholder.classList.contains(
+      "web072-fix10-toolbar-placeholder"
+    )
+  ) {
+    placeholder =
+      document.createElement("div");
+
+    placeholder.className =
+      "web072-fix10-toolbar-placeholder";
+
+    anchor.insertAdjacentElement(
+      "beforebegin",
+      placeholder
+    );
+  }
+
+  const stickyTop =
+    web072Fix10StickyTop();
+
+  document.documentElement.style.setProperty(
+    "--web072-fix10-sticky-top",
+    stickyTop + "px"
+  );
+
+  /*
+   * IMPORTANT :
+   * anchor est avant toolbar et placeholder.
+   * Sa position naturelle ne bouge donc pas quand toolbar devient fixed.
+   */
+  const anchorRect =
+    anchor.getBoundingClientRect();
+
+  const shouldFix =
+    anchorRect.top <= stickyTop;
+
+  if (shouldFix) {
+    const parent =
+      toolbar.parentElement || detail;
+
+    const parentRect =
+      parent.getBoundingClientRect();
+
+    const toolbarHeight =
+      Math.ceil(
+        toolbar.getBoundingClientRect().height
+      );
+
+    placeholder.style.height =
+      toolbarHeight + "px";
+
+    toolbar.classList.add(
+      "web072-fix10-toolbar-fixed"
+    );
+
+    toolbar.style.setProperty(
+      "top",
+      stickyTop + "px",
+      "important"
+    );
+
+    toolbar.style.setProperty(
+      "left",
+      Math.max(0, parentRect.left) + "px",
+      "important"
+    );
+
+    toolbar.style.setProperty(
+      "width",
+      Math.min(
+        parentRect.width,
+        window.innerWidth -
+          Math.max(0, parentRect.left)
+      ) + "px",
+      "important"
+    );
+
+    toolbar.style.setProperty(
+      "z-index",
+      "10000",
+      "important"
+    );
+  } else {
+    placeholder.style.height =
+      "0px";
+
+    toolbar.style.removeProperty(
+      "left"
+    );
+
+    toolbar.style.removeProperty(
+      "width"
+    );
+
+    toolbar.style.removeProperty(
+      "z-index"
+    );
+
+    toolbar.style.removeProperty(
+      "top"
+    );
+  }
+}
+
+let web072Fix10Raf = 0;
+
+function web072Fix10ApplyDetail() {
+  if (web072Fix10Raf) return;
+
+  web072Fix10Raf =
+    requestAnimationFrame(() => {
+      web072Fix10Raf = 0;
+
+      try {
+        web072Fix10ApplySectionSpacing();
+        web072Fix10HideIntermediateBar();
+        web072Fix10SyncStickyToolbar();
+      } catch (_) {}
+    });
+}
+
+/*
+ * Hook APRÈS FIX9D : garantit l'application dès renderDetail,
+ * sans MutationObserver.
+ */
+const web072Fix10PreviousRenderDetail =
+  renderDetail;
+
+renderDetail =
+  function web072Fix10RenderDetail(...args) {
+    const result =
+      web072Fix10PreviousRenderDetail.apply(
+        this,
+        args
+      );
+
+    const apply = () => {
+      web072Fix10ApplyDetail();
+
+      setTimeout(
+        web072Fix10ApplyDetail,
+        60
+      );
+
+      setTimeout(
+        web072Fix10ApplyDetail,
+        220
+      );
+    };
+
+    if (
+      result &&
+      typeof result.then === "function"
+    ) {
+      result.finally(apply);
+    } else {
+      apply();
+    }
+
+    return result;
+  };
+
+if (!window.__web072Fix10Installed) {
+  window.__web072Fix10Installed = true;
+
+  document.addEventListener(
+    "DOMContentLoaded",
+    web072Fix10ApplyDetail
+  );
+
+  document.addEventListener(
+    "click",
+    () => setTimeout(
+      web072Fix10ApplyDetail,
+      0
+    ),
+    true
+  );
+
+  document.addEventListener(
+    "change",
+    () => setTimeout(
+      web072Fix10ApplyDetail,
+      0
+    ),
+    true
+  );
+
+  /*
+   * capture=true permet aussi de réagir si le scroll se produit
+   * dans un conteneur interne plutôt que sur window.
+   */
+  document.addEventListener(
+    "scroll",
+    web072Fix10ApplyDetail,
+    true
+  );
+
+  window.addEventListener(
+    "scroll",
+    web072Fix10ApplyDetail,
+    {
+      passive: true
+    }
+  );
+
+  window.addEventListener(
+    "resize",
+    web072Fix10ApplyDetail,
+    {
+      passive: true
+    }
+  );
+
+  setTimeout(
+    web072Fix10ApplyDetail,
+    80
+  );
+
+  setTimeout(
+    web072Fix10ApplyDetail,
+    500
+  );
+}
+
+/* WEB072_FIX10_DETAIL_STICKY005_END */

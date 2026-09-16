@@ -3868,6 +3868,111 @@ select {
   }
 </style>
 
+
+<style id="web072-fix10-detail-spacing-sticky-css">
+  /* WEB072 FIX10 · DETAIL_STICKY005 / SPACING002 */
+
+  /*
+   * FIX9D conserve ses règles de rendu.
+   * On neutralise uniquement son ancien position:sticky, qui n'accroche
+   * pas correctement dans la structure réelle de la page.
+   */
+  #detailView .web072-fix9-toolbar-sticky {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    width: auto !important;
+    z-index: auto !important;
+  }
+
+  /*
+   * Le bandeau exact Répertoire / Ajout manuel / Corbeille /
+   * Activité précédente / Activité suivante est fixé par le moteur FIX10.
+   */
+  #detailView .web072-fix10-toolbar-fixed {
+    position: fixed !important;
+    top: var(--web072-fix10-sticky-top, 2mm) !important;
+    z-index: 10000 !important;
+
+    margin: 0 !important;
+
+    box-sizing: border-box !important;
+
+    background: rgba(8,14,10,.995) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+  }
+
+  .web072-fix10-toolbar-anchor {
+    display: block !important;
+    width: 100% !important;
+    height: 0 !important;
+
+    margin: 0 !important;
+    padding: 0 !important;
+
+    pointer-events: none !important;
+  }
+
+  .web072-fix10-toolbar-placeholder {
+    display: block !important;
+    width: 100% !important;
+    height: 0;
+
+    margin: 0 !important;
+    padding: 0 !important;
+
+    pointer-events: none !important;
+  }
+
+  /*
+   * 2 mm EXACTS entre les grandes rubriques du détail :
+   * toolbar, statistiques, matériel/repères, carte, analyses, etc.
+   */
+  #detailView.web072-fix10-spacing {
+    margin-top: 2mm !important;
+    padding-top: 0 !important;
+  }
+
+  #detailView.web072-fix10-spacing
+  > .web072-fix10-major-section {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  #detailView.web072-fix10-spacing
+  > .web072-fix10-major-section
+  + .web072-fix10-major-section {
+    margin-top: 2mm !important;
+  }
+
+  /*
+   * Lorsqu'un wrapper historique autour d'une rubrique imposait un grand
+   * espace, la classe appliquée par FIX10 le ramène elle aussi à 2 mm.
+   */
+  .web072-fix10-major-section {
+    scroll-margin-top: calc(
+      var(--web072-fix10-sticky-top, 2mm) + 2mm
+    ) !important;
+  }
+
+  /*
+   * La fine barre parasite entre statistiques et matériel reste supprimée.
+   */
+  .web072-fix9-hide-intermediate-bar,
+  .web072-fix10-hide-intermediate-bar {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: hidden !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5311,7 +5416,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-FIX9D-STICKY-ALIGN004-ICON-LAYOUT005"></script>
+  <script type="module" src="./app.js?v=WEB072-FIX10-DETAIL-STICKY005-SPACING002"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
