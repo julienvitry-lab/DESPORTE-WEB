@@ -1,28 +1,53 @@
-# CGWEB083 · FIX8 · CUSTOMHEADER001
+# CGWEB083 · FIX9 · HEADERMEASURE001
 
-## Objectif
+## Cause identifiée
 
-Les décalages successifs sur la barre historique n'étant pas satisfaisants,
-la solution est remplacée par une nouvelle barre de titre dédiée.
+Les correctifs précédents modifiaient le header CGWEB083 alors que
+`WEB072 FIX11` continuait, après chaque rendu, à :
 
-## Nouveau header
+- remettre `#activityDirectoryHeaderWeb059` en `display:grid !important` ;
+- imposer sa propre grille aux lignes ;
+- retravailler l'ancien header.
 
-Création de `#cgweb083CustomActivityHeader`, placé juste avant
-`#activityDirectorySection`.
+Cela expliquait le double header et les écarts persistants.
 
-Ce nouveau header :
+## Nouvelle architecture
 
-- est `sticky` ;
-- possède son propre fond, ses bordures et son ombre ;
-- masque complètement l'ancien `#activityDirectoryHeaderWeb059` ;
-- centre les textes horizontalement dans les colonnes correspondantes.
+### 1. Ancien header supprimé
 
-## Alignement aux colonnes
+`#activityDirectoryHeaderWeb059` n'est plus créé par WEB059.
 
-La grille du nouveau header reprend dynamiquement le
-`grid-template-columns` de la première `.activity-card` visible.
+`WEB072 FIX11` conserve son rôle utile sur les lignes d'activités
+mais ne peut plus créer ou afficher un header.
 
-Ainsi les libellés :
+### 2. Header indépendant
+
+Création de :
+
+`#cgweb083MeasuredActivityHeader`
+
+Il est inséré directement après `#uxSecondaryNav`
+(Répertoire / Corbeille), donc avant `<main>`.
+
+### 3. Ancrage sans mouvement initial
+
+Le header possède naturellement 2 mm de marge sous
+Répertoire / Corbeille.
+
+Son `top` sticky est calculé sur :
+
+`bottom(Répertoire / Corbeille) + 2 mm`
+
+La position naturelle et le seuil sticky sont donc identiques :
+le header n'a aucun déplacement à effectuer au premier scroll.
+
+### 4. Alignement par mesure réelle
+
+Aucune grille théorique n'est utilisée pour les titres.
+
+Après rendu, FIX9 mesure les rectangles des huit `.datum`
+de la première `.activity-card` :
+
 - Date
 - Heure
 - Distance
@@ -32,12 +57,13 @@ Ainsi les libellés :
 - Repères
 - Charge
 
-s'alignent directement avec les vraies colonnes des activités.
+Chaque titre reçoit exactement le même `left` et la même `width`
+que sa cellule correspondante, puis `text-align:center`.
 
 ## Conservé
 
+- espacement vertical 2 mm ;
 - Tri des activités sous le header ;
-- espacement vertical de 2 mm ;
 - 100 activités au démarrage ;
 - ancre « Afficher 20 de plus » ;
 - pictogramme FIT FIX4 ;

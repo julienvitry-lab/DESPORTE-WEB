@@ -5494,37 +5494,22 @@ function web059DirectoryGridTemplate() {
   }
 
 function web059EnsureDirectoryHeader() {
-    if (!ui.activityList) return null;
+  document
+    .querySelectorAll("#activityDirectoryHeaderWeb059")
+    .forEach((node) => node.remove());
 
-    let header =
-      document.getElementById("activityDirectoryHeaderWeb059");
-
-    if (!header) {
-      header = document.createElement("div");
-      header.id = "activityDirectoryHeaderWeb059";
-      header.className = "web059-activity-header";
-      ui.activityList.insertAdjacentElement("beforebegin", header);
-    }
-
-    header.innerHTML =
-      '<span aria-hidden="true"></span>' +
-      '<strong>Date</strong>' +
-      '<strong>Heure</strong>' +
-      '<strong>Distance</strong>' +
-      '<strong>D+</strong>' +
-      '<strong>Temps</strong>' +
-      '<strong>Matériel</strong>' +
-      '<strong>Repères</strong>' +
-      '<strong>Charge</strong>';
-
-    header.style.gridTemplateColumns =
-      web059DirectoryGridTemplate();
-
-    web059RefreshStickyTop();
-
-    cgweb083Fix6ApplyActivityHeader();
-  return header;
+  if (
+    typeof cgweb083Fix9ScheduleHeaderSync === "function"
+  ) {
+    cgweb083Fix9ScheduleHeaderSync();
   }
+
+  return (
+    document.getElementById(
+      "cgweb083MeasuredActivityHeader"
+    ) || null
+  );
+}
 
 function web059HideRepeatedActivityLabels() {
   if (!ui.activityList) return;
@@ -6136,88 +6121,370 @@ window.addEventListener("sport-fit-quick-updated", () => {
 /* CGWEB083_FIX6_ACTIVITYHEADER002_START */
 
 function cgweb083Fix6ApplyActivityHeader() {
-  const nativeHeader = document.getElementById("activityDirectoryHeaderWeb059");
-  const section = document.getElementById("activityDirectorySection");
-  const list = document.getElementById("activityList");
-
-  if (!section || !section.parentNode) return;
-
-  if (nativeHeader) {
-    nativeHeader.style.setProperty("display", "none", "important");
-    nativeHeader.setAttribute("aria-hidden", "true");
+  if (
+    typeof cgweb083Fix9ScheduleHeaderSync === "function"
+  ) {
+    cgweb083Fix9ScheduleHeaderSync();
   }
-
-  let host = document.getElementById("cgweb083CustomActivityHeader");
-  if (!host) {
-    host = document.createElement("div");
-    host.id = "cgweb083CustomActivityHeader";
-    host.innerHTML = [
-      '<div class="cgweb083-custom-header-grid">',
-      '<span class="cgweb083-header-spacer" aria-hidden="true"></span>',
-      '<strong>Date</strong>',
-      '<strong>Heure</strong>',
-      '<strong>Distance</strong>',
-      '<strong>D+</strong>',
-      '<strong>Temps</strong>',
-      '<strong>Matériel</strong>',
-      '<strong>Repères</strong>',
-      '<strong>Charge</strong>',
-      '</div>'
-    ].join("");
-  }
-
-  if (host.parentNode !== section.parentNode || host.nextElementSibling !== section) {
-    section.parentNode.insertBefore(host, section);
-  }
-
-  const grid = host.querySelector(".cgweb083-custom-header-grid");
-  if (!grid) return;
-
-  let template = "";
-  const firstCard = list ? list.querySelector(".activity-card") : null;
-
-  if (firstCard) {
-    template = getComputedStyle(firstCard).gridTemplateColumns || "";
-  }
-
-  if ((!template || template === "none") && nativeHeader) {
-    template = getComputedStyle(nativeHeader).gridTemplateColumns || "";
-  }
-
-  if (template && template !== "none") {
-    grid.style.setProperty("grid-template-columns", template, "important");
-  }
-
-  if (typeof web059RefreshStickyTop === "function") {
-    web059RefreshStickyTop();
-  }
-
-  host.style.setProperty("position", "sticky", "important");
-  host.style.setProperty("top", "var(--web059-sticky-top, 0px)", "important");
-  host.style.setProperty("z-index", "5400", "important");
 }
 
 /* CGWEB083_FIX6_ACTIVITYHEADER002_END */
 
 
 
-/* CGWEB083_FIX7_ACTIVITYHEADER003_START */
-/*
- * Header hors #activityDirectorySection :
- * - sticky robuste ;
- * - Tri des activités sous le header ;
- * - déplacements cumulés.
- */
-/* CGWEB083_FIX7_ACTIVITYHEADER003_END */
 
 
-/* CGWEB083_FIX8_CUSTOMHEADER001_START */
-window.addEventListener("resize", () => {
-  if (typeof cgweb083Fix6ApplyActivityHeader === "function") {
-    queueMicrotask(() => cgweb083Fix6ApplyActivityHeader());
+
+
+
+
+/* CGWEB083_FIX9_HEADERMEASURE001_START */
+
+function cgweb083Fix9Mm2Px(mm = 2) {
+  let probe =
+    document.getElementById("cgweb083Fix9MmProbe");
+
+  if (!probe) {
+    probe = document.createElement("div");
+    probe.id = "cgweb083Fix9MmProbe";
+    probe.setAttribute("aria-hidden", "true");
+
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.pointerEvents = "none";
+    probe.style.width = "1mm";
+    probe.style.height = "1mm";
+
+    document.body.appendChild(probe);
   }
-});
-/* CGWEB083_FIX8_CUSTOMHEADER001_END */
+
+  const px =
+    probe.getBoundingClientRect().height;
+
+  return (
+    Number.isFinite(px) && px > 0
+      ? px * mm
+      : 3.7795275591 * mm
+  );
+}
+
+function cgweb083Fix9EnsureHeader() {
+  /*
+   * L'ancien header ne doit plus pouvoir revenir :
+   * WEB072 FIX11 lui appliquait display:grid!important après rendu.
+   */
+  document
+    .querySelectorAll("#activityDirectoryHeaderWeb059")
+    .forEach((node) => node.remove());
+
+  /*
+   * FIX8 est remplacé : un seul header CGWEB083 doit exister.
+   */
+  const old =
+    document.getElementById(
+      "cgweb083CustomActivityHeader"
+    );
+
+  if (old) old.remove();
+
+  let host =
+    document.getElementById(
+      "cgweb083MeasuredActivityHeader"
+    );
+
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "cgweb083MeasuredActivityHeader";
+    host.setAttribute(
+      "aria-label",
+      "En-tête du répertoire d'activités"
+    );
+
+    const track = document.createElement("div");
+    track.className = "cgweb083-measured-track";
+
+    const labels = [
+      "Date",
+      "Heure",
+      "Distance",
+      "D+",
+      "Temps",
+      "Matériel",
+      "Repères",
+      "Charge"
+    ];
+
+    for (const text of labels) {
+      const title = document.createElement("strong");
+      title.dataset.cgweb083Column = text;
+      title.textContent = text;
+      track.appendChild(title);
+    }
+
+    host.appendChild(track);
+  }
+
+  /*
+   * Le header est un vrai frère du bandeau Répertoire / Corbeille,
+   * juste APRES ce bandeau et AVANT <main>.
+   * Il occupe donc sa place définitive dès l'ouverture.
+   */
+  const secondary =
+    document.getElementById("uxSecondaryNav");
+
+  if (
+    secondary &&
+    secondary.parentNode &&
+    host.previousElementSibling !== secondary
+  ) {
+    secondary.insertAdjacentElement(
+      "afterend",
+      host
+    );
+  }
+
+  return host;
+}
+
+function cgweb083Fix9ActivityCells(card) {
+  if (!card) return [];
+
+  const cells =
+    Array.from(
+      card.querySelectorAll(":scope > .datum")
+    );
+
+  /*
+   * Structure réelle du bandeau :
+   * Date / Départ / Distance / D+ / Durée /
+   * Matériel / Repères / Charge.
+   */
+  return cells.slice(0, 8);
+}
+
+function cgweb083Fix9SetVisibility(host) {
+  const section =
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  const active =
+    document.body.dataset.uxPage === "activities" &&
+    section &&
+    !section.classList.contains("hidden");
+
+  host.style.setProperty(
+    "display",
+    active ? "block" : "none",
+    "important"
+  );
+
+  return active;
+}
+
+function cgweb083Fix9SyncActivityHeader() {
+  const host = cgweb083Fix9EnsureHeader();
+
+  if (!host) return;
+  if (!cgweb083Fix9SetVisibility(host)) return;
+
+  const track =
+    host.querySelector(
+      ".cgweb083-measured-track"
+    );
+
+  const list =
+    document.getElementById("activityList");
+
+  const card =
+    list?.querySelector(".activity-card");
+
+  const secondary =
+    document.getElementById("uxSecondaryNav");
+
+  if (!track || !card || !secondary) return;
+
+  const cells =
+    cgweb083Fix9ActivityCells(card);
+
+  if (cells.length !== 8) return;
+
+  const gap2mm =
+    cgweb083Fix9Mm2Px(2);
+
+  /*
+   * ANCRAGE :
+   * le top sticky = position naturelle initiale du header,
+   * soit exactement 2 mm sous Répertoire / Corbeille.
+   * Il n'a donc aucun déplacement à effectuer au premier scroll.
+   */
+  const secondaryRect =
+    secondary.getBoundingClientRect();
+
+  const stickyTop =
+    Math.ceil(
+      secondaryRect.bottom + gap2mm
+    );
+
+  host.style.setProperty(
+    "top",
+    stickyTop + "px",
+    "important"
+  );
+
+  document.documentElement.style.setProperty(
+    "--cgweb083-fix9-header-top",
+    stickyTop + "px"
+  );
+
+  /*
+   * ALIGNEMENT :
+   * aucune grille théorique.
+   * On mesure les rectangles REELS des huit cellules déjà rendues.
+   */
+  const cardRect =
+    card.getBoundingClientRect();
+
+  track.style.setProperty(
+    "left",
+    cardRect.left + "px",
+    "important"
+  );
+
+  track.style.setProperty(
+    "width",
+    cardRect.width + "px",
+    "important"
+  );
+
+  const titles =
+    Array.from(
+      track.querySelectorAll(
+        ":scope > strong"
+      )
+    );
+
+  cells.forEach((cell, index) => {
+    const title = titles[index];
+    if (!title) return;
+
+    const style =
+      getComputedStyle(cell);
+
+    const rect =
+      cell.getBoundingClientRect();
+
+    const visible =
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      rect.width > 0 &&
+      rect.height > 0;
+
+    if (!visible) {
+      title.style.setProperty(
+        "display",
+        "none",
+        "important"
+      );
+      return;
+    }
+
+    title.style.setProperty(
+      "display",
+      "block",
+      "important"
+    );
+
+    /*
+     * Le titre reçoit exactement le même intervalle horizontal
+     * que sa cellule. text-align:center fait le reste.
+     */
+    title.style.setProperty(
+      "left",
+      (rect.left - cardRect.left) + "px",
+      "important"
+    );
+
+    title.style.setProperty(
+      "width",
+      rect.width + "px",
+      "important"
+    );
+  });
+}
+
+function cgweb083Fix9ScheduleHeaderSync() {
+  const run = () => {
+    try {
+      cgweb083Fix9SyncActivityHeader();
+    } catch (_) {}
+  };
+
+  requestAnimationFrame(() => {
+    run();
+
+    requestAnimationFrame(run);
+  });
+
+  setTimeout(run, 60);
+  setTimeout(run, 180);
+}
+
+/*
+ * Alias durable :
+ * les anciens appels CGWEB083 continuent à fonctionner
+ * mais arrivent tous dans le nouveau moteur.
+ */
+function cgweb083Fix6ApplyActivityHeader() {
+  cgweb083Fix9ScheduleHeaderSync();
+}
+
+if (!window.__cgweb083Fix9Installed) {
+  window.__cgweb083Fix9Installed = true;
+
+  window.addEventListener(
+    "resize",
+    cgweb083Fix9ScheduleHeaderSync,
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "click",
+    () => {
+      setTimeout(
+        cgweb083Fix9ScheduleHeaderSync,
+        0
+      );
+    },
+    true
+  );
+
+  if ("ResizeObserver" in window) {
+    const ro =
+      new ResizeObserver(
+        cgweb083Fix9ScheduleHeaderSync
+      );
+
+    for (const node of [
+      document.querySelector(".topbar"),
+      document.getElementById("uxPrimaryNav"),
+      document.getElementById("uxSecondaryNav"),
+      document.getElementById("activityList")
+    ]) {
+      if (node) ro.observe(node);
+    }
+
+    window.__cgweb083Fix9ResizeObserver = ro;
+  }
+
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb083Fix9ScheduleHeaderSync
+  );
+}
+
+/* CGWEB083_FIX9_HEADERMEASURE001_END */
+
 
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;
@@ -19697,84 +19964,27 @@ function web072Fix11DirectoryGridTemplate() {
 }
 
 function web072Fix11AlignDirectoryHeader() {
-  const header =
-    document.getElementById("activityDirectoryHeaderWeb059");
-
-  if (!header) return;
-
-  /*
-   * Charge après Repères.
-   */
-  const labels =
-    Array.from(header.querySelectorAll("strong"));
-
-  if (
-    !labels.some((node) =>
-      /^Charge$/i.test(web072Fix11Text(node))
-    )
-  ) {
-    const charge = document.createElement("strong");
-    charge.textContent = "Charge";
-    header.appendChild(charge);
-  }
-
-  /*
-   * Annule le positionnement absolu de FIX9D puis applique la vraie grille.
-   */
-  header.classList.remove(
-    "web072-fix9-directory-header"
-  );
-
-  header.style.setProperty(
-    "display",
-    "grid",
-    "important"
-  );
-
-  header.style.setProperty(
-    "position",
-    "static",
-    "important"
-  );
-
-  header.style.setProperty(
-    "grid-template-columns",
-    web072Fix11DirectoryGridTemplate(),
-    "important"
-  );
-
-  for (const node of header.children) {
-    node.classList.remove(
-      "web072-fix9-header-label",
-      "web072-fix8-header-label",
-      "web072-fix7-header-label",
-      "web072-fix6-header-label"
-    );
-
-    node.style.removeProperty("left");
-    node.style.removeProperty("top");
-    node.style.removeProperty("position");
-    node.style.removeProperty("width");
-    node.style.removeProperty("max-width");
-
-    if (node.tagName === "STRONG") {
-      node.style.setProperty(
-        "transform",
-        "translateX(-1cm)",
-        "important"
-      );
-    }
-  }
+  document
+    .querySelectorAll("#activityDirectoryHeaderWeb059")
+    .forEach((node) => node.remove());
 
   for (
     const card of
-    document.querySelectorAll("#activityList .activity-card")
+    document.querySelectorAll(
+      "#activityList .activity-card"
+    )
   ) {
     card.style.setProperty(
       "grid-template-columns",
       web072Fix11DirectoryGridTemplate(),
       "important"
     );
+  }
+
+  if (
+    typeof cgweb083Fix9ScheduleHeaderSync === "function"
+  ) {
+    cgweb083Fix9ScheduleHeaderSync();
   }
 }
 

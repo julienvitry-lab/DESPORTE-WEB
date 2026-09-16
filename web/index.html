@@ -4469,67 +4469,125 @@ select {
 
 
 
-<style id="cgweb083-fix8-customheader-css">
-/* CGWEB083 FIX8 · CUSTOMHEADER001 */
 
-/* Ancien header totalement masqué. */
-#activityDirectoryHeaderWeb059{
+<style id="cgweb083-fix9-headermeasure-css">
+/* CGWEB083 FIX9 · HEADERMEASURE001 */
+
+/* L'ancien header n'existe plus, garde-fou au cas où. */
+#activityDirectoryHeaderWeb059,
+#cgweb083CustomActivityHeader{
   display:none!important;
 }
 
-/* Le nouveau header vit hors du Répertoire, juste avant celui-ci. */
-#cgweb083CustomActivityHeader{
+/* ---------------------------------------------------------------
+   HEADER :
+   frère direct de #uxSecondaryNav, donc sa position naturelle
+   est immédiatement sous Répertoire / Corbeille.
+   --------------------------------------------------------------- */
+
+#cgweb083MeasuredActivityHeader{
   position:sticky!important;
-  top:var(--web059-sticky-top, 0px)!important;
-  z-index:5400!important;
+  top:var(--cgweb083-fix9-header-top, 168px)!important;
+  z-index:5600!important;
 
-  margin:0 12px 7.559px 12px!important;
-  padding:0!important;
-}
-
-#cgweb083CustomActivityHeader .cgweb083-custom-header-grid{
-  display:grid!important;
-  align-items:center!important;
-
-  min-height:34px!important;
+  display:block;
+  width:100%!important;
   height:34px!important;
+  min-height:34px!important;
+
   box-sizing:border-box!important;
 
-  padding:5px 12px!important;
-  gap:8px!important;
+  /*
+   * EXACTEMENT 2 mm sous Répertoire / Corbeille.
+   * Le seuil sticky calculé en JS correspond à cette position.
+   */
+  margin:2mm 0 0 0!important;
+  padding:0!important;
+
+  pointer-events:none!important;
+}
+
+body:not(.ux-activities-page)
+#cgweb083MeasuredActivityHeader{
+  display:none!important;
+}
+
+/*
+ * La piste reçoit dynamiquement le left + width de la première
+ * activity-card. Elle a donc exactement la même largeur visuelle.
+ */
+#cgweb083MeasuredActivityHeader
+.cgweb083-measured-track{
+  position:absolute!important;
+  top:0!important;
+
+  height:34px!important;
+  min-height:34px!important;
+
+  box-sizing:border-box!important;
 
   background:rgba(8,14,10,.995)!important;
   color:var(--muted,#c7c7a4)!important;
 
-  border-top:1px solid rgba(210,180,95,.22)!important;
-  border-bottom:1px solid rgba(210,180,95,.34)!important;
-  box-shadow:0 2px 5px rgba(0,0,0,.26)!important;
+  border-top:
+    1px solid rgba(210,180,95,.22)!important;
+  border-bottom:
+    1px solid rgba(210,180,95,.34)!important;
+
+  box-shadow:
+    0 2px 5px rgba(0,0,0,.26)!important;
 }
 
-#cgweb083CustomActivityHeader .cgweb083-header-spacer{
-  visibility:hidden!important;
-}
+/*
+ * AUCUNE grille pour les titres.
+ * Le JS copie left + width de chaque vraie cellule.
+ */
+#cgweb083MeasuredActivityHeader
+.cgweb083-measured-track > strong{
+  position:absolute!important;
+  top:0!important;
 
-#cgweb083CustomActivityHeader strong{
+  height:34px!important;
+
   display:block!important;
-  justify-self:center!important;
-  align-self:center!important;
+  box-sizing:border-box!important;
+
+  padding:6px 0!important;
+  margin:0!important;
+
+  color:var(--muted,#c7c7a4)!important;
+
+  font-weight:500!important;
+  font-size:.86rem!important;
+  line-height:20px!important;
+
   text-align:center!important;
   white-space:nowrap!important;
-  font-weight:500!important;
-  line-height:22px!important;
+
+  transform:none!important;
 }
 
-/* Répertoire : Tri reste juste sous le header, espacement 2 mm conservé. */
+/* ---------------------------------------------------------------
+   Répertoire :
+   le <main> commence 2 mm après le header fixe/sticky.
+   Ainsi Tri reste la première rubrique sous le header.
+   --------------------------------------------------------------- */
+
+body.ux-activities-page main{
+  margin-top:2mm!important;
+}
+
 #activityDirectorySection{
   --cgweb083-gap-2mm:7.559px;
 
   display:flex!important;
   flex-direction:column!important;
+
   gap:var(--cgweb083-gap-2mm)!important;
 
   margin-top:0!important;
   margin-bottom:0!important;
+
   padding-top:0!important;
   padding-bottom:var(--cgweb083-gap-2mm)!important;
 }
@@ -4546,40 +4604,25 @@ select {
 }
 
 #activityDirectorySection > details > summary{
-  display:flex!important;
-  visibility:visible!important;
-  opacity:1!important;
-
   min-height:34px!important;
   height:34px!important;
-  box-sizing:border-box!important;
 
   margin:0!important;
   padding:5px 12px!important;
 
+  box-sizing:border-box!important;
+
+  display:flex!important;
   align-items:center!important;
+
   line-height:22px!important;
 }
 
-#activityDirectorySection > details > summary > span:first-child{
-  display:inline-block!important;
-  visibility:visible!important;
-  opacity:1!important;
-  margin:0!important;
-  font-size:.88rem!important;
-  line-height:22px!important;
-}
-
-#activityDirectorySection > details > summary > small{
+#activityDirectorySection
+> details
+> summary
+> small{
   display:none!important;
-}
-
-/* Prioritaire même sous 1050 px. */
-@media (max-width:1050px){
-  #cgweb083CustomActivityHeader{
-    position:sticky!important;
-    top:var(--web059-sticky-top, 0px)!important;
-  }
 }
 </style>
 </head>
@@ -6075,7 +6118,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB083-FIX8-CUSTOMHEADER001"></script>
+  <script type="module" src="./app.js?v=CGWEB083-FIX9-HEADERMEASURE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
