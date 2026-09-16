@@ -17891,15 +17891,123 @@ function localeSort(a, b) {
 
 
 
-/* WEB072_FIX5_UI_STABILITY001_START */
 
-function web072Fix5Text(el) {
+
+
+/* WEB072_FIX6_UI_STABILITY002_START */
+
+function web072Fix6StoredSport() {
+  try {
+    const value = Number(
+      localStorage.getItem("sport_web_web055_home_sport")
+    );
+    return value === 2 ? 2 : 1;
+  } catch (_) {
+    return 1;
+  }
+}
+
+function web072Fix6RestoreHomeSport() {
+  const sport = web072Fix6StoredSport();
+
+  dashboardSport = sport;
+
+  document.getElementById("web055RunningButton")?.classList.toggle(
+    "active",
+    sport === 1
+  );
+
+  document.getElementById("web055CyclingButton")?.classList.toggle(
+    "active",
+    sport === 2
+  );
+}
+
+const web072Fix6OriginalSetSport = web055SetSport;
+
+web055SetSport = function web072Fix6LockedSetSport(sport) {
+  let requested = Number(sport) === 2 ? 2 : 1;
+
+  const explicit =
+    Number(window.__web072Fix6ExplicitSport);
+
+  if (explicit === 1 || explicit === 2) {
+    requested = explicit;
+  } else {
+    requested = web072Fix6StoredSport();
+  }
+
+  dashboardSport = requested;
+
+  document.getElementById("web055RunningButton")?.classList.toggle(
+    "active",
+    requested === 1
+  );
+
+  document.getElementById("web055CyclingButton")?.classList.toggle(
+    "active",
+    requested === 2
+  );
+};
+
+const web072Fix6OriginalLoadDashboard = loadWebDashboard;
+
+loadWebDashboard = async function web072Fix6LoadDashboard(...args) {
+  web072Fix6RestoreHomeSport();
+  return web072Fix6OriginalLoadDashboard.apply(this, args);
+};
+
+if (!window.__web072Fix6HomeCaptureInstalled) {
+  window.__web072Fix6HomeCaptureInstalled = true;
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target =
+        event.target instanceof Element
+          ? event.target
+          : null;
+
+      if (!target) return;
+
+      let sport = 0;
+
+      if (target.closest("#web055RunningButton")) {
+        sport = 1;
+      } else if (target.closest("#web055CyclingButton")) {
+        sport = 2;
+      }
+
+      if (!sport) return;
+
+      try {
+        localStorage.setItem(
+          "sport_web_web055_home_sport",
+          String(sport)
+        );
+      } catch (_) {}
+
+      window.__web072Fix6ExplicitSport = sport;
+
+      setTimeout(() => {
+        if (
+          Number(window.__web072Fix6ExplicitSport) === sport
+        ) {
+          delete window.__web072Fix6ExplicitSport;
+        }
+      }, 0);
+    },
+    true
+  );
+}
+
+function web072Fix6Text(el) {
   return String(el?.textContent || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function web072Fix5DecorateSportCells() {
+function web072Fix6DecorateSportCells() {
   document
     .querySelectorAll("#activityList .web071-fix1-activity-main")
     .forEach((cell) => {
@@ -17915,9 +18023,7 @@ function web072Fix5DecorateSportCells() {
         "web072-bike-cell"
       );
 
-      if (
-        /vélo|velo|bike|cycling|vtt/.test(label)
-      ) {
+      if (/vélo|velo|bike|cycling|vtt/.test(label)) {
         cell.classList.add("web072-bike-cell");
       } else {
         cell.classList.add("web072-run-cell");
@@ -17925,7 +18031,7 @@ function web072Fix5DecorateSportCells() {
     });
 }
 
-function web072Fix5FindDirectoryHeader() {
+function web072Fix6FindDirectoryHeader() {
   const list = document.getElementById("activityList");
   if (!list) return null;
 
@@ -17947,7 +18053,7 @@ function web072Fix5FindDirectoryHeader() {
   for (const el of root.querySelectorAll("div")) {
     const texts =
       Array.from(el.children)
-        .map((child) => web072Fix5Text(child));
+        .map((child) => web072Fix6Text(child));
 
     if (
       wanted.every((label) => texts.includes(label)) &&
@@ -17960,35 +18066,33 @@ function web072Fix5FindDirectoryHeader() {
   return null;
 }
 
-function web072Fix5AlignDirectoryHeader() {
+function web072Fix6AlignDirectoryHeader() {
   const list = document.getElementById("activityList");
   const sportCell =
     list?.querySelector(".web071-fix1-activity-main");
   const row = sportCell?.parentElement;
-  const header = web072Fix5FindDirectoryHeader();
+  const header = web072Fix6FindDirectoryHeader();
 
   if (!row || !header) return;
 
   const texts =
     Array.from(header.children)
-      .map((child) => web072Fix5Text(child));
+      .map((child) => web072Fix6Text(child));
 
   if (
     texts[0] === "Date" &&
-    !header.querySelector(".web072-fix5-header-spacer")
+    !header.querySelector(".web072-fix6-header-spacer")
   ) {
     const spacer = document.createElement("span");
-    spacer.className = "web072-fix5-header-spacer";
+    spacer.className =
+      "web072-fix6-header-spacer";
     spacer.setAttribute("aria-hidden", "true");
     header.prepend(spacer);
   }
 
   const style = getComputedStyle(row);
 
-  header.classList.add(
-    "web072-fix5-directory-header"
-  );
-
+  header.classList.add("web072-fix6-directory-header");
   header.style.display = "grid";
 
   if (
@@ -18007,45 +18111,47 @@ function web072Fix5AlignDirectoryHeader() {
     style.paddingRight || "0px";
 }
 
-function web072Fix5FindToolbar() {
+function web072Fix6FindToolbar() {
   const detail = document.getElementById("detailView");
-  if (!detail || detail.classList.contains("hidden")) {
-    return null;
+  if (!detail) return null;
+
+  const candidates =
+    Array.from(
+      detail.querySelectorAll(
+        ".web059-detail-toolbar, .detail-toolbar-web049, .detail-toolbar"
+      )
+    );
+
+  for (const candidate of candidates) {
+    const text = web072Fix6Text(candidate);
+
+    if (
+      /Répertoire/i.test(text) &&
+      /Mettre à la corbeille/i.test(text) &&
+      /Activité précédente/i.test(text) &&
+      /Activité suivante/i.test(text)
+    ) {
+      return candidate;
+    }
   }
 
-  const controls =
-    Array.from(detail.querySelectorAll("button, a"));
-
-  const repo =
-    controls.find((el) =>
-      /^.*Répertoire.*$/i.test(web072Fix5Text(el))
-    );
-
   const trash =
-    controls.find((el) =>
-      /Mettre à la corbeille/i.test(web072Fix5Text(el))
-    );
+    Array.from(detail.querySelectorAll("button, a"))
+      .find((el) =>
+        /Mettre à la corbeille/i.test(web072Fix6Text(el))
+      );
 
-  const prev =
-    controls.find((el) =>
-      /Activité précédente/i.test(web072Fix5Text(el))
-    );
-
-  const next =
-    controls.find((el) =>
-      /Activité suivante/i.test(web072Fix5Text(el))
-    );
-
-  if (!repo || !trash || !prev || !next) return null;
+  if (!trash) return null;
 
   let node = trash.parentElement;
 
   while (node && node !== detail) {
+    const text = web072Fix6Text(node);
+
     if (
-      node.contains(repo) &&
-      node.contains(trash) &&
-      node.contains(prev) &&
-      node.contains(next)
+      /Répertoire/i.test(text) &&
+      /Activité précédente/i.test(text) &&
+      /Activité suivante/i.test(text)
     ) {
       return node;
     }
@@ -18056,7 +18162,7 @@ function web072Fix5FindToolbar() {
   return null;
 }
 
-function web072Fix5EnsureManual(toolbar) {
+function web072Fix6EnsureManual(toolbar) {
   if (!toolbar) return;
 
   for (
@@ -18066,26 +18172,24 @@ function web072Fix5EnsureManual(toolbar) {
     if (!toolbar.contains(old)) old.remove();
   }
 
-  if (
-    toolbar.querySelector(".web072-manual-add-btn")
-  ) {
+  if (toolbar.querySelector(".web072-manual-add-btn")) {
     return;
   }
 
-  const template =
+  const trash =
     Array.from(toolbar.querySelectorAll("button, a"))
       .find((el) =>
-        /Mettre à la corbeille/i.test(web072Fix5Text(el))
-      ) ||
-    toolbar.querySelector("button");
+        /Mettre à la corbeille/i.test(web072Fix6Text(el))
+      );
+
+  const template =
+    trash || toolbar.querySelector("button");
 
   const button = document.createElement("button");
   button.type = "button";
   button.className =
     ((template?.className || "secondary") +
-      " web072-manual-add-btn")
-      .trim();
-
+      " web072-manual-add-btn").trim();
   button.textContent = "Ajout manuel";
 
   button.addEventListener("click", (event) => {
@@ -18093,257 +18197,164 @@ function web072Fix5EnsureManual(toolbar) {
     navigateUx("more", "manual");
   });
 
-  const trash =
-    Array.from(toolbar.querySelectorAll("button, a"))
-      .find((el) =>
-        /Mettre à la corbeille/i.test(web072Fix5Text(el))
-      );
-
   if (trash) {
-    trash.insertAdjacentElement(
-      "beforebegin",
-      button
-    );
+    trash.insertAdjacentElement("beforebegin", button);
   } else {
     toolbar.appendChild(button);
   }
 }
 
-function web072Fix5HideDuplicates(toolbar) {
+function web072Fix6RemoveBottomNav() {
   const detail = document.getElementById("detailView");
-  if (!detail || !toolbar) return;
+  if (!detail) return;
 
-  for (
-    const el of
-    Array.from(detail.querySelectorAll("button, a"))
-  ) {
-    if (toolbar.contains(el)) continue;
-
-    const text = web072Fix5Text(el);
-
-    if (/^Ajout manuel$/i.test(text)) {
-      const host = el.parentElement;
-
-      if (
-        host &&
-        host.querySelectorAll("button, a").length === 1
-      ) {
-        host.classList.add(
-          "web072-orphan-manual-toolbar"
-        );
-      } else {
-        el.remove();
-      }
-    }
+  for (const id of [
+    "nextActivityBottomButton",
+    "backToCatalogBottomButton",
+    "previousActivityBottomButton"
+  ]) {
+    document.getElementById(id)?.remove();
   }
 
-  const repoButtons =
-    Array.from(detail.querySelectorAll("button, a"))
-      .filter((el) =>
-        /Répertoire/i.test(web072Fix5Text(el)) &&
-        !toolbar.contains(el)
-      );
-
-  for (const repo of repoButtons) {
-    let node = repo.parentElement;
-    let depth = 0;
-
-    while (node && node !== detail && depth < 7) {
-      const text = web072Fix5Text(node);
-
-      if (
-        /Activité précédente/i.test(text) &&
-        /Activité suivante/i.test(text) &&
-        /Répertoire/i.test(text)
-      ) {
-        node.classList.add(
-          "web072-bottom-nav-duplicate"
-        );
-        break;
-      }
-
-      node = node.parentElement;
-      depth++;
-    }
+  for (
+    const nav of
+    detail.querySelectorAll(
+      ".web059-detail-bottom-nav, .detail-bottom-nav"
+    )
+  ) {
+    nav.remove();
   }
 }
 
-function web072Fix5TopOffset() {
-  let top = 0;
+function web072Fix6ToolbarTop() {
+  const nav =
+    document.getElementById("uxPrimaryNav");
 
-  for (
-    const el of [
-      document.querySelector(".topbar"),
-      document.getElementById("uxPrimaryNav")
-    ]
-  ) {
-    if (!el) continue;
-
-    const style = getComputedStyle(el);
+  if (nav) {
+    const rect = nav.getBoundingClientRect();
 
     if (
-      style.display === "none" ||
-      style.visibility === "hidden"
+      rect.height > 0 &&
+      getComputedStyle(nav).display !== "none"
     ) {
-      continue;
+      return Math.max(0, Math.ceil(rect.bottom)) + 8;
     }
-
-    top += Math.ceil(
-      el.getBoundingClientRect().height
-    );
   }
 
-  return top;
+  return 8;
 }
 
-function web072Fix5SyncFixedToolbar() {
+function web072Fix6SyncToolbar() {
   const detail = document.getElementById("detailView");
-  const toolbar = web072Fix5FindToolbar();
+  const toolbar = web072Fix6FindToolbar();
 
-  const previous =
-    document.querySelector(".web072-fix5-toolbar-fixed");
+  if (!detail || !toolbar) return;
 
-  if (!detail || !toolbar) {
-    if (previous) {
-      previous.classList.remove(
-        "web072-fix5-toolbar-fixed"
-      );
+  web072Fix6EnsureManual(toolbar);
+  web072Fix6RemoveBottomNav();
 
-      for (const property of [
-        "top",
-        "left",
-        "width"
-      ]) {
-        previous.style.removeProperty(property);
-      }
-    }
+  toolbar.classList.add("web072-fix6-toolbar-fixed");
 
-    document
-      .querySelectorAll(".web072-fix5-toolbar-spacer")
-      .forEach((el) => el.remove());
+  const rect = detail.getBoundingClientRect();
+  const left = Math.max(8, Math.round(rect.left));
+  const width =
+    Math.max(
+      0,
+      Math.min(
+        rect.width,
+        window.innerWidth - left - 8
+      )
+    );
 
-    return;
-  }
+  toolbar.style.setProperty(
+    "position",
+    "fixed",
+    "important"
+  );
+  toolbar.style.setProperty(
+    "top",
+    web072Fix6ToolbarTop() + "px",
+    "important"
+  );
+  toolbar.style.setProperty(
+    "left",
+    left + "px",
+    "important"
+  );
+  toolbar.style.setProperty(
+    "width",
+    width + "px",
+    "important"
+  );
+  toolbar.style.setProperty(
+    "z-index",
+    "9999",
+    "important"
+  );
 
-  web072Fix5EnsureManual(toolbar);
-  web072Fix5HideDuplicates(toolbar);
-
-  let spacer =
-    toolbar.previousElementSibling;
+  let spacer = toolbar.previousElementSibling;
 
   if (
     !spacer ||
     !spacer.classList.contains(
-      "web072-fix5-toolbar-spacer"
+      "web072-fix6-toolbar-spacer"
     )
   ) {
     spacer = document.createElement("div");
     spacer.className =
-      "web072-fix5-toolbar-spacer";
-
-    toolbar.insertAdjacentElement(
-      "beforebegin",
-      spacer
-    );
+      "web072-fix6-toolbar-spacer";
+    toolbar.insertAdjacentElement("beforebegin", spacer);
   }
-
-  const toolbarHeight =
-    Math.ceil(toolbar.getBoundingClientRect().height) ||
-    58;
 
   spacer.style.height =
-    toolbarHeight + "px";
-
-  const detailRect =
-    detail.getBoundingClientRect();
-
-  toolbar.classList.add(
-    "web072-fix5-toolbar-fixed"
-  );
-
-  toolbar.style.top =
-    web072Fix5TopOffset() + "px";
-  toolbar.style.left =
-    Math.max(0, detailRect.left) + "px";
-  toolbar.style.width =
-    Math.max(0, detailRect.width) + "px";
-}
-
-function web072Fix5HideThinDivider() {
-  const row =
-    document.getElementById("web061SingleMetricRow");
-
-  const next =
-    row?.nextElementSibling;
-
-  if (!row || !next) return;
-
-  const rect =
-    next.getBoundingClientRect();
-
-  if (
-    next.tagName === "HR" ||
-    /divider|separator/i.test(
-      String(next.className || "")
-    ) ||
     (
-      rect.height > 0 &&
-      rect.height <= 16 &&
-      rect.width >=
-        row.getBoundingClientRect().width * .75
-    )
-  ) {
-    next.classList.add("web072-hide-divider");
-  }
+      Math.ceil(
+        toolbar.getBoundingClientRect().height
+      ) + 8
+    ) + "px";
 }
 
-function web072Fix5Apply() {
+function web072Fix6Apply() {
   try {
-    web072Fix5DecorateSportCells();
-    web072Fix5AlignDirectoryHeader();
-    web072Fix5SyncFixedToolbar();
-    web072Fix5HideThinDivider();
+    web072Fix6DecorateSportCells();
+    web072Fix6AlignDirectoryHeader();
+    web072Fix6RemoveBottomNav();
+    web072Fix6SyncToolbar();
+
+    if (document.body.dataset.uxPage === "home") {
+      web072Fix6RestoreHomeSport();
+    }
   } catch (_) {}
 }
 
-if (!window.__web072Fix5Installed) {
-  window.__web072Fix5Installed = true;
+if (!window.__web072Fix6Installed) {
+  window.__web072Fix6Installed = true;
 
   const refresh = () =>
-    requestAnimationFrame(web072Fix5Apply);
+    requestAnimationFrame(web072Fix6Apply);
 
-  document.addEventListener(
-    "DOMContentLoaded",
-    refresh
-  );
-
+  document.addEventListener("DOMContentLoaded", refresh);
   document.addEventListener(
     "click",
     () => setTimeout(refresh, 0),
     true
   );
-
   document.addEventListener(
     "change",
     () => setTimeout(refresh, 0),
     true
   );
-
   window.addEventListener(
     "resize",
     refresh,
     { passive: true }
   );
 
-  window.addEventListener(
-    "scroll",
-    refresh,
-    { passive: true, capture: true }
-  );
-
-  setTimeout(refresh, 100);
-  setTimeout(refresh, 600);
-  setTimeout(refresh, 1500);
+  setTimeout(refresh, 50);
+  setTimeout(refresh, 400);
+  setTimeout(refresh, 1200);
+  setTimeout(refresh, 3000);
+  setTimeout(refresh, 5000);
 }
 
-/* WEB072_FIX5_UI_STABILITY001_END */
+/* WEB072_FIX6_UI_STABILITY002_END */
