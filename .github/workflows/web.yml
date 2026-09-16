@@ -119,12 +119,22 @@ jobs:
           req_re web/index.html 'src="\./app\.js\?v=[^"]+"' 'Cache-bust app.js'
 
           # Garde-fou performance.
+          # WEB072 FIX8 utilise volontairement un unique MutationObserver
+          # pour suivre les reconstructions asynchrones du Répertoire.
           MUT="$(grep -c 'new MutationObserver' web/app.js || true)"
-          if [ "$MUT" != "0" ]; then
-            echo "❌ MutationObserver = $MUT"
+
+          if [ "$MUT" -gt "1" ]; then
+            echo "❌ MutationObserver = $MUT : plus d'un observer détecté"
             exit 43
           fi
-          echo "✓ MutationObserver = 0"
+
+          if [ "$MUT" = "1" ]; then
+            req web/app.js \
+              'WEB072_FIX8_DIRECTORY_VISUAL_START' \
+              'MutationObserver unique autorisé par WEB072 FIX8'
+          fi
+
+          echo "✓ MutationObserver = $MUT"
 
           echo "======================================================"
           echo "✅ VALIDATION SPORT WEB COURANT OK"
