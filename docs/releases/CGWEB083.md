@@ -1,33 +1,32 @@
-# CGWEB083 · ACTIVITYDIRECTORYUX001
+# CGWEB083 · ACTIVITYDIRECTORYUX003 · FIX3
 
-## Objectif
+## Répertoire Activités
 
-Améliorer l'ergonomie du répertoire **Activités**.
+### Affichage initial
+100 dernières activités.
 
-## Changements
+### Afficher 20 de plus
+La position verticale du navigateur est conservée exactement :
+- mémorisation de `window.scrollY` ;
+- suppression du focus du bouton avant rerender ;
+- aucun `scrollIntoView` ;
+- restauration immédiate puis sur deux frames supplémentaires.
 
-### Pictogramme FIT à droite
-- pictogramme plus petit ;
-- FIT disponible : couleur d'origine ;
-- FIT indisponible : pictogramme grisé ;
-- plus aucune barre diagonale ;
-- clic uniquement quand le FIT est disponible.
+L'utilisateur reste donc exactement à l'endroit où il était avant de demander 20 activités supplémentaires.
 
-### Répertoire
-- 100 dernières activités affichées dès l'ouverture ;
-- le bouton **Afficher 20 de plus** conserve la position de lecture grâce à une ancre furtive ;
-- le répertoire ne renvoie plus en haut après ce clic.
-
-### Titre du répertoire
-Décalages visuels demandés :
+### Titres
 - Date : +2 mm ;
 - Temps : -1 mm ;
-- Matériel : +2 cm ;
+- Matériel : +2,5 cm ;
 - Repères : -1 cm ;
-- Charge : +5 mm.
+- Charge : +1 cm.
+
+### FIT
+- bureau : 13 × 13 px ;
+- petit écran : 12 × 12 px ;
+- disponible : couleur d'origine ;
+- indisponible : gris discret ;
+- aucune barre.
 
 ## Données
-- aucune activité modifiée ;
-- aucun backfill ;
-- aucun nouveau backend ;
-- CGWEB081 et CGWEB082 conservés.
+Backend, activités et pipeline FIT inchangés.

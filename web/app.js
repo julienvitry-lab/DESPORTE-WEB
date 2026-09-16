@@ -6061,34 +6061,39 @@ function v083ActivityKey(activity) {
 }
 
 function v083ApplyLoadMoreAnchor(anchor) {
-  if (!anchor) return;
-  const attempt = () => {
-    let target = null;
-    if (anchor.activityId) {
-      const escaped = (window.CSS && typeof CSS.escape === "function")
-        ? CSS.escape(anchor.activityId)
-        : anchor.activityId.replace(/["\\]/g, "\\$&");
-      target = document.querySelector('#activityList .activity-card[data-activity-id="' + escaped + '"]');
-    }
-    if (target) {
-      target.scrollIntoView({block: "end", inline: "nearest"});
-      window.scrollBy({top: -72, left: 0, behavior: "auto"});
-      return;
-    }
-    if (Number.isFinite(anchor.scrollY)) {
-      window.scrollTo({top: anchor.scrollY, left: 0, behavior: "auto"});
-    }
+  if (!anchor || !Number.isFinite(anchor.scrollY)) return;
+
+  const y = Math.max(0, Number(anchor.scrollY));
+  const root = document.documentElement;
+  const previousBehavior = root.style.scrollBehavior;
+
+  root.style.scrollBehavior = "auto";
+
+  const restore = () => {
+    window.scrollTo(0, y);
   };
-  requestAnimationFrame(() => requestAnimationFrame(attempt));
+
+  restore();
+
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(() => {
+      restore();
+      setTimeout(() => {
+        restore();
+        root.style.scrollBehavior = previousBehavior;
+      }, 0);
+    });
+  });
 }
 
 function v083HeaderShiftPx(label) {
   switch (label) {
     case "Date": return 2 * V083_MM;
     case "Temps": return -1 * V083_MM;
-    case "Matériel": return 2 * V083_CM;
+    case "Matériel": return 2.5 * V083_CM;
     case "Repères": return -1 * V083_CM;
-    case "Charge": return 5 * V083_MM;
+    case "Charge": return 1 * V083_CM;
     default: return 0;
   }
 }
@@ -6194,11 +6199,18 @@ function renderActivities() {
     more.type = "button";
     more.className = "secondary";
     more.textContent = "Afficher 20 de plus";
-    more.addEventListener("click", () => {
+    more.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
       const anchor = {
-        scrollY: window.scrollY,
-        activityId: v083ActivityKey(visibleRows[visibleRows.length - 1] || null)
+        scrollY: window.scrollY
       };
+
+      if (document.activeElement === more) {
+        more.blur();
+      }
+
       activityVisibleLimit += 20;
       renderActivities();
       v083ApplyLoadMoreAnchor(anchor);
