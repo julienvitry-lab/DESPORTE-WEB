@@ -1,9 +1,38 @@
 "use strict";
 
+/* WEB074_FIX6_SELFCONTAINED_DEPS_START */
+const {onRequest} = require("firebase-functions/v2/https");
+const {getApps, initializeApp} = require("firebase-admin/app");
+const {getAuth} = require("firebase-admin/auth");
+const {getFirestore} = require("firebase-admin/firestore");
+const {getStorage} = require("firebase-admin/storage");
+const crypto = require("crypto");
+
+if (!getApps().length) initializeApp();
+
+const db = getFirestore();
+const ROOT = "sport_users";
+const REGION = "europe-west1";
+
+async function requireUser(req) {
+  const auth = String(req.headers.authorization || "");
+
+  if (!auth.startsWith("Bearer ")) {
+    throw Object.assign(
+      new Error("Firebase bearer token manquant."),
+      {status: 401}
+    );
+  }
+
+  return getAuth().verifyIdToken(auth.slice(7));
+}
+/* WEB074_FIX6_SELFCONTAINED_DEPS_END */
+
+
 const SPORT_FIT_BUCKET = "sport-505813.firebasestorage.app";
 const SPORT_FIT_MAX_BYTES = 25 * 1024 * 1024;
 
-function createFitVault({onRequest, getStorage, db, crypto, requireUser, ROOT, REGION}) {
+function createFitVault() {
   function cors(res) {
     res.set("Access-Control-Allow-Origin", "*");
     res.set(

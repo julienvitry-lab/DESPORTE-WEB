@@ -1260,5 +1260,5 @@ exports.stravaBridge = onRequest(
 
 /* WEB074_FITCLOUD001_INDEX_START */
 const {createFitVault} = require("./fitvault");
-exports.fitVault = createFitVault({onRequest, getStorage, db, crypto, requireUser, ROOT, REGION});
+exports.fitVault = createFitVault();
 /* WEB074_FITCLOUD001_INDEX_END */
