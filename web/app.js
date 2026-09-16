@@ -4188,42 +4188,125 @@ function renderDashboardEquipment(rows) {
 
 function renderDashboardRecent(rows) {
   ui.dashboardRecentList.innerHTML = "";
+
   if (!rows.length) {
-    ui.dashboardRecentList.innerHTML = '<div class="empty compact-empty">Aucune activité récente.</div>';
+    ui.dashboardRecentList.innerHTML =
+      '<div class="empty compact-empty">Aucune activité récente.</div>';
     return;
   }
+
   rows.forEach((activity) => {
-    const button = document.createElement("button"); button.type = "button"; button.className = "dashboard-list-row dashboard-activity-row";
-    button.addEventListener("click", () => showActivity(activity));
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className =
+      "dashboard-list-row dashboard-activity-row cgweb084-dashboard-map-row";
+
+    button.addEventListener(
+      "click",
+      () => showActivity(activity)
+    );
+
     const main = document.createElement("div");
-    const title = document.createElement("strong"); title.textContent = activity.custom_title || sportName(activity.sport);
-    const meta = document.createElement("span"); meta.textContent = `${formatDate(activity.start_time_ms)} · ${formatDistance(activity.distance_m)} · ${formatMeters(activity.ascent_m)}`;
+
+    const title = document.createElement("strong");
+    title.textContent =
+      activity.custom_title ||
+      sportName(activity.sport);
+
+    const meta = document.createElement("span");
+    meta.textContent =
+      formatDate(activity.start_time_ms) +
+      " · " +
+      formatDistance(activity.distance_m) +
+      " · " +
+      formatMeters(activity.ascent_m);
+
     main.append(title, meta);
-    const duration = document.createElement("span"); duration.className = "dashboard-list-value"; duration.textContent = formatDuration(activity.elapsed_time_ms);
-    button.append(main, duration); ui.dashboardRecentList.appendChild(button);
+
+    const thumb =
+      cgweb084MapThumbnailNode(activity);
+
+    const duration = document.createElement("span");
+    duration.className = "dashboard-list-value";
+    duration.textContent =
+      formatDuration(activity.elapsed_time_ms);
+
+    button.append(main, thumb, duration);
+    ui.dashboardRecentList.appendChild(button);
   });
 }
 
 function renderDashboardRecords() {
   ui.dashboardRecordsList.innerHTML = "";
+
   const standard = records
-    .filter((record) => ["distance", "duration", "ascent"].includes(String(record.record_type ?? "").toLowerCase()))
-    .sort((a, b) => ["distance", "duration", "ascent"].indexOf(String(a.record_type).toLowerCase()) - ["distance", "duration", "ascent"].indexOf(String(b.record_type).toLowerCase()));
+    .filter((record) =>
+      ["distance", "duration", "ascent"].includes(
+        String(record.record_type ?? "").toLowerCase()
+      )
+    )
+    .sort(
+      (a, b) =>
+        ["distance", "duration", "ascent"].indexOf(
+          String(a.record_type).toLowerCase()
+        ) -
+        ["distance", "duration", "ascent"].indexOf(
+          String(b.record_type).toLowerCase()
+        )
+    );
+
   if (!standard.length) {
-    ui.dashboardRecordsList.innerHTML = '<div class="empty compact-empty">Aucun record matérialisé.</div>';
+    ui.dashboardRecordsList.innerHTML =
+      '<div class="empty compact-empty">Aucun record matérialisé.</div>';
     return;
   }
+
   standard.forEach((record) => {
     const activityId = Number(record.activity_id);
-    const linked = activities.find((activity) => Number(activity.id ?? activity.__docId) === activityId);
-    const button = document.createElement("button"); button.type = "button"; button.className = "dashboard-list-row dashboard-activity-row";
-    button.addEventListener("click", () => { void openRecordActivity(record); });
+
+    const linked = activities.find(
+      (activity) =>
+        Number(activity.id ?? activity.__docId) === activityId
+    );
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className =
+      "dashboard-list-row dashboard-activity-row cgweb084-dashboard-map-row";
+
+    button.addEventListener(
+      "click",
+      () => {
+        void openRecordActivity(record);
+      }
+    );
+
     const main = document.createElement("div");
-    const title = document.createElement("strong"); title.textContent = recordLabel(record.record_type);
-    const meta = document.createElement("span"); meta.textContent = linked ? `${formatDate(linked.start_time_ms)} · ${linked.custom_title || sportName(linked.sport)}` : `Activité #${activityId || "?"}`;
+
+    const title = document.createElement("strong");
+    title.textContent = recordLabel(record.record_type);
+
+    const meta = document.createElement("span");
+    meta.textContent = linked
+      ? formatDate(linked.start_time_ms) +
+        " · " +
+        (linked.custom_title || sportName(linked.sport))
+      : "Activité #" + (activityId || "?");
+
     main.append(title, meta);
-    const value = document.createElement("span"); value.className = "dashboard-list-value"; value.textContent = formatRecordValue(record);
-    button.append(main, value); ui.dashboardRecordsList.appendChild(button);
+
+    const thumb = linked
+      ? cgweb084MapThumbnailNode(linked)
+      : document.createElement("span");
+
+    thumb.classList.add("cgweb084-map-thumb");
+
+    const value = document.createElement("span");
+    value.className = "dashboard-list-value";
+    value.textContent = formatRecordValue(record);
+
+    button.append(main, thumb, value);
+    ui.dashboardRecordsList.appendChild(button);
   });
 }
 
@@ -8036,6 +8119,7 @@ function renderDetail(activity) {
 
   web059InstallDetailSticky();
   web059RefreshStickyTop();
+  queueMicrotask(() => void cgweb084RenderRevisionHistory(activity));
 }
 
 
@@ -16656,6 +16740,1062 @@ async function flushPendingWebMutations() {
   }
 }
 
+
+/* CGWEB084_SAFEEDIT001_START */
+
+let cgweb084RevisionRenderToken = 0;
+const cgweb084RouteThumbnailCache = new Map();
+
+function cgweb084PlainClone(value) {
+  if (value == null) return value;
+
+  try {
+    return structuredClone(value);
+  } catch (_) {}
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_) {
+    return value;
+  }
+}
+
+function cgweb084CleanActivitySnapshot(activity) {
+  const out = {};
+
+  for (const [key, value] of Object.entries(activity || {})) {
+    if (String(key).startsWith("__")) continue;
+    if (typeof value === "function") continue;
+
+    out[key] = cgweb084PlainClone(value);
+  }
+
+  return out;
+}
+
+function cgweb084CurrentLandmarks(activity) {
+  const key = String(activityKey(activity) || "");
+
+  return (activityLandmarks.get(key) || []).map((row) => {
+    const copy = {};
+
+    for (const [field, value] of Object.entries(row || {})) {
+      if (String(field).startsWith("__")) continue;
+      copy[field] = cgweb084PlainClone(value);
+    }
+
+    return copy;
+  });
+}
+
+function cgweb084RevisionReasonLabel(reason) {
+  const labels = {
+    TEXT_AUTOSAVE: "Titre / description / note",
+    IMMEDIATE_FIELDS: "Métadonnées personnelles",
+    LANDMARK: "Repères",
+    RESTORE_GUARD: "Sauvegarde avant restauration"
+  };
+
+  return labels[String(reason || "")] || String(reason || "Modification");
+}
+
+async function cgweb084SaveActivityRevision(
+  activity,
+  reason,
+  intendedPatch = null
+) {
+  if (!activity || !currentUser) return null;
+
+  const key = String(activityKey(activity) || "").trim();
+  if (!key) return null;
+
+  const now = Date.now();
+  const random = Math.random().toString(36).slice(2, 9);
+  const revisionKey = key + "_" + now + "_" + random;
+
+  const row = {
+    revision_id: revisionKey,
+    activity_key: key,
+    activity_id: Number.isFinite(Number(key))
+      ? Number(key)
+      : null,
+    created_at_ms: now,
+    reason: String(reason || "EDIT"),
+    source: "SPORT_WEB",
+    version: "SAFEEDIT001",
+    snapshot: cgweb084CleanActivitySnapshot(activity),
+    landmarks: cgweb084CurrentLandmarks(activity),
+    intended_patch: cgweb084PlainClone(intendedPatch || {})
+  };
+
+  await commitWebMutation({
+    table: "activity_revisions",
+    rowKey: revisionKey,
+    operation: "UPSERT",
+    row,
+    materializedCollection: "activity_revisions",
+    materializedData: row
+  });
+
+  return row;
+}
+
+async function cgweb084LoadRevisions(activity) {
+  if (!activity || !currentUser) return [];
+
+  const key = String(activityKey(activity) || "").trim();
+  if (!key) return [];
+
+  const snap = await getDocs(
+    query(
+      userCollection("activity_revisions"),
+      where("activity_key", "==", key)
+    )
+  );
+
+  const rows = [];
+
+  snap.forEach((item) => {
+    rows.push({
+      __revisionDocId: item.id,
+      ...item.data()
+    });
+  });
+
+  rows.sort(
+    (a, b) =>
+      Number(b.created_at_ms || 0) -
+      Number(a.created_at_ms || 0)
+  );
+
+  return rows;
+}
+
+async function cgweb084RestoreLandmarks(activity, targetRows) {
+  const activityId = Number(activity?.id ?? activity?.__docId);
+
+  if (!Number.isFinite(activityId) || activityId <= 0) return;
+
+  const current = cgweb084CurrentLandmarks(activity);
+  const target = Array.isArray(targetRows) ? targetRows : [];
+
+  const currentByCode = new Map(
+    current.map((row) => [
+      String(row.landmark_code || ""),
+      row
+    ])
+  );
+
+  const targetByCode = new Map(
+    target.map((row) => [
+      String(row.landmark_code || ""),
+      row
+    ])
+  );
+
+  for (const [code] of currentByCode) {
+    if (!code || targetByCode.has(code)) continue;
+
+    await commitWebMutation({
+      table: "activity_landmarks",
+      rowKey: activityId + ":" + code,
+      operation: "DELETE",
+      row: null,
+      materializedCollection: "activity_landmarks",
+      deleteMaterialized: true
+    });
+
+    applyActivityLandmarkLocally(
+      activityId,
+      code,
+      null,
+      "DELETE"
+    );
+  }
+
+  for (const [code, stored] of targetByCode) {
+    if (!code) continue;
+
+    const row = {
+      ...cgweb084PlainClone(stored),
+      activity_id: activityId,
+      landmark_code: code
+    };
+
+    await commitWebMutation({
+      table: "activity_landmarks",
+      rowKey: activityId + ":" + code,
+      operation: "UPSERT",
+      row,
+      materializedCollection: "activity_landmarks",
+      materializedData: row
+    });
+
+    applyActivityLandmarkLocally(
+      activityId,
+      code,
+      row,
+      "UPSERT"
+    );
+  }
+}
+
+async function cgweb084RestoreRevision(activity, revision) {
+  if (!activity || !revision?.snapshot) return;
+
+  const label = new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "short",
+    timeStyle: "medium"
+  }).format(
+    new Date(Number(revision.created_at_ms || Date.now()))
+  );
+
+  const ok = window.confirm(
+    "Restaurer la version du " +
+      label +
+      " ?\n\n" +
+      "L'état actuel sera lui-même sauvegardé avant restauration."
+  );
+
+  if (!ok) return;
+
+  const key = String(activityKey(activity) || "").trim();
+  if (!key) return;
+
+  const restoreButton =
+    document.getElementById("cgweb084RevisionRefresh");
+
+  if (restoreButton) restoreButton.disabled = true;
+
+  try {
+    await cgweb084SaveActivityRevision(
+      activity,
+      "RESTORE_GUARD",
+      { restore_revision_id: revision.revision_id || revision.__revisionDocId }
+    );
+
+    const snapshot = {
+      ...cgweb084PlainClone(revision.snapshot),
+      id: Number.isFinite(Number(key))
+        ? Number(key)
+        : revision.snapshot.id
+    };
+
+    /*
+     * Firestore UPSERT utilise merge:true. Les champs éditables absents
+     * d'une ancienne version doivent donc être explicitement remis à null
+     * pour obtenir une restauration fidèle.
+     */
+    for (const field of [
+      "custom_title",
+      "description",
+      "personal_note",
+      "equipment_name",
+      "equipment_manual",
+      "equipment_mapping_id",
+      "equipment_assignment_source",
+      "equipment_assignment_version",
+      "feeling_score",
+      "difficulty_score",
+      "privacy"
+    ]) {
+      if (!(field in snapshot)) snapshot[field] = null;
+    }
+
+    delete snapshot.__docId;
+    delete snapshot.__sportKey;
+    delete snapshot.__updatedAtMs;
+
+    await commitWebMutation({
+      table: "activities",
+      rowKey: key,
+      operation: "UPSERT",
+      row: snapshot,
+      materializedCollection: "activities",
+      materializedData: snapshot
+    });
+
+    await cgweb084RestoreLandmarks(
+      activity,
+      revision.landmarks
+    );
+
+    const docId = activity.__docId || key;
+
+    for (const field of Object.keys(activity)) {
+      if (!String(field).startsWith("__")) {
+        delete activity[field];
+      }
+    }
+
+    Object.assign(
+      activity,
+      snapshot,
+      { __docId: docId }
+    );
+
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+
+    if (
+      currentDetailId === key &&
+      !ui.detailView.classList.contains("hidden")
+    ) {
+      renderDetail(activity);
+    }
+
+    setMessage(
+      "CGWEB084 · version restaurée. L'état remplacé a été conservé dans l'historique.",
+      "success"
+    );
+
+    await cgweb084RenderRevisionHistory(activity);
+  } catch (error) {
+    console.error("CGWEB084 restore", error);
+    handleError(error, "Restauration impossible");
+  } finally {
+    if (restoreButton) restoreButton.disabled = false;
+  }
+}
+
+function cgweb084EnsureRevisionEditorVisible() {
+  const panel =
+    document.querySelector("#detailView .detail-edit-panel");
+
+  if (!panel) return;
+
+  panel.classList.remove("hidden");
+  panel.removeAttribute("aria-hidden");
+
+  const eyebrow = panel.querySelector(".section-heading .eyebrow");
+  const title = panel.querySelector(".section-heading h2");
+
+  if (eyebrow) eyebrow.textContent = "MODIFIER · RÉVERSIBLE";
+  if (title) title.textContent = "Édition réversible de l’activité";
+}
+
+async function cgweb084RenderRevisionHistory(activity) {
+  cgweb084EnsureRevisionEditorVisible();
+
+  const host =
+    document.getElementById("cgweb084RevisionList");
+
+  const meta =
+    document.getElementById("cgweb084RevisionMeta");
+
+  const status =
+    document.getElementById("cgweb084RevisionStatus");
+
+  if (!host || !meta || !status || !activity) return;
+
+  const token = ++cgweb084RevisionRenderToken;
+
+  status.textContent = "Lecture de l’historique…";
+  host.innerHTML = "";
+
+  try {
+    const rows = await cgweb084LoadRevisions(activity);
+
+    if (token !== cgweb084RevisionRenderToken) return;
+
+    meta.textContent =
+      rows.length +
+      " version" +
+      (rows.length > 1 ? "s" : "");
+
+    status.textContent = rows.length
+      ? "Chaque version peut être restaurée sans perdre l’état actuel."
+      : "Aucune modification enregistrée pour cette activité.";
+
+    if (!rows.length) return;
+
+    for (const revision of rows.slice(0, 30)) {
+      const row = document.createElement("div");
+      row.className = "cgweb084-revision-row";
+
+      const main = document.createElement("div");
+
+      const strong = document.createElement("strong");
+      strong.textContent =
+        cgweb084RevisionReasonLabel(revision.reason);
+
+      const small = document.createElement("span");
+      small.textContent = new Intl.DateTimeFormat(
+        "fr-FR",
+        {
+          dateStyle: "short",
+          timeStyle: "medium"
+        }
+      ).format(
+        new Date(Number(revision.created_at_ms || 0))
+      );
+
+      main.append(strong, small);
+
+      const restore = document.createElement("button");
+      restore.type = "button";
+      restore.className = "secondary compact";
+      restore.textContent = "Restaurer";
+      restore.addEventListener("click", () => {
+        void cgweb084RestoreRevision(activity, revision);
+      });
+
+      row.append(main, restore);
+      host.appendChild(row);
+    }
+  } catch (error) {
+    console.error("CGWEB084 revisions", error);
+    meta.textContent = "Erreur";
+    status.textContent =
+      "Historique indisponible : " +
+      (error?.message || error);
+  }
+}
+
+function cgweb084WireRevisionUi() {
+  const refresh =
+    document.getElementById("cgweb084RevisionRefresh");
+
+  if (
+    refresh &&
+    refresh.dataset.cgweb084Wired !== "1"
+  ) {
+    refresh.dataset.cgweb084Wired = "1";
+
+    refresh.addEventListener("click", () => {
+      const activity = currentDetailActivity();
+
+      if (activity) {
+        void cgweb084RenderRevisionHistory(activity);
+      }
+    });
+  }
+
+  cgweb084EnsureRevisionEditorVisible();
+}
+
+/* CGWEB084_SAFEEDIT001_END */
+
+/* CGWEB084_MAPTHUMB001_START */
+
+function cgweb084RouteLatLon(raw) {
+  const out = [];
+
+  if (Array.isArray(raw?.points)) {
+    for (const point of raw.points) {
+      const lat = Number(
+        point?.latitude ??
+        point?.lat
+      );
+
+      const lon = Number(
+        point?.longitude ??
+        point?.lon ??
+        point?.lng
+      );
+
+      if (
+        Number.isFinite(lat) &&
+        Number.isFinite(lon) &&
+        Math.abs(lat) <= 90 &&
+        Math.abs(lon) <= 180
+      ) {
+        out.push([lat, lon]);
+      }
+    }
+  }
+
+  if (out.length >= 2) return out;
+
+  const lat =
+    Array.isArray(raw?.lat) ? raw.lat :
+    Array.isArray(raw?.latitude) ? raw.latitude :
+    Array.isArray(raw?.latitudes) ? raw.latitudes :
+    [];
+
+  const lon =
+    Array.isArray(raw?.lon) ? raw.lon :
+    Array.isArray(raw?.lng) ? raw.lng :
+    Array.isArray(raw?.longitude) ? raw.longitude :
+    Array.isArray(raw?.longitudes) ? raw.longitudes :
+    [];
+
+  const count = Math.min(lat.length, lon.length);
+
+  for (let i = 0; i < count; i += 1) {
+    const a = Number(lat[i]);
+    const b = Number(lon[i]);
+
+    if (
+      Number.isFinite(a) &&
+      Number.isFinite(b) &&
+      Math.abs(a) <= 90 &&
+      Math.abs(b) <= 180
+    ) {
+      out.push([a, b]);
+    }
+  }
+
+  return out;
+}
+
+function cgweb084RouteSvg(points) {
+  if (!Array.isArray(points) || points.length < 2) {
+    return "";
+  }
+
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+
+  for (const [lat, lon] of points) {
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+    minLon = Math.min(minLon, lon);
+    maxLon = Math.max(maxLon, lon);
+  }
+
+  const latSpan = Math.max(0.000001, maxLat - minLat);
+  const lonSpan = Math.max(0.000001, maxLon - minLon);
+
+  const width = 96;
+  const height = 42;
+  const pad = 5;
+
+  const usableW = width - pad * 2;
+  const usableH = height - pad * 2;
+
+  const step = Math.max(
+    1,
+    Math.floor(points.length / 80)
+  );
+
+  const sampled = [];
+
+  for (let i = 0; i < points.length; i += step) {
+    sampled.push(points[i]);
+  }
+
+  if (
+    sampled[sampled.length - 1] !==
+    points[points.length - 1]
+  ) {
+    sampled.push(points[points.length - 1]);
+  }
+
+  const xy = sampled.map(([lat, lon]) => {
+    const x =
+      pad +
+      ((lon - minLon) / lonSpan) *
+      usableW;
+
+    const y =
+      pad +
+      (1 - (lat - minLat) / latSpan) *
+      usableH;
+
+    return [
+      Math.round(x * 10) / 10,
+      Math.round(y * 10) / 10
+    ];
+  });
+
+  const polyline =
+    xy
+      .map(([x, y]) => x + "," + y)
+      .join(" ");
+
+  const start = xy[0];
+  const finish = xy[xy.length - 1];
+
+  return (
+    '<svg viewBox="0 0 96 42" aria-hidden="true">' +
+      '<path class="cgweb084-thumb-grid" d="M24 0V42M48 0V42M72 0V42M0 14H96M0 28H96"></path>' +
+      '<polyline class="cgweb084-thumb-route" points="' +
+        polyline +
+      '"></polyline>' +
+      '<circle class="cgweb084-thumb-start" cx="' +
+        start[0] +
+        '" cy="' +
+        start[1] +
+        '" r="2.4"></circle>' +
+      '<circle class="cgweb084-thumb-finish" cx="' +
+        finish[0] +
+        '" cy="' +
+        finish[1] +
+        '" r="2.4"></circle>' +
+    '</svg>'
+  );
+}
+
+async function cgweb084LoadRouteThumbnail(activity) {
+  if (!currentUser || !activity) return "";
+
+  const key = String(activityKey(activity) || "").trim();
+  if (!key) return "";
+
+  if (cgweb084RouteThumbnailCache.has(key)) {
+    return cgweb084RouteThumbnailCache.get(key);
+  }
+
+  const promise = (async () => {
+    try {
+      const snap = await getDoc(
+        doc(
+          db,
+          ROOT,
+          currentUser.uid,
+          "activity_routes",
+          key
+        )
+      );
+
+      if (!snap.exists()) return "";
+
+      return cgweb084RouteSvg(
+        cgweb084RouteLatLon(snap.data())
+      );
+    } catch (error) {
+      console.warn("CGWEB084 miniature", key, error);
+      return "";
+    }
+  })();
+
+  cgweb084RouteThumbnailCache.set(key, promise);
+
+  const html = await promise;
+  cgweb084RouteThumbnailCache.set(key, html);
+
+  return html;
+}
+
+function cgweb084MapThumbnailNode(activity) {
+  const host = document.createElement("span");
+  host.className = "cgweb084-map-thumb";
+  host.title = "Miniature du tracé";
+
+  host.innerHTML =
+    '<span class="cgweb084-map-thumb-loading">…</span>';
+
+  void cgweb084LoadRouteThumbnail(activity).then((html) => {
+    if (!host.isConnected) return;
+
+    if (html) {
+      host.innerHTML = html;
+      host.classList.add("has-route");
+    } else {
+      host.innerHTML = "";
+      host.classList.add("no-route");
+    }
+  });
+
+  return host;
+}
+
+/* CGWEB084_MAPTHUMB001_END */
+
+/* CGWEB084_PERIODZIP001_START */
+
+function cgweb084PeriodBounds() {
+  const mode =
+    document.getElementById("cgweb084ExportMode")?.value ||
+    "month";
+
+  if (mode === "year") {
+    const year = Number(
+      document.getElementById("cgweb084ExportYear")?.value
+    );
+
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      throw new Error("Année invalide.");
+    }
+
+    return {
+      mode,
+      label: String(year),
+      start: new Date(year, 0, 1).getTime(),
+      end: new Date(year + 1, 0, 1).getTime()
+    };
+  }
+
+  const raw =
+    String(
+      document.getElementById("cgweb084ExportMonth")?.value ||
+      ""
+    );
+
+  const match = /^(\d{4})-(\d{2})$/.exec(raw);
+
+  if (!match) {
+    throw new Error("Mois invalide.");
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+
+  return {
+    mode,
+    label: raw,
+    start: new Date(year, month, 1).getTime(),
+    end: new Date(year, month + 1, 1).getTime()
+  };
+}
+
+async function cgweb084FetchPeriodActivities(period) {
+  const snap = await getDocs(
+    query(
+      userCollection("activities"),
+      where("start_time_ms", ">=", period.start),
+      where("start_time_ms", "<", period.end),
+      orderBy("start_time_ms", "asc")
+    )
+  );
+
+  const rows = [];
+
+  snap.forEach((item) => {
+    const row = {
+      __docId: item.id,
+      ...item.data()
+    };
+
+    if (row.deleted_at_ms == null) {
+      rows.push(row);
+    }
+  });
+
+  return rows;
+}
+
+function cgweb084CsvCell(value) {
+  if (value == null) return "";
+
+  const text =
+    typeof value === "object"
+      ? JSON.stringify(value)
+      : String(value);
+
+  if (
+    text.includes(",") ||
+    text.includes('"') ||
+    text.includes("\n")
+  ) {
+    return '"' + text.replaceAll('"', '""') + '"';
+  }
+
+  return text;
+}
+
+function cgweb084ActivitiesCsv(rows) {
+  const fields = [
+    "id",
+    "start_time_iso",
+    "sport",
+    "sub_sport",
+    "distance_m",
+    "ascent_m",
+    "descent_m",
+    "elapsed_time_ms",
+    "moving_time_ms",
+    "avg_hr",
+    "max_hr",
+    "equipment_name",
+    "custom_title",
+    "description",
+    "personal_note"
+  ];
+
+  const lines = [fields.join(",")];
+
+  for (const activity of rows) {
+    const values = {
+      id: activity.id ?? activity.__docId ?? "",
+      start_time_iso: Number.isFinite(Number(activity.start_time_ms))
+        ? new Date(Number(activity.start_time_ms)).toISOString()
+        : "",
+      sport: activity.sport ?? "",
+      sub_sport: activity.sub_sport ?? activity.subSport ?? "",
+      distance_m: activity.distance_m ?? "",
+      ascent_m: activity.ascent_m ?? "",
+      descent_m: activity.descent_m ?? "",
+      elapsed_time_ms: activity.elapsed_time_ms ?? "",
+      moving_time_ms: activity.moving_time_ms ?? "",
+      avg_hr: activity.avg_hr ?? "",
+      max_hr: activity.max_hr ?? "",
+      equipment_name: activity.equipment_name ?? "",
+      custom_title: activity.custom_title ?? "",
+      description: activity.description ?? "",
+      personal_note: activity.personal_note ?? ""
+    };
+
+    lines.push(
+      fields.map((field) => cgweb084CsvCell(values[field])).join(",")
+    );
+  }
+
+  return lines.join("\r\n");
+}
+
+function cgweb084DownloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  a.href = url;
+  a.download = fileName;
+
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function cgweb084SetExportModeUi() {
+  const mode =
+    document.getElementById("cgweb084ExportMode")?.value ||
+    "month";
+
+  const month =
+    document.getElementById("cgweb084ExportMonth");
+
+  const year =
+    document.getElementById("cgweb084ExportYear");
+
+  if (month) month.classList.toggle("hidden", mode !== "month");
+  if (year) year.classList.toggle("hidden", mode !== "year");
+}
+
+async function cgweb084ExportPeriod() {
+  const button =
+    document.getElementById("cgweb084ExportButton");
+
+  const status =
+    document.getElementById("cgweb084ExportStatus");
+
+  if (!button || !status) return;
+
+  button.disabled = true;
+
+  try {
+    if (!currentUser) {
+      throw new Error("Connexion Firebase absente.");
+    }
+
+    if (!window.JSZip) {
+      throw new Error("Bibliothèque ZIP non chargée.");
+    }
+
+    const period = cgweb084PeriodBounds();
+
+    status.textContent =
+      "Lecture des activités " + period.label + "…";
+
+    const rows =
+      await cgweb084FetchPeriodActivities(period);
+
+    if (!rows.length) {
+      throw new Error(
+        "Aucune activité sur la période " + period.label + "."
+      );
+    }
+
+    const zip = new window.JSZip();
+
+    zip.file(
+      "activities.csv",
+      cgweb084ActivitiesCsv(rows)
+    );
+
+    zip.file(
+      "activities.json",
+      JSON.stringify(
+        rows.map(cgweb084CleanActivitySnapshot),
+        null,
+        2
+      )
+    );
+
+    const includeFit =
+      document.getElementById("cgweb084ExportFits")?.checked !== false;
+
+    const fitFolder =
+      includeFit ? zip.folder("FIT") : null;
+
+    const missingFits = [];
+    let fitCount = 0;
+
+    const fitApi = window.SPORT_FIT_EXPORT;
+
+    if (includeFit) {
+      if (!fitApi?.refresh || !fitApi?.downloadActivityBlob) {
+        throw new Error(
+          "API FIT Cloud d’export non disponible."
+        );
+      }
+
+      status.textContent =
+        "Lecture du Coffre FIT Cloud…";
+
+      await fitApi.refresh(true);
+
+      for (let i = 0; i < rows.length; i += 1) {
+        const activity = rows[i];
+        const key = String(activityKey(activity) || "").trim();
+
+        status.textContent =
+          "FIT " +
+          (i + 1) +
+          "/" +
+          rows.length +
+          " · activité #" +
+          key;
+
+        try {
+          const result =
+            await fitApi.downloadActivityBlob(key);
+
+          if (result?.blob && result?.fileName) {
+            fitFolder.file(
+              result.fileName,
+              result.blob
+            );
+
+            fitCount += 1;
+          } else {
+            missingFits.push(key);
+          }
+        } catch (error) {
+          missingFits.push(key);
+        }
+      }
+    }
+
+    const manifest = {
+      export_version: "PERIODZIP001",
+      exported_at: new Date().toISOString(),
+      period: {
+        mode: period.mode,
+        label: period.label,
+        start_ms: period.start,
+        end_ms: period.end
+      },
+      activity_count: rows.length,
+      fit_requested: includeFit,
+      fit_count: fitCount,
+      fit_missing_count: missingFits.length,
+      fit_missing_activity_ids: missingFits
+    };
+
+    zip.file(
+      "manifest.json",
+      JSON.stringify(manifest, null, 2)
+    );
+
+    status.textContent =
+      "Compression ZIP…";
+
+    const blob =
+      await zip.generateAsync({
+        type: "blob",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 }
+      });
+
+    const safeLabel =
+      period.label.replace(/[^0-9A-Za-z_-]+/g, "_");
+
+    const fileName =
+      "SPORT_" +
+      safeLabel +
+      "_FIT_CSV_JSON.zip";
+
+    cgweb084DownloadBlob(blob, fileName);
+
+    status.textContent =
+      rows.length +
+      " activité(s) · " +
+      fitCount +
+      " FIT · " +
+      missingFits.length +
+      " FIT manquant(s) · ZIP téléchargé.";
+  } catch (error) {
+    console.error("CGWEB084 export", error);
+
+    status.textContent =
+      "Export impossible : " +
+      (error?.message || error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function cgweb084InitPeriodExport() {
+  const mode =
+    document.getElementById("cgweb084ExportMode");
+
+  const month =
+    document.getElementById("cgweb084ExportMonth");
+
+  const year =
+    document.getElementById("cgweb084ExportYear");
+
+  const button =
+    document.getElementById("cgweb084ExportButton");
+
+  const now = new Date();
+
+  if (month && !month.value) {
+    month.value =
+      now.getFullYear() +
+      "-" +
+      String(now.getMonth() + 1).padStart(2, "0");
+  }
+
+  if (year && !year.value) {
+    year.value = String(now.getFullYear());
+  }
+
+  if (
+    mode &&
+    mode.dataset.cgweb084Wired !== "1"
+  ) {
+    mode.dataset.cgweb084Wired = "1";
+    mode.addEventListener("change", cgweb084SetExportModeUi);
+  }
+
+  if (
+    button &&
+    button.dataset.cgweb084Wired !== "1"
+  ) {
+    button.dataset.cgweb084Wired = "1";
+    button.addEventListener(
+      "click",
+      () => void cgweb084ExportPeriod()
+    );
+  }
+
+  cgweb084SetExportModeUi();
+}
+
+/* CGWEB084_PERIODZIP001_END */
+
+function cgweb084Init() {
+  cgweb084WireRevisionUi();
+  cgweb084InitPeriodExport();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb084Init,
+    { once: true }
+  );
+} else {
+  queueMicrotask(cgweb084Init);
+}
+
+
 function scheduleCurrentActivityAutosave() {
   const activity = currentDetailActivity();
   if (!activity) return;
@@ -16730,6 +17870,8 @@ async function persistActivityEdits(activity, title, description, note, generati
     }
     return;
   }
+
+  await cgweb084SaveActivityRevision(activity, "TEXT_AUTOSAVE", patch);
 
   setInteropStatus("Synchronisation automatique…", "pending");
 
@@ -16860,6 +18002,8 @@ async function saveImmediateActivityFields(partialPatch, successLabel) {
   });
   if (!changed) return;
 
+  await cgweb084SaveActivityRevision(activity, "IMMEDIATE_FIELDS", patch);
+
   setInteropStatus("Synchronisation automatique…", "pending");
   try {
     await commitWebMutation({
@@ -16916,6 +18060,8 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
   const rowKey = `${activityId}:${code}`;
   const now = Date.now();
   const next = Math.max(0, Math.min(99, Number(occurrences) || 0));
+
+  await cgweb084SaveActivityRevision(activity, "LANDMARK", { landmark_code: code, occurrences: next });
 
   setInteropStatus(next > 0 ? "Repère en cours d’envoi…" : "Suppression en cours…", "pending");
 

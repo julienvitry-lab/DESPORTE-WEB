@@ -4921,6 +4921,163 @@ body.ux-activities-page main{
 }
 /* Charge inchangée */
 </style>
+
+<style id="cgweb084-css">
+/* CGWEB084 */
+
+/* SAFEEDIT001 */
+#detailView .detail-edit-panel{
+  display:block!important;
+}
+
+.cgweb084-revision-head-actions{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+
+.cgweb084-revision-list{
+  display:grid;
+  gap:7px;
+  margin-top:9px;
+}
+
+.cgweb084-revision-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  padding:9px 10px;
+  border:1px solid rgba(190,255,55,.14);
+  border-radius:12px;
+  background:rgba(255,255,255,.018);
+}
+
+.cgweb084-revision-row > div{
+  min-width:0;
+  display:grid;
+  gap:3px;
+}
+
+.cgweb084-revision-row span{
+  color:var(--muted,#9ca89f);
+  font-size:.78rem;
+}
+
+/* MAPTHUMB001 */
+.cgweb084-dashboard-map-row{
+  grid-template-columns:minmax(0,1fr) 104px auto!important;
+  align-items:center!important;
+}
+
+.cgweb084-map-thumb{
+  width:96px;
+  height:42px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  pointer-events:none;
+  opacity:.9;
+}
+
+.cgweb084-map-thumb.no-route{
+  opacity:0;
+}
+
+.cgweb084-map-thumb svg{
+  width:96px;
+  height:42px;
+  overflow:visible;
+}
+
+.cgweb084-thumb-grid{
+  fill:none;
+  stroke:rgba(255,255,255,.05);
+  stroke-width:.6;
+}
+
+.cgweb084-thumb-route{
+  fill:none;
+  stroke:var(--green,#9cff22);
+  stroke-width:2;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.cgweb084-thumb-start{
+  fill:#ffffff;
+  stroke:rgba(0,0,0,.65);
+  stroke-width:.8;
+}
+
+.cgweb084-thumb-finish{
+  fill:var(--green,#9cff22);
+  stroke:rgba(0,0,0,.65);
+  stroke-width:.8;
+}
+
+.cgweb084-map-thumb-loading{
+  color:var(--muted,#9ca89f);
+}
+
+/* PERIODZIP001 */
+.cgweb084-period-export{
+  display:grid;
+  gap:10px;
+  margin:14px 0;
+  padding:14px;
+  border:1px solid rgba(190,255,55,.16);
+  border-radius:14px;
+  background:rgba(156,255,34,.025);
+}
+
+.cgweb084-period-export-head{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+}
+
+.cgweb084-period-export-head > div{
+  display:grid;
+  gap:3px;
+}
+
+.cgweb084-period-export-controls{
+  display:grid;
+  grid-template-columns:150px minmax(150px,210px) minmax(110px,150px) minmax(190px,1fr) auto;
+  gap:9px;
+  align-items:end;
+}
+
+.cgweb084-period-export-controls label{
+  display:grid;
+  gap:5px;
+}
+
+.cgweb084-export-fit-check{
+  grid-template-columns:auto 1fr!important;
+  align-items:center!important;
+  align-self:center;
+}
+
+@media(max-width:900px){
+  .cgweb084-period-export-controls{
+    grid-template-columns:1fr 1fr;
+  }
+
+  .cgweb084-dashboard-map-row{
+    grid-template-columns:minmax(0,1fr) 76px auto!important;
+  }
+
+  .cgweb084-map-thumb,
+  .cgweb084-map-thumb svg{
+    width:68px;
+    height:34px;
+  }
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5303,7 +5460,43 @@ body.ux-activities-page main{
           <div id="webFilesStatus" class="muted">Chargement du coffre…</div>
           <div id="webFilesList" class="web-files-list"></div>
 
-                    <!-- WEB074_FITCLOUD001_HTML_START -->
+
+<!-- CGWEB084_PERIODZIP001_HTML_START -->
+<section id="cgweb084PeriodExport" class="cgweb084-period-export">
+  <div class="cgweb084-period-export-head">
+    <div>
+      <strong>Export période</strong>
+      <span class="muted">ZIP avec CSV + JSON + FIT Cloud disponibles.</span>
+    </div>
+    <span class="pill neutral">CGWEB084</span>
+  </div>
+  <div class="cgweb084-period-export-controls">
+    <label>
+      <span>Période</span>
+      <select id="cgweb084ExportMode">
+        <option value="month">Mois</option>
+        <option value="year">Année</option>
+      </select>
+    </label>
+    <label>
+      <span>Mois</span>
+      <input id="cgweb084ExportMonth" type="month">
+    </label>
+    <label>
+      <span>Année</span>
+      <input id="cgweb084ExportYear" type="number" min="2000" max="2100" step="1">
+    </label>
+    <label class="cgweb084-export-fit-check">
+      <input id="cgweb084ExportFits" type="checkbox" checked>
+      <span>Inclure les FIT Cloud</span>
+    </label>
+    <button id="cgweb084ExportButton" class="primary compact" type="button">Exporter ZIP</button>
+  </div>
+  <div id="cgweb084ExportStatus" class="muted">Choisissez un mois ou une année.</div>
+</section>
+<!-- CGWEB084_PERIODZIP001_HTML_END -->
+
+<!-- WEB074_FITCLOUD001_HTML_START -->
           <section class="web-fit-cloud-panel">
             <div class="web-fit-cloud-head">
               <div>
@@ -6390,7 +6583,26 @@ body.ux-activities-page main{
           <div id="detailLandmarks" class="landmark-strip"></div>
         </section>
 
-        <section id="detailRecordsSection" class="detail-section panel hidden">
+
+<!-- CGWEB084_SAFEEDIT001_HTML_START -->
+<section id="cgweb084RevisionSection" class="detail-section panel cgweb084-revision-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">CGWEB084 · SAFEEDIT001</p>
+      <h2>Historique des modifications</h2>
+      <p class="muted">Chaque modification est précédée d’un instantané. Restaurer une version sauvegarde d’abord l’état actuel.</p>
+    </div>
+    <div class="cgweb084-revision-head-actions">
+      <span id="cgweb084RevisionMeta" class="pill neutral">0 version</span>
+      <button id="cgweb084RevisionRefresh" class="secondary compact" type="button">Actualiser</button>
+    </div>
+  </div>
+  <div id="cgweb084RevisionStatus" class="muted">Aucun historique chargé.</div>
+  <div id="cgweb084RevisionList" class="cgweb084-revision-list"></div>
+</section>
+<!-- CGWEB084_SAFEEDIT001_HTML_END -->
+
+<section id="detailRecordsSection" class="detail-section panel hidden">
           <div class="section-heading">
             <p class="eyebrow">RECORD</p>
             <h2>Records liés à cette activité</h2>
@@ -6413,8 +6625,9 @@ body.ux-activities-page main{
     SPORT Web · WEB018 · interopérabilité contrôlée Firestore
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB083-FIX11-FIX1-HEADEROFFSET002"></script>
+  <script type="module" src="./app.js?v=CGWEB084-SAFEEDIT-MAPTHUMB-PERIODZIP001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
@@ -6423,6 +6636,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB083-FIX3-ACTIVITYDIRECTORYUX003"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB084-PERIODZIP001"></script>
 </body>
 </html>

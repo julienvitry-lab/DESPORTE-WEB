@@ -1115,6 +1115,60 @@ function v079RenderFitAuthority() {
 }
 /* CGWEB079_FITCUTOVER001_END */
 
+
+/* CGWEB084_PERIODZIP001_FIT_START */
+
+async function cgweb084DownloadActivityBlob(activityId) {
+  const key = v081ActivityKey(activityId);
+
+  if (!key) {
+    throw new Error("Identifiant activité absent.");
+  }
+
+  await v081EnsureQuickRows(false);
+
+  let row = v081PreferredRow(key);
+
+  if (!row) {
+    await v081EnsureQuickRows(true);
+    row = v081PreferredRow(key);
+  }
+
+  if (!row) {
+    throw new Error(
+      "Aucun FIT Cloud associé à l’activité #" + key
+    );
+  }
+
+  const blob = await request(
+    "download",
+    {
+      query: { sha256: row.sha256 },
+      binaryResponse: true
+    }
+  );
+
+  return {
+    blob,
+    fileName:
+      String(row.file_name || key + ".fit"),
+    row: { ...row }
+  };
+}
+
+window.SPORT_FIT_EXPORT = Object.freeze({
+  version: "PERIODZIP001",
+  refresh: async (force = true) =>
+    v081EnsureQuickRows(Boolean(force)),
+  preferredRow: (activityId) =>
+    v081PreferredRow(activityId),
+  downloadActivityBlob:
+    cgweb084DownloadActivityBlob
+});
+
+/* CGWEB084_PERIODZIP001_FIT_END */
+
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
