@@ -8120,6 +8120,7 @@ function renderDetail(activity) {
   web059InstallDetailSticky();
   web059RefreshStickyTop();
   queueMicrotask(() => void cgweb084RenderRevisionHistory(activity));
+  queueMicrotask(() => void cgweb085aRenderFitEditor(activity));
 }
 
 
@@ -16793,7 +16794,8 @@ function cgweb084RevisionReasonLabel(reason) {
     TEXT_AUTOSAVE: "Titre / description / note",
     IMMEDIATE_FIELDS: "Métadonnées personnelles",
     LANDMARK: "Repères",
-    RESTORE_GUARD: "Sauvegarde avant restauration"
+    RESTORE_GUARD: "Sauvegarde avant restauration",
+    FIT_EDITOR: "Modification du fichier FIT"
   };
 
   return labels[String(reason || "")] || String(reason || "Modification");
@@ -17780,9 +17782,282 @@ function cgweb084InitPeriodExport() {
 
 /* CGWEB084_PERIODZIP001_END */
 
+
+/* CGWEB085A_FITEDITOR001_APP_START */
+
+function cgweb085aDateTimeLocal(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n)) return "";
+
+  const date = new Date(n);
+  const pad = (value) => String(value).padStart(2, "0");
+
+  return (
+    date.getFullYear() +
+    "-" +
+    pad(date.getMonth() + 1) +
+    "-" +
+    pad(date.getDate()) +
+    "T" +
+    pad(date.getHours()) +
+    ":" +
+    pad(date.getMinutes()) +
+    ":" +
+    pad(date.getSeconds())
+  );
+}
+
+async function cgweb085aRenderFitEditor(activity) {
+  const section = document.getElementById("cgweb085aFitEditorSection");
+  if (!section || !activity) return;
+
+  const start = document.getElementById("cgweb085aFitStart");
+  const synthetic = document.getElementById("cgweb085aSyntheticHr");
+  const avg = document.getElementById("cgweb085aAvgHr");
+  const max = document.getElementById("cgweb085aMaxHr");
+  const status = document.getElementById("cgweb085aStatus");
+  const meta = document.getElementById("cgweb085aMeta");
+  const apply = document.getElementById("cgweb085aApply");
+
+  if (start) start.value = cgweb085aDateTimeLocal(activity.start_time_ms);
+  if (synthetic) synthetic.checked = false;
+
+  if (avg) {
+    avg.value = Number.isFinite(Number(activity.avg_hr))
+      ? String(Math.round(Number(activity.avg_hr)))
+      : "";
+  }
+
+  if (max) {
+    max.value = Number.isFinite(Number(activity.max_hr))
+      ? String(Math.round(Number(activity.max_hr)))
+      : "";
+  }
+
+  const api = window.SPORT_FIT_EDITOR;
+
+  if (!api?.refresh) {
+    if (status) status.textContent = "FITEDITOR001 indisponible.";
+    if (apply) apply.disabled = true;
+    return;
+  }
+
+  try {
+    await api.refresh();
+
+    const key = String(activityKey(activity) || "");
+    const current = api.currentRow(key);
+    const versions = api.versions(key) || [];
+
+    if (meta) {
+      meta.textContent = current
+        ? (
+            (current.is_active_version ? "ACTIVE · " : "") +
+            "v" +
+            Number(current.version_index || 1) +
+            " · " +
+            versions.length +
+            " version(s)"
+          )
+        : "Aucun FIT Cloud";
+    }
+
+    if (status) {
+      status.textContent = current
+        ? "FIT courant : " + (current.file_name || current.sha256)
+        : "Aucun FIT Cloud associé : édition impossible.";
+    }
+
+    if (apply) apply.disabled = !current;
+  } catch (error) {
+    if (status) status.textContent = "FITEDITOR001 : " + (error?.message || error);
+    if (apply) apply.disabled = true;
+  }
+}
+
+function cgweb085aSyncHrInputs() {
+  const enabled =
+    document.getElementById("cgweb085aSyntheticHr")?.checked === true;
+
+  for (const id of ["cgweb085aAvgHr", "cgweb085aMaxHr"]) {
+    const input = document.getElementById(id);
+    if (input) input.disabled = !enabled;
+  }
+}
+
+async function cgweb085aApplyFitEditor() {
+  const activity = currentDetailActivity();
+  if (!activity) throw new Error("Activité courante introuvable.");
+
+  const startInput = document.getElementById("cgweb085aFitStart");
+  const synthetic =
+    document.getElementById("cgweb085aSyntheticHr")?.checked === true;
+
+  const newStart = new Date(String(startInput?.value || "")).getTime();
+  const oldStart = Number(activity.start_time_ms);
+
+  if (!Number.isFinite(newStart) || !Number.isFinite(oldStart)) {
+    throw new Error("Date/heure de départ invalide.");
+  }
+
+  const offsetSeconds = Math.round((newStart - oldStart) / 1000);
+
+  let avgHr = null;
+  let maxHr = null;
+
+  if (synthetic) {
+    avgHr = Number(document.getElementById("cgweb085aAvgHr")?.value);
+    maxHr = Number(document.getElementById("cgweb085aMaxHr")?.value);
+
+    if (!Number.isFinite(avgHr) || avgHr < 40 || avgHr > 220) {
+      throw new Error("FC moyenne invalide.");
+    }
+
+    if (!Number.isFinite(maxHr) || maxHr < avgHr || maxHr > 240) {
+      throw new Error("FC maximale invalide.");
+    }
+  }
+
+  if (offsetSeconds === 0 && !synthetic) {
+    throw new Error("Aucune modification FIT demandée.");
+  }
+
+  const oldLabel = new Date(oldStart).toLocaleString("fr-FR");
+  const newLabel = new Date(newStart).toLocaleString("fr-FR");
+
+  const confirmation = [
+    "Activité #" + activityKey(activity),
+    "",
+    "Départ : " + oldLabel,
+    "Nouveau : " + newLabel,
+    "Décalage : " + (offsetSeconds >= 0 ? "+" : "") + offsetSeconds + " s",
+    synthetic
+      ? (
+          "FC synthétique : " +
+          Math.round(avgHr) +
+          " / " +
+          Math.round(maxHr) +
+          " bpm"
+        )
+      : "FC : données source conservées",
+    "",
+    "Le FIT actuel sera conservé comme version antérieure.",
+    "La nouvelle version deviendra ACTIVE."
+  ].join("\n");
+
+  if (!window.confirm(confirmation)) return;
+
+  const button = document.getElementById("cgweb085aApply");
+  const status = document.getElementById("cgweb085aStatus");
+
+  if (button) button.disabled = true;
+
+  try {
+    if (status) status.textContent = "Création de la nouvelle version FIT…";
+
+    await cgweb084SaveActivityRevision(
+      activity,
+      "FIT_EDITOR",
+      {
+        start_offset_s: offsetSeconds,
+        synthetic_hr: synthetic,
+        avg_hr: synthetic ? avgHr : null,
+        max_hr: synthetic ? maxHr : null
+      }
+    );
+
+    const api = window.SPORT_FIT_EDITOR;
+    if (!api?.createActiveVersion) {
+      throw new Error("API SPORT_FIT_EDITOR absente.");
+    }
+
+    const result = await api.createActiveVersion(
+      activityKey(activity),
+      {
+        start_offset_s: offsetSeconds,
+        avg_hr_override: synthetic ? avgHr : null,
+        max_hr_override: synthetic ? maxHr : null
+      }
+    );
+
+    const patch = result?.activity_patch || {};
+
+    if (Object.keys(patch).length) {
+      const key = String(activityKey(activity) || "");
+
+      const materialized = {
+        ...activity,
+        ...patch
+      };
+
+      delete materialized.__docId;
+
+      await commitWebMutation({
+        table: "activities",
+        rowKey: key,
+        operation: "UPSERT",
+        row: materialized,
+        materializedCollection: "activities",
+        materializedData: materialized
+      });
+
+      Object.assign(activity, patch);
+    }
+
+    window.SPORT_FIT_QUICKDOWNLOAD?.invalidate?.();
+
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+    renderDetail(activity);
+    scheduleDashboardRefresh();
+
+    if (status) {
+      status.textContent =
+        "FITEDITOR001 OK · v" +
+        (result?.version_index || "?") +
+        " ACTIVE · " +
+        (result?.file?.file_name || "FIT canonique") +
+        (synthetic ? " · FC SYNTHETIC" : "");
+    }
+
+    setMessage(
+      "CGWEB085A · nouvelle version FIT active créée ; version précédente conservée.",
+      "success"
+    );
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function cgweb085aWireFitEditor() {
+  const apply = document.getElementById("cgweb085aApply");
+  const synthetic = document.getElementById("cgweb085aSyntheticHr");
+
+  if (apply && apply.dataset.cgweb085aWired !== "1") {
+    apply.dataset.cgweb085aWired = "1";
+    apply.addEventListener("click", () => {
+      void cgweb085aApplyFitEditor().catch((error) => {
+        const status = document.getElementById("cgweb085aStatus");
+        if (status) status.textContent = "FITEDITOR001 : " + (error?.message || error);
+        console.error("FITEDITOR001", error);
+      });
+    });
+  }
+
+  if (synthetic && synthetic.dataset.cgweb085aWired !== "1") {
+    synthetic.dataset.cgweb085aWired = "1";
+    synthetic.addEventListener("change", cgweb085aSyncHrInputs);
+  }
+
+  cgweb085aSyncHrInputs();
+}
+
+/* CGWEB085A_FITEDITOR001_APP_END */
+
 function cgweb084Init() {
   cgweb084WireRevisionUi();
   cgweb084InitPeriodExport();
+  cgweb085aWireFitEditor();
 }
 
 if (document.readyState === "loading") {

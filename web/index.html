@@ -5078,6 +5078,24 @@ body.ux-activities-page main{
 }
 </style>
 
+
+<style id="cgweb085a-css">
+.cgweb085a-fit-editor{display:grid;gap:12px}
+.cgweb085a-fit-grid{
+  display:grid;
+  grid-template-columns:minmax(230px,1.3fr) minmax(235px,1.2fr) minmax(120px,.7fr) minmax(120px,.7fr) auto;
+  gap:10px;
+  align-items:end
+}
+.cgweb085a-fit-grid label{display:grid;gap:5px}
+.cgweb085a-check{grid-template-columns:auto 1fr!important;align-items:center!important;align-self:center}
+.cgweb085a-warning{font-size:.78rem}
+#cgweb085aMeta{white-space:nowrap}
+@media(max-width:1000px){
+  .cgweb085a-fit-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -6602,6 +6620,47 @@ body.ux-activities-page main{
 </section>
 <!-- CGWEB084_SAFEEDIT001_HTML_END -->
 
+<!-- CGWEB085A_FITEDITOR001_HTML_START -->
+<section id="cgweb085aFitEditorSection" class="detail-section panel cgweb085a-fit-editor">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">CGWEB085A · FITEDITOR001</p>
+      <h2>Modifier le fichier FIT</h2>
+      <p class="muted">Une nouvelle version canonique devient active ; la version précédente reste conservée.</p>
+    </div>
+    <span id="cgweb085aMeta" class="pill neutral">FIT</span>
+  </div>
+
+  <div class="cgweb085a-fit-grid">
+    <label>
+      <span>Date et heure de départ</span>
+      <input id="cgweb085aFitStart" type="datetime-local" step="1">
+    </label>
+
+    <label class="cgweb085a-check">
+      <input id="cgweb085aSyntheticHr" type="checkbox">
+      <span>Ajouter une FC synthétique cohérente</span>
+    </label>
+
+    <label>
+      <span>FC moyenne cible</span>
+      <input id="cgweb085aAvgHr" type="number" min="40" max="220" step="1" placeholder="bpm" disabled>
+    </label>
+
+    <label>
+      <span>FC maximale cible</span>
+      <input id="cgweb085aMaxHr" type="number" min="40" max="240" step="1" placeholder="bpm" disabled>
+    </label>
+
+    <button id="cgweb085aApply" class="primary" type="button">Créer et activer la version</button>
+  </div>
+
+  <div id="cgweb085aStatus" class="muted">Lecture du FIT courant…</div>
+  <p class="muted cgweb085a-warning">Toute FC générée est marquée SYNTHETIC / FITEDITOR001. Le FIT parent n’est jamais supprimé.</p>
+</section>
+<!-- CGWEB085A_FITEDITOR001_HTML_END -->
+
+
 <section id="detailRecordsSection" class="detail-section panel hidden">
           <div class="section-heading">
             <p class="eyebrow">RECORD</p>
@@ -6627,7 +6686,7 @@ body.ux-activities-page main{
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB084-SAFEEDIT-MAPTHUMB-PERIODZIP001"></script>
+  <script type="module" src="./app.js?v=CGWEB085A-FITEDITOR001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
@@ -6636,6 +6695,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB084-PERIODZIP001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB085A-FITEDITOR001"></script>
 </body>
 </html>

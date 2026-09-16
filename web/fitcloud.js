@@ -486,12 +486,25 @@ function v081ActivityKey(value) {
 function v081RootPreference(row) {
   const version = Number(row?.version_index || 1);
   const parent = String(row?.parent_sha256 || "").trim();
-  const edited = String(row?.version_kind || "").toUpperCase() === "EDITED_CANONICAL";
-  const root = !parent && (!Number.isFinite(version) || version <= 1) && !edited;
+  const edited =
+    String(row?.version_kind || "").toUpperCase() === "EDITED_CANONICAL";
+
+  const root =
+    !parent &&
+    (!Number.isFinite(version) || version <= 1) &&
+    !edited;
+
+  const active = row?.is_active_version === true;
+
   return {
+    active: active ? 0 : 1,
     root: root ? 0 : 1,
     version: Number.isFinite(version) ? version : 999999,
-    uploaded: Number(row?.uploaded_at_ms || row?.first_uploaded_at_ms || 0)
+    uploaded: Number(
+      row?.uploaded_at_ms ||
+      row?.first_uploaded_at_ms ||
+      0
+    )
   };
 }
 
@@ -504,7 +517,7 @@ function v081RowsForActivity(activityId) {
     .sort((a, b) => {
       const pa = v081RootPreference(a);
       const pb = v081RootPreference(b);
-      return pa.root - pb.root || pa.version - pb.version || pa.uploaded - pb.uploaded;
+      return pa.active - pb.active || pa.root - pb.root || pa.version - pb.version || pb.uploaded - pa.uploaded;
     });
 }
 
@@ -581,6 +594,144 @@ queueMicrotask(() => {
   window.dispatchEvent(new CustomEvent("sport-fit-quick-ready"));
 });
 /* CGWEB081_FITQUICKDOWNLOAD001_CLOUD_END */
+
+/* CGWEB085A_FIX2_FITCLOUD_API_START */
+
+async function cgweb085aRefreshFitRows(force = true) {
+  if (force) v081QuickLoadedAt = 0;
+  return v081EnsureQuickRows(Boolean(force));
+}
+
+async function cgweb085aDownloadRowBlob(row) {
+  const sha = String(row?.sha256 || "").trim();
+
+  if (!sha) {
+    throw new Error("SHA-256 FIT absent.");
+  }
+
+  const blob = await request(
+    "download",
+    {
+      query: {sha256: sha},
+      binaryResponse: true
+    }
+  );
+
+  return {
+    blob,
+    fileName: String(row?.file_name || sha + ".fit"),
+    row
+  };
+}
+
+async function cgweb085aAllFitRows() {
+  const payload = await request(
+    "list_all",
+    {
+      query: {limit: 10000}
+    }
+  );
+
+  return Array.isArray(payload?.files)
+    ? payload.files
+    : [];
+}
+
+async function cgweb085aCreateActiveVersion(
+  activityId,
+  options = {}
+) {
+  const key = v081ActivityKey(activityId);
+
+  if (!key) {
+    throw new Error("Identifiant activité absent.");
+  }
+
+  await v081EnsureQuickRows(false);
+
+  let parent = v081PreferredRow(key);
+
+  if (!parent) {
+    await v081EnsureQuickRows(true);
+    parent = v081PreferredRow(key);
+  }
+
+  if (!parent) {
+    throw new Error(
+      "FITEDITOR001 : aucun FIT Cloud source pour cette activité."
+    );
+  }
+
+  const result = await request(
+    "version",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        activity_id: key,
+        parent_sha256: String(parent.sha256 || ""),
+        start_offset_s: Number(options.start_offset_s || 0),
+        avg_hr_override: options.avg_hr_override ?? null,
+        max_hr_override: options.max_hr_override ?? null,
+        fit_editor_mode: "FITEDITOR001",
+        activate_version: true,
+        apply_activity_changes: true
+      })
+    }
+  );
+
+  await v080MaybeAutoBackupResult(result);
+  await renderCloud();
+  await v081EnsureQuickRows(true);
+
+  return result;
+}
+
+window.SPORT_FIT_EDITOR = Object.freeze({
+  version: "FITEDITOR001",
+  refresh: () => cgweb085aRefreshFitRows(true),
+  currentRow: (activityId) => v081PreferredRow(activityId),
+  versions: (activityId) => v081RowsForActivity(activityId),
+  createActiveVersion: cgweb085aCreateActiveVersion
+});
+
+/*
+ * Infrastructure utilisée ensuite par CGWEB085B.
+ * allRows() ne sera appelée qu'après ajout de l'action list_all.
+ */
+window.SPORT_FIT_EXPORT = Object.freeze({
+  version: "FITEXPORT_API001",
+  refresh: () => cgweb085aRefreshFitRows(true),
+  preferredRow: (activityId) => v081PreferredRow(activityId),
+  rowsForActivity: (activityId) => v081RowsForActivity(activityId),
+  allRows: cgweb085aAllFitRows,
+  downloadRowBlob: cgweb085aDownloadRowBlob,
+  downloadActivityBlob: async (activityId) => {
+    const key = v081ActivityKey(activityId);
+
+    await v081EnsureQuickRows(false);
+
+    let row = v081PreferredRow(key);
+
+    if (!row) {
+      await v081EnsureQuickRows(true);
+      row = v081PreferredRow(key);
+    }
+
+    if (!row) {
+      throw new Error(
+        "Aucun FIT Cloud associé à cette activité."
+      );
+    }
+
+    return cgweb085aDownloadRowBlob(row);
+  }
+});
+
+/* CGWEB085A_FIX1_FITCLOUD_API_END */
+
 
 function renderList() {
   const host = node("webFitCloudList");

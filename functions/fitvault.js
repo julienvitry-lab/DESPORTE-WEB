@@ -599,15 +599,8 @@ function createFitVault() {
       payload.avg_hr = avgHr;
       payload.max_hr = maxHr;
 
-      if (avgHr != null && maxHr != null && payload.points.length) {
-        const spread = Math.max(0, maxHr - avgHr);
-        payload.points = payload.points.map((point, index, rows) => {
-          const progress = rows.length > 1 ? index / (rows.length - 1) : 0.5;
-          const wave = Math.pow(Math.sin(Math.PI * progress), 4);
-          const low = Math.max(20, avgHr - Math.round(spread * 0.30));
-          const simulated = Math.round(low + (maxHr - low) * wave);
-          return {...point, heart_rate: simulated};
-        });
+      if (avgHr != null && maxHr != null) {
+        payload.points = v085aSyntheticHeartRate(payload, source, avgHr, maxHr);
       }
     }
 
@@ -645,6 +638,253 @@ function createFitVault() {
     const suffix = String(Math.max(2, Number(versionIndex) || 2)).padStart(2, "0");
     return safe.replace(/(?:_\d{2})?\.fit$/i, `_${suffix}.fit`);
   }
+
+  /* CGWEB085A_FITEDITOR001_BACKEND_START */
+
+  function v085aInterpolatePoint(a, b, ratio) {
+    const out = {};
+    for (const key of [
+      "lat",
+      "lon",
+      "altitude_m",
+      "distance_m",
+      "cadence",
+      "power",
+      "speed_mps"
+    ]) {
+      const x = v078Finite(a?.[key]);
+      const y = v078Finite(b?.[key]);
+      if (x != null && y != null) out[key] = x + (y - x) * ratio;
+      else if (x != null) out[key] = x;
+      else if (y != null) out[key] = y;
+    }
+    return out;
+  }
+
+  function v085aDensifyPoints(payload, source) {
+    const points = Array.isArray(payload?.points)
+      ? payload.points.map((point) => ({...point}))
+      : [];
+
+    if (
+      points.length >= 12 ||
+      !Number.isFinite(Number(source?.durationMs)) ||
+      Number(source.durationMs) <= 0
+    ) {
+      return points;
+    }
+
+    const durationMs = Number(source.durationMs);
+    const count = Math.max(
+      12,
+      Math.min(900, Math.round(durationMs / 15000) + 1)
+    );
+
+    const first = points[0] || {
+      timestamp_ms: payload.start_time_ms,
+      distance_m: 0
+    };
+
+    const last = points[points.length - 1] || {
+      timestamp_ms: payload.start_time_ms + durationMs,
+      distance_m: Number(payload.distance_m || 0)
+    };
+
+    const out = [];
+
+    for (let i = 0; i < count; i += 1) {
+      const ratio = count > 1 ? i / (count - 1) : 0;
+      const interpolated = v085aInterpolatePoint(first, last, ratio);
+
+      out.push({
+        ...interpolated,
+        timestamp_ms: Math.round(payload.start_time_ms + durationMs * ratio),
+        distance_m: Number.isFinite(Number(payload.distance_m))
+          ? Number(payload.distance_m) * ratio
+          : Number(interpolated.distance_m || 0)
+      });
+    }
+
+    return out;
+  }
+
+  function v085aSyntheticHeartRate(payload, source, average, maximum) {
+    const avg = Math.max(40, Math.min(240, Math.round(Number(average))));
+    const max = Math.max(avg, Math.min(260, Math.round(Number(maximum))));
+    let points = v085aDensifyPoints(payload, source);
+
+    if (!points.length) return points;
+
+    const spread = Math.max(8, max - avg);
+
+    const speeds = points
+      .map((point) => v078Finite(point.speed_mps))
+      .filter((value) => value != null && value >= 0);
+
+    const powers = points
+      .map((point) => v078Finite(point.power))
+      .filter((value) => value != null && value >= 0);
+
+    const maxSpeed = speeds.length ? Math.max(...speeds) : 0;
+    const maxPower = powers.length ? Math.max(...powers) : 0;
+
+    const raw = [];
+    const efforts = [];
+
+    for (let i = 0; i < points.length; i += 1) {
+      const point = points[i];
+      const previous = points[Math.max(0, i - 1)];
+      const progress = points.length > 1 ? i / (points.length - 1) : 0.5;
+
+      const distanceDelta = Math.max(
+        0,
+        Number(point.distance_m || 0) - Number(previous.distance_m || 0)
+      );
+
+      const altitudeDelta =
+        Number(point.altitude_m || 0) - Number(previous.altitude_m || 0);
+
+      const grade = distanceDelta >= 10
+        ? Math.max(-0.20, Math.min(0.30, altitudeDelta / distanceDelta))
+        : 0;
+
+      const speed = v078Finite(point.speed_mps);
+      const power = v078Finite(point.power);
+
+      const speedEffort =
+        maxSpeed > 0 && speed != null ? speed / maxSpeed : 0.50;
+
+      const powerEffort =
+        maxPower > 0 && power != null ? power / maxPower : speedEffort;
+
+      const warmup = Math.min(1, progress / 0.10);
+      const drift = progress * 0.14;
+      const climb = Math.max(0, grade) * 2.0;
+      const wave =
+        0.045 * Math.sin(progress * Math.PI * 8) +
+        0.020 * Math.sin(progress * Math.PI * 17);
+
+      const effort =
+        (0.54 * speedEffort + 0.22 * powerEffort + climb + drift + wave) *
+        (0.62 + 0.38 * warmup);
+
+      efforts.push(effort);
+      raw.push(avg + (effort - 0.50) * spread * 0.95);
+    }
+
+    const smooth = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      smooth.push(i === 0 ? raw[i] : smooth[i - 1] * 0.80 + raw[i] * 0.20);
+    }
+
+    const mean = smooth.reduce((sum, value) => sum + value, 0) / smooth.length;
+    const floor = Math.max(35, avg - Math.max(12, Math.round(spread * 0.70)));
+
+    let values = smooth.map((value) =>
+      Math.max(floor, Math.min(max, Math.round(value + (avg - mean))))
+    );
+
+    let peakIndex = 0;
+    for (let i = 1; i < efforts.length; i += 1) {
+      if (efforts[i] > efforts[peakIndex]) peakIndex = i;
+    }
+
+    values[peakIndex] = max;
+
+    for (let pass = 0; pass < 3; pass += 1) {
+      const currentAvg =
+        values.reduce((sum, value) => sum + value, 0) / values.length;
+      const delta = avg - currentAvg;
+
+      values = values.map((value, index) => {
+        if (index === peakIndex) return max;
+        return Math.max(floor, Math.min(max - 1, Math.round(value + delta)));
+      });
+
+      values[peakIndex] = max;
+    }
+
+    return points.map((point, index) => ({
+      ...point,
+      heart_rate: values[index]
+    }));
+  }
+
+  async function v085aActivateVersion(
+    uid,
+    activityId,
+    targetRef,
+    fileRow,
+    activity,
+    edited
+  ) {
+    const now = Date.now();
+
+    const family = await files(uid)
+      .where("activity_id", "==", String(activityId))
+      .limit(500)
+      .get();
+
+    const batch = db.batch();
+
+    for (const docSnap of family.docs) {
+      batch.set(
+        docSnap.ref,
+        {
+          is_active_version: docSnap.id === fileRow.sha256,
+          active_changed_at_ms: now
+        },
+        {merge: true}
+      );
+    }
+
+    batch.set(
+      targetRef,
+      {
+        is_active_version: true,
+        active_changed_at_ms: now
+      },
+      {merge: true}
+    );
+
+    const patch = {
+      fit_active_sha256: fileRow.sha256,
+      fit_active_version_index: Number(fileRow.version_index || 1),
+      fit_active_file_name: fileRow.file_name || null,
+      fit_editor_version: "FITEDITOR001",
+      fit_updated_at_ms: now
+    };
+
+    const offsetMs =
+      Math.round(Number(edited?.edits?.start_offset_s || 0) * 1000);
+
+    if (offsetMs !== 0) {
+      patch.start_time_ms = Number(edited.payload.start_time_ms);
+
+      const oldEnd = v078Finite(activity?.end_time_ms);
+      if (oldEnd != null) patch.end_time_ms = oldEnd + offsetMs;
+    }
+
+    if (String(edited?.edits?.heart_rate_mode || "") === "SIMULATED") {
+      patch.avg_hr = edited.edits.avg_hr_override;
+      patch.max_hr = edited.edits.max_hr_override;
+      patch.heart_rate_source = "SYNTHETIC";
+      patch.heart_rate_source_version = "FITEDITOR001";
+      patch.heart_rate_profile = "SYNTHETIC_COHERENT_V1";
+    }
+
+    batch.set(
+      db.doc(ROOT + "/" + uid + "/activities/" + activityId),
+      patch,
+      {merge: true}
+    );
+
+    await batch.commit();
+    return patch;
+  }
+
+  /* CGWEB085A_FITEDITOR001_BACKEND_END */
+
   /* CGWEB078_FITVERSION001_HELPERS_END */
 
   return onRequest(
@@ -916,6 +1156,8 @@ function createFitVault() {
           }
           if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
 
+          const editorMode = String(body.fit_editor_mode || "").toUpperCase() === "FITEDITOR001";
+
           const activityId = String(body.activity_id || "").trim();
           if (!activityId || activityId.includes("/")) {
             return res.status(400).json({error: "activity_id réel requis."});
@@ -1136,10 +1378,12 @@ function createFitVault() {
           }
 
           const versionIndex = await v078NextVersionIndex(uid, activityId);
-          const fileName = v078VersionedName(
-            generated.fileName || parent?.file_name || "activity.fit",
-            versionIndex
-          );
+          const fileName = editorMode
+            ? safeName(generated.fileName || parent?.file_name || "activity.fit")
+            : v078VersionedName(
+                generated.fileName || parent?.file_name || "activity.fit",
+                versionIndex
+              );
           const hash = sha256(generated.buffer);
 
           if (parentHash && hash === parentHash) {
@@ -1158,22 +1402,47 @@ function createFitVault() {
                 error: "FITVERSION001 : ce contenu existe déjà dans le coffre sous un autre lien ; aucun manifeste modifié."
               });
             }
+            let activityPatch = null;
+
+            if (editorMode && body.activate_version === true) {
+              activityPatch = await v085aActivateVersion(
+                uid,
+                activityId,
+                ref,
+                {
+                  ...previous,
+                  sha256: previous.sha256 || hash,
+                  version_index: Number(previous.version_index || versionIndex),
+                  file_name: previous.file_name || fileName
+                },
+                activity,
+                edited
+              );
+            }
+
             return res.json({
               ok: true,
-              service: "FITVERSION001",
+              service: editorMode ? "FITEDITOR001" : "FITVERSION001",
               activity_id: activityId,
               version_index: Number(previous.version_index || versionIndex),
               parent_sha256: previous.parent_sha256 || parentHash || null,
               edits: edited.edits,
-              file: previous,
+              file: {
+                ...previous,
+                is_active_version:
+                  editorMode && body.activate_version === true
+                    ? true
+                    : Boolean(previous.is_active_version)
+              },
+              activity_patch: activityPatch,
               validation,
               fit: decodedFit,
               stored: true,
               deduplicated: true,
               reused_existing_version: true,
-              activity_modified: false,
+              activity_modified: Boolean(activityPatch),
               activities_created: 0,
-              activities_modified: 0
+              activities_modified: activityPatch ? 1 : 0
             });
           }
 
@@ -1198,7 +1467,7 @@ function createFitVault() {
                 metadata: {
                   sha256: hash,
                   owner_uid: uid,
-                  source: "WEB_FITVERSION",
+                  source: editorMode ? "WEB_FITEDITOR" : "WEB_FITVERSION",
                   mode: "VERSIONED_CANONICAL",
                   writer: "FITWRITER001",
                   versioner: "FITVERSION001",
@@ -1229,16 +1498,18 @@ function createFitVault() {
             fit_integrity: true,
             fitwriter_version: "FITWRITER001",
             fitversion_version: "FITVERSION001",
+            fit_editor_version: editorMode ? "FITEDITOR001" : null,
             version_index: versionIndex,
             version_family_id: familyId,
             parent_sha256: parentHash || null,
-            version_kind: "EDITED_CANONICAL",
+            version_kind: editorMode ? "ACTIVE_EDITABLE_CANONICAL" : "EDITED_CANONICAL",
             start_offset_s: edited.edits.start_offset_s,
             start_time_ms_source: edited.edits.start_time_ms_source,
             heart_rate_mode: edited.edits.heart_rate_mode,
             avg_hr_override: edited.edits.avg_hr_override,
             max_hr_override: edited.edits.max_hr_override,
             route_source_present: Boolean(routeSnap.exists),
+            is_active_version: false,
             first_uploaded_at_ms: Number(previous.first_uploaded_at_ms || now),
             uploaded_at_ms: now,
             last_seen_at_ms: now,
@@ -1248,21 +1519,37 @@ function createFitVault() {
 
           await ref.set(metadata, {merge: true});
 
+          let activityPatch = null;
+
+          if (editorMode && body.activate_version === true) {
+            activityPatch = await v085aActivateVersion(
+              uid,
+              activityId,
+              ref,
+              metadata,
+              activity,
+              edited
+            );
+
+            metadata.is_active_version = true;
+          }
+
           return res.json({
             ok: true,
-            service: "FITVERSION001",
+            service: editorMode ? "FITEDITOR001" : "FITVERSION001",
             activity_id: activityId,
             version_index: versionIndex,
             parent_sha256: parentHash || null,
             edits: edited.edits,
             file: metadata,
+            activity_patch: activityPatch,
             validation,
             fit: decodedFit,
             stored: true,
             deduplicated: Boolean(existing.exists || exists),
-            activity_modified: false,
+            activity_modified: Boolean(activityPatch),
             activities_created: 0,
-            activities_modified: 0
+            activities_modified: activityPatch ? 1 : 0
           });
         }
         /* CGWEB078_FITVERSION001_ACTION_END */
