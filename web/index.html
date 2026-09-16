@@ -3869,98 +3869,68 @@ select {
 </style>
 
 
-<style id="web072-fix10-detail-spacing-sticky-css">
-  /* WEB072 FIX10 · DETAIL_STICKY005 / SPACING002 */
 
-  /*
-   * FIX9D conserve ses règles de rendu.
-   * On neutralise uniquement son ancien position:sticky, qui n'accroche
-   * pas correctement dans la structure réelle de la page.
-   */
-  #detailView .web072-fix9-toolbar-sticky {
-    position: relative !important;
-    top: auto !important;
-    left: auto !important;
-    width: auto !important;
-    z-index: auto !important;
-  }
+<style id="web072-fix11-spada-css">
+  /* WEB072 FIX11 · DETAIL_ANCHOR006 / SPACING003 / DIRECTORY_CHARGE001 */
 
-  /*
-   * Le bandeau exact Répertoire / Ajout manuel / Corbeille /
-   * Activité précédente / Activité suivante est fixé par le moteur FIX10.
-   */
-  #detailView .web072-fix10-toolbar-fixed {
+  /* ------------------------------------------------------------------
+     SPADA : aucune modification des icônes FIX9D.
+     ------------------------------------------------------------------ */
+
+  /* Bandeau exact : immobile dès l'ouverture. */
+  #detailView .web072-fix11-toolbar-fixed {
     position: fixed !important;
-    top: var(--web072-fix10-sticky-top, 2mm) !important;
+    top: var(--web072-fix11-toolbar-top, 2mm) !important;
     z-index: 10000 !important;
-
     margin: 0 !important;
-
     box-sizing: border-box !important;
-
     background: rgba(8,14,10,.995) !important;
     backdrop-filter: blur(8px) !important;
     -webkit-backdrop-filter: blur(8px) !important;
   }
 
-  .web072-fix10-toolbar-anchor {
+  .web072-fix11-toolbar-placeholder {
     display: block !important;
     width: 100% !important;
-    height: 0 !important;
-
     margin: 0 !important;
     padding: 0 !important;
-
     pointer-events: none !important;
   }
 
-  .web072-fix10-toolbar-placeholder {
-    display: block !important;
-    width: 100% !important;
-    height: 0;
-
-    margin: 0 !important;
-    padding: 0 !important;
-
-    pointer-events: none !important;
-  }
-
-  /*
-   * 2 mm EXACTS entre les grandes rubriques du détail :
-   * toolbar, statistiques, matériel/repères, carte, analyses, etc.
-   */
-  #detailView.web072-fix10-spacing {
+  /* 2 mm entre les grandes rubriques du détail. */
+  #detailView.web072-fix11-spacing {
     margin-top: 2mm !important;
     padding-top: 0 !important;
   }
 
-  #detailView.web072-fix10-spacing
-  > .web072-fix10-major-section {
+  #detailView.web072-fix11-spacing > .web072-fix11-major-section {
     margin-top: 0 !important;
     margin-bottom: 0 !important;
   }
 
-  #detailView.web072-fix10-spacing
-  > .web072-fix10-major-section
-  + .web072-fix10-major-section {
+  #detailView.web072-fix11-spacing
+  > .web072-fix11-major-section
+  + .web072-fix11-major-section {
     margin-top: 2mm !important;
   }
 
-  /*
-   * Lorsqu'un wrapper historique autour d'une rubrique imposait un grand
-   * espace, la classe appliquée par FIX10 le ramène elle aussi à 2 mm.
-   */
-  .web072-fix10-major-section {
-    scroll-margin-top: calc(
-      var(--web072-fix10-sticky-top, 2mm) + 2mm
-    ) !important;
+  /* La ligne statistiques / la ligne Matériel-Repères suivent aussi 2 mm. */
+  #detailView .detail-hero-two-lines {
+    gap: 2mm !important;
   }
 
-  /*
-   * La fine barre parasite entre statistiques et matériel reste supprimée.
-   */
-  .web072-fix9-hide-intermediate-bar,
-  .web072-fix10-hide-intermediate-bar {
+  #detailView .detail-controls-row {
+    margin-top: 2mm !important;
+    margin-bottom: 2mm !important;
+    padding-top: 0 !important;
+  }
+
+  #detailView #web061SingleMetricRow {
+    margin-bottom: 2mm !important;
+  }
+
+  /* Barre parasite : masquage définitif quand FIX11 la marque. */
+  .web072-fix11-parasite-bar {
     display: none !important;
     visibility: hidden !important;
     height: 0 !important;
@@ -3970,6 +3940,51 @@ select {
     padding: 0 !important;
     border: 0 !important;
     overflow: hidden !important;
+    pointer-events: none !important;
+  }
+
+  /* ------------------------------------------------------------------
+     Répertoire : grille 9 colonnes = sport + 8 données.
+     Charge vient après Repères.
+     ------------------------------------------------------------------ */
+  #activityList .activity-card,
+  #activityDirectoryHeaderWeb059 {
+    grid-template-columns:
+      58px
+      minmax(116px,.72fr)
+      minmax(86px,.54fr)
+      minmax(108px,.64fr)
+      minmax(78px,.48fr)
+      minmax(118px,.70fr)
+      minmax(250px,1.42fr)
+      minmax(96px,.58fr)
+      minmax(82px,.50fr)
+      !important;
+  }
+
+  #activityDirectoryHeaderWeb059 {
+    display: grid !important;
+    position: static !important;
+    align-items: center !important;
+  }
+
+  #activityDirectoryHeaderWeb059 > strong {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+    text-align: center !important;
+
+    /* Demande utilisateur : tous les titres -1 cm sur l'axe X. */
+    transform: translateX(-1cm) !important;
+  }
+
+  #activityList .web072-fix11-charge-cell {
+    text-align: center !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
 </style>
 
@@ -5416,7 +5431,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-FIX10-DETAIL-STICKY005-SPACING002"></script>
+  <script type="module" src="./app.js?v=WEB072-FIX11-DETAIL-ANCHOR006-SPACING003-DIRECTORY-CHARGE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

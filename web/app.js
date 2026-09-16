@@ -5476,27 +5476,32 @@ function web059RefreshStickyTop() {
 }
 
 function web059DirectoryGridTemplate() {
-  return [
-    "58px",
-    "minmax(116px,.72fr)",
-    "minmax(86px,.54fr)",
-    "minmax(108px,.64fr)",
-    "minmax(78px,.48fr)",
-    "minmax(118px,.70fr)",
-    "minmax(250px,1.42fr)",
-    "minmax(96px,.58fr)"
-  ].join(" ");
-}
+    return [
+      "58px",
+      "minmax(116px,.72fr)",
+      "minmax(86px,.54fr)",
+      "minmax(108px,.64fr)",
+      "minmax(78px,.48fr)",
+      "minmax(118px,.70fr)",
+      "minmax(250px,1.42fr)",
+      "minmax(96px,.58fr)",
+      "minmax(82px,.50fr)"
+    ].join(" ");
+  }
 
 function web059EnsureDirectoryHeader() {
-  if (!ui.activityList) return null;
+    if (!ui.activityList) return null;
 
-  let header = document.getElementById("activityDirectoryHeaderWeb059");
+    let header =
+      document.getElementById("activityDirectoryHeaderWeb059");
 
-  if (!header) {
-    header = document.createElement("div");
-    header.id = "activityDirectoryHeaderWeb059";
-    header.className = "web059-activity-header";
+    if (!header) {
+      header = document.createElement("div");
+      header.id = "activityDirectoryHeaderWeb059";
+      header.className = "web059-activity-header";
+      ui.activityList.insertAdjacentElement("beforebegin", header);
+    }
+
     header.innerHTML =
       '<span aria-hidden="true"></span>' +
       '<strong>Date</strong>' +
@@ -5505,16 +5510,16 @@ function web059EnsureDirectoryHeader() {
       '<strong>D+</strong>' +
       '<strong>Temps</strong>' +
       '<strong>Matériel</strong>' +
-      '<strong>Repères</strong>';
+      '<strong>Repères</strong>' +
+      '<strong>Charge</strong>';
 
-    ui.activityList.insertAdjacentElement("beforebegin", header);
+    header.style.gridTemplateColumns =
+      web059DirectoryGridTemplate();
+
+    web059RefreshStickyTop();
+
+    return header;
   }
-
-  header.style.gridTemplateColumns = web059DirectoryGridTemplate();
-  web059RefreshStickyTop();
-
-  return header;
-}
 
 function web059HideRepeatedActivityLabels() {
   if (!ui.activityList) return;
@@ -5532,7 +5537,8 @@ function web059HideRepeatedActivityLabels() {
     "MATÉRIEL",
     "MATERIEL",
     "REPÈRES",
-    "REPERES"
+    "REPERES",
+    "CHARGE"
   ]);
 
   for (const card of ui.activityList.querySelectorAll(".activity-card")) {
@@ -5907,6 +5913,7 @@ function renderActivities() {
     button.appendChild(datum("Durée", formatDuration(web059MovingTimeMs(activity)), "hide-sm"));
     button.appendChild(datum("Matériel", activity.equipment_name || "—", "hide-md hide-sm"));
     button.appendChild(datum("Repères", markerSummary(activity), "hide-md hide-sm"));
+    button.appendChild(datum("Charge", web072Fix11FormatCharge(activity), "hide-md hide-sm web072-fix11-charge-cell"));
 
     fragment.appendChild(button);
   }
@@ -18524,29 +18531,52 @@ if (!window.__web072Fix9Installed) {
 /* WEB072_FIX9D_STICKY_ALIGN004_END */
 
 
-/* WEB072_FIX10_DETAIL_STICKY005_START */
 
-function web072Fix10Text(el) {
+
+
+/* WEB072_FIX11_DETAIL_ANCHOR006_START */
+
+/* =========================================================================
+   SPADA — FIX11 ne touche ni aux icônes ni aux acquis FIX9D/FIX10 hors
+   éléments explicitement remplacés ci-dessous.
+   ========================================================================= */
+
+function web072Fix11Text(el) {
   return String(el?.textContent || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/*
- * Cible EXCLUSIVEMENT le bandeau demandé :
- * Répertoire + Ajout manuel + Corbeille + Précédente + Suivante.
- */
-function web072Fix10FindStickyToolbar() {
-  const detail =
-    document.getElementById("detailView");
+function web072Fix11Mm2Px() {
+  let probe = document.getElementById("web072Fix11MmProbe");
 
+  if (!probe) {
+    probe = document.createElement("div");
+    probe.id = "web072Fix11MmProbe";
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.pointerEvents = "none";
+    probe.style.width = "2mm";
+    probe.style.height = "2mm";
+    document.body.appendChild(probe);
+  }
+
+  return probe.getBoundingClientRect().height || 8;
+}
+
+/* =========================================================================
+   1. BANDEAU IMMOBILE DÈS L'OUVERTURE
+   ========================================================================= */
+
+function web072Fix11FindToolbar() {
+  const detail = document.getElementById("detailView");
   if (!detail) return null;
 
   const candidates =
     Array.from(detail.querySelectorAll("div, nav, section"));
 
   for (const candidate of candidates) {
-    const text = web072Fix10Text(candidate);
+    const text = web072Fix11Text(candidate);
 
     if (
       /Répertoire/i.test(text) &&
@@ -18558,9 +18588,7 @@ function web072Fix10FindStickyToolbar() {
       const nestedSame =
         Array.from(candidate.children || [])
           .some((child) => {
-            const childText =
-              web072Fix10Text(child);
-
+            const childText = web072Fix11Text(child);
             return (
               /Répertoire/i.test(childText) &&
               /Ajout manuel/i.test(childText) &&
@@ -18570,15 +18598,10 @@ function web072Fix10FindStickyToolbar() {
             );
           });
 
-      if (!nestedSame) {
-        return candidate;
-      }
+      if (!nestedSame) return candidate;
     }
   }
 
-  /*
-   * Fallback sur le finder FIX9D déjà validé.
-   */
   try {
     return web072Fix9FindToolbar?.() || null;
   } catch (_) {
@@ -18586,382 +18609,470 @@ function web072Fix10FindStickyToolbar() {
   }
 }
 
-/*
- * Top sticky :
- * - 2 mm du haut si les onglets défilent ;
- * - 2 mm sous les onglets s'ils sont eux-mêmes sticky/fixed.
- */
-function web072Fix10StickyTop() {
-  let bottom = 0;
+function web072Fix11ToolbarTop() {
+  const gap = web072Fix11Mm2Px();
 
-  const candidates = [
-    document.querySelector(".topbar"),
-    document.getElementById("uxPrimaryNav")
-  ].filter(Boolean);
+  const nav =
+    document.getElementById("uxPrimaryNav") ||
+    document.querySelector('[data-ux-primary-nav]');
 
-  for (const el of candidates) {
-    const style =
-      getComputedStyle(el);
+  if (nav) {
+    const rect = nav.getBoundingClientRect();
 
     if (
-      style.display === "none" ||
-      style.visibility === "hidden"
+      rect.height > 0 &&
+      rect.bottom > 0 &&
+      rect.bottom < window.innerHeight
     ) {
-      continue;
-    }
-
-    if (
-      style.position === "fixed" ||
-      style.position === "sticky"
-    ) {
-      const rect =
-        el.getBoundingClientRect();
-
-      if (
-        rect.height > 0 &&
-        rect.bottom > 0 &&
-        rect.top < window.innerHeight
-      ) {
-        bottom =
-          Math.max(
-            bottom,
-            Math.ceil(rect.bottom)
-          );
-      }
+      /* 2 mm SOUS la barre des onglets, dès l'ouverture. */
+      return Math.ceil(rect.bottom + gap);
     }
   }
 
-  /*
-   * 2 mm en CSS, convertis par le navigateur.
-   * On mesure un élément temporaire pour garder exactement l'unité demandée.
-   */
-  let probe =
-    document.getElementById(
-      "web072Fix10MmProbe"
-    );
-
-  if (!probe) {
-    probe =
-      document.createElement("div");
-
-    probe.id =
-      "web072Fix10MmProbe";
-
-    probe.style.position = "absolute";
-    probe.style.visibility = "hidden";
-    probe.style.pointerEvents = "none";
-    probe.style.width = "2mm";
-    probe.style.height = "2mm";
-
-    document.body.appendChild(probe);
-  }
-
-  const gap =
-    probe.getBoundingClientRect().height || 8;
-
-  return bottom + gap;
+  return Math.ceil(gap);
 }
 
-/*
- * Marque les rubriques majeures du détail.
- * On ne touche pas à leur contenu interne.
- */
-function web072Fix10ApplySectionSpacing() {
-  const detail =
-    document.getElementById("detailView");
+function web072Fix11FixToolbarImmediately() {
+  const detail = document.getElementById("detailView");
+  const toolbar = web072Fix11FindToolbar();
 
-  if (!detail) return;
+  if (!detail || !toolbar) return;
 
-  detail.classList.add(
-    "web072-fix10-spacing"
+  /*
+   * Le polyfill FIX10 est retiré par le patch source.
+   * On neutralise aussi les anciennes classes sticky/fixed résiduelles.
+   */
+  toolbar.classList.remove(
+    "web072-fix9-toolbar-sticky",
+    "web072-fix10-toolbar-fixed"
   );
 
-  const children =
-    Array.from(detail.children);
+  toolbar.classList.add(
+    "web072-fix11-toolbar-fixed"
+  );
 
-  for (const child of children) {
-    child.classList.remove(
-      "web072-fix10-major-section"
+  let placeholder = toolbar.previousElementSibling;
+
+  if (
+    !placeholder ||
+    !placeholder.classList.contains(
+      "web072-fix11-toolbar-placeholder"
+    )
+  ) {
+    placeholder = document.createElement("div");
+    placeholder.className =
+      "web072-fix11-toolbar-placeholder";
+
+    toolbar.insertAdjacentElement(
+      "beforebegin",
+      placeholder
     );
+  }
+
+  const top = web072Fix11ToolbarTop();
+
+  document.documentElement.style.setProperty(
+    "--web072-fix11-toolbar-top",
+    top + "px"
+  );
+
+  const detailRect = detail.getBoundingClientRect();
+  const left = Math.max(0, Math.round(detailRect.left));
+  const width = Math.max(
+    0,
+    Math.min(
+      detailRect.width,
+      window.innerWidth - left
+    )
+  );
+
+  toolbar.style.setProperty(
+    "position",
+    "fixed",
+    "important"
+  );
+  toolbar.style.setProperty(
+    "top",
+    top + "px",
+    "important"
+  );
+  toolbar.style.setProperty(
+    "left",
+    left + "px",
+    "important"
+  );
+  toolbar.style.setProperty(
+    "width",
+    width + "px",
+    "important"
+  );
+  toolbar.style.setProperty(
+    "z-index",
+    "10000",
+    "important"
+  );
+
+  const height =
+    Math.ceil(toolbar.getBoundingClientRect().height);
+
+  /*
+   * Le contenu commence exactement 2 mm après le bandeau fixe.
+   */
+  placeholder.style.height =
+    (height + web072Fix11Mm2Px()) + "px";
+}
+
+/* =========================================================================
+   2. ESPACEMENT 2 MM ENTRE RUBRIQUES
+   ========================================================================= */
+
+function web072Fix11MarkMajorSections() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return;
+
+  detail.classList.add("web072-fix11-spacing");
+
+  for (const child of Array.from(detail.children)) {
+    child.classList.remove("web072-fix11-major-section");
 
     if (
-      child.classList.contains(
-        "web072-fix10-toolbar-anchor"
-      ) ||
-      child.classList.contains(
-        "web072-fix10-toolbar-placeholder"
-      )
+      child.classList.contains("web072-fix11-toolbar-fixed") ||
+      child.classList.contains("web072-fix11-toolbar-placeholder")
     ) {
       continue;
     }
 
-    const style =
-      getComputedStyle(child);
-
-    const rect =
-      child.getBoundingClientRect();
+    const style = getComputedStyle(child);
+    const rect = child.getBoundingClientRect();
 
     if (
       style.display !== "none" &&
       style.visibility !== "hidden" &&
       rect.height > 0
     ) {
-      child.classList.add(
-        "web072-fix10-major-section"
-      );
+      child.classList.add("web072-fix11-major-section");
     }
+  }
+
+  /*
+   * Cas important signalé : Matériel / Repères → Carte.
+   */
+  const controls =
+    detail.querySelector(".detail-controls-row");
+
+  if (controls) {
+    controls.style.setProperty(
+      "margin-bottom",
+      "2mm",
+      "important"
+    );
+    controls.style.setProperty(
+      "padding-top",
+      "0",
+      "important"
+    );
   }
 }
 
-/*
- * Suppression de la petite barre située entre les statistiques
- * et la rubrique Matériel/Repères.
- */
-function web072Fix10HideIntermediateBar() {
-  const detail =
-    document.getElementById("detailView");
+/* =========================================================================
+   3. SUPPRESSION FORTE DE LA BARRE PARASITE
+   ========================================================================= */
 
-  const stats =
-    document.getElementById(
-      "web061SingleMetricRow"
-    );
+function web072Fix11HideParasiteBars() {
+  const detail = document.getElementById("detailView");
+  const stats = document.getElementById("web061SingleMetricRow");
 
-  if (!detail || !stats) return;
+  const controls =
+    detail?.querySelector(".detail-controls-row") ||
+    detail?.querySelector(".detail-quick-equipment")?.parentElement;
 
-  let node =
-    stats.nextElementSibling;
+  if (!detail || !stats || !controls) return;
 
-  const statsRect =
-    stats.getBoundingClientRect();
+  const statsRect = stats.getBoundingClientRect();
+  const controlsRect = controls.getBoundingClientRect();
+  const detailRect = detail.getBoundingClientRect();
 
-  for (
-    let i = 0;
-    node && i < 4;
-    i += 1, node = node.nextElementSibling
-  ) {
-    const rect =
-      node.getBoundingClientRect();
+  const minY = statsRect.bottom - 2;
+  const maxY = controlsRect.top + 2;
 
-    const signature =
-      String(node.id || "") +
-      " " +
-      String(node.className || "");
+  for (const node of detail.querySelectorAll("div, hr, section")) {
+    if (
+      node === stats ||
+      node === controls ||
+      node.contains(stats) ||
+      node.contains(controls) ||
+      stats.contains(node) ||
+      controls.contains(node)
+    ) {
+      continue;
+    }
+
+    const rect = node.getBoundingClientRect();
+
+    if (
+      rect.top < minY ||
+      rect.bottom > maxY
+    ) {
+      continue;
+    }
+
+    const text = web072Fix11Text(node);
+
+    const hasInteractive =
+      Boolean(
+        node.querySelector(
+          "button, input, select, textarea, a"
+        )
+      );
 
     const thinWide =
-      rect.height > 0 &&
-      rect.height <= 18 &&
-      rect.width >= statsRect.width * 0.70;
+      rect.height >= 1 &&
+      rect.height <= 20 &&
+      rect.width >= detailRect.width * 0.68;
 
     const named =
       /divider|separator|progress|status|sync|bar/i.test(
-        signature
+        String(node.id || "") +
+        " " +
+        String(node.className || "")
       );
 
-    if (thinWide || named) {
-      node.classList.add(
-        "web072-fix10-hide-intermediate-bar"
-      );
-      break;
+    if (
+      (thinWide || named) &&
+      !text &&
+      !hasInteractive
+    ) {
+      node.classList.add("web072-fix11-parasite-bar");
     }
   }
 }
 
-/*
- * Polyfill sticky robuste.
- *
- * Le bandeau reste dans le flux tant que son ancre est sous le seuil.
- * Dès que l'ancre atteint le seuil, le bandeau devient FIXED.
- * Le placeholder garde exactement sa hauteur, donc aucune remontée
- * du bandeau de statistiques.
- */
-function web072Fix10SyncStickyToolbar() {
-  const detail =
-    document.getElementById("detailView");
+/* =========================================================================
+   4. RÉPERTOIRE — CHARGE APRÈS REPÈRES
+   ========================================================================= */
 
-  const toolbar =
-    web072Fix10FindStickyToolbar();
+function web072Fix11FormatCharge(activity) {
+  try {
+    if (typeof web055SafeChargeScore === "function") {
+      const value = Number(web055SafeChargeScore(activity));
 
-  if (!detail || !toolbar) return;
+      if (Number.isFinite(value) && value >= 0) {
+        return Math.round(value).toLocaleString("fr-FR");
+      }
+    }
+  } catch (_) {}
 
-  /*
-   * Neutralise le sticky FIX9D pour que le seuil soit mesurable.
-   */
-  toolbar.classList.remove(
-    "web072-fix10-toolbar-fixed"
-  );
+  for (const raw of [
+    activity?.training_load,
+    activity?.trainingLoad,
+    activity?.load,
+    activity?.activity_load,
+    activity?.activityLoad,
+    activity?.trimp,
+    activity?.charge_score,
+    activity?.chargeScore,
+    activity?.sport_load,
+    activity?.sportLoad
+  ]) {
+    const value = Number(raw);
 
-  let anchor =
-    toolbar.previousElementSibling;
-
-  if (
-    !anchor ||
-    !anchor.classList.contains(
-      "web072-fix10-toolbar-anchor"
-    )
-  ) {
-    anchor =
-      document.createElement("div");
-
-    anchor.className =
-      "web072-fix10-toolbar-anchor";
-
-    toolbar.insertAdjacentElement(
-      "beforebegin",
-      anchor
-    );
+    if (Number.isFinite(value) && value >= 0) {
+      return Math.round(value).toLocaleString("fr-FR");
+    }
   }
 
-  let placeholder =
-    anchor.previousElementSibling;
+  return "—";
+}
 
-  if (
-    !placeholder ||
-    !placeholder.classList.contains(
-      "web072-fix10-toolbar-placeholder"
-    )
-  ) {
-    placeholder =
-      document.createElement("div");
+function web072Fix11DirectoryGridTemplate() {
+  return [
+    "58px",
+    "minmax(116px,.72fr)",
+    "minmax(86px,.54fr)",
+    "minmax(108px,.64fr)",
+    "minmax(78px,.48fr)",
+    "minmax(118px,.70fr)",
+    "minmax(250px,1.42fr)",
+    "minmax(96px,.58fr)",
+    "minmax(82px,.50fr)"
+  ].join(" ");
+}
 
-    placeholder.className =
-      "web072-fix10-toolbar-placeholder";
+function web072Fix11AlignDirectoryHeader() {
+  const header =
+    document.getElementById("activityDirectoryHeaderWeb059");
 
-    anchor.insertAdjacentElement(
-      "beforebegin",
-      placeholder
-    );
-  }
-
-  const stickyTop =
-    web072Fix10StickyTop();
-
-  document.documentElement.style.setProperty(
-    "--web072-fix10-sticky-top",
-    stickyTop + "px"
-  );
+  if (!header) return;
 
   /*
-   * IMPORTANT :
-   * anchor est avant toolbar et placeholder.
-   * Sa position naturelle ne bouge donc pas quand toolbar devient fixed.
+   * Charge après Repères.
    */
-  const anchorRect =
-    anchor.getBoundingClientRect();
+  const labels =
+    Array.from(header.querySelectorAll("strong"));
 
-  const shouldFix =
-    anchorRect.top <= stickyTop;
+  if (
+    !labels.some((node) =>
+      /^Charge$/i.test(web072Fix11Text(node))
+    )
+  ) {
+    const charge = document.createElement("strong");
+    charge.textContent = "Charge";
+    header.appendChild(charge);
+  }
 
-  if (shouldFix) {
-    const parent =
-      toolbar.parentElement || detail;
+  /*
+   * Annule le positionnement absolu de FIX9D puis applique la vraie grille.
+   */
+  header.classList.remove(
+    "web072-fix9-directory-header"
+  );
 
-    const parentRect =
-      parent.getBoundingClientRect();
+  header.style.setProperty(
+    "display",
+    "grid",
+    "important"
+  );
 
-    const toolbarHeight =
-      Math.ceil(
-        toolbar.getBoundingClientRect().height
+  header.style.setProperty(
+    "position",
+    "static",
+    "important"
+  );
+
+  header.style.setProperty(
+    "grid-template-columns",
+    web072Fix11DirectoryGridTemplate(),
+    "important"
+  );
+
+  for (const node of header.children) {
+    node.classList.remove(
+      "web072-fix9-header-label",
+      "web072-fix8-header-label",
+      "web072-fix7-header-label",
+      "web072-fix6-header-label"
+    );
+
+    node.style.removeProperty("left");
+    node.style.removeProperty("top");
+    node.style.removeProperty("position");
+    node.style.removeProperty("width");
+    node.style.removeProperty("max-width");
+
+    if (node.tagName === "STRONG") {
+      node.style.setProperty(
+        "transform",
+        "translateX(-1cm)",
+        "important"
       );
+    }
+  }
 
-    placeholder.style.height =
-      toolbarHeight + "px";
-
-    toolbar.classList.add(
-      "web072-fix10-toolbar-fixed"
-    );
-
-    toolbar.style.setProperty(
-      "top",
-      stickyTop + "px",
+  for (
+    const card of
+    document.querySelectorAll("#activityList .activity-card")
+  ) {
+    card.style.setProperty(
+      "grid-template-columns",
+      web072Fix11DirectoryGridTemplate(),
       "important"
-    );
-
-    toolbar.style.setProperty(
-      "left",
-      Math.max(0, parentRect.left) + "px",
-      "important"
-    );
-
-    toolbar.style.setProperty(
-      "width",
-      Math.min(
-        parentRect.width,
-        window.innerWidth -
-          Math.max(0, parentRect.left)
-      ) + "px",
-      "important"
-    );
-
-    toolbar.style.setProperty(
-      "z-index",
-      "10000",
-      "important"
-    );
-  } else {
-    placeholder.style.height =
-      "0px";
-
-    toolbar.style.removeProperty(
-      "left"
-    );
-
-    toolbar.style.removeProperty(
-      "width"
-    );
-
-    toolbar.style.removeProperty(
-      "z-index"
-    );
-
-    toolbar.style.removeProperty(
-      "top"
     );
   }
 }
 
-let web072Fix10Raf = 0;
+/*
+ * FIX9D continue d'appeler sa fonction d'alignement.
+ * On la redirige vers FIX11 afin d'éviter toute concurrence.
+ */
+try {
+  if (
+    typeof web072Fix9AlignDirectoryHeader === "function"
+  ) {
+    web072Fix9AlignDirectoryHeader =
+      web072Fix11AlignDirectoryHeader;
+  }
+} catch (_) {}
 
-function web072Fix10ApplyDetail() {
-  if (web072Fix10Raf) return;
+/* =========================================================================
+   5. RAFRAÎCHISSEMENTS CIBLÉS
+   ========================================================================= */
 
-  web072Fix10Raf =
-    requestAnimationFrame(() => {
-      web072Fix10Raf = 0;
+function web072Fix11ApplyDetail() {
+  try {
+    web072Fix11FixToolbarImmediately();
+    web072Fix11MarkMajorSections();
+    web072Fix11HideParasiteBars();
+  } catch (_) {}
+}
 
-      try {
-        web072Fix10ApplySectionSpacing();
-        web072Fix10HideIntermediateBar();
-        web072Fix10SyncStickyToolbar();
-      } catch (_) {}
-    });
+function web072Fix11ApplyDirectory() {
+  try {
+    web072Fix11AlignDirectoryHeader();
+  } catch (_) {}
 }
 
 /*
- * Hook APRÈS FIX9D : garantit l'application dès renderDetail,
- * sans MutationObserver.
+ * renderDetail : ancrage dès le tout premier affichage.
  */
-const web072Fix10PreviousRenderDetail =
+const web072Fix11PreviousRenderDetail =
   renderDetail;
 
 renderDetail =
-  function web072Fix10RenderDetail(...args) {
+  function web072Fix11RenderDetail(...args) {
     const result =
-      web072Fix10PreviousRenderDetail.apply(
+      web072Fix11PreviousRenderDetail.apply(
         this,
         args
       );
 
     const apply = () => {
-      web072Fix10ApplyDetail();
+      requestAnimationFrame(() => {
+        web072Fix11ApplyDetail();
+      });
 
-      setTimeout(
-        web072Fix10ApplyDetail,
-        60
+      setTimeout(web072Fix11ApplyDetail, 40);
+      setTimeout(web072Fix11ApplyDetail, 160);
+    };
+
+    if (
+      result &&
+      typeof result.then === "function"
+    ) {
+      result.finally(apply);
+    } else {
+      apply();
+    }
+
+    return result;
+  };
+
+/*
+ * renderActivities : FIX11 passe après FIX9D.
+ */
+const web072Fix11PreviousRenderActivities =
+  renderActivities;
+
+renderActivities =
+  function web072Fix11RenderActivities(...args) {
+    const result =
+      web072Fix11PreviousRenderActivities.apply(
+        this,
+        args
+      );
+
+    const apply = () => {
+      requestAnimationFrame(
+        web072Fix11ApplyDirectory
       );
 
       setTimeout(
-        web072Fix10ApplyDetail,
-        220
+        web072Fix11ApplyDirectory,
+        120
+      );
+
+      setTimeout(
+        web072Fix11ApplyDirectory,
+        280
       );
     };
 
@@ -18977,67 +19088,41 @@ renderDetail =
     return result;
   };
 
-if (!window.__web072Fix10Installed) {
-  window.__web072Fix10Installed = true;
+if (!window.__web072Fix11Installed) {
+  window.__web072Fix11Installed = true;
 
   document.addEventListener(
     "DOMContentLoaded",
-    web072Fix10ApplyDetail
+    () => {
+      web072Fix11ApplyDetail();
+      web072Fix11ApplyDirectory();
+    }
   );
 
   document.addEventListener(
     "click",
-    () => setTimeout(
-      web072Fix10ApplyDetail,
-      0
-    ),
+    () => setTimeout(() => {
+      web072Fix11ApplyDetail();
+      web072Fix11ApplyDirectory();
+    }, 0),
     true
-  );
-
-  document.addEventListener(
-    "change",
-    () => setTimeout(
-      web072Fix10ApplyDetail,
-      0
-    ),
-    true
-  );
-
-  /*
-   * capture=true permet aussi de réagir si le scroll se produit
-   * dans un conteneur interne plutôt que sur window.
-   */
-  document.addEventListener(
-    "scroll",
-    web072Fix10ApplyDetail,
-    true
-  );
-
-  window.addEventListener(
-    "scroll",
-    web072Fix10ApplyDetail,
-    {
-      passive: true
-    }
   );
 
   window.addEventListener(
     "resize",
-    web072Fix10ApplyDetail,
+    () => {
+      web072Fix11ApplyDetail();
+      web072Fix11ApplyDirectory();
+    },
     {
       passive: true
     }
   );
 
-  setTimeout(
-    web072Fix10ApplyDetail,
-    80
-  );
-
-  setTimeout(
-    web072Fix10ApplyDetail,
-    500
-  );
+  setTimeout(() => {
+    web072Fix11ApplyDetail();
+    web072Fix11ApplyDirectory();
+  }, 300);
 }
 
-/* WEB072_FIX10_DETAIL_STICKY005_END */
+/* WEB072_FIX11_DETAIL_ANCHOR006_END */
