@@ -3828,6 +3828,152 @@ select {
   }
 </style>
 
+
+<style id="web072-detail-nav002-icon-layout003-css">
+  /* WEB072 · DETAIL_NAV002 / ICON_LAYOUT003 */
+
+  /* A — Répertoire : le header reprend exactement la grille d'une ligne. */
+  .web072-directory-header {
+    box-sizing: border-box !important;
+    align-items: center !important;
+  }
+
+  .web072-directory-header > * {
+    text-align: center !important;
+    justify-self: center !important;
+  }
+
+  .web072-directory-header-spacer {
+    width: 100% !important;
+    height: 1px !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  /* B — Réduction supplémentaire des pictogrammes (~2 mm en hauteur). */
+  #activityList .web071-fix1-sport-icon {
+    width: 44px !important;
+    height: 38px !important;
+    min-width: 44px !important;
+    min-height: 38px !important;
+    max-width: 44px !important;
+    max-height: 38px !important;
+    overflow: visible !important;
+  }
+
+  #activityList .web071-fix1-sport-icon img[src*="sport-running"],
+  #activityList .web071-fix1-sport-icon img[alt*="Course"],
+  #activityList .web071-fix1-sport-icon img[alt*="course"] {
+    width: 21px !important;
+    height: 21px !important;
+    max-width: 21px !important;
+    max-height: 21px !important;
+    transform: none !important;
+  }
+
+  #activityList .web071-fix1-sport-icon img[src*="sport-bike"],
+  #activityList .web071-fix1-sport-icon img[alt*="Vélo"],
+  #activityList .web071-fix1-sport-icon img[alt*="velo"],
+  #activityList .web071-fix1-sport-icon img[alt*="Velo"] {
+    width: 27px !important;
+    height: 19px !important;
+    max-width: 27px !important;
+    max-height: 19px !important;
+    transform: none !important;
+  }
+
+  /* Éclair indoor : à GAUCHE de l'icône et centré verticalement. */
+  .web071-indoor-badge.web071-indoor-lightning {
+    left: -12px !important;
+    right: auto !important;
+    top: 50% !important;
+    bottom: auto !important;
+    transform: translateY(-50%) !important;
+    font-size: 14px !important;
+  }
+
+  #web061SingleMetricRow
+  .web071-indoor-badge.web071-indoor-lightning {
+    left: -10px !important;
+    right: auto !important;
+    top: 50% !important;
+    bottom: auto !important;
+    transform: translateY(-50%) !important;
+    font-size: 16px !important;
+  }
+
+  /* C — suppression de la barre horizontale entre stats et encart suivant. */
+  #web061SingleMetricRow + hr,
+  #web061SingleMetricRow + .divider,
+  #web061SingleMetricRow + .separator,
+  #web061SingleMetricRow + .toolbar-separator,
+  #web061SingleMetricRow + .web-divider,
+  #web061SingleMetricRow::after,
+  .web072-hide-divider {
+    display: none !important;
+    content: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    border: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /*
+   * D — un seul bandeau d'actions, ancré pendant la consultation.
+   * Il reste dans le flux : aucune métrique ne passe dessous.
+   */
+  #detailView .web072-detail-nav-toolbar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 120 !important;
+
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+
+    background: rgba(8, 14, 10, .98) !important;
+    backdrop-filter: blur(5px) !important;
+
+    margin: 0 0 8px !important;
+    padding-top: 7px !important;
+    padding-bottom: 7px !important;
+
+    box-sizing: border-box !important;
+  }
+
+  #detailView .web072-detail-nav-toolbar + #web061SingleMetricRow {
+    margin-top: 0 !important;
+  }
+
+  .web072-manual-add-btn {
+    margin-left: 0 !important;
+    white-space: nowrap !important;
+  }
+
+  /* Si un ancien bandeau doublon subsiste, il est masqué. */
+  .web072-secondary-detail-toolbar {
+    display: none !important;
+  }
+
+  /* Détail : libellés et valeurs parfaitement centrés dans leurs cartes. */
+  #web061SingleMetricRow > * {
+    align-self: stretch !important;
+  }
+
+  #web061SingleMetricRow > * > *,
+  #web061SingleMetricRow .metric-card,
+  #web061SingleMetricRow .stat-card,
+  #web061SingleMetricRow .web061-single-metric-card {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    box-sizing: border-box !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5271,7 +5417,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-FIX3-DETAIL-NAV-UI001"></script>
+  <script type="module" src="./app.js?v=WEB072-DETAIL-NAV002-ICON-LAYOUT003"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

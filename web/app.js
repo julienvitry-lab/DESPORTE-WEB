@@ -1051,7 +1051,6 @@ function uxPageConfig() {
         ["equipment-map","Matériel auto"],
         ["maps","Cartes"],
         ["files","Fichiers"],
-        ["manual","Ajout manuel"],
         ["import","Import"],
         ["sync","Synchronisation"],
         ["health","Santé sync"],
@@ -17919,3 +17918,356 @@ function web072ApplyDetailToolbarTweaks() {
     }
   } catch (_) {}
 }
+
+
+/* WEB072_DETAIL_NAV002_ICON_LAYOUT003_START */
+
+function web072DirectTexts(element) {
+  return Array.from(element?.children || [])
+    .map((node) => String(node.textContent || "").trim());
+}
+
+function web072FindDirectoryHeader() {
+  const list = document.getElementById("activityList");
+  if (!list) return null;
+
+  const section =
+    list.closest("#activityDirectorySection") ||
+    list.parentElement?.parentElement ||
+    document.body;
+
+  const wanted = [
+    "Date",
+    "Heure",
+    "Distance",
+    "D+",
+    "Temps",
+    "Matériel",
+    "Repères"
+  ];
+
+  const candidates =
+    Array.from(section.querySelectorAll("div"));
+
+  for (const el of candidates) {
+    const texts = web072DirectTexts(el);
+
+    if (
+      wanted.every((label) => texts.includes(label)) &&
+      texts.length <= 9
+    ) {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+function web072AlignDirectoryHeader() {
+  const list = document.getElementById("activityList");
+  if (!list) return;
+
+  const sportCell =
+    list.querySelector(".web071-fix1-activity-main");
+
+  const dataRow = sportCell?.parentElement;
+  const header = web072FindDirectoryHeader();
+
+  if (!dataRow || !header) return;
+
+  const headerTexts = web072DirectTexts(header);
+
+  if (
+    headerTexts[0] === "Date" &&
+    !header.querySelector(".web072-directory-header-spacer")
+  ) {
+    const spacer = document.createElement("span");
+    spacer.className =
+      "web072-directory-header-spacer";
+    spacer.setAttribute("aria-hidden", "true");
+    header.prepend(spacer);
+  }
+
+  const rowStyle =
+    window.getComputedStyle(dataRow);
+
+  header.classList.add(
+    "web072-directory-header"
+  );
+
+  header.style.display = "grid";
+
+  if (
+    rowStyle.gridTemplateColumns &&
+    rowStyle.gridTemplateColumns !== "none"
+  ) {
+    header.style.gridTemplateColumns =
+      rowStyle.gridTemplateColumns;
+  }
+
+  header.style.columnGap =
+    rowStyle.columnGap || "0px";
+
+  header.style.paddingLeft =
+    rowStyle.paddingLeft || "0px";
+
+  header.style.paddingRight =
+    rowStyle.paddingRight || "0px";
+}
+
+function web072FindDetailToolbar() {
+  const detail =
+    document.getElementById("detailView") ||
+    document.body;
+
+  const controls =
+    Array.from(
+      detail.querySelectorAll("button, a")
+    );
+
+  const prev =
+    controls.find((el) =>
+      /Activité précédente/i.test(
+        String(el.textContent || "").trim()
+      )
+    );
+
+  const next =
+    controls.find((el) =>
+      /Activité suivante/i.test(
+        String(el.textContent || "").trim()
+      )
+    );
+
+  if (!prev || !next) return null;
+
+  let node = prev.parentElement;
+
+  while (
+    node &&
+    node !== detail &&
+    !node.contains(next)
+  ) {
+    node = node.parentElement;
+  }
+
+  return node && node.contains(next)
+    ? node
+    : null;
+}
+
+function web072InstallManualAddButton(toolbar) {
+  if (!toolbar) return;
+
+  if (
+    toolbar.querySelector(
+      ".web072-manual-add-btn"
+    )
+  ) {
+    return;
+  }
+
+  const reference =
+    toolbar.querySelector("button");
+
+  const button =
+    document.createElement("button");
+
+  button.type = "button";
+  button.className =
+    String(reference?.className || "secondary")
+      .trim() +
+    " web072-manual-add-btn";
+
+  button.textContent = "Ajout manuel";
+
+  button.addEventListener(
+    "click",
+    (event) => {
+      event.preventDefault();
+
+      try {
+        navigateUx("more", "manual");
+      } catch (_) {
+        const oldManual =
+          Array.from(
+            document.querySelectorAll(
+              "button, a"
+            )
+          ).find((el) =>
+            /Ajout manuel/i.test(
+              String(
+                el.textContent || ""
+              ).trim()
+            ) &&
+            !el.classList.contains(
+              "web072-manual-add-btn"
+            )
+          );
+
+        oldManual?.click();
+      }
+    }
+  );
+
+  /*
+   * Position : après "Mettre à la corbeille",
+   * sinon avant les boutons précédent/suivant.
+   */
+  const deleteButton =
+    Array.from(
+      toolbar.querySelectorAll(
+        "button, a"
+      )
+    ).find((el) =>
+      /Mettre à la corbeille/i.test(
+        String(el.textContent || "")
+      )
+    );
+
+  if (deleteButton) {
+    deleteButton.insertAdjacentElement(
+      "afterend",
+      button
+    );
+  } else {
+    toolbar.appendChild(button);
+  }
+}
+
+function web072HideDetailDivider() {
+  const row =
+    document.getElementById(
+      "web061SingleMetricRow"
+    );
+
+  if (!row) return;
+
+  let next = row.nextElementSibling;
+
+  /*
+   * Cible la barre visuelle très basse et très large
+   * qui suit immédiatement les métriques.
+   */
+  if (next) {
+    const style =
+      window.getComputedStyle(next);
+
+    const rect =
+      next.getBoundingClientRect();
+
+    const looksLikeDivider =
+      next.tagName === "HR" ||
+      /divider|separator|progress|sync-bar/i.test(
+        String(next.className || "")
+      ) ||
+      (
+        rect.height > 0 &&
+        rect.height <= 18 &&
+        rect.width >=
+          row.getBoundingClientRect().width * .75
+      );
+
+    if (looksLikeDivider) {
+      next.classList.add(
+        "web072-hide-divider"
+      );
+    }
+  }
+}
+
+function web072ApplyDetailToolbar() {
+  const toolbar =
+    web072FindDetailToolbar();
+
+  if (!toolbar) return;
+
+  toolbar.classList.add(
+    "web072-detail-nav-toolbar"
+  );
+
+  web072InstallManualAddButton(toolbar);
+
+  /*
+   * Masque uniquement d'éventuels autres groupes
+   * qui contiennent eux aussi précédent + suivant.
+   */
+  const detail =
+    document.getElementById("detailView");
+
+  if (detail) {
+    const allGroups =
+      Array.from(
+        detail.querySelectorAll("div")
+      );
+
+    for (const group of allGroups) {
+      if (group === toolbar) continue;
+
+      const text =
+        String(group.textContent || "");
+
+      if (
+        /Activité précédente/i.test(text) &&
+        /Activité suivante/i.test(text) &&
+        !group.contains(toolbar) &&
+        !toolbar.contains(group)
+      ) {
+        group.classList.add(
+          "web072-secondary-detail-toolbar"
+        );
+      }
+    }
+  }
+}
+
+function web072ApplyLayout() {
+  try {
+    web072AlignDirectoryHeader();
+    web072ApplyDetailToolbar();
+    web072HideDetailDivider();
+  } catch (_) {}
+}
+
+/*
+ * Pas de MutationObserver.
+ * Quelques points de rafraîchissement légers suffisent
+ * pour les rendus asynchrones actuels.
+ */
+if (!window.__web072LayoutInstalled) {
+  window.__web072LayoutInstalled = true;
+
+  document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+      setTimeout(web072ApplyLayout, 0);
+      setTimeout(web072ApplyLayout, 500);
+      setTimeout(web072ApplyLayout, 1500);
+    }
+  );
+
+  document.addEventListener(
+    "click",
+    () => setTimeout(
+      web072ApplyLayout,
+      0
+    ),
+    true
+  );
+
+  document.addEventListener(
+    "change",
+    () => setTimeout(
+      web072ApplyLayout,
+      0
+    ),
+    true
+  );
+
+  setInterval(
+    web072ApplyLayout,
+    1500
+  );
+}
+
+/* WEB072_DETAIL_NAV002_ICON_LAYOUT003_END */
