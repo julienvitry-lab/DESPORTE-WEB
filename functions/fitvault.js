@@ -1,5 +1,15 @@
 "use strict";
 
+/* CGWEB075_FITWRITER001_IMPORT_START */
+const {
+  encodeCanonicalFit,
+  inspectFitBuffer,
+  fitWriterSelfTest,
+  canonicalFitFileName
+} = require("./fitwriter");
+/* CGWEB075_FITWRITER001_IMPORT_END */
+
+
 /* WEB074_FIX6_SELFCONTAINED_DEPS_START */
 const {onRequest} = require("firebase-functions/v2/https");
 const {getApps, initializeApp} = require("firebase-admin/app");
@@ -152,6 +162,241 @@ function createFitVault() {
             historical_mode_creates_activities: false
           });
         }
+
+
+        /* CGWEB075_FITWRITER001_ACTION_START */
+
+        if (action === "writer_health") {
+          if (req.method !== "GET" && req.method !== "POST") {
+            return res.status(405).json({error: "GET/POST requis."});
+          }
+
+          const test = await fitWriterSelfTest();
+
+          return res.json({
+            ok: true,
+            service: "FITWRITER001",
+            sdk: "@garmin/fitsdk",
+            bytes: test.bytes,
+            file_name: test.fileName,
+            point_count: test.stats.pointCount,
+            integrity: test.check.integrity,
+            activity_messages: test.check.activityCount,
+            session_messages: test.check.sessionCount,
+            lap_messages: test.check.lapCount,
+            record_messages: test.check.recordCount,
+            stored: false
+          });
+        }
+
+        if (action === "generate") {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+
+          let payload = req.body;
+
+          if (Buffer.isBuffer(payload)) {
+            try {
+              payload = JSON.parse(payload.toString("utf8"));
+            } catch {
+              payload = null;
+            }
+          }
+
+          if (
+            !payload ||
+            typeof payload !== "object" ||
+            Array.isArray(payload)
+          ) {
+            return res.status(400).json({
+              error: "Corps JSON FITWRITER001 requis."
+            });
+          }
+
+          const generated =
+            await encodeCanonicalFit(payload);
+
+          const check =
+            await inspectFitBuffer(generated.buffer);
+
+          if (!check.ok) {
+            return res.status(500).json({
+              error: "FIT généré invalide.",
+              validation: check
+            });
+          }
+
+          const requestedName =
+            String(payload.file_name || "").trim();
+
+          const fileName =
+            safeName(
+              requestedName ||
+              generated.fileName ||
+              canonicalFitFileName(
+                generated.stats.startMs,
+                "C"
+              )
+            );
+
+          const hash =
+            sha256(generated.buffer);
+
+          const ref =
+            fileDoc(uid, hash);
+
+          const existing =
+            await ref.get();
+
+          const previous =
+            existing.exists
+              ? existing.data() || {}
+              : {};
+
+          const explicitActivityId =
+            String(
+              payload.activity_id || ""
+            ).trim();
+
+          const link =
+            await resolveActivity(
+              uid,
+              explicitActivityId ||
+                previous.activity_id,
+              generated.stats.startMs,
+              generated.stats.sport
+            );
+
+          const path =
+            previous.object_path ||
+            objectPath(
+              uid,
+              hash,
+              generated.stats.startMs
+            );
+
+          const object =
+            bucket().file(path);
+
+          const [exists] =
+            await object.exists();
+
+          if (!exists) {
+            await object.save(
+              generated.buffer,
+              {
+                resumable: false,
+                validation: "crc32c",
+                contentType:
+                  "application/vnd.ant.fit",
+                metadata: {
+                  cacheControl:
+                    "private, no-store",
+                  metadata: {
+                    sha256: hash,
+                    owner_uid: uid,
+                    source:
+                      "WEB_FITWRITER",
+                    mode:
+                      "GENERATED_CANONICAL",
+                    writer:
+                      "FITWRITER001"
+                  }
+                }
+              }
+            );
+          }
+
+          const now =
+            Date.now();
+
+          const metadata = {
+            file_id: hash,
+            sha256: hash,
+            object_path: path,
+            file_name: fileName,
+            original_name:
+              previous.original_name ||
+              fileName,
+
+            size_bytes:
+              generated.buffer.length,
+
+            mime_type:
+              "application/vnd.ant.fit",
+
+            source:
+              "WEB_FITWRITER",
+
+            upload_mode:
+              "GENERATED_CANONICAL",
+
+            start_time_ms:
+              generated.stats.startMs,
+
+            sport:
+              generated.stats.sport,
+
+            sub_sport:
+              generated.stats.subSport,
+
+            activity_id:
+              link.activity_id ||
+              previous.activity_id ||
+              null,
+
+            link_status:
+              link.activity_id
+                ? link.link_status
+                : (
+                    previous.link_status ||
+                    link.link_status
+                  ),
+
+            point_count:
+              generated.stats.pointCount,
+
+            fit_integrity:
+              true,
+
+            fitwriter_version:
+              "FITWRITER001",
+
+            first_uploaded_at_ms:
+              Number(
+                previous.first_uploaded_at_ms ||
+                now
+              ),
+
+            uploaded_at_ms: now,
+            last_seen_at_ms: now,
+            deleted_at_ms: null,
+
+            storage_version:
+              "FITCLOUD001"
+          };
+
+          await ref.set(
+            metadata,
+            {merge: true}
+          );
+
+          return res.json({
+            ok: true,
+            generated: true,
+            deduplicated:
+              Boolean(
+                existing.exists ||
+                exists
+              ),
+            file: metadata,
+            validation: check,
+            activities_created: 0
+          });
+        }
+
+        /* CGWEB075_FITWRITER001_ACTION_END */
 
         if (action === "upload") {
           if (req.method !== "POST") return res.status(405).json({error: "POST requis."});

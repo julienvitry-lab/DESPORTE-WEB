@@ -233,11 +233,54 @@ async function renderCloud() {
   }
 }
 
+
+/* CGWEB075_FITWRITER001_WEB_START */
+
+async function testFitWriter() {
+  const status =
+    node("webFitCloudStatus");
+
+  const button =
+    node("webFitWriterTestButton");
+
+  if (button) button.disabled = true;
+
+  if (status) {
+    status.textContent =
+      "Test du moteur FIT Garmin…";
+  }
+
+  try {
+    const result =
+      await request(
+        "writer_health",
+        {method: "POST"}
+      );
+
+    if (status) {
+      status.textContent =
+        `FIT Writer OK · ${result.record_messages || 0} records · ${result.bytes || 0} octets · intégrité ${result.integrity ? "OK" : "KO"}.`;
+    }
+  } catch (error) {
+    if (status) {
+      status.textContent =
+        `FIT Writer en erreur : ${error?.message || error}`;
+    }
+
+    throw error;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+/* CGWEB075_FITWRITER001_WEB_END */
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudUploadButton")?.addEventListener("click", () => void uploadHistorical());
   node("webFitCloudRefreshButton")?.addEventListener("click", () => void renderCloud());
+  node("webFitWriterTestButton")?.addEventListener("click", () => void testFitWriter());
   selectionChanged([]);
 }
 
