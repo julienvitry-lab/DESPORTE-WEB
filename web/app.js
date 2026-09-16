@@ -5903,6 +5903,8 @@ function v081SetQuickState(control, state, label = "") {
   control.classList.remove("is-pending", "is-available", "is-unavailable", "is-busy", "is-error");
   control.classList.add(`is-${state}`);
   control.dataset.fitState = state;
+  const disabled = state === "unavailable" || state === "error";
+  control.setAttribute("aria-disabled", disabled ? "true" : "false");
 
   if (state === "available") {
     control.title = label ? `Télécharger ${label}` : "Télécharger le FIT associé";
@@ -5925,6 +5927,7 @@ function v081SetQuickState(control, state, label = "") {
 async function v081DownloadFromControl(control) {
   const activityId = String(control?.dataset?.activityId || "").trim();
   if (!activityId) return;
+  if (control?.dataset?.fitState === "unavailable" || control?.dataset?.fitState === "error") return;
 
   const api = v081FitQuickApi();
   if (!api?.downloadActivity) {

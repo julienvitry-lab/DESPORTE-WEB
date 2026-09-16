@@ -4228,6 +4228,64 @@ select {
   #activityList .web081-fit-quick svg{width:14px!important;height:14px!important;}
 }
 </style>
+
+<style id="cgweb082-fitavailability-css">
+/* CGWEB082 · FITAVAILABILITY001 */
+
+/* Indisponible = même pictogramme + UNE seule barre diagonale. */
+#activityList .web081-fit-quick.is-unavailable,
+#activityList .web081-fit-quick.is-error{
+  position:absolute!important;
+  cursor:default!important;
+}
+
+/* Barre unique, de bas-gauche vers haut-droite. */
+#activityList .web081-fit-quick.is-unavailable::after,
+#activityList .web081-fit-quick.is-error::after{
+  content:""!important;
+  position:absolute!important;
+  left:4px!important;
+  right:4px!important;
+  top:50%!important;
+  height:1.7px!important;
+  border-radius:2px!important;
+  background:currentColor!important;
+  transform:translateY(-50%) rotate(-45deg)!important;
+  transform-origin:center!important;
+  pointer-events:none!important;
+  z-index:3!important;
+}
+
+/* Le symbole reste lisible : il n'est pas remplacé par une croix. */
+#activityList .web081-fit-quick.is-unavailable{
+  opacity:.46!important;
+}
+#activityList .web081-fit-quick.is-error{
+  opacity:.55!important;
+}
+
+/* Pas d'effet "bouton actif" quand le téléchargement n'est pas possible. */
+#activityList .web081-fit-quick.is-unavailable:hover,
+#activityList .web081-fit-quick.is-error:hover{
+  transform:translateY(-50%)!important;
+}
+
+/* Pictogramme disponible : comportement CGWEB081 inchangé. */
+#activityList .web081-fit-quick.is-available::after,
+#activityList .web081-fit-quick.is-pending::after,
+#activityList .web081-fit-quick.is-busy::after{
+  content:none!important;
+}
+
+@media (max-width:700px){
+  #activityList .web081-fit-quick.is-unavailable::after,
+  #activityList .web081-fit-quick.is-error::after{
+    left:4px!important;
+    right:4px!important;
+    height:1.5px!important;
+  }
+}
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -5721,7 +5779,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB081-FITQUICKDOWNLOAD001"></script>
+  <script type="module" src="./app.js?v=CGWEB082-FITAVAILABILITY001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
@@ -5730,6 +5788,6 @@ select {
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB081-FITQUICKDOWNLOAD001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB082-FITAVAILABILITY001"></script>
 </body>
 </html>
