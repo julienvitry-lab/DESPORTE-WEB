@@ -6120,13 +6120,7 @@ window.addEventListener("sport-fit-quick-updated", () => {
 
 /* CGWEB083_FIX6_ACTIVITYHEADER002_START */
 
-function cgweb083Fix6ApplyActivityHeader() {
-  if (
-    typeof cgweb083Fix9ScheduleHeaderSync === "function"
-  ) {
-    cgweb083Fix9ScheduleHeaderSync();
-  }
-}
+/* CGWEB083 FIX9B HOTFIX2 : relais dupliqué supprimé ; l'alias FIX9 ci-dessous est conservé. */
 
 /* CGWEB083_FIX6_ACTIVITYHEADER002_END */
 
@@ -6138,6 +6132,7 @@ function cgweb083Fix6ApplyActivityHeader() {
 
 
 
+/* CGWEB083_FIX9B_HOTFIX2_JSBOOT002 */
 /* CGWEB083_FIX9_HEADERMEASURE001_START */
 
 function cgweb083Fix9Mm2Px(mm = 2) {
