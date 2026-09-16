@@ -1212,7 +1212,10 @@ function navigateUx(page, subpage = null, options = {}) {
     } else if (sub === "files") {
       setUxSectionVisibility([ui.webFilesSection]);
       void renderWebFileVault();
-    } else if (sub === "manual") setUxSectionVisibility([ui.webManualSection]);
+    } else if (sub === "manual") {
+      setUxSectionVisibility([ui.webManualSection]);
+      queueMicrotask(() => initializeWebManualForm());
+    }
     else if (sub === "import") setUxSectionVisibility([ui.webImportSection]);
     else if (sub === "health") setUxSectionVisibility([ui.syncHealthSection]);
     else if (sub === "landmarks-advanced") setUxSectionVisibility([ui.advancedLandmarksSection]);
@@ -14367,36 +14370,98 @@ function parseManualDurationMs(value) {
   return null;
 }
 
+/* WEB073_MANUAL_SPORT001_START */
+
+const WEB073_MANUAL_SPORT_PROFILES = Object.freeze([
+  Object.freeze({
+    key: "RUN",
+    label: "Course à pied",
+    sport: 1,
+    subSport: 0,
+    importProfile: "WEBMANUAL001_RUN",
+    indoor: false,
+    virtual: false,
+    trainer: false
+  }),
+  Object.freeze({
+    key: "BIKE",
+    label: "Vélo",
+    sport: 2,
+    subSport: 0,
+    importProfile: "WEBMANUAL001_BIKE",
+    indoor: false,
+    virtual: false,
+    trainer: false
+  }),
+  Object.freeze({
+    key: "VIRTUAL_BIKE",
+    label: "Vélo virtuel",
+    sport: 2,
+    subSport: 58,
+    importProfile: "WEBMANUAL001_VIRTUAL_BIKE",
+    indoor: true,
+    virtual: true,
+    trainer: true
+  }),
+  Object.freeze({
+    key: "TREADMILL",
+    label: "Tapis de course",
+    sport: 1,
+    subSport: 1,
+    importProfile: "WEBMANUAL001_TREADMILL",
+    indoor: true,
+    virtual: false,
+    trainer: false
+  })
+]);
+
+function web073ManualProfile(key) {
+  const normalized = String(key || "").trim().toUpperCase();
+
+  return WEB073_MANUAL_SPORT_PROFILES.find(
+    (profile) => profile.key === normalized
+  ) || WEB073_MANUAL_SPORT_PROFILES[0];
+}
+
+function web073SelectedManualProfile() {
+  return web073ManualProfile(ui.webManualSport?.value);
+}
+
+/* WEB073_MANUAL_SPORT001_END */
+
 function manualSportChoices() {
-  const candidates = [...new Set(
-    activities
-      .map((activity) => Number(activity.sport))
-      .filter(Number.isFinite)
-  )];
-  if (!candidates.length) return [1,2,11];
-  return candidates.sort((a,b) => sportName(a).localeCompare(sportName(b), "fr"));
+  return WEB073_MANUAL_SPORT_PROFILES.map((profile) => profile.key);
 }
 
 function initializeWebManualForm() {
   if (!ui.webManualSport) return;
 
-  const previous = ui.webManualSport.value;
+  const previous = String(ui.webManualSport.value || "").trim().toUpperCase();
+
   ui.webManualSport.innerHTML = "";
-  for (const sport of manualSportChoices()) {
+
+  for (const profile of WEB073_MANUAL_SPORT_PROFILES) {
     const option = document.createElement("option");
-    option.value = String(sport);
-    option.textContent = sportName(sport);
+    option.value = profile.key;
+    option.textContent = profile.label;
     ui.webManualSport.appendChild(option);
   }
-  if (previous && [...ui.webManualSport.options].some((o) => o.value === previous)) {
-    ui.webManualSport.value = previous;
-  }
 
-  if (!ui.webManualDate.value) {
+  ui.webManualSport.value = WEB073_MANUAL_SPORT_PROFILES.some(
+    (profile) => profile.key === previous
+  ) ? previous : "RUN";
+
+  if (!ui.webManualDate?.value) {
     const now = new Date();
-    const local = new Date(now.getTime() - now.getTimezoneOffset()*60000);
-    ui.webManualDate.value = local.toISOString().slice(0,10);
-    ui.webManualTime.value = local.toISOString().slice(11,16);
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+
+    if (ui.webManualDate) {
+      ui.webManualDate.value = local.toISOString().slice(0, 10);
+    }
+
+    if (ui.webManualTime) {
+      ui.webManualTime.value = local.toISOString().slice(11, 16);
+    }
   }
 
   rebuildWebManualEquipment();
@@ -14406,30 +14471,54 @@ function initializeWebManualForm() {
 
 function rebuildWebManualEquipment() {
   if (!ui.webManualEquipment) return;
+
   const current = ui.webManualEquipment.value;
   ui.webManualEquipment.innerHTML = '<option value="">Aucun matériel</option>';
 
-  const fakeActivity = {sport:Number(ui.webManualSport?.value)};
+  const profile = web073SelectedManualProfile();
+
+  const fakeActivity = {
+    sport: profile.sport,
+    sub_sport: profile.subSport,
+    indoor: profile.indoor,
+    virtual: profile.virtual,
+    trainer: profile.trainer
+  };
+
   const allowed = equipmentCategoriesForSport(fakeActivity);
 
   const rows = equipmentRows
-    .filter((item) => String(item.status ?? "ACTIVE").toUpperCase() === "ACTIVE")
-    .filter((item) => !allowed || allowed.has(String(item.category ?? "").toUpperCase()))
+    .filter((item) =>
+      String(item.status ?? "ACTIVE").toUpperCase() === "ACTIVE"
+    )
+    .filter((item) =>
+      !allowed ||
+      allowed.has(String(item.category ?? "").toUpperCase())
+    )
     .slice()
-    .sort((a,b) => equipmentDisplayName(a).localeCompare(equipmentDisplayName(b),"fr",{sensitivity:"base"}));
+    .sort((a, b) =>
+      equipmentDisplayName(a).localeCompare(
+        equipmentDisplayName(b),
+        "fr",
+        { sensitivity: "base" }
+      )
+    );
 
   const seen = new Set();
+
   for (const item of rows) {
     const value = equipmentDisplayName(item);
     if (!value || seen.has(value)) continue;
+
     seen.add(value);
+
     const option = document.createElement("option");
     option.value = value;
     option.textContent = value;
     ui.webManualEquipment.appendChild(option);
   }
 
-  if ([...ui.webManualEquipment.options].some((o) => o.value === current)) {
+  if ([...ui.webManualEquipment.options].some((option) => option.value === current)) {
     ui.webManualEquipment.value = current;
   }
 }
@@ -14490,7 +14579,7 @@ function manualStartTimeMs() {
   return Number.isFinite(parsed.getTime()) ? parsed.getTime() : null;
 }
 
-function buildWebManualDraft() {
+function buildWebManualDraftWeb073Base() {
   const start = manualStartTimeMs();
   const duration = parseManualDurationMs(ui.webManualDuration?.value);
   const distanceKm = Number(ui.webManualDistanceKm?.value || 0);
@@ -14530,6 +14619,51 @@ function buildWebManualDraft() {
   return activity;
 }
 
+function buildWebManualDraft() {
+  const profile = web073SelectedManualProfile();
+
+  /*
+   * La fonction de base attendait une valeur numérique dans le select.
+   * On lui fournit temporairement le sport réel, puis on rétablit le profil.
+   */
+  const selectedValue = ui.webManualSport?.value;
+
+  if (ui.webManualSport) {
+    ui.webManualSport.value = String(profile.sport);
+  }
+
+  let draft;
+
+  try {
+    draft = buildWebManualDraftWeb073Base();
+  } finally {
+    if (ui.webManualSport) {
+      ui.webManualSport.value = selectedValue;
+    }
+  }
+
+  return {
+    ...draft,
+    sport: profile.sport,
+    sub_sport: profile.subSport,
+
+    indoor: profile.indoor,
+    is_indoor: profile.indoor,
+
+    virtual: profile.virtual,
+    is_virtual: profile.virtual,
+
+    trainer: profile.trainer,
+    is_trainer: profile.trainer,
+
+    import_source: "WEB_MANUAL",
+    import_profile: profile.importProfile,
+
+    manual_sport_profile: profile.key,
+    manual_sport_label: profile.label
+  };
+}
+
 async function probableManualDuplicate(draft) {
   const min = draft.start_time_ms - 120000;
   const max = draft.start_time_ms + 120000;
@@ -14553,7 +14687,7 @@ async function probableManualDuplicate(draft) {
   return null;
 }
 
-function updateWebManualPreview() {
+function updateWebManualPreviewWeb073Base() {
   if (!ui.webManualPreview) return;
   try {
     const draft = buildWebManualDraft();
@@ -14574,6 +14708,15 @@ function updateWebManualPreview() {
   } catch (error) {
     ui.webManualPreview.textContent = error?.message || "Informations incomplètes.";
     ui.webManualPreview.className = "web-manual-preview muted";
+  }
+}
+
+function updateWebManualPreview() {
+  updateWebManualPreviewWeb073Base();
+
+  const strong = ui.webManualPreview?.querySelector("strong");
+  if (strong) {
+    strong.textContent = web073SelectedManualProfile().label;
   }
 }
 

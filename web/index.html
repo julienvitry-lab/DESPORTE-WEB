@@ -4572,7 +4572,14 @@ select {
             <div class="web-manual-grid">
               <label>
                 <span>Sport</span>
-                <select id="webManualSport" required></select>
+                <!-- WEB073_MANUAL_SPORT001_HTML_START -->
+<select id="webManualSport" required>
+  <option value="RUN">Course à pied</option>
+  <option value="BIKE">Vélo</option>
+  <option value="VIRTUAL_BIKE">Vélo virtuel</option>
+  <option value="TREADMILL">Tapis de course</option>
+</select>
+<!-- WEB073_MANUAL_SPORT001_HTML_END -->
               </label>
               <label>
                 <span>Date</span>
@@ -5599,7 +5606,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-FIX13-MANUALTAB001-DETAIL-SPACING005-PARASITE002"></script>
+  <script type="module" src="./app.js?v=WEB073-MANUAL-SPORT001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
