@@ -775,11 +775,35 @@ window.SPORT_FIT_PIPELINE = Object.freeze({
 
 /* CGWEB077_FITPIPELINE001_WEB_END */
 
+
+/* CGWEB079_FITCUTOVER001_START */
+const SPORT_FIT_AUTHORITY = Object.freeze({
+  version: "FITCUTOVER001",
+  authority: "SPORT_WEB",
+  canonicalWriter: "FITWRITER001",
+  cloudVault: "FITCLOUD001",
+  futureImportPipeline: "FITPIPELINE001",
+  versioning: "FITVERSION001",
+  androidRole: "FIREBASE_SYNC_ONLY",
+  historicalBackfill: false
+});
+
+window.SPORT_FIT_AUTHORITY = SPORT_FIT_AUTHORITY;
+
+function v079RenderFitAuthority() {
+  const status = node("webFitAuthorityStatus");
+  if (!status) return;
+  status.textContent = "Pipeline FIT : SPORT Web maître · Android lecture / synchronisation Firebase";
+  status.title = "FITCUTOVER001 · aucune acquisition FIT/Strava sur Android · aucun backfill historique";
+}
+/* CGWEB079_FITCUTOVER001_END */
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudUploadButton")?.addEventListener("click", () => void uploadHistorical());
   node("webFitCloudRefreshButton")?.addEventListener("click", () => void renderCloud());
+  v079RenderFitAuthority();
   node("webFitWriterTestButton")?.addEventListener("click", () => void testFitWriter());
   node("webFitRoundTripButton")?.addEventListener("click", () => void testFitRoundTrip());
   selectionChanged([]);
