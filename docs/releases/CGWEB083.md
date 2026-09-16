@@ -1,33 +1,45 @@
-# CGWEB083 · FIX5 · ACTIVITYHEADER001
+# CGWEB083 · FIX6 · ACTIVITYHEADER002
 
-## Barre de titre Activités
+## Reprise propre après la régression FIX5
 
-La barre `activityDirectoryHeaderWeb059` est maintenant ciblée directement.
+FIX5 est supprimé.
 
-Décalages :
+La correction ne dépend plus de `body.ux-activities-page`.
+
+## Barre de titre
+
+La barre réelle `#activityDirectoryHeaderWeb059` est restaurée :
+
+- hauteur : 34 px ;
+- fond opaque ;
+- bord supérieur et inférieur ;
+- `position: sticky` ;
+- offset : `--web059-sticky-top`.
+
+## Décalages horizontaux
+
+Appliqués après chaque reconstruction du header avec `style.setProperty(..., "important")` :
+
 - Date : +2 mm ;
 - Temps : -1 mm ;
 - Matériel : +2,5 cm ;
 - Repères : -1 cm ;
 - Charge : +1 cm.
 
-Les anciens `left` / `transform` injectés par les correctifs précédents sont neutralisés par CSS `!important`.
-
-## Ancrage
-
-La barre de titre est `position: sticky` et utilise `--web059-sticky-top`, déjà calculé à partir des navigations visibles.
+Le moteur historique `v083NudgeDirectoryHeaders` délègue maintenant à FIX6 et ne peut plus annuler ces positions.
 
 ## Espacement vertical
 
-Les rubriques directes du Répertoire Activités sont séparées uniformément de 2 mm (7,559 px).
+`#activityDirectorySection` devient une pile verticale explicite avec `gap: 2 mm`.
 
-Les lignes d'activités elles-mêmes ne sont pas concernées par ce nouvel espacement.
+Les marges historiques des enfants directs sont neutralisées.
+
+Le bandeau replié « Tri des activités » reçoit une hauteur compacte de 34 px afin de supprimer toute zone vide fantôme.
 
 ## Conservé
 
-- 100 dernières activités au départ ;
-- ancrage de scroll sur « Afficher 20 de plus » ;
+- 100 activités au démarrage ;
+- « Afficher 20 de plus » sans saut de scroll ;
 - pictogramme FIT FIX4 ;
 - pipeline FIT ;
-- backend ;
-- données Firestore.
+- backend et Firestore inchangés.

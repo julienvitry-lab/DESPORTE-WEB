@@ -5522,7 +5522,8 @@ function web059EnsureDirectoryHeader() {
 
     web059RefreshStickyTop();
 
-    return header;
+    cgweb083Fix6ApplyActivityHeader();
+  return header;
   }
 
 function web059HideRepeatedActivityLabels() {
@@ -6099,39 +6100,8 @@ function v083HeaderShiftPx(label) {
 }
 
 function v083NudgeDirectoryHeaders() {
-  const wanted = ["Date", "Heure", "Distance", "D+", "Temps", "Matériel", "Repères", "Charge"];
-  const nodes = Array.from(document.querySelectorAll("div, span, th, label, strong"));
-  let headerRoot = null;
-
-  for (const node of nodes) {
-    const descendants = Array.from(node.querySelectorAll("*"));
-    const bucket = [];
-    for (const child of descendants) {
-      if (child.children.length) continue;
-      const text = String(child.textContent || "").replace(/\s+/g, " ").trim();
-      if (wanted.includes(text)) bucket.push(text);
-    }
-    const ok = wanted.every((label) => bucket.includes(label));
-    if (ok) {
-      headerRoot = node;
-      break;
-    }
-  }
-
-  if (!headerRoot) return;
-
-  const targets = Array.from(headerRoot.querySelectorAll("*")).filter((el) => {
-    if (el.children.length) return false;
-    const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
-    return wanted.includes(text);
-  });
-
-  for (const el of targets) {
-    const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
-    const shift = v083HeaderShiftPx(text);
-    if (!shift) continue;
-    el.style.display = "inline-block";
-    el.style.transform = "translateX(" + shift + "px)";
+  if (typeof cgweb083Fix6ApplyActivityHeader === "function") {
+    cgweb083Fix6ApplyActivityHeader();
   }
 }
 
@@ -6161,6 +6131,57 @@ window.addEventListener("sport-fit-quick-updated", () => {
   queueMicrotask(() => v083Fix4ApplyDownloadIcon());
 });
 /* CGWEB083_FIX4_FITICON_END */
+
+
+/* CGWEB083_FIX6_ACTIVITYHEADER002_START */
+
+function cgweb083Fix6ApplyActivityHeader() {
+  const header = document.getElementById("activityDirectoryHeaderWeb059");
+  if (!header) return;
+
+  const shifts = new Map([
+    ["Date", "7.559px"],
+    ["Heure", "0px"],
+    ["Distance", "0px"],
+    ["D+", "0px"],
+    ["Temps", "-3.780px"],
+    ["Matériel", "94.488px"],
+    ["Repères", "-37.795px"],
+    ["Charge", "37.795px"]
+  ]);
+
+  header.classList.add("cgweb083-fix6-header");
+
+  for (const label of Array.from(header.querySelectorAll(":scope > strong"))) {
+    const text = String(label.textContent || "").replace(/\s+/g, " ").trim();
+    const x = shifts.get(text) ?? "0px";
+
+    label.style.setProperty("position", "relative", "important");
+    label.style.setProperty("left", "0", "important");
+    label.style.setProperty("right", "auto", "important");
+    label.style.setProperty("margin-left", "0", "important");
+    label.style.setProperty("margin-right", "0", "important");
+    label.style.setProperty("transform", "translateX(" + x + ")", "important");
+    label.style.setProperty("white-space", "nowrap", "important");
+  }
+
+  header.style.setProperty("display", "grid", "important");
+  header.style.setProperty("position", "sticky", "important");
+  header.style.setProperty("top", "var(--web059-sticky-top, 0px)", "important");
+  header.style.setProperty("z-index", "4200", "important");
+  header.style.setProperty("min-height", "34px", "important");
+  header.style.setProperty("height", "34px", "important");
+  header.style.setProperty("padding", "5px 12px", "important");
+  header.style.setProperty("margin", "0", "important");
+  header.style.setProperty("box-sizing", "border-box", "important");
+  header.style.setProperty("background", "rgba(8,14,10,.985)", "important");
+  header.style.setProperty("border-top", "1px solid rgba(210,180,95,.22)", "important");
+  header.style.setProperty("border-bottom", "1px solid rgba(210,180,95,.34)", "important");
+  header.style.setProperty("box-shadow", "0 2px 5px rgba(0,0,0,.22)", "important");
+}
+
+/* CGWEB083_FIX6_ACTIVITYHEADER002_END */
+
 
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;
@@ -6208,6 +6229,7 @@ function renderActivities() {
   }
 
   ui.activityList.appendChild(fragment);
+  queueMicrotask(() => cgweb083Fix6ApplyActivityHeader());
   queueMicrotask(() => v083Fix4ApplyDownloadIcon());
   queueMicrotask(() => v083NudgeDirectoryHeaders());
   queueMicrotask(() => void v081RefreshFitQuickControls());
