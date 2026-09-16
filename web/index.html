@@ -3695,37 +3695,35 @@ select {
 
 
 
-<style id="web072-fix8-directory-visual-css">
-  /* WEB072 FIX8 · DIRECTORY_VISUAL_ROLLBACK001 */
 
-  /*
-   * Cellule sport :
-   * cadre interne large afin que l'éclair reste DANS le bandeau.
-   */
+<style id="web072-fix9-sticky-align-css">
+  /* WEB072 FIX9 · STICKY_ALIGN004 / ICON_LAYOUT005 */
+
+  #activityList .web071-fix1-activity-main {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: visible !important;
+  }
+
   #activityList .web071-fix1-sport-icon {
     position: relative !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-
-    width: 58px !important;
-    min-width: 58px !important;
-    max-width: 58px !important;
-
-    height: 40px !important;
-    min-height: 40px !important;
-    max-height: 40px !important;
-
+    width: 68px !important;
+    min-width: 68px !important;
+    max-width: 68px !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    max-height: 42px !important;
     margin: auto !important;
     padding: 0 !important;
-    overflow: visible !important;
     box-sizing: border-box !important;
+    overflow: visible !important;
   }
 
-  /*
-   * Course : retour à une taille proche du rendu lisible précédent.
-   * 34 px, centrée H/V, sans débordement.
-   */
+  /* Course : ~1 mm de marge verticale. */
   #activityList .web071-fix1-sport-icon[aria-label*="course" i] img,
   #activityList .web071-fix1-sport-icon[aria-label*="course" i] svg,
   #activityList .web071-fix1-sport-icon[aria-label*="running" i] img,
@@ -3739,19 +3737,14 @@ select {
     min-height: 34px !important;
     max-width: 34px !important;
     max-height: 34px !important;
-
     margin: auto !important;
     padding: 0 !important;
-
     object-fit: contain !important;
-    object-position: center center !important;
-
+    object-position: 50% 50% !important;
     transform: none !important;
   }
 
-  /*
-   * Vélo : taille lisible et centre optique au milieu du bandeau.
-   */
+  /* Velo : agrandi + contraste renforce. */
   #activityList .web071-fix1-sport-icon[aria-label*="vélo" i] img,
   #activityList .web071-fix1-sport-icon[aria-label*="vélo" i] svg,
   #activityList .web071-fix1-sport-icon[aria-label*="velo" i] img,
@@ -3761,110 +3754,109 @@ select {
   #activityList .web072-bike-cell .web071-fix1-sport-icon img,
   #activityList .web072-bike-cell .web071-fix1-sport-icon svg,
   #activityList .web072-bike-cell .web071-fix1-sport-icon .sport-icon-c1v1 {
-    width: 35px !important;
-    height: 25px !important;
-    min-width: 35px !important;
-    min-height: 25px !important;
-    max-width: 35px !important;
-    max-height: 25px !important;
-
+    width: 48px !important;
+    height: 34px !important;
+    min-width: 48px !important;
+    min-height: 34px !important;
+    max-width: 48px !important;
+    max-height: 34px !important;
     margin: auto !important;
     padding: 0 !important;
-
     object-fit: contain !important;
-    object-position: center center !important;
-
-    transform: none !important;
+    object-position: 50% 50% !important;
+    color: #ffd84d !important;
+    fill: #ffd84d !important;
+    filter: brightness(1.45) saturate(1.45) contrast(1.12) !important;
+    transform: translateX(8px) !important;
   }
 
-  /*
-   * Éclair indoor :
-   * - reste à l'intérieur du cadre de 58 px ;
-   * - à gauche ;
-   * - marge réelle avec le vélo ;
-   * - ne peut plus sortir du bandeau.
-   */
+  #activityList .web072-bike-cell .web071-fix1-sport-icon svg *,
+  #activityList .web071-fix1-sport-icon[aria-label*="vélo" i] svg *,
+  #activityList .web071-fix1-sport-icon[aria-label*="velo" i] svg *,
+  #activityList .web071-fix1-sport-icon[aria-label*="bike" i] svg * {
+    stroke: #ffd84d !important;
+  }
+
+  /* Eclair : -15 % environ, 2 mm vers la gauche, sans toucher le velo. */
   #activityList .web071-fix1-sport-icon
   > .web071-indoor-badge.web071-indoor-lightning {
     position: absolute !important;
-
-    left: 1px !important;
+    left: -7px !important;
     right: auto !important;
-
     top: 50% !important;
     bottom: auto !important;
-
     transform: translateY(-50%) !important;
-
     margin: 0 !important;
     padding: 0 !important;
-
-    font-size: 21px !important;
+    font-size: 18px !important;
     line-height: 1 !important;
-
+    z-index: 10 !important;
     pointer-events: none !important;
   }
 
-  /*
-   * Entête : aucun faux grid ni spacer.
-   * FIX8 positionne chaque titre sur le centre MESURE de sa cellule.
-   */
-  .web072-fix8-directory-header {
+  /* Entete : titres positionnes sur centres mesures. */
+  .web072-fix9-directory-header {
     position: relative !important;
     display: block !important;
     min-height: 32px !important;
     box-sizing: border-box !important;
   }
 
-  .web072-fix8-directory-header
-  > .web072-fix8-header-label {
+  .web072-fix9-directory-header > .web072-fix9-header-label {
     position: absolute !important;
-
     top: 50% !important;
     transform: translate(-50%, -50%) !important;
-
     width: max-content !important;
     max-width: none !important;
-
     margin: 0 !important;
     padding: 0 !important;
-
     text-align: center !important;
     white-space: nowrap !important;
   }
 
-  /*
-   * Le bandeau navigation reste en flux tant qu'il n'a pas atteint
-   * le haut. Le JS le fixe uniquement à ce moment-là.
-   */
-  #detailView .web072-fix8-toolbar-floating {
-    position: fixed !important;
+  /* Detail : on annule les anciennes reserves verticales. */
+  #detailView {
+    overflow: visible !important;
+    padding-top: 0 !important;
+    margin-top: 8px !important;
+    scroll-margin-top: 0 !important;
+  }
+
+  #detailView .web072-fix9-toolbar-sticky,
+  #detailView .web059-detail-toolbar.web072-fix9-toolbar-sticky,
+  #detailView .detail-toolbar-web049.web072-fix9-toolbar-sticky,
+  #detailView > .detail-toolbar.web072-fix9-toolbar-sticky {
+    position: sticky !important;
+    position: -webkit-sticky !important;
+    top: var(--web072-fix9-sticky-top, 8px) !important;
     z-index: 9999 !important;
-    margin: 0 !important;
-
-    box-sizing: border-box !important;
-
+    margin-top: 0 !important;
+    margin-bottom: 8px !important;
     background: rgba(8,14,10,.995) !important;
     backdrop-filter: blur(8px) !important;
     -webkit-backdrop-filter: blur(8px) !important;
+    box-sizing: border-box !important;
   }
 
-  .web072-fix8-toolbar-anchor {
-    display: block !important;
-    width: 100% !important;
+  .web072-fix9-sticky-parent {
+    overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    contain: none !important;
+  }
+
+  .web072-fix9-hide-intermediate-bar {
+    display: none !important;
+    visibility: hidden !important;
     height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
-    pointer-events: none !important;
+    border: 0 !important;
+    overflow: hidden !important;
   }
 
-  .web072-fix8-toolbar-placeholder {
-    display: block !important;
-    width: 100% !important;
-    pointer-events: none !important;
-  }
-
-  /* Navigation basse toujours interdite. */
   #detailView .web059-detail-bottom-nav,
   #detailView .detail-bottom-nav,
   #detailView #nextActivityBottomButton,
@@ -5319,7 +5311,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-FIX8-DIRECTORY-VISUAL-ROLLBACK001"></script>
+  <script type="module" src="./app.js?v=WEB072-FIX9D-STICKY-ALIGN004-ICON-LAYOUT005"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

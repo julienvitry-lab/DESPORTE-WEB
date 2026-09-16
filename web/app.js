@@ -17900,12 +17900,12 @@ function localeSort(a, b) {
 
 
 
-/* WEB072_FIX8_DIRECTORY_VISUAL_START */
 
-/*
- * Accueil : protection du choix Course/Vélo conservée.
- */
-function web072Fix8StoredSport() {
+
+
+/* WEB072_FIX9D_STICKY_ALIGN004_START */
+
+function web072Fix9StoredSport() {
   try {
     return Number(
       localStorage.getItem("sport_web_web055_home_sport")
@@ -17915,9 +17915,8 @@ function web072Fix8StoredSport() {
   }
 }
 
-function web072Fix8RestoreHomeSport() {
-  const sport = web072Fix8StoredSport();
-
+function web072Fix9RestoreHomeSport() {
+  const sport = web072Fix9StoredSport();
   dashboardSport = sport;
 
   document.getElementById("web055RunningButton")?.classList.toggle(
@@ -17931,16 +17930,16 @@ function web072Fix8RestoreHomeSport() {
   );
 }
 
-const web072Fix8OriginalSetSport = web055SetSport;
+const web072Fix9OriginalSetSport = web055SetSport;
 
-web055SetSport = function web072Fix8LockedSetSport(sport) {
+web055SetSport = function web072Fix9LockedSetSport(sport) {
   let requested = Number(sport) === 2 ? 2 : 1;
-  const explicit = Number(window.__web072Fix8ExplicitSport);
+  const explicit = Number(window.__web072Fix9ExplicitSport);
 
   if (explicit === 1 || explicit === 2) {
     requested = explicit;
   } else {
-    requested = web072Fix8StoredSport();
+    requested = web072Fix9StoredSport();
   }
 
   dashboardSport = requested;
@@ -17956,24 +17955,20 @@ web055SetSport = function web072Fix8LockedSetSport(sport) {
   );
 };
 
-const web072Fix8OriginalLoadDashboard = loadWebDashboard;
+const web072Fix9OriginalLoadDashboard = loadWebDashboard;
 
-loadWebDashboard = async function web072Fix8LoadDashboard(...args) {
-  web072Fix8RestoreHomeSport();
-  return web072Fix8OriginalLoadDashboard.apply(this, args);
+loadWebDashboard = async function web072Fix9LoadDashboard(...args) {
+  web072Fix9RestoreHomeSport();
+  return web072Fix9OriginalLoadDashboard.apply(this, args);
 };
 
-if (!window.__web072Fix8HomeCaptureInstalled) {
-  window.__web072Fix8HomeCaptureInstalled = true;
+if (!window.__web072Fix9HomeCaptureInstalled) {
+  window.__web072Fix9HomeCaptureInstalled = true;
 
   document.addEventListener(
     "click",
     (event) => {
-      const target =
-        event.target instanceof Element
-          ? event.target
-          : null;
-
+      const target = event.target instanceof Element ? event.target : null;
       if (!target) return;
 
       let sport = 0;
@@ -17993,13 +17988,11 @@ if (!window.__web072Fix8HomeCaptureInstalled) {
         );
       } catch (_) {}
 
-      window.__web072Fix8ExplicitSport = sport;
+      window.__web072Fix9ExplicitSport = sport;
 
       setTimeout(() => {
-        if (
-          Number(window.__web072Fix8ExplicitSport) === sport
-        ) {
-          delete window.__web072Fix8ExplicitSport;
+        if (Number(window.__web072Fix9ExplicitSport) === sport) {
+          delete window.__web072Fix9ExplicitSport;
         }
       }, 0);
     },
@@ -18007,30 +18000,20 @@ if (!window.__web072Fix8HomeCaptureInstalled) {
   );
 }
 
-function web072Fix8Text(el) {
+function web072Fix9Text(el) {
   return String(el?.textContent || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/*
- * Icônes : classes recalculées à chaque reconstruction du Répertoire.
- */
-function web072Fix8DecorateSportCells() {
+function web072Fix9DecorateSportCells() {
   document
     .querySelectorAll("#activityList .web071-fix1-activity-main")
     .forEach((cell) => {
-      const icon =
-        cell.querySelector(".web071-fix1-sport-icon");
+      const icon = cell.querySelector(".web071-fix1-sport-icon");
+      const label = String(icon?.getAttribute("aria-label") || "").toLowerCase();
 
-      const label =
-        String(icon?.getAttribute("aria-label") || "")
-          .toLowerCase();
-
-      cell.classList.remove(
-        "web072-run-cell",
-        "web072-bike-cell"
-      );
+      cell.classList.remove("web072-run-cell", "web072-bike-cell");
 
       if (/vélo|velo|bike|cycling|vtt/.test(label)) {
         cell.classList.add("web072-bike-cell");
@@ -18040,11 +18023,7 @@ function web072Fix8DecorateSportCells() {
     });
 }
 
-/*
- * Entête : on part du parent REEL de la cellule sport de la 1re activité.
- * Plus de recherche approximative de ligne.
- */
-function web072Fix8FindDirectoryHeader() {
+function web072Fix9FindDirectoryHeader() {
   const list = document.getElementById("activityList");
   if (!list) return null;
 
@@ -18064,9 +18043,7 @@ function web072Fix8FindDirectoryHeader() {
   ];
 
   for (const el of root.querySelectorAll("div")) {
-    const children = Array.from(el.children);
-    const texts =
-      children.map((child) => web072Fix8Text(child));
+    const texts = Array.from(el.children).map((child) => web072Fix9Text(child));
 
     if (
       wanted.every((label) => texts.includes(label)) &&
@@ -18079,46 +18056,118 @@ function web072Fix8FindDirectoryHeader() {
   return null;
 }
 
-function web072Fix8AlignDirectoryHeader() {
+function web072Fix9FindRealActivityRow() {
   const list = document.getElementById("activityList");
-  const sportCell =
-    list?.querySelector(".web071-fix1-activity-main");
+  const sportCell = list?.querySelector(".web071-fix1-activity-main");
 
-  const row = sportCell?.parentElement;
-  const header = web072Fix8FindDirectoryHeader();
+  if (!list || !sportCell) return null;
 
-  if (!row || !sportCell || !header) return;
+  const listRect = list.getBoundingClientRect();
+  let node = sportCell;
 
-  /*
-   * Retirer les anciens spacers/styles hérités des FIX précédents.
-   */
-  header
-    .querySelectorAll(
-      ".web072-fix5-header-spacer, " +
-      ".web072-fix6-header-spacer, " +
-      ".web072-fix7-header-spacer"
-    )
-    .forEach((el) => el.remove());
+  while (node && node !== list) {
+    const rect = node.getBoundingClientRect();
 
-  const rowChildren =
-    Array.from(row.children)
-      .filter((cell) => {
-        const rect = cell.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-      });
+    if (
+      rect.width >= listRect.width * 0.82 &&
+      rect.height >= 30 &&
+      rect.height <= 110
+    ) {
+      return node;
+    }
 
-  const sportIndex =
-    rowChildren.indexOf(sportCell);
+    node = node.parentElement;
+  }
 
-  if (sportIndex < 0) return;
+  return sportCell.parentElement;
+}
 
-  const dataCells =
-    rowChildren.slice(
-      sportIndex + 1,
-      sportIndex + 8
+function web072Fix9ColumnCenters(row) {
+  if (!row) return [];
+
+  const rowRect = row.getBoundingClientRect();
+
+  const candidates = Array.from(row.querySelectorAll("*"))
+    .map((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        rect,
+        center: rect.left + rect.width / 2
+      };
+    })
+    .filter(({ rect }) =>
+      rect.width >= 42 &&
+      rect.width <= rowRect.width * 0.48 &&
+      rect.height >= rowRect.height * 0.48 &&
+      rect.height <= rowRect.height * 1.15 &&
+      rect.left >= rowRect.left - 2 &&
+      rect.right <= rowRect.right + 2
     );
 
-  if (dataCells.length !== 7) return;
+  const clusters = [];
+
+  for (const candidate of candidates) {
+    let cluster = clusters.find((item) =>
+      Math.abs(item.center - candidate.center) <= 12
+    );
+
+    if (!cluster) {
+      cluster = {
+        center: candidate.center,
+        widest: candidate.rect.width
+      };
+      clusters.push(cluster);
+    } else if (candidate.rect.width > cluster.widest) {
+      cluster.center = candidate.center;
+      cluster.widest = candidate.rect.width;
+    }
+  }
+
+  const centers = clusters
+    .map((item) => item.center)
+    .sort((x, y) => x - y);
+
+  const merged = [];
+
+  for (const center of centers) {
+    if (!merged.length || center - merged[merged.length - 1] > 24) {
+      merged.push(center);
+    }
+  }
+
+  if (merged.length < 8) return [];
+  if (merged.length === 8) return merged.slice(1);
+
+  const selected = [merged[0]];
+
+  for (let target = 1; target < 8; target += 1) {
+    const expected = rowRect.left + rowRect.width * (target / 8);
+    let best = null;
+
+    for (const center of merged) {
+      if (center <= selected[selected.length - 1]) continue;
+
+      const distance = Math.abs(center - expected);
+
+      if (!best || distance < best.distance) {
+        best = { center, distance };
+      }
+    }
+
+    if (best) selected.push(best.center);
+  }
+
+  return selected.length === 8 ? selected.slice(1) : [];
+}
+
+function web072Fix9AlignDirectoryHeader() {
+  const header = web072Fix9FindDirectoryHeader();
+  const row = web072Fix9FindRealActivityRow();
+
+  if (!header || !row) return;
+
+  const centers = web072Fix9ColumnCenters(row);
+  if (centers.length !== 7) return;
 
   const labels = [
     "Date",
@@ -18133,58 +18182,44 @@ function web072Fix8AlignDirectoryHeader() {
   const headerRect = header.getBoundingClientRect();
   if (headerRect.width <= 0) return;
 
-  header.classList.add("web072-fix8-directory-header");
+  header
+    .querySelectorAll(
+      ".web072-fix5-header-spacer, " +
+      ".web072-fix6-header-spacer, " +
+      ".web072-fix7-header-spacer, " +
+      ".web072-fix8-header-spacer"
+    )
+    .forEach((el) => el.remove());
+
+  header.classList.add("web072-fix9-directory-header");
   header.style.gridTemplateColumns = "";
   header.style.columnGap = "";
   header.style.paddingLeft = "";
   header.style.paddingRight = "";
 
   labels.forEach((label, index) => {
-    const title =
-      Array.from(header.children)
-        .find((child) =>
-          web072Fix8Text(child) === label
-        );
+    const title = Array.from(header.children)
+      .find((child) => web072Fix9Text(child) === label);
 
-    const cell = dataCells[index];
+    if (!title) return;
 
-    if (!title || !cell) return;
-
-    const rect = cell.getBoundingClientRect();
-
-    title.classList.add("web072-fix8-header-label");
-
-    title.style.left =
-      (
-        rect.left +
-        rect.width / 2 -
-        headerRect.left
-      ) + "px";
+    title.classList.add("web072-fix9-header-label");
+    title.style.left = (centers[index] - headerRect.left) + "px";
   });
 }
 
-/*
- * Bandeau : vrai comportement sticky/polyfill.
- * - normal dans le flux ;
- * - devient fixed seulement quand son ancre atteint le haut ;
- * - revient dans le flux en remontant.
- * Aucun grand espace permanent.
- */
-function web072Fix8FindToolbar() {
+function web072Fix9FindToolbar() {
   const detail = document.getElementById("detailView");
   if (!detail) return null;
 
-  const candidates =
-    Array.from(
-      detail.querySelectorAll(
-        ".web059-detail-toolbar, " +
-        ".detail-toolbar-web049, " +
-        ".detail-toolbar"
-      )
-    );
+  const candidates = Array.from(
+    detail.querySelectorAll(
+      ".web059-detail-toolbar, .detail-toolbar-web049, .detail-toolbar"
+    )
+  );
 
   for (const candidate of candidates) {
-    const text = web072Fix8Text(candidate);
+    const text = web072Fix9Text(candidate);
 
     if (
       /Répertoire/i.test(text) &&
@@ -18196,48 +18231,54 @@ function web072Fix8FindToolbar() {
     }
   }
 
+  const trash = Array.from(detail.querySelectorAll("button, a"))
+    .find((el) => /Mettre à la corbeille/i.test(web072Fix9Text(el)));
+
+  if (!trash) return null;
+
+  let node = trash.parentElement;
+
+  while (node && node !== detail) {
+    const text = web072Fix9Text(node);
+
+    if (
+      /Répertoire/i.test(text) &&
+      /Activité précédente/i.test(text) &&
+      /Activité suivante/i.test(text)
+    ) {
+      return node;
+    }
+
+    node = node.parentElement;
+  }
+
   return null;
 }
 
-function web072Fix8EnsureManual(toolbar) {
+function web072Fix9EnsureManual(toolbar) {
   if (!toolbar) return;
 
-  for (
-    const old of
-    document.querySelectorAll(".web072-manual-add-btn")
-  ) {
+  for (const old of document.querySelectorAll(".web072-manual-add-btn")) {
     if (!toolbar.contains(old)) old.remove();
   }
 
   if (toolbar.querySelector(".web072-manual-add-btn")) return;
 
-  const trash =
-    Array.from(toolbar.querySelectorAll("button, a"))
-      .find((el) =>
-        /Mettre à la corbeille/i.test(
-          web072Fix8Text(el)
-        )
-      );
+  const trash = Array.from(toolbar.querySelectorAll("button, a"))
+    .find((el) => /Mettre à la corbeille/i.test(web072Fix9Text(el)));
 
   const template = trash || toolbar.querySelector("button");
   const button = document.createElement("button");
 
   button.type = "button";
   button.className =
-    (
-      (template?.className || "secondary") +
-      " web072-manual-add-btn"
-    ).trim();
-
+    ((template?.className || "secondary") + " web072-manual-add-btn").trim();
   button.textContent = "Ajout manuel";
 
-  button.addEventListener(
-    "click",
-    (event) => {
-      event.preventDefault();
-      navigateUx("more", "manual");
-    }
-  );
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    navigateUx("more", "manual");
+  });
 
   if (trash) {
     trash.insertAdjacentElement("beforebegin", button);
@@ -18246,7 +18287,7 @@ function web072Fix8EnsureManual(toolbar) {
   }
 }
 
-function web072Fix8RemoveBottomNav() {
+function web072Fix9RemoveBottomNav() {
   const detail = document.getElementById("detailView");
   if (!detail) return;
 
@@ -18258,229 +18299,226 @@ function web072Fix8RemoveBottomNav() {
     document.getElementById(id)?.remove();
   }
 
-  for (
-    const nav of
-    detail.querySelectorAll(
-      ".web059-detail-bottom-nav, .detail-bottom-nav"
-    )
-  ) {
+  for (const nav of detail.querySelectorAll(
+    ".web059-detail-bottom-nav, .detail-bottom-nav"
+  )) {
     nav.remove();
   }
 }
 
-function web072Fix8StickyTop() {
-  /*
-   * Aucun écart arbitraire.
-   * Si la barre principale est elle-même fixed/sticky,
-   * le bandeau se cale juste dessous.
-   * Sinon il colle au haut du viewport.
-   */
-  const nav = document.getElementById("uxPrimaryNav");
+function web072Fix9StickyTop() {
+  let bottom = 0;
 
-  if (!nav) return 0;
+  for (const el of [
+    document.querySelector(".topbar"),
+    document.getElementById("uxPrimaryNav")
+  ]) {
+    if (!el) continue;
 
-  const style = getComputedStyle(nav);
+    const style = getComputedStyle(el);
 
-  if (
-    style.position !== "fixed" &&
-    style.position !== "sticky"
-  ) {
-    return 0;
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden"
+    ) {
+      continue;
+    }
+
+    if (
+      style.position === "fixed" ||
+      style.position === "sticky"
+    ) {
+      const rect = el.getBoundingClientRect();
+
+      if (rect.bottom > 0 && rect.top < window.innerHeight) {
+        bottom = Math.max(bottom, Math.ceil(rect.bottom));
+      }
+    }
   }
 
-  const rect = nav.getBoundingClientRect();
-
-  return Math.max(0, Math.ceil(rect.bottom));
+  return bottom + 8;
 }
 
-function web072Fix8SyncStickyToolbar() {
+function web072Fix9PrepareStickyToolbar() {
   const detail = document.getElementById("detailView");
-  const toolbar = web072Fix8FindToolbar();
+  const toolbar = web072Fix9FindToolbar();
 
   if (!detail || !toolbar) return;
 
-  web072Fix8EnsureManual(toolbar);
-  web072Fix8RemoveBottomNav();
+  web072Fix9EnsureManual(toolbar);
+  web072Fix9RemoveBottomNav();
 
-  let anchor =
-    toolbar.previousElementSibling;
+  detail.style.setProperty("padding-top", "0px", "important");
+  detail.style.setProperty("margin-top", "8px", "important");
+  detail.style.setProperty("overflow", "visible", "important");
 
-  if (
-    !anchor ||
-    !anchor.classList.contains(
-      "web072-fix8-toolbar-anchor"
-    )
+  let node = toolbar.parentElement;
+
+  while (
+    node &&
+    node !== document.body &&
+    node !== document.documentElement
   ) {
-    anchor = document.createElement("div");
-    anchor.className =
-      "web072-fix8-toolbar-anchor";
+    node.classList.add("web072-fix9-sticky-parent");
 
-    toolbar.insertAdjacentElement(
-      "beforebegin",
-      anchor
-    );
+    if (node === detail.parentElement) break;
+    node = node.parentElement;
   }
 
-  let placeholder =
-    anchor.previousElementSibling;
+  document.documentElement.style.setProperty(
+    "--web072-fix9-sticky-top",
+    web072Fix9StickyTop() + "px"
+  );
 
-  if (
-    !placeholder ||
-    !placeholder.classList.contains(
-      "web072-fix8-toolbar-placeholder"
-    )
+  toolbar.classList.add("web072-fix9-toolbar-sticky");
+
+  toolbar.style.removeProperty("position");
+  toolbar.style.removeProperty("left");
+  toolbar.style.removeProperty("width");
+  toolbar.style.removeProperty("z-index");
+  toolbar.style.removeProperty("top");
+}
+
+function web072Fix9HideIntermediateBar() {
+  const row = document.getElementById("web061SingleMetricRow");
+  if (!row) return;
+
+  let node = row.nextElementSibling;
+
+  for (
+    let i = 0;
+    node && i < 3;
+    i += 1, node = node.nextElementSibling
   ) {
-    placeholder = document.createElement("div");
-    placeholder.className =
-      "web072-fix8-toolbar-placeholder";
+    const rect = node.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    const classText = String(node.className || "");
+    const idText = String(node.id || "");
 
-    anchor.insertAdjacentElement(
-      "beforebegin",
-      placeholder
-    );
-  }
+    const thinWide =
+      rect.height > 0 &&
+      rect.height <= 18 &&
+      rect.width >= rowRect.width * 0.72;
 
-  /*
-   * Si le toolbar est fixed, l'ancre n'est plus affectée
-   * par sa géométrie ; son top reste donc notre seuil réel.
-   */
-  const threshold = web072Fix8StickyTop();
-  const anchorRect = anchor.getBoundingClientRect();
-
-  const shouldFloat =
-    anchorRect.top <= threshold;
-
-  if (shouldFloat) {
-    if (
-      !toolbar.classList.contains(
-        "web072-fix8-toolbar-floating"
-      )
-    ) {
-      placeholder.style.height =
-        Math.ceil(
-          toolbar.getBoundingClientRect().height
-        ) + "px";
-
-      toolbar.classList.add(
-        "web072-fix8-toolbar-floating"
+    const namedBar =
+      /divider|separator|sync|status|progress|bar/i.test(
+        classText + " " + idText
       );
+
+    if (thinWide || namedBar) {
+      node.classList.add("web072-fix9-hide-intermediate-bar");
+      break;
     }
-
-    const detailRect =
-      detail.getBoundingClientRect();
-
-    toolbar.style.setProperty(
-      "top",
-      threshold + "px",
-      "important"
-    );
-
-    toolbar.style.setProperty(
-      "left",
-      Math.max(0, detailRect.left) + "px",
-      "important"
-    );
-
-    toolbar.style.setProperty(
-      "width",
-      Math.min(
-        detailRect.width,
-        window.innerWidth -
-          Math.max(0, detailRect.left)
-      ) + "px",
-      "important"
-    );
-  } else {
-    toolbar.classList.remove(
-      "web072-fix8-toolbar-floating"
-    );
-
-    toolbar.style.removeProperty("top");
-    toolbar.style.removeProperty("left");
-    toolbar.style.removeProperty("width");
-    toolbar.style.removeProperty("position");
-    toolbar.style.removeProperty("z-index");
-
-    placeholder.style.height = "0px";
   }
 }
 
-/*
- * Une seule boucle RAF + MutationObserver.
- */
-let web072Fix8Raf = 0;
+let web072Fix9Raf = 0;
 
-function web072Fix8Apply() {
+function web072Fix9ApplyActivities() {
   try {
-    web072Fix8DecorateSportCells();
-    web072Fix8AlignDirectoryHeader();
-    web072Fix8RemoveBottomNav();
-    web072Fix8SyncStickyToolbar();
-
-    if (document.body.dataset.uxPage === "home") {
-      web072Fix8RestoreHomeSport();
-    }
+    web072Fix9DecorateSportCells();
+    web072Fix9AlignDirectoryHeader();
   } catch (_) {}
 }
 
-function web072Fix8RequestApply() {
-  if (web072Fix8Raf) return;
-
-  web072Fix8Raf =
-    requestAnimationFrame(() => {
-      web072Fix8Raf = 0;
-      web072Fix8Apply();
-    });
+function web072Fix9ApplyDetail() {
+  try {
+    web072Fix9PrepareStickyToolbar();
+    web072Fix9HideIntermediateBar();
+    web072Fix9RemoveBottomNav();
+  } catch (_) {}
 }
 
-if (!window.__web072Fix8Installed) {
-  window.__web072Fix8Installed = true;
+function web072Fix9ApplyAll() {
+  if (web072Fix9Raf) return;
 
-  document.addEventListener(
-    "DOMContentLoaded",
-    web072Fix8RequestApply
-  );
+  web072Fix9Raf = requestAnimationFrame(() => {
+    web072Fix9Raf = 0;
+
+    web072Fix9ApplyActivities();
+    web072Fix9ApplyDetail();
+
+    if (document.body.dataset.uxPage === "home") {
+      web072Fix9RestoreHomeSport();
+    }
+  });
+}
+
+const web072Fix9OriginalRenderActivities = renderActivities;
+
+renderActivities = function web072Fix9RenderActivities(...args) {
+  const result = web072Fix9OriginalRenderActivities.apply(this, args);
+
+  const apply = () => {
+    requestAnimationFrame(web072Fix9ApplyActivities);
+    setTimeout(web072Fix9ApplyActivities, 80);
+  };
+
+  if (result && typeof result.then === "function") {
+    result.finally(apply);
+  } else {
+    apply();
+  }
+
+  return result;
+};
+
+const web072Fix9OriginalRenderDetail = renderDetail;
+
+renderDetail = function web072Fix9RenderDetail(...args) {
+  const result = web072Fix9OriginalRenderDetail.apply(this, args);
+
+  const apply = () => {
+    requestAnimationFrame(web072Fix9ApplyDetail);
+    setTimeout(web072Fix9ApplyDetail, 80);
+  };
+
+  if (result && typeof result.then === "function") {
+    result.finally(apply);
+  } else {
+    apply();
+  }
+
+  return result;
+};
+
+if (!window.__web072Fix9Installed) {
+  window.__web072Fix9Installed = true;
+
+  document.addEventListener("DOMContentLoaded", web072Fix9ApplyAll);
 
   document.addEventListener(
     "click",
-    () => setTimeout(web072Fix8RequestApply, 0),
+    () => setTimeout(web072Fix9ApplyAll, 0),
     true
   );
 
   document.addEventListener(
     "change",
-    () => setTimeout(web072Fix8RequestApply, 0),
+    () => setTimeout(web072Fix9ApplyAll, 0),
     true
   );
 
   window.addEventListener(
     "resize",
-    web072Fix8RequestApply,
+    web072Fix9ApplyAll,
     { passive: true }
   );
 
   window.addEventListener(
     "scroll",
-    web072Fix8RequestApply,
-    { passive: true, capture: true }
+    () => {
+      document.documentElement.style.setProperty(
+        "--web072-fix9-sticky-top",
+        web072Fix9StickyTop() + "px"
+      );
+    },
+    { passive: true }
   );
 
-  const observer =
-    new MutationObserver(() => {
-      web072Fix8RequestApply();
-    });
-
-  observer.observe(
-    document.body,
-    {
-      childList: true,
-      subtree: true
-    }
-  );
-
-  setTimeout(web072Fix8RequestApply, 50);
-  setTimeout(web072Fix8RequestApply, 300);
-  setTimeout(web072Fix8RequestApply, 1000);
+  setTimeout(web072Fix9ApplyAll, 50);
+  setTimeout(web072Fix9ApplyAll, 250);
+  setTimeout(web072Fix9ApplyAll, 900);
 }
 
-/* WEB072_FIX8_DIRECTORY_VISUAL_END */
+/* WEB072_FIX9D_STICKY_ALIGN004_END */
