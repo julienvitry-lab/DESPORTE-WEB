@@ -3694,27 +3694,37 @@ select {
 
 
 
-<style id="web072-fix7-directory-render-css">
-  /* WEB072 FIX7 · DIRECTORY_RENDER003 / HEADER_ALIGN002 */
 
+<style id="web072-fix8-directory-visual-css">
+  /* WEB072 FIX8 · DIRECTORY_VISUAL_ROLLBACK001 */
+
+  /*
+   * Cellule sport :
+   * cadre interne large afin que l'éclair reste DANS le bandeau.
+   */
   #activityList .web071-fix1-sport-icon {
     position: relative !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    width: 44px !important;
-    min-width: 44px !important;
-    height: 38px !important;
-    min-height: 38px !important;
-    padding: 0 !important;
+
+    width: 58px !important;
+    min-width: 58px !important;
+    max-width: 58px !important;
+
+    height: 40px !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
+
     margin: auto !important;
+    padding: 0 !important;
     overflow: visible !important;
     box-sizing: border-box !important;
   }
 
   /*
-   * Course : règle directe sur aria-label.
-   * Elle s'applique dès le premier rendu, sans attendre web072-run-cell.
+   * Course : retour à une taille proche du rendu lisible précédent.
+   * 34 px, centrée H/V, sans débordement.
    */
   #activityList .web071-fix1-sport-icon[aria-label*="course" i] img,
   #activityList .web071-fix1-sport-icon[aria-label*="course" i] svg,
@@ -3723,103 +3733,138 @@ select {
   #activityList .web072-run-cell .web071-fix1-sport-icon img,
   #activityList .web072-run-cell .web071-fix1-sport-icon svg,
   #activityList .web072-run-cell .web071-fix1-sport-icon .sport-icon-c1v1 {
-    width: 21.6px !important;
-    height: 21.6px !important;
-    min-width: 21.6px !important;
-    min-height: 21.6px !important;
-    max-width: 21.6px !important;
-    max-height: 21.6px !important;
-    object-fit: contain !important;
-    object-position: center center !important;
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    min-height: 34px !important;
+    max-width: 34px !important;
+    max-height: 34px !important;
+
     margin: auto !important;
     padding: 0 !important;
+
+    object-fit: contain !important;
+    object-position: center center !important;
+
     transform: none !important;
   }
 
+  /*
+   * Vélo : taille lisible et centre optique au milieu du bandeau.
+   */
+  #activityList .web071-fix1-sport-icon[aria-label*="vélo" i] img,
+  #activityList .web071-fix1-sport-icon[aria-label*="vélo" i] svg,
+  #activityList .web071-fix1-sport-icon[aria-label*="velo" i] img,
+  #activityList .web071-fix1-sport-icon[aria-label*="velo" i] svg,
+  #activityList .web071-fix1-sport-icon[aria-label*="bike" i] img,
+  #activityList .web071-fix1-sport-icon[aria-label*="bike" i] svg,
   #activityList .web072-bike-cell .web071-fix1-sport-icon img,
   #activityList .web072-bike-cell .web071-fix1-sport-icon svg,
   #activityList .web072-bike-cell .web071-fix1-sport-icon .sport-icon-c1v1 {
-    width: 30px !important;
-    height: 21px !important;
-    min-width: 30px !important;
-    min-height: 21px !important;
-    max-width: 30px !important;
-    max-height: 21px !important;
-    object-fit: contain !important;
-    object-position: center center !important;
+    width: 35px !important;
+    height: 25px !important;
+    min-width: 35px !important;
+    min-height: 25px !important;
+    max-width: 35px !important;
+    max-height: 25px !important;
+
     margin: auto !important;
     padding: 0 !important;
+
+    object-fit: contain !important;
+    object-position: center center !important;
+
     transform: none !important;
   }
 
   /*
-   * Indoor : l'éclair est entièrement A GAUCHE du conteneur icône.
-   * right: calc(100% + 5px) garantit un espace vide de 5 px :
-   * il ne peut donc plus toucher le guidon.
+   * Éclair indoor :
+   * - reste à l'intérieur du cadre de 58 px ;
+   * - à gauche ;
+   * - marge réelle avec le vélo ;
+   * - ne peut plus sortir du bandeau.
    */
   #activityList .web071-fix1-sport-icon
   > .web071-indoor-badge.web071-indoor-lightning {
-    left: auto !important;
-    right: calc(100% + 5px) !important;
+    position: absolute !important;
+
+    left: 1px !important;
+    right: auto !important;
+
     top: 50% !important;
     bottom: auto !important;
+
     transform: translateY(-50%) !important;
+
+    margin: 0 !important;
+    padding: 0 !important;
+
     font-size: 21px !important;
     line-height: 1 !important;
-    margin: 0 !important;
-  }
 
-  #web061SingleMetricRow
-  .web071-indoor-badge.web071-indoor-lightning {
-    font-size: 24px !important;
+    pointer-events: none !important;
   }
 
   /*
-   * Entête Répertoire :
-   * les titres sont positionnés par JS sur le CENTRE MESURE
-   * des 7 cellules de la première activité visible.
+   * Entête : aucun faux grid ni spacer.
+   * FIX8 positionne chaque titre sur le centre MESURE de sa cellule.
    */
-  .web072-fix7-directory-header {
+  .web072-fix8-directory-header {
     position: relative !important;
     display: block !important;
     min-height: 32px !important;
     box-sizing: border-box !important;
   }
 
-  .web072-fix7-directory-header
-  > .web072-fix7-header-label {
+  .web072-fix8-directory-header
+  > .web072-fix8-header-label {
     position: absolute !important;
+
     top: 50% !important;
     transform: translate(-50%, -50%) !important;
+
     width: max-content !important;
     max-width: none !important;
+
     margin: 0 !important;
     padding: 0 !important;
+
     text-align: center !important;
     white-space: nowrap !important;
   }
 
-  /* Bandeau détail conservé du FIX6. */
-  #detailView .web072-fix7-toolbar-fixed,
-  #detailView .web059-detail-toolbar.web072-fix7-toolbar-fixed,
-  #detailView .detail-toolbar-web049.web072-fix7-toolbar-fixed,
-  #detailView > .detail-toolbar.web072-fix7-toolbar-fixed {
+  /*
+   * Le bandeau navigation reste en flux tant qu'il n'a pas atteint
+   * le haut. Le JS le fixe uniquement à ce moment-là.
+   */
+  #detailView .web072-fix8-toolbar-floating {
     position: fixed !important;
     z-index: 9999 !important;
     margin: 0 !important;
+
     box-sizing: border-box !important;
+
     background: rgba(8,14,10,.995) !important;
     backdrop-filter: blur(8px) !important;
     -webkit-backdrop-filter: blur(8px) !important;
   }
 
-  .web072-fix7-toolbar-spacer {
+  .web072-fix8-toolbar-anchor {
+    display: block !important;
+    width: 100% !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+  }
+
+  .web072-fix8-toolbar-placeholder {
     display: block !important;
     width: 100% !important;
     pointer-events: none !important;
   }
 
-  /* Les 3 boutons historiques du bas restent définitivement interdits. */
+  /* Navigation basse toujours interdite. */
   #detailView .web059-detail-bottom-nav,
   #detailView .detail-bottom-nav,
   #detailView #nextActivityBottomButton,
@@ -3827,18 +3872,6 @@ select {
   #detailView #previousActivityBottomButton {
     display: none !important;
     visibility: hidden !important;
-    opacity: 0 !important;
-    position: absolute !important;
-    width: 0 !important;
-    height: 0 !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
-    max-width: 0 !important;
-    max-height: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border: 0 !important;
-    overflow: hidden !important;
     pointer-events: none !important;
   }
 </style>
@@ -5286,7 +5319,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-FIX7-DIRECTORY-RENDER003-HEADER-ALIGN002"></script>
+  <script type="module" src="./app.js?v=WEB072-FIX8-DIRECTORY-VISUAL-ROLLBACK001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
