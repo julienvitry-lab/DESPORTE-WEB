@@ -4156,6 +4156,77 @@ select {
   }
 </style>
 
+
+<style id="cgweb081-fitquickdownload-css">
+/* CGWEB081 · FITQUICKDOWNLOAD001 */
+#activityList .activity-card{
+  position:relative!important;
+  padding-right:40px!important;
+}
+#activityList .web081-fit-quick{
+  position:absolute!important;
+  right:7px!important;
+  top:50%!important;
+  transform:translateY(-50%)!important;
+  width:27px!important;
+  height:27px!important;
+  box-sizing:border-box!important;
+  border-radius:50%!important;
+  border:1px solid rgba(255,255,255,.22)!important;
+  background:rgba(5,8,6,.82)!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  z-index:30!important;
+  color:rgba(255,255,255,.52)!important;
+  cursor:pointer!important;
+  touch-action:manipulation!important;
+  transition:opacity .12s ease,border-color .12s ease,color .12s ease,transform .12s ease!important;
+}
+#activityList .web081-fit-quick svg{
+  width:16px!important;
+  height:16px!important;
+  fill:none!important;
+  stroke:currentColor!important;
+  stroke-width:1.9!important;
+  stroke-linecap:round!important;
+  stroke-linejoin:round!important;
+  pointer-events:none!important;
+}
+#activityList .web081-fit-quick.is-available{
+  color:#d9ff79!important;
+  border-color:rgba(190,255,55,.72)!important;
+  opacity:1!important;
+}
+#activityList .web081-fit-quick.is-pending{
+  opacity:.48!important;
+}
+#activityList .web081-fit-quick.is-unavailable{
+  opacity:.24!important;
+  cursor:default!important;
+}
+#activityList .web081-fit-quick.is-error{
+  opacity:.38!important;
+}
+#activityList .web081-fit-quick.is-busy{
+  color:#fff!important;
+  border-color:rgba(255,255,255,.75)!important;
+  opacity:1!important;
+  animation:web081FitPulse .8s ease-in-out infinite alternate!important;
+}
+#activityList .web081-fit-quick:hover{
+  transform:translateY(-50%) scale(1.06)!important;
+}
+@keyframes web081FitPulse{
+  from{opacity:.45}
+  to{opacity:1}
+}
+@media (max-width:700px){
+  #activityList .activity-card{padding-right:34px!important;}
+  #activityList .web081-fit-quick{right:4px!important;width:24px!important;height:24px!important;}
+  #activityList .web081-fit-quick svg{width:14px!important;height:14px!important;}
+}
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -5649,7 +5720,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB077-FITPIPELINE001"></script>
+  <script type="module" src="./app.js?v=CGWEB081-FITQUICKDOWNLOAD001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
@@ -5658,6 +5729,6 @@ select {
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB080-FITDRIVE001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB081-FITQUICKDOWNLOAD001"></script>
 </body>
 </html>

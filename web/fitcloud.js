@@ -473,6 +473,113 @@ async function v080BackupMissingCloudFits() {
 }
 /* CGWEB080_FITDRIVE001_WEB_END */
 
+/* CGWEB081_FITQUICKDOWNLOAD001_CLOUD_START */
+const V081_QUICK_CACHE_MS = 3000;
+let v081QuickLoadedAt = 0;
+
+function v081ActivityKey(value) {
+  return String(value ?? "").trim();
+}
+
+function v081RootPreference(row) {
+  const version = Number(row?.version_index || 1);
+  const parent = String(row?.parent_sha256 || "").trim();
+  const edited = String(row?.version_kind || "").toUpperCase() === "EDITED_CANONICAL";
+  const root = !parent && (!Number.isFinite(version) || version <= 1) && !edited;
+  return {
+    root: root ? 0 : 1,
+    version: Number.isFinite(version) ? version : 999999,
+    uploaded: Number(row?.uploaded_at_ms || row?.first_uploaded_at_ms || 0)
+  };
+}
+
+function v081RowsForActivity(activityId) {
+  const key = v081ActivityKey(activityId);
+  if (!key) return [];
+
+  return rows
+    .filter((row) => row?.deleted_at_ms == null && v081ActivityKey(row?.activity_id) === key)
+    .sort((a, b) => {
+      const pa = v081RootPreference(a);
+      const pb = v081RootPreference(b);
+      return pa.root - pb.root || pa.version - pb.version || pa.uploaded - pb.uploaded;
+    });
+}
+
+function v081PreferredRow(activityId) {
+  return v081RowsForActivity(activityId)[0] || null;
+}
+
+async function v081EnsureQuickRows(force = false) {
+  const fresh = v081QuickLoadedAt > 0 && (Date.now() - v081QuickLoadedAt) < V081_QUICK_CACHE_MS;
+  if (!force && fresh) return rows;
+
+  const payload = await request("list", {query: {limit: 1000}});
+  rows = Array.isArray(payload?.files) ? payload.files : [];
+  v081QuickLoadedAt = Date.now();
+  window.dispatchEvent(new CustomEvent("sport-fit-quick-updated"));
+  return rows;
+}
+
+async function v081Availability(activityIds) {
+  await v081EnsureQuickRows(false);
+  const out = {};
+  for (const raw of Array.isArray(activityIds) ? activityIds : []) {
+    const key = v081ActivityKey(raw);
+    if (!key) continue;
+    const row = v081PreferredRow(key);
+    out[key] = row ? {
+      hasFit: true,
+      sha256: String(row.sha256 || ""),
+      file_name: String(row.file_name || "activity.fit"),
+      version_index: Number(row.version_index || 1),
+      root: !row.parent_sha256 && Number(row.version_index || 1) <= 1
+    } : {hasFit: false};
+  }
+  return out;
+}
+
+async function v081DownloadActivity(activityId) {
+  const key = v081ActivityKey(activityId);
+  if (!key) throw new Error("Identifiant d’activité absent.");
+
+  await v081EnsureQuickRows(false);
+  let row = v081PreferredRow(key);
+
+  // Un FIT peut venir d'être créé : un second passage forcé évite un faux négatif de cache.
+  if (!row) {
+    await v081EnsureQuickRows(true);
+    row = v081PreferredRow(key);
+  }
+
+  if (!row) {
+    throw Object.assign(new Error("Aucun FIT Cloud associé à cette activité."), {code: "NO_FIT"});
+  }
+
+  await download(row);
+  return {
+    activity_id: key,
+    sha256: String(row.sha256 || ""),
+    file_name: String(row.file_name || "activity.fit"),
+    version_index: Number(row.version_index || 1),
+    parent_sha256: row.parent_sha256 || null
+  };
+}
+
+window.SPORT_FIT_QUICKDOWNLOAD = Object.freeze({
+  version: "FITQUICKDOWNLOAD001",
+  availability: v081Availability,
+  downloadActivity: v081DownloadActivity,
+  refresh: () => v081EnsureQuickRows(true),
+  invalidate: () => { v081QuickLoadedAt = 0; },
+  preferredRow: (activityId) => v081PreferredRow(activityId)
+});
+
+queueMicrotask(() => {
+  window.dispatchEvent(new CustomEvent("sport-fit-quick-ready"));
+});
+/* CGWEB081_FITQUICKDOWNLOAD001_CLOUD_END */
+
 function renderList() {
   const host = node("webFitCloudList");
   if (!host) return;

@@ -5879,6 +5879,164 @@ function web062ScheduleDirectoryMovingAudit() {
 }
 
 
+/* CGWEB081_FITQUICKDOWNLOAD001_APP_START */
+let v081RefreshPromise = null;
+
+function v081FitQuickApi() {
+  return window.SPORT_FIT_QUICKDOWNLOAD || null;
+}
+
+function v081ActivityId(activity) {
+  return String(
+    activity?.id ??
+    activity?.__docId ??
+    activity?.activity_id ??
+    activity?.__sportKey ??
+    ""
+  ).trim();
+}
+
+function v081SetQuickState(control, state, label = "") {
+  if (!control) return;
+  control.classList.remove("is-pending", "is-available", "is-unavailable", "is-busy", "is-error");
+  control.classList.add(`is-${state}`);
+  control.dataset.fitState = state;
+
+  if (state === "available") {
+    control.title = label ? `Télécharger ${label}` : "Télécharger le FIT associé";
+    control.setAttribute("aria-label", control.title);
+  } else if (state === "busy") {
+    control.title = "Téléchargement du FIT…";
+    control.setAttribute("aria-label", control.title);
+  } else if (state === "unavailable") {
+    control.title = "Aucun FIT Cloud associé à cette activité";
+    control.setAttribute("aria-label", control.title);
+  } else if (state === "error") {
+    control.title = "FIT indisponible pour le moment";
+    control.setAttribute("aria-label", control.title);
+  } else {
+    control.title = "Recherche du FIT associé…";
+    control.setAttribute("aria-label", control.title);
+  }
+}
+
+async function v081DownloadFromControl(control) {
+  const activityId = String(control?.dataset?.activityId || "").trim();
+  if (!activityId) return;
+
+  const api = v081FitQuickApi();
+  if (!api?.downloadActivity) {
+    setMessage("FIT Cloud : module de téléchargement non chargé.", "info");
+    return;
+  }
+
+  v081SetQuickState(control, "busy");
+
+  try {
+    const result = await api.downloadActivity(activityId);
+    v081SetQuickState(control, "available", result?.file_name || "le FIT associé");
+    setMessage(`FIT téléchargé · ${result?.file_name || `activité #${activityId}`}`, "success");
+  } catch (error) {
+    const noFit = error?.code === "NO_FIT" || /aucun fit/i.test(String(error?.message || ""));
+    v081SetQuickState(control, noFit ? "unavailable" : "error");
+    setMessage(
+      noFit
+        ? `Aucun FIT Cloud associé à l’activité #${activityId}.`
+        : `Téléchargement FIT impossible : ${error?.message || error}`,
+      "info"
+    );
+    console.error("FITQUICKDOWNLOAD001", error);
+  }
+}
+
+function v081CreateFitQuickControl(activity) {
+  const control = document.createElement("span");
+  control.className = "web081-fit-quick is-pending";
+  control.dataset.activityId = v081ActivityId(activity);
+  control.setAttribute("role", "button");
+  control.setAttribute("tabindex", "0");
+  control.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 3v11"></path>
+      <path d="M8 10l4 4 4-4"></path>
+      <path d="M5 19h14"></path>
+    </svg>`;
+
+  v081SetQuickState(control, "pending");
+
+  control.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+
+  control.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void v081DownloadFromControl(control);
+  });
+
+  control.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    void v081DownloadFromControl(control);
+  });
+
+  return control;
+}
+
+async function v081RefreshFitQuickControls() {
+  if (v081RefreshPromise) return v081RefreshPromise;
+
+  const run = (async () => {
+    const controls = Array.from(document.querySelectorAll("#activityList .web081-fit-quick"));
+    if (!controls.length) return;
+
+    const api = v081FitQuickApi();
+    if (!api?.availability) return;
+
+    const ids = [...new Set(
+      controls
+        .map((control) => String(control.dataset.activityId || "").trim())
+        .filter(Boolean)
+    )];
+
+    if (!ids.length) return;
+
+    try {
+      const availability = await api.availability(ids);
+      for (const control of controls) {
+        const id = String(control.dataset.activityId || "").trim();
+        const info = availability?.[id];
+        if (info?.hasFit) {
+          v081SetQuickState(control, "available", info.file_name || "le FIT associé");
+        } else {
+          v081SetQuickState(control, "unavailable");
+        }
+      }
+    } catch (error) {
+      console.warn("FITQUICKDOWNLOAD001 disponibilité", error);
+      for (const control of controls) {
+        if (control.dataset.fitState === "pending") v081SetQuickState(control, "error");
+      }
+    }
+  })();
+
+  v081RefreshPromise = run;
+  try {
+    await run;
+  } finally {
+    v081RefreshPromise = null;
+  }
+}
+
+window.addEventListener("sport-fit-quick-ready", () => {
+  queueMicrotask(() => void v081RefreshFitQuickControls());
+});
+window.addEventListener("sport-fit-quick-updated", () => {
+  queueMicrotask(() => void v081RefreshFitQuickControls());
+});
+/* CGWEB081_FITQUICKDOWNLOAD001_APP_END */
+
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;
   ui.loadedLabel.textContent =
@@ -5919,10 +6077,12 @@ function renderActivities() {
     button.appendChild(datum("Repères", markerSummary(activity), "hide-md hide-sm"));
     button.appendChild(datum("Charge", web072Fix11FormatCharge(activity), "hide-md hide-sm web072-fix11-charge-cell"));
 
+    button.appendChild(v081CreateFitQuickControl(activity));
     fragment.appendChild(button);
   }
 
   ui.activityList.appendChild(fragment);
+  queueMicrotask(() => void v081RefreshFitQuickControls());
 
   if (filteredActivities.length > visibleRows.length) {
     const footer = document.createElement("div");
