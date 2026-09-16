@@ -5,7 +5,8 @@ const {
   encodeCanonicalFit,
   inspectFitBuffer,
   fitWriterSelfTest,
-  canonicalFitFileName
+  canonicalFitFileName,
+  decodeCanonicalFitSummary
 } = require("./fitwriter");
 /* CGWEB075_FITWRITER001_IMPORT_END */
 
@@ -141,6 +142,223 @@ function createFitVault() {
       link_status: candidates.length ? "UNLINKED_AMBIGUOUS" : "UNLINKED_NO_MATCH"
     };
   }
+
+  /* CGWEB076_FITROUNDTRIP001_HELPERS_START */
+  function rtFinite(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function rtFirstFinite(...values) {
+    for (const value of values) {
+      const n = rtFinite(value);
+      if (n != null) return n;
+    }
+    return null;
+  }
+
+  function rtArray(route, ...keys) {
+    for (const key of keys) {
+      const value = route?.[key];
+      if (Array.isArray(value)) return value;
+    }
+    return [];
+  }
+
+  function rtMetric(name, source, fit, tolerance = 0) {
+    const s = rtFinite(source);
+    const f = rtFinite(fit);
+
+    if (s == null) {
+      return {
+        metric: name,
+        source: null,
+        fit: f,
+        delta: null,
+        tolerance,
+        tested: false,
+        ok: true
+      };
+    }
+
+    if (f == null) {
+      return {
+        metric: name,
+        source: s,
+        fit: null,
+        delta: null,
+        tolerance,
+        tested: true,
+        ok: false
+      };
+    }
+
+    const delta = f - s;
+    return {
+      metric: name,
+      source: s,
+      fit: f,
+      delta,
+      tolerance,
+      tested: true,
+      ok: Math.abs(delta) <= tolerance
+    };
+  }
+
+  function rtDurationMs(activity) {
+    const direct = rtFirstFinite(
+      activity?.elapsed_time_ms,
+      activity?.timer_time_ms,
+      activity?.moving_time_ms,
+      activity?.duration_ms
+    );
+    if (direct != null && direct >= 0) return direct;
+
+    const start = rtFinite(activity?.start_time_ms);
+    const end = rtFinite(activity?.end_time_ms);
+    if (start != null && end != null && end >= start) return end - start;
+    return null;
+  }
+
+  function rtBuildPayload(activity, route) {
+    const startMs = rtFinite(activity?.start_time_ms);
+    if (startMs == null || startMs <= 0) {
+      throw Object.assign(new Error("FITROUNDTRIP001 : start_time_ms absent."), {status: 422});
+    }
+
+    const sport = rtFinite(activity?.sport);
+    if (sport == null) {
+      throw Object.assign(new Error("FITROUNDTRIP001 : sport absent."), {status: 422});
+    }
+
+    const subSport = rtFirstFinite(activity?.sub_sport, activity?.subSport, 0) ?? 0;
+    const durationMs = rtDurationMs(activity);
+    if (durationMs == null || durationMs <= 0) {
+      throw Object.assign(new Error("FITROUNDTRIP001 : durée absente ou nulle."), {status: 422});
+    }
+
+    const lat = rtArray(route, "lat", "latitude", "latitudes");
+    const lon = rtArray(route, "lon", "lng", "longitude", "longitudes");
+    const alt = rtArray(route, "alt_m", "altitude_m", "altitude", "altitudes");
+    const dist = rtArray(route, "distance_m", "distance", "distances");
+    const times = rtArray(route, "time_ms", "timestamp_ms", "timestamps_ms");
+    const hrs = rtArray(route, "hr_bpm", "heart_rate_bpm", "heart_rate", "hr");
+    const cadence = rtArray(route, "cadence", "cadence_rpm");
+    const power = rtArray(route, "power", "watts", "power_w");
+    const speed = rtArray(route, "speed_mps", "enhanced_speed_mps", "speed");
+
+    const count = Math.min(lat.length, lon.length);
+    const valid = [];
+
+    for (let i = 0; i < count; i += 1) {
+      const latitude = rtFinite(lat[i]);
+      const longitude = rtFinite(lon[i]);
+      if (
+        latitude == null || longitude == null ||
+        latitude < -90 || latitude > 90 ||
+        longitude < -180 || longitude > 180
+      ) continue;
+      valid.push({i, latitude, longitude});
+    }
+
+    if (valid.length < 2) {
+      throw Object.assign(
+        new Error("FITROUNDTRIP001 : activity_routes ne contient pas au moins 2 points GPS."),
+        {status: 422}
+      );
+    }
+
+    const sourceDistance = rtFinite(activity?.distance_m);
+    const lastRouteDistance = [...valid]
+      .reverse()
+      .map(({i}) => rtFinite(dist[i]))
+      .find((value) => value != null && value > 0) ?? null;
+
+    const validTimes = valid
+      .map(({i}) => rtFinite(times[i]))
+      .filter((value) => value != null);
+    const useRouteTiming =
+      validTimes.length === valid.length &&
+      validTimes[validTimes.length - 1] > validTimes[0];
+    const routeTimeStart = useRouteTiming ? validTimes[0] : null;
+    const routeTimeSpan = useRouteTiming
+      ? validTimes[validTimes.length - 1] - validTimes[0]
+      : null;
+
+    const points = valid.map((row, position) => {
+      const progress = valid.length > 1 ? position / (valid.length - 1) : 0;
+
+      let pointTime = startMs + Math.round(durationMs * progress);
+      if (useRouteTiming && routeTimeSpan > 0) {
+        const raw = rtFinite(times[row.i]);
+        const relative = Math.max(0, Math.min(1, (raw - routeTimeStart) / routeTimeSpan));
+        pointTime = startMs + Math.round(durationMs * relative);
+      }
+
+      let pointDistance = rtFinite(dist[row.i]);
+      if (sourceDistance != null && sourceDistance >= 0) {
+        if (pointDistance != null && lastRouteDistance != null && lastRouteDistance > 0) {
+          pointDistance = Math.max(0, pointDistance * (sourceDistance / lastRouteDistance));
+        } else {
+          pointDistance = sourceDistance * progress;
+        }
+      }
+
+      const point = {
+        timestamp_ms: pointTime,
+        lat: row.latitude,
+        lon: row.longitude,
+        altitude_m: rtFinite(alt[row.i]),
+        distance_m: pointDistance,
+        heart_rate: rtFinite(hrs[row.i]),
+        cadence: rtFinite(cadence[row.i]),
+        power: rtFinite(power[row.i]),
+        speed_mps: rtFinite(speed[row.i])
+      };
+
+      for (const key of Object.keys(point)) {
+        if (point[key] == null) delete point[key];
+      }
+      return point;
+    });
+
+    return {
+      payload: {
+        start_time_ms: startMs,
+        sport,
+        sub_sport: subSport,
+        duration_s: durationMs / 1000,
+        total_timer_time_s: durationMs / 1000,
+        distance_m: sourceDistance,
+        total_ascent_m: rtFinite(activity?.ascent_m),
+        avg_hr: rtFinite(activity?.avg_hr),
+        max_hr: rtFinite(activity?.max_hr),
+        points
+      },
+      source: {
+        startMs,
+        durationMs,
+        distance: sourceDistance,
+        ascent: rtFinite(activity?.ascent_m),
+        avgHr: rtFinite(activity?.avg_hr),
+        maxHr: rtFinite(activity?.max_hr),
+        sport,
+        subSport,
+        sourcePointCount: rtFirstFinite(
+          route?.source_point_count,
+          activity?.gps_point_count,
+          activity?.record_count
+        ),
+        previewPointCount: points.length,
+        routeHasTime: useRouteTiming,
+        routeHasHeartRate: hrs.some((value) => {
+          const n = rtFinite(value);
+          return n != null && n > 0;
+        })
+      }
+    };
+  }
+  /* CGWEB076_FITROUNDTRIP001_HELPERS_END */
 
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
@@ -397,6 +615,164 @@ function createFitVault() {
         }
 
         /* CGWEB075_FITWRITER001_ACTION_END */
+
+        /* CGWEB076_FITROUNDTRIP001_ACTION_START */
+        if (action === "roundtrip") {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+
+          let body = req.body;
+          if (Buffer.isBuffer(body)) {
+            try { body = JSON.parse(body.toString("utf8")); }
+            catch { body = null; }
+          }
+          if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
+
+          const activityId = String(body.activity_id || "").trim();
+          if (!activityId || activityId.includes("/")) {
+            return res.status(400).json({error: "activity_id réel requis."});
+          }
+
+          const activityRef = db.doc(`${ROOT}/${uid}/activities/${activityId}`);
+          const routeRef = db.doc(`${ROOT}/${uid}/activity_routes/${activityId}`);
+
+          const [activitySnap, routeSnap] = await Promise.all([
+            activityRef.get(),
+            routeRef.get()
+          ]);
+
+          if (!activitySnap.exists) {
+            return res.status(404).json({error: `Activité ${activityId} absente de Firestore.`});
+          }
+          if (!routeSnap.exists) {
+            return res.status(422).json({
+              error: `Activité ${activityId} : activity_routes absent ; essai de l'activité suivante.`
+            });
+          }
+
+          const activity = activitySnap.data() || {};
+          if (activity.deleted_at_ms != null) {
+            return res.status(422).json({error: "Activité source supprimée."});
+          }
+
+          const route = routeSnap.data() || {};
+          const prepared = rtBuildPayload(activity, route);
+          const generated = await encodeCanonicalFit(prepared.payload);
+          const validation = await inspectFitBuffer(generated.buffer);
+
+          if (!validation.ok) {
+            return res.status(500).json({
+              error: "FITROUNDTRIP001 : FIT généré invalide.",
+              validation
+            });
+          }
+
+          const decodedFit = await decodeCanonicalFitSummary(generated.buffer);
+          const comparisons = [
+            rtMetric("start_time_ms", prepared.source.startMs, decodedFit.startMs, 1000),
+            rtMetric("sport", prepared.source.sport, decodedFit.sport, 0),
+            rtMetric("sub_sport", prepared.source.subSport, decodedFit.subSport, 0),
+            rtMetric("duration_s", prepared.source.durationMs / 1000, decodedFit.timerSeconds, 0.05),
+            rtMetric("distance_m", prepared.source.distance, decodedFit.totalDistance, 0.5),
+            rtMetric("ascent_m", prepared.source.ascent, decodedFit.totalAscent, 1),
+            rtMetric("avg_hr", prepared.source.avgHr, decodedFit.avgHeartRate, 1),
+            rtMetric("max_hr", prepared.source.maxHr, decodedFit.maxHeartRate, 1),
+            rtMetric("preview_records", prepared.source.previewPointCount, decodedFit.recordCount, 0)
+          ];
+
+          const comparisonOk = comparisons.every((item) => item.ok);
+          const structureOk =
+            decodedFit.integrity &&
+            !decodedFit.errors.length &&
+            decodedFit.sessionCount === 1 &&
+            decodedFit.lapCount >= 1 &&
+            decodedFit.activityCount === 1;
+
+          const roundtripOk = Boolean(validation.ok && structureOk && comparisonOk);
+
+          const hash = sha256(generated.buffer);
+          const ref = fileDoc(uid, hash);
+          const existing = await ref.get();
+          const previous = existing.exists ? existing.data() || {} : {};
+          const path = previous.object_path || objectPath(uid, hash, prepared.source.startMs);
+          const object = bucket().file(path);
+          const [exists] = await object.exists();
+
+          if (!exists) {
+            await object.save(generated.buffer, {
+              resumable: false,
+              validation: "crc32c",
+              contentType: "application/vnd.ant.fit",
+              metadata: {
+                cacheControl: "private, no-store",
+                metadata: {
+                  sha256: hash,
+                  owner_uid: uid,
+                  source: "WEB_FITROUNDTRIP_TEST",
+                  mode: "ROUNDTRIP_PREVIEW_TEST",
+                  writer: "FITWRITER001",
+                  roundtrip: "FITROUNDTRIP001"
+                }
+              }
+            });
+          }
+
+          const now = Date.now();
+          const fileName = safeName(previous.file_name || generated.fileName);
+          const metadata = {
+            file_id: hash,
+            sha256: hash,
+            object_path: path,
+            file_name: fileName,
+            original_name: previous.original_name || fileName,
+            size_bytes: generated.buffer.length,
+            mime_type: "application/vnd.ant.fit",
+            source: previous.source || "WEB_FITROUNDTRIP_TEST",
+            upload_mode: previous.upload_mode || "ROUNDTRIP_PREVIEW_TEST",
+            start_time_ms: prepared.source.startMs,
+            sport: prepared.source.sport,
+            sub_sport: prepared.source.subSport,
+            activity_id: previous.activity_id || activityId,
+            link_status: previous.link_status || "LINKED_ROUNDTRIP",
+            point_count: generated.stats.pointCount,
+            fit_integrity: Boolean(decodedFit.integrity),
+            fitwriter_version: "FITWRITER001",
+            fitroundtrip_version: "FITROUNDTRIP001",
+            fitroundtrip_ok: roundtripOk,
+            roundtrip_is_preview_test: true,
+            lossless_source_reconstruction: false,
+            roundtrip_source_activity_id: activityId,
+            roundtrip_source_point_count: prepared.source.sourcePointCount,
+            roundtrip_preview_point_count: prepared.source.previewPointCount,
+            roundtrip_tested_at_ms: now,
+            first_uploaded_at_ms: Number(previous.first_uploaded_at_ms || now),
+            uploaded_at_ms: now,
+            last_seen_at_ms: now,
+            deleted_at_ms: null,
+            storage_version: "FITCLOUD001"
+          };
+
+          await ref.set(metadata, {merge: true});
+
+          return res.status(roundtripOk ? 200 : 409).json({
+            ok: roundtripOk,
+            service: "FITROUNDTRIP001",
+            activity_id: activityId,
+            activity_title: String(activity.custom_title || activity.file_name || "").trim(),
+            source: prepared.source,
+            fit: decodedFit,
+            validation,
+            comparisons,
+            file: metadata,
+            stored: true,
+            deduplicated: Boolean(existing.exists || exists),
+            activity_modified: false,
+            activities_created: 0,
+            activities_modified: 0
+          });
+        }
+        /* CGWEB076_FITROUNDTRIP001_ACTION_END */
 
         if (action === "upload") {
           if (req.method !== "POST") return res.status(405).json({error: "POST requis."});

@@ -275,12 +275,110 @@ async function testFitWriter() {
 
 /* CGWEB075_FITWRITER001_WEB_END */
 
+
+/* CGWEB076_FITROUNDTRIP001_WEB_START */
+function fitRoundTripCandidateActivities() {
+  const b = bridge();
+  const rows = Array.isArray(b.getActivities?.()) ? b.getActivities() : [];
+  return rows
+    .filter((activity) => activity && activity.deleted_at_ms == null)
+    .filter((activity) => String(b.activityKey?.(activity) || "").trim())
+    .sort((a, bRow) => Number(bRow.start_time_ms || 0) - Number(a.start_time_ms || 0));
+}
+
+function fitRoundTripComparison(result, metric) {
+  const row = Array.isArray(result?.comparisons)
+    ? result.comparisons.find((item) => item?.metric === metric)
+    : null;
+  return row || null;
+}
+
+function fitRoundTripDeltaLabel(row, unit, digits = 1) {
+  if (!row?.tested || !Number.isFinite(Number(row.delta))) return "—";
+  const value = Number(row.delta);
+  return `${value >= 0 ? "+" : ""}${value.toFixed(digits)} ${unit}`;
+}
+
+async function testFitRoundTrip() {
+  const status = node("webFitCloudStatus");
+  const button = node("webFitRoundTripButton");
+  if (button) button.disabled = true;
+  if (status) status.textContent = "Round Trip : recherche d’une activité GPS réelle…";
+
+  try {
+    const candidates = fitRoundTripCandidateActivities();
+    if (!candidates.length) {
+      throw new Error("Aucune activité GPS chargée n’est disponible pour le Round Trip.");
+    }
+
+    let lastError = null;
+    const tested = candidates.slice(0, 20);
+
+    for (let index = 0; index < tested.length; index += 1) {
+      const activity = tested[index];
+      const id = String(bridge().activityKey(activity) || "").trim();
+      if (!id) continue;
+
+      if (status) {
+        status.textContent = `Round Trip : activité #${id} (${index + 1}/${tested.length})…`;
+      }
+
+      try {
+        const result = await request("roundtrip", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({activity_id: id})
+        });
+
+        const duration = fitRoundTripComparison(result, "duration_s");
+        const distance = fitRoundTripComparison(result, "distance_m");
+        const ascent = fitRoundTripComparison(result, "ascent_m");
+        const avgHr = fitRoundTripComparison(result, "avg_hr");
+        const maxHr = fitRoundTripComparison(result, "max_hr");
+        const preview = Number(result?.source?.previewPointCount || 0);
+        const sourcePoints = Number(result?.source?.sourcePointCount || 0);
+        const pointLabel = sourcePoints > preview
+          ? `${preview}/${sourcePoints} pts`
+          : `${preview} pts`;
+
+        await renderCloud();
+
+        if (status) {
+          status.textContent =
+            `Round Trip OK · #${result.activity_id} · ${pointLabel} · ` +
+            `Δ durée ${fitRoundTripDeltaLabel(duration, "s", 2)} · ` +
+            `distance ${fitRoundTripDeltaLabel(distance, "m", 2)} · ` +
+            `D+ ${fitRoundTripDeltaLabel(ascent, "m", 1)} · ` +
+            `FC ${fitRoundTripDeltaLabel(avgHr, "bpm", 0)}/${fitRoundTripDeltaLabel(maxHr, "bpm", 0)} · intégrité OK.`;
+          status.title = JSON.stringify(result.comparisons || []);
+        }
+
+        return result;
+      } catch (error) {
+        lastError = error;
+        const message = String(error?.message || error || "");
+        if (/activity_routes|tracé|points GPS/i.test(message)) continue;
+        throw error;
+      }
+    }
+
+    throw lastError || new Error("Aucune activité récente ne possède un tracé Web exploitable.");
+  } catch (error) {
+    if (status) status.textContent = `Round Trip en erreur : ${error?.message || error}`;
+    throw error;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+/* CGWEB076_FITROUNDTRIP001_WEB_END */
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudUploadButton")?.addEventListener("click", () => void uploadHistorical());
   node("webFitCloudRefreshButton")?.addEventListener("click", () => void renderCloud());
   node("webFitWriterTestButton")?.addEventListener("click", () => void testFitWriter());
+  node("webFitRoundTripButton")?.addEventListener("click", () => void testFitRoundTrip());
   selectionChanged([]);
 }
 

@@ -373,6 +373,34 @@ function activityStats(payload, normalized) {
       ? Math.round(Math.max(...heartRates))
       : null;
 
+  /* CGWEB076_FITROUNDTRIP001_STATS_START */
+  const suppliedAvgHeartRate =
+    firstFinite(
+      payload?.avg_hr,
+      payload?.avg_heart_rate,
+      payload?.average_heart_rate,
+      payload?.average_heartrate
+    );
+
+  const suppliedMaxHeartRate =
+    firstFinite(
+      payload?.max_hr,
+      payload?.max_heart_rate,
+      payload?.maximum_heart_rate,
+      payload?.max_heartrate
+    );
+
+  const effectiveAvgHeartRate =
+    suppliedAvgHeartRate != null && suppliedAvgHeartRate > 0
+      ? Math.round(clamp(suppliedAvgHeartRate, 0, 255))
+      : avgHeartRate;
+
+  const effectiveMaxHeartRate =
+    suppliedMaxHeartRate != null && suppliedMaxHeartRate > 0
+      ? Math.round(clamp(suppliedMaxHeartRate, 0, 255))
+      : maxHeartRate;
+  /* CGWEB076_FITROUNDTRIP001_STATS_END */
+
   const totalAscent =
     firstFinite(
       payload?.total_ascent_m,
@@ -395,8 +423,8 @@ function activityStats(payload, normalized) {
       Math.max(0, totalDistance),
     totalAscent:
       Math.max(0, totalAscent || 0),
-    avgHeartRate,
-    maxHeartRate,
+    avgHeartRate: effectiveAvgHeartRate,
+    maxHeartRate: effectiveMaxHeartRate,
     avgSpeed:
       avgSpeed != null &&
       Number.isFinite(avgSpeed)
@@ -918,10 +946,90 @@ async function fitWriterSelfTest() {
   };
 }
 
+
+/* CGWEB076_FITROUNDTRIP001_DECODE_START */
+async function decodeCanonicalFitSummary(buffer) {
+  const {Decoder, Stream} = await fitSdk();
+
+  const source = Buffer.isBuffer(buffer)
+    ? buffer
+    : Buffer.from(buffer);
+
+  const stream = Stream.fromBuffer(source);
+  if (!Decoder.isFIT(stream)) {
+    throw new Error("FITROUNDTRIP001 : signature FIT invalide.");
+  }
+
+  const decoder = new Decoder(Stream.fromBuffer(source));
+  const integrity = decoder.checkIntegrity();
+
+  const result = decoder.read({
+    applyScaleAndOffset: true,
+    expandSubFields: true,
+    expandComponents: true,
+    convertTypesToStrings: false,
+    convertDateTimesToDates: true,
+    includeUnknownData: false,
+    mergeHeartRates: true,
+    decodeMemoGlobs: false,
+    skipHeader: false,
+    dataOnly: false,
+    legacyArrayMode: false
+  });
+
+  const messages = result?.messages || {};
+  const records = Array.isArray(messages.recordMesgs) ? messages.recordMesgs : [];
+  const sessions = Array.isArray(messages.sessionMesgs) ? messages.sessionMesgs : [];
+  const laps = Array.isArray(messages.lapMesgs) ? messages.lapMesgs : [];
+  const activities = Array.isArray(messages.activityMesgs) ? messages.activityMesgs : [];
+  const session = sessions[0] || {};
+
+  const dateMs = (value) => {
+    if (value instanceof Date) {
+      const n = value.getTime();
+      return Number.isFinite(n) ? n : null;
+    }
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    return n > 100000000000 ? Math.round(n) : Math.round(n * 1000);
+  };
+
+  const number = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const firstRecord = records[0] || {};
+  const lastRecord = records[records.length - 1] || {};
+
+  return {
+    integrity: Boolean(integrity),
+    errors: Array.isArray(result?.errors)
+      ? result.errors.map((error) => error?.message || String(error))
+      : [],
+    startMs: dateMs(session.startTime) ?? dateMs(firstRecord.timestamp),
+    endMs: dateMs(session.timestamp) ?? dateMs(lastRecord.timestamp),
+    elapsedSeconds: number(session.totalElapsedTime),
+    timerSeconds: number(session.totalTimerTime),
+    totalDistance: number(session.totalDistance),
+    totalAscent: number(session.totalAscent),
+    avgHeartRate: number(session.avgHeartRate),
+    maxHeartRate: number(session.maxHeartRate),
+    sport: number(session.sport),
+    subSport: number(session.subSport),
+    recordCount: records.length,
+    lapCount: laps.length,
+    sessionCount: sessions.length,
+    activityCount: activities.length
+  };
+}
+/* CGWEB076_FITROUNDTRIP001_DECODE_END */
+
 module.exports = {
   encodeCanonicalFit,
   inspectFitBuffer,
   fitWriterSelfTest,
   canonicalFitFileName,
-  sportFileCode
+  sportFileCode,
+  decodeCanonicalFitSummary
 };
