@@ -17179,66 +17179,32 @@ function cgweb084WireRevisionUi() {
 /* CGWEB084_SAFEEDIT001_END */
 
 /* CGWEB084_MAPTHUMB001_START */
+/* CGWEB085C_MAPTHUMB002_MARKER : normalizeRoute + multi-clés */
 
 function cgweb084RouteLatLon(raw) {
-  const out = [];
+  try {
+    const route = normalizeRoute(raw || {});
 
-  if (Array.isArray(raw?.points)) {
-    for (const point of raw.points) {
-      const lat = Number(
-        point?.latitude ??
-        point?.lat
+    return (route?.points || [])
+      .map((point) => [
+        Number(point.latitude),
+        Number(point.longitude)
+      ])
+      .filter(
+        ([lat, lon]) =>
+          Number.isFinite(lat) &&
+          Number.isFinite(lon) &&
+          Math.abs(lat) <= 90 &&
+          Math.abs(lon) <= 180
       );
+  } catch (error) {
+    console.warn(
+      "MAPTHUMB002 normalizeRoute",
+      error
+    );
 
-      const lon = Number(
-        point?.longitude ??
-        point?.lon ??
-        point?.lng
-      );
-
-      if (
-        Number.isFinite(lat) &&
-        Number.isFinite(lon) &&
-        Math.abs(lat) <= 90 &&
-        Math.abs(lon) <= 180
-      ) {
-        out.push([lat, lon]);
-      }
-    }
+    return [];
   }
-
-  if (out.length >= 2) return out;
-
-  const lat =
-    Array.isArray(raw?.lat) ? raw.lat :
-    Array.isArray(raw?.latitude) ? raw.latitude :
-    Array.isArray(raw?.latitudes) ? raw.latitudes :
-    [];
-
-  const lon =
-    Array.isArray(raw?.lon) ? raw.lon :
-    Array.isArray(raw?.lng) ? raw.lng :
-    Array.isArray(raw?.longitude) ? raw.longitude :
-    Array.isArray(raw?.longitudes) ? raw.longitudes :
-    [];
-
-  const count = Math.min(lat.length, lon.length);
-
-  for (let i = 0; i < count; i += 1) {
-    const a = Number(lat[i]);
-    const b = Number(lon[i]);
-
-    if (
-      Number.isFinite(a) &&
-      Number.isFinite(b) &&
-      Math.abs(a) <= 90 &&
-      Math.abs(b) <= 180
-    ) {
-      out.push([a, b]);
-    }
-  }
-
-  return out;
 }
 
 function cgweb084RouteSvg(points) {
@@ -17331,43 +17297,73 @@ function cgweb084RouteSvg(points) {
   );
 }
 
-async function cgweb084LoadRouteThumbnail(activity) {
+async async function cgweb084LoadRouteThumbnail(activity) {
   if (!currentUser || !activity) return "";
 
-  const key = String(activityKey(activity) || "").trim();
-  if (!key) return "";
+  const keys = [
+    ...new Set(
+      [
+        activity?.id,
+        activity?.__docId,
+        activityKey(activity)
+      ]
+        .filter(
+          (value) =>
+            value !== null &&
+            value !== undefined &&
+            String(value).trim() !== ""
+        )
+        .map((value) => String(value))
+    )
+  ];
 
-  if (cgweb084RouteThumbnailCache.has(key)) {
-    return cgweb084RouteThumbnailCache.get(key);
+  if (!keys.length) return "";
+
+  const cacheKey = keys.join("|");
+
+  if (cgweb084RouteThumbnailCache.has(cacheKey)) {
+    return cgweb084RouteThumbnailCache.get(cacheKey);
   }
 
   const promise = (async () => {
     try {
-      const snap = await getDoc(
-        doc(
-          db,
-          ROOT,
-          currentUser.uid,
-          "activity_routes",
-          key
-        )
-      );
+      for (const key of keys) {
+        const snapshot = await getDoc(
+          doc(
+            db,
+            ROOT,
+            currentUser.uid,
+            "activity_routes",
+            key
+          )
+        );
 
-      if (!snap.exists()) return "";
+        if (!snapshot.exists()) continue;
 
-      return cgweb084RouteSvg(
-        cgweb084RouteLatLon(snap.data())
-      );
+        const points = cgweb084RouteLatLon(snapshot.data());
+
+        if (points.length >= 2) {
+          return cgweb084RouteSvg(points);
+        }
+      }
+
+      return "";
     } catch (error) {
-      console.warn("CGWEB084 miniature", key, error);
+      console.warn(
+        "MAPTHUMB002 miniature",
+        keys,
+        error
+      );
+
       return "";
     }
   })();
 
-  cgweb084RouteThumbnailCache.set(key, promise);
+  cgweb084RouteThumbnailCache.set(cacheKey, promise);
 
   const html = await promise;
-  cgweb084RouteThumbnailCache.set(key, html);
+
+  cgweb084RouteThumbnailCache.set(cacheKey, html);
 
   return html;
 }
