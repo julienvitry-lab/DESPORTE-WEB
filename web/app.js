@@ -734,7 +734,7 @@ function installWeb049UiContract() {
     applyWeb049UiContract();
     syncWeb049StickyOffsets();
   });
-web072ApplyDetailToolbarTweaks();
+
 
   refresh();
   window.addEventListener("resize", refresh, { passive: true });
@@ -17862,412 +17862,225 @@ function localeSort(a, b) {
 
 
 /* WEB072_DETAIL_NAV_UI001 */
-function web072ApplyDetailToolbarTweaks() {
-  try {
-    const navButtons = Array.from(document.querySelectorAll("button, a"));
-    const prevBtn = navButtons.find((el) => /Activité précédente/i.test((el.textContent || "").trim()));
-    const nextBtn = navButtons.find((el) => /Activité suivante/i.test((el.textContent || "").trim()));
 
-    if (prevBtn && nextBtn) {
-      const toolbar = prevBtn.closest("div");
-      if (toolbar) {
-        toolbar.classList.add("web072-detail-nav-toolbar");
-      }
-    }
 
-    const row = document.getElementById("web061SingleMetricRow");
-    if (row) {
-      const next = row.nextElementSibling;
-      if (next && (
-        next.tagName === "HR" ||
-        /divider|separator|toolbar/i.test(next.className || "")
-      )) {
-        next.classList.add("web072-hide-divider");
-      }
-    }
 
-    const repoBtn = navButtons.find((el) => /^Répertoire$/i.test((el.textContent || "").trim()));
-    const corbeilleBtn = navButtons.find((el) => /^Corbeille$/i.test((el.textContent || "").trim()));
-    if (repoBtn && corbeilleBtn) {
-      const host = repoBtn.closest("div");
-      if (host && !host.querySelector(".web072-manual-add-btn")) {
-        const existingManual = navButtons.find((el) =>
-          /Ajout manuel/i.test((el.textContent || "").trim())
-        );
 
-        const btn = document.createElement(existingManual?.tagName === "A" ? "a" : "button");
-        btn.className = (existingManual?.className || repoBtn.className || "").trim() + " web072-manual-add-btn";
-        btn.type = "button";
-        btn.textContent = "Ajout manuel";
 
-        btn.addEventListener("click", (ev) => {
-          ev.preventDefault();
-          const manual = Array.from(document.querySelectorAll("button, a"))
-            .find((el) => /Ajout manuel/i.test((el.textContent || "").trim()) && !el.classList.contains("web072-manual-add-btn"));
-          if (manual) {
-            manual.click();
-            return;
-          }
-          const plus = Array.from(document.querySelectorAll("button, a"))
-            .find((el) => /Ajout manuel/i.test((el.getAttribute("aria-label") || "")));
-          if (plus) plus.click();
-        });
 
-        host.appendChild(btn);
-      }
-    }
-  } catch (_) {}
+/* WEB072_FIX4_DETAIL_NAV003_START */
+
+function web072Fix4Text(el) {
+  return String(el?.textContent || "").replace(/\s+/g, " ").trim();
 }
 
-
-/* WEB072_DETAIL_NAV002_ICON_LAYOUT003_START */
-
-function web072DirectTexts(element) {
-  return Array.from(element?.children || [])
-    .map((node) => String(node.textContent || "").trim());
+function web072Fix4Controls(root) {
+  return Array.from(
+    root.querySelectorAll("button, a")
+  );
 }
 
-function web072FindDirectoryHeader() {
-  const list = document.getElementById("activityList");
-  if (!list) return null;
+function web072Fix4FindToolbar() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return null;
 
-  const section =
-    list.closest("#activityDirectorySection") ||
-    list.parentElement?.parentElement ||
-    document.body;
+  const controls = web072Fix4Controls(detail);
 
-  const wanted = [
-    "Date",
-    "Heure",
-    "Distance",
-    "D+",
-    "Temps",
-    "Matériel",
-    "Repères"
-  ];
+  const repo = controls.find((el) =>
+    /Répertoire/i.test(web072Fix4Text(el))
+  );
 
-  const candidates =
-    Array.from(section.querySelectorAll("div"));
+  const trash = controls.find((el) =>
+    /Mettre à la corbeille/i.test(web072Fix4Text(el))
+  );
 
-  for (const el of candidates) {
-    const texts = web072DirectTexts(el);
+  const prev = controls.find((el) =>
+    /Activité précédente/i.test(web072Fix4Text(el))
+  );
 
+  const next = controls.find((el) =>
+    /Activité suivante/i.test(web072Fix4Text(el))
+  );
+
+  if (!repo || !trash || !prev || !next) return null;
+
+  /*
+   * On part du bouton corbeille (présent uniquement dans le bandeau du haut)
+   * et on remonte jusqu'au plus petit ancêtre contenant les 4 actions.
+   */
+  let node = trash.parentElement;
+
+  while (node && node !== detail) {
     if (
-      wanted.every((label) => texts.includes(label)) &&
-      texts.length <= 9
+      node.contains(repo) &&
+      node.contains(trash) &&
+      node.contains(prev) &&
+      node.contains(next)
     ) {
-      return el;
+      return node;
     }
+
+    node = node.parentElement;
   }
 
   return null;
 }
 
-function web072AlignDirectoryHeader() {
-  const list = document.getElementById("activityList");
-  if (!list) return;
-
-  const sportCell =
-    list.querySelector(".web071-fix1-activity-main");
-
-  const dataRow = sportCell?.parentElement;
-  const header = web072FindDirectoryHeader();
-
-  if (!dataRow || !header) return;
-
-  const headerTexts = web072DirectTexts(header);
-
-  if (
-    headerTexts[0] === "Date" &&
-    !header.querySelector(".web072-directory-header-spacer")
-  ) {
-    const spacer = document.createElement("span");
-    spacer.className =
-      "web072-directory-header-spacer";
-    spacer.setAttribute("aria-hidden", "true");
-    header.prepend(spacer);
-  }
-
-  const rowStyle =
-    window.getComputedStyle(dataRow);
-
-  header.classList.add(
-    "web072-directory-header"
-  );
-
-  header.style.display = "grid";
-
-  if (
-    rowStyle.gridTemplateColumns &&
-    rowStyle.gridTemplateColumns !== "none"
-  ) {
-    header.style.gridTemplateColumns =
-      rowStyle.gridTemplateColumns;
-  }
-
-  header.style.columnGap =
-    rowStyle.columnGap || "0px";
-
-  header.style.paddingLeft =
-    rowStyle.paddingLeft || "0px";
-
-  header.style.paddingRight =
-    rowStyle.paddingRight || "0px";
-}
-
-function web072FindDetailToolbar() {
-  const detail =
-    document.getElementById("detailView") ||
-    document.body;
-
-  const controls =
-    Array.from(
-      detail.querySelectorAll("button, a")
-    );
-
-  const prev =
-    controls.find((el) =>
-      /Activité précédente/i.test(
-        String(el.textContent || "").trim()
-      )
-    );
-
-  const next =
-    controls.find((el) =>
-      /Activité suivante/i.test(
-        String(el.textContent || "").trim()
-      )
-    );
-
-  if (!prev || !next) return null;
-
-  let node = prev.parentElement;
-
-  while (
-    node &&
-    node !== detail &&
-    !node.contains(next)
-  ) {
-    node = node.parentElement;
-  }
-
-  return node && node.contains(next)
-    ? node
-    : null;
-}
-
-function web072InstallManualAddButton(toolbar) {
+function web072Fix4EnsureManualButton(toolbar) {
   if (!toolbar) return;
 
-  if (
-    toolbar.querySelector(
-      ".web072-manual-add-btn"
-    )
-  ) {
-    return;
+  /*
+   * Supprime tous les anciens boutons WEB072 situés ailleurs.
+   */
+  for (const old of document.querySelectorAll(".web072-manual-add-btn")) {
+    if (!toolbar.contains(old)) old.remove();
   }
 
-  const reference =
-    toolbar.querySelector("button");
+  let button = toolbar.querySelector(".web072-manual-add-btn");
 
-  const button =
-    document.createElement("button");
+  if (!button) {
+    const template =
+      Array.from(toolbar.querySelectorAll("button, a"))
+        .find((el) =>
+          /Mettre à la corbeille/i.test(web072Fix4Text(el))
+        ) ||
+      toolbar.querySelector("button");
 
-  button.type = "button";
-  button.className =
-    String(reference?.className || "secondary")
-      .trim() +
-    " web072-manual-add-btn";
+    button = document.createElement("button");
+    button.type = "button";
+    button.className =
+      ((template?.className || "secondary") + " web072-manual-add-btn").trim();
+    button.textContent = "Ajout manuel";
 
-  button.textContent = "Ajout manuel";
-
-  button.addEventListener(
-    "click",
-    (event) => {
+    button.addEventListener("click", (event) => {
       event.preventDefault();
 
       try {
         navigateUx("more", "manual");
-      } catch (_) {
-        const oldManual =
-          Array.from(
-            document.querySelectorAll(
-              "button, a"
-            )
-          ).find((el) =>
-            /Ajout manuel/i.test(
-              String(
-                el.textContent || ""
-              ).trim()
-            ) &&
-            !el.classList.contains(
-              "web072-manual-add-btn"
-            )
-          );
+      } catch (_) {}
+    });
 
-        oldManual?.click();
-      }
-    }
-  );
+    const trash =
+      Array.from(toolbar.querySelectorAll("button, a"))
+        .find((el) =>
+          /Mettre à la corbeille/i.test(web072Fix4Text(el))
+        );
 
-  /*
-   * Position : après "Mettre à la corbeille",
-   * sinon avant les boutons précédent/suivant.
-   */
-  const deleteButton =
-    Array.from(
-      toolbar.querySelectorAll(
-        "button, a"
-      )
-    ).find((el) =>
-      /Mettre à la corbeille/i.test(
-        String(el.textContent || "")
-      )
-    );
-
-  if (deleteButton) {
-    deleteButton.insertAdjacentElement(
-      "afterend",
-      button
-    );
-  } else {
-    toolbar.appendChild(button);
-  }
-}
-
-function web072HideDetailDivider() {
-  const row =
-    document.getElementById(
-      "web061SingleMetricRow"
-    );
-
-  if (!row) return;
-
-  let next = row.nextElementSibling;
-
-  /*
-   * Cible la barre visuelle très basse et très large
-   * qui suit immédiatement les métriques.
-   */
-  if (next) {
-    const style =
-      window.getComputedStyle(next);
-
-    const rect =
-      next.getBoundingClientRect();
-
-    const looksLikeDivider =
-      next.tagName === "HR" ||
-      /divider|separator|progress|sync-bar/i.test(
-        String(next.className || "")
-      ) ||
-      (
-        rect.height > 0 &&
-        rect.height <= 18 &&
-        rect.width >=
-          row.getBoundingClientRect().width * .75
-      );
-
-    if (looksLikeDivider) {
-      next.classList.add(
-        "web072-hide-divider"
-      );
+    if (trash) {
+      trash.insertAdjacentElement("afterend", button);
+    } else {
+      toolbar.appendChild(button);
     }
   }
 }
 
-function web072ApplyDetailToolbar() {
-  const toolbar =
-    web072FindDetailToolbar();
-
-  if (!toolbar) return;
-
-  toolbar.classList.add(
-    "web072-detail-nav-toolbar"
-  );
-
-  web072InstallManualAddButton(toolbar);
+function web072Fix4HideDuplicates(toolbar) {
+  const detail = document.getElementById("detailView");
+  if (!detail || !toolbar) return;
 
   /*
-   * Masque uniquement d'éventuels autres groupes
-   * qui contiennent eux aussi précédent + suivant.
+   * F — navigation du bas :
+   * repère chaque autre groupe contenant Répertoire + précédent + suivant.
    */
-  const detail =
-    document.getElementById("detailView");
+  const repoButtons =
+    web072Fix4Controls(detail).filter((el) =>
+      /Répertoire/i.test(web072Fix4Text(el)) &&
+      !toolbar.contains(el)
+    );
 
-  if (detail) {
-    const allGroups =
-      Array.from(
-        detail.querySelectorAll("div")
-      );
+  for (const repo of repoButtons) {
+    let node = repo.parentElement;
+    let steps = 0;
 
-    for (const group of allGroups) {
-      if (group === toolbar) continue;
-
-      const text =
-        String(group.textContent || "");
+    while (node && node !== detail && steps < 6) {
+      const text = web072Fix4Text(node);
 
       if (
         /Activité précédente/i.test(text) &&
         /Activité suivante/i.test(text) &&
-        !group.contains(toolbar) &&
-        !toolbar.contains(group)
+        /Répertoire/i.test(text)
       ) {
-        group.classList.add(
-          "web072-secondary-detail-toolbar"
-        );
+        node.classList.add("web072-bottom-nav-duplicate");
+        break;
       }
+
+      node = node.parentElement;
+      steps += 1;
+    }
+  }
+
+  /*
+   * E — ancien bandeau contenant uniquement Ajout manuel.
+   */
+  const manuals =
+    web072Fix4Controls(detail).filter((el) =>
+      /^Ajout manuel$/i.test(web072Fix4Text(el)) &&
+      !toolbar.contains(el)
+    );
+
+  for (const manual of manuals) {
+    let host = manual.parentElement;
+
+    if (
+      host &&
+      web072Fix4Controls(host).length === 1
+    ) {
+      host.classList.add("web072-orphan-manual-toolbar");
+    } else {
+      manual.remove();
     }
   }
 }
 
-function web072ApplyLayout() {
+function web072Fix4HideThinDivider() {
+  const row = document.getElementById("web061SingleMetricRow");
+  if (!row) return;
+
+  const next = row.nextElementSibling;
+  if (!next) return;
+
+  const rect = next.getBoundingClientRect();
+
+  if (
+    next.tagName === "HR" ||
+    /divider|separator/i.test(String(next.className || "")) ||
+    (
+      rect.height > 0 &&
+      rect.height <= 16 &&
+      rect.width >= row.getBoundingClientRect().width * .75
+    )
+  ) {
+    next.classList.add("web072-hide-divider");
+  }
+}
+
+function web072Fix4Apply() {
   try {
-    web072AlignDirectoryHeader();
-    web072ApplyDetailToolbar();
-    web072HideDetailDivider();
+    const toolbar = web072Fix4FindToolbar();
+
+    if (toolbar) {
+      toolbar.classList.add("web072-fixed-detail-toolbar");
+      web072Fix4EnsureManualButton(toolbar);
+      web072Fix4HideDuplicates(toolbar);
+    }
+
+    web072Fix4HideThinDivider();
   } catch (_) {}
 }
 
-/*
- * Pas de MutationObserver.
- * Quelques points de rafraîchissement légers suffisent
- * pour les rendus asynchrones actuels.
- */
-if (!window.__web072LayoutInstalled) {
-  window.__web072LayoutInstalled = true;
+if (!window.__web072Fix4Installed) {
+  window.__web072Fix4Installed = true;
 
-  document.addEventListener(
-    "DOMContentLoaded",
-    () => {
-      setTimeout(web072ApplyLayout, 0);
-      setTimeout(web072ApplyLayout, 500);
-      setTimeout(web072ApplyLayout, 1500);
-    }
-  );
+  const refresh = () => {
+    setTimeout(web072Fix4Apply, 0);
+    setTimeout(web072Fix4Apply, 350);
+  };
 
-  document.addEventListener(
-    "click",
-    () => setTimeout(
-      web072ApplyLayout,
-      0
-    ),
-    true
-  );
+  document.addEventListener("DOMContentLoaded", refresh);
+  document.addEventListener("click", refresh, true);
+  document.addEventListener("change", refresh, true);
 
-  document.addEventListener(
-    "change",
-    () => setTimeout(
-      web072ApplyLayout,
-      0
-    ),
-    true
-  );
-
-  setInterval(
-    web072ApplyLayout,
-    1500
-  );
+  setInterval(web072Fix4Apply, 1800);
 }
 
-/* WEB072_DETAIL_NAV002_ICON_LAYOUT003_END */
+/* WEB072_FIX4_DETAIL_NAV003_END */

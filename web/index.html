@@ -3690,167 +3690,14 @@ select {
 </style>
 
 
-<style id="web072-detail-nav-ui-css">
-  /* WEB072 FIX3 · DETAIL_NAV_UI001 */
 
-  /* A. recentrage des libellés / valeurs dans le détail */
-  #web061SingleMetricRow {
-    position: relative !important;
-    align-items: stretch !important;
-  }
+<style id="web072-detail-nav003-icon-layout004-css">
+  /* WEB072 FIX4 · DETAIL_NAV003 / ICON_LAYOUT004 */
 
-  #web061SingleMetricRow > * {
-    display: flex !important;
-    align-items: stretch !important;
-  }
-
-  #web061SingleMetricRow > * > *,
-  #web061SingleMetricRow .metric-card,
-  #web061SingleMetricRow .stat-card,
-  #web061SingleMetricRow .web061-single-metric-card {
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: center !important;
-    align-items: center !important;
-    gap: 6px !important;
-    min-height: 88px !important;
-    height: 100% !important;
-    text-align: center !important;
-    box-sizing: border-box !important;
-  }
-
-  #web061SingleMetricRow .label,
-  #web061SingleMetricRow .metric-label,
-  #web061SingleMetricRow .stat-label,
-  #web061SingleMetricRow small,
-  #web061SingleMetricRow .muted {
-    margin: 0 !important;
-    line-height: 1.1 !important;
-    text-align: center !important;
-    transform: none !important;
-  }
-
-  #web061SingleMetricRow .value,
-  #web061SingleMetricRow .metric-value,
-  #web061SingleMetricRow .stat-value,
-  #web061SingleMetricRow strong {
-    margin: 0 !important;
-    line-height: 1.12 !important;
-    text-align: center !important;
-    transform: none !important;
-  }
-
-  /* B. icônes légèrement réduites pour ne plus toucher le bandeau */
-  #activityList .web071-fix1-sport-icon {
-    width: 44px !important;
-    height: 36px !important;
-    min-width: 44px !important;
-    min-height: 36px !important;
-    max-width: 44px !important;
-    max-height: 36px !important;
-  }
-
-  #activityList .web071-fix1-sport-icon img[src*="sport-running"],
-  #activityList .web071-fix1-sport-icon img[alt*="Course"],
-  #activityList .web071-fix1-sport-icon img[alt*="course"] {
-    width: 26px !important;
-    height: 26px !important;
-    max-width: 26px !important;
-    max-height: 26px !important;
-    transform: translateY(0px) !important;
-  }
-
-  #activityList .web071-fix1-sport-icon img[src*="sport-bike"],
-  #activityList .web071-fix1-sport-icon img[alt*="Vélo"],
-  #activityList .web071-fix1-sport-icon img[alt*="velo"],
-  #activityList .web071-fix1-sport-icon img[alt*="Velo"] {
-    width: 32px !important;
-    height: 23px !important;
-    max-width: 32px !important;
-    max-height: 23px !important;
-    transform: translateY(0px) !important;
-  }
-
-  /* B bis. éclair indoor en haut à gauche */
-  .web071-indoor-badge.web071-indoor-lightning {
-    left: -2px !important;
-    right: auto !important;
-    top: -2px !important;
-    bottom: auto !important;
-    font-size: 14px !important;
-  }
-
-  #web061SingleMetricRow .web071-indoor-badge.web071-indoor-lightning {
-    left: 4px !important;
-    right: auto !important;
-    top: 4px !important;
-    font-size: 16px !important;
-  }
-
-  /* C. suppression de la grande barre entre métriques et encart suivant */
-  #web061SingleMetricRow + hr,
-  #web061SingleMetricRow + .divider,
-  #web061SingleMetricRow + .separator,
-  #web061SingleMetricRow + .toolbar-separator,
-  #web061SingleMetricRow + .web-divider,
-  #web061SingleMetricRow::after {
-    display: none !important;
-    content: none !important;
-    border: 0 !important;
-    height: 0 !important;
-  }
-
-  .web072-hide-divider {
-    display: none !important;
-  }
-
-  /* D. bandeau sticky de navigation dans le détail */
-  .web072-detail-nav-toolbar {
-    position: sticky !important;
-    top: 58px !important;
-    z-index: 65 !important;
-    background: rgba(7, 14, 10, 0.96) !important;
-    backdrop-filter: blur(4px) !important;
-  }
-
-  .web072-detail-nav-toolbar + * {
-    scroll-margin-top: 130px !important;
-  }
-
-  /* Bouton Ajout manuel dans le bandeau Activités */
-  .web072-manual-add-btn {
-    margin-left: 8px !important;
-  }
-
-  /* option demandée : masquer d'éventuels boutons secondaires redondants */
-  .web072-secondary-detail-buttons {
-    display: none !important;
-  }
-</style>
-
-
-<style id="web072-detail-nav002-icon-layout003-css">
-  /* WEB072 · DETAIL_NAV002 / ICON_LAYOUT003 */
-
-  /* A — Répertoire : le header reprend exactement la grille d'une ligne. */
-  .web072-directory-header {
-    box-sizing: border-box !important;
-    align-items: center !important;
-  }
-
-  .web072-directory-header > * {
-    text-align: center !important;
-    justify-self: center !important;
-  }
-
-  .web072-directory-header-spacer {
-    width: 100% !important;
-    height: 1px !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-  }
-
-  /* B — Réduction supplémentaire des pictogrammes (~2 mm en hauteur). */
+  /*
+   * A — Course : réduction franche, sans déplacer le centre de la cellule.
+   * Le cadre conserve le centrage vertical acquis.
+   */
   #activityList .web071-fix1-sport-icon {
     width: 44px !important;
     height: 38px !important;
@@ -3858,19 +3705,27 @@ select {
     min-height: 38px !important;
     max-width: 44px !important;
     max-height: 38px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     overflow: visible !important;
   }
 
   #activityList .web071-fix1-sport-icon img[src*="sport-running"],
   #activityList .web071-fix1-sport-icon img[alt*="Course"],
   #activityList .web071-fix1-sport-icon img[alt*="course"] {
-    width: 21px !important;
-    height: 21px !important;
-    max-width: 21px !important;
-    max-height: 21px !important;
+    width: 18px !important;
+    height: 18px !important;
+    max-width: 18px !important;
+    max-height: 18px !important;
+    margin: auto !important;
     transform: none !important;
+    object-fit: contain !important;
   }
 
+  /*
+   * Le vélo garde sa taille WEB072, qui ne déborde plus.
+   */
   #activityList .web071-fix1-sport-icon img[src*="sport-bike"],
   #activityList .web071-fix1-sport-icon img[alt*="Vélo"],
   #activityList .web071-fix1-sport-icon img[alt*="velo"],
@@ -3879,14 +3734,18 @@ select {
     height: 19px !important;
     max-width: 27px !important;
     max-height: 19px !important;
+    margin: auto !important;
     transform: none !important;
+    object-fit: contain !important;
   }
 
-  /* Éclair indoor : à GAUCHE de l'icône et centré verticalement. */
+  /*
+   * B — éclair : environ 2 mm plus à gauche et 2 mm plus haut.
+   */
   .web071-indoor-badge.web071-indoor-lightning {
-    left: -12px !important;
+    left: -20px !important;
     right: auto !important;
-    top: 50% !important;
+    top: calc(50% - 8px) !important;
     bottom: auto !important;
     transform: translateY(-50%) !important;
     font-size: 14px !important;
@@ -3894,83 +3753,82 @@ select {
 
   #web061SingleMetricRow
   .web071-indoor-badge.web071-indoor-lightning {
-    left: -10px !important;
+    left: -18px !important;
     right: auto !important;
-    top: 50% !important;
+    top: calc(50% - 8px) !important;
     bottom: auto !important;
     transform: translateY(-50%) !important;
     font-size: 16px !important;
   }
 
-  /* C — suppression de la barre horizontale entre stats et encart suivant. */
+  /*
+   * C — aucune transformation des cartes métriques :
+   * les stats reviennent au rendu WEB061/066.
+   */
+  #web061SingleMetricRow {
+    position: relative !important;
+    top: auto !important;
+    z-index: 1 !important;
+    clear: both !important;
+  }
+
+  /*
+   * D — LE vrai bandeau sticky :
+   * Répertoire / corbeille / ajout manuel / précédent / suivant.
+   */
+  #detailView .web059-detail-toolbar,
+  #detailView .web072-fixed-detail-toolbar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 200 !important;
+
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+
+    background: rgba(8, 14, 10, .99) !important;
+    backdrop-filter: blur(5px) !important;
+
+    padding-top: 7px !important;
+    padding-bottom: 7px !important;
+    margin-bottom: 8px !important;
+
+    box-sizing: border-box !important;
+    overflow: visible !important;
+  }
+
+  #detailView .web072-fixed-detail-toolbar > button,
+  #detailView .web072-fixed-detail-toolbar > a,
+  #detailView .web072-fixed-detail-toolbar button,
+  #detailView .web072-fixed-detail-toolbar a {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+  }
+
+  .web072-manual-add-btn {
+    margin: 0 !important;
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+  }
+
+  /*
+   * E/F — aucun bandeau Ajout manuel isolé et aucune navigation du bas.
+   */
+  .web072-orphan-manual-toolbar,
+  .web072-bottom-nav-duplicate {
+    display: none !important;
+  }
+
+  /*
+   * Barre fine inutile sous les métriques.
+   */
   #web061SingleMetricRow + hr,
   #web061SingleMetricRow + .divider,
   #web061SingleMetricRow + .separator,
   #web061SingleMetricRow + .toolbar-separator,
   #web061SingleMetricRow + .web-divider,
-  #web061SingleMetricRow::after,
   .web072-hide-divider {
     display: none !important;
-    content: none !important;
-    height: 0 !important;
-    min-height: 0 !important;
-    border: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  /*
-   * D — un seul bandeau d'actions, ancré pendant la consultation.
-   * Il reste dans le flux : aucune métrique ne passe dessous.
-   */
-  #detailView .web072-detail-nav-toolbar {
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 120 !important;
-
-    display: flex !important;
-    align-items: center !important;
-    gap: 8px !important;
-
-    background: rgba(8, 14, 10, .98) !important;
-    backdrop-filter: blur(5px) !important;
-
-    margin: 0 0 8px !important;
-    padding-top: 7px !important;
-    padding-bottom: 7px !important;
-
-    box-sizing: border-box !important;
-  }
-
-  #detailView .web072-detail-nav-toolbar + #web061SingleMetricRow {
-    margin-top: 0 !important;
-  }
-
-  .web072-manual-add-btn {
-    margin-left: 0 !important;
-    white-space: nowrap !important;
-  }
-
-  /* Si un ancien bandeau doublon subsiste, il est masqué. */
-  .web072-secondary-detail-toolbar {
-    display: none !important;
-  }
-
-  /* Détail : libellés et valeurs parfaitement centrés dans leurs cartes. */
-  #web061SingleMetricRow > * {
-    align-self: stretch !important;
-  }
-
-  #web061SingleMetricRow > * > *,
-  #web061SingleMetricRow .metric-card,
-  #web061SingleMetricRow .stat-card,
-  #web061SingleMetricRow .web061-single-metric-card {
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    justify-content: center !important;
-    text-align: center !important;
-    box-sizing: border-box !important;
   }
 </style>
 
@@ -5417,7 +5275,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-DETAIL-NAV002-ICON-LAYOUT003"></script>
+  <script type="module" src="./app.js?v=WEB072-FIX4-DETAIL-NAV003-ICON-LAYOUT004"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
