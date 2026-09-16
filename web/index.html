@@ -4069,6 +4069,93 @@ select {
   }
 </style>
 
+
+<style id="web072-fix13-manual-spacing-css">
+  /* WEB072 FIX13 · MANUALTAB001 / DETAIL_SPACING005 / PARASITE002 */
+
+  /* SPADA : icônes, Charge, header Répertoire et Accueil conservés. */
+
+  /* Le bandeau complet reste fixé dès l'ouverture. */
+  #detailView .web072-fix13-toolbar-fixed {
+    position: fixed !important;
+    top: var(--web072-fix13-toolbar-top, 2mm) !important;
+    z-index: 10000 !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    background: rgba(8,14,10,.995) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+  }
+
+  /*
+   * FIX13 n'utilise PLUS de placeholder dans le flux.
+   * Le décalage nécessaire est calculé directement sur #detailView
+   * à l'ouverture : il ne dépend donc pas du scroll.
+   */
+  #detailView.web072-fix13-detail {
+    margin-top: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  /*
+   * Deux rubriques internes du résumé :
+   * statistiques -> Matériel/Repères = exactement 2 mm.
+   */
+  #detailView .detail-hero-two-lines {
+    gap: 2mm !important;
+    margin-top: 0 !important;
+    margin-bottom: 2mm !important;
+  }
+
+  #detailView .detail-hero-two-lines > .detail-summary-row,
+  #detailView .detail-hero-two-lines > .detail-controls-row {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  /*
+   * Matériel/Repères -> rubrique suivante (Carte) :
+   * le parent résumé porte 2 mm en bas, la carte n'ajoute rien.
+   */
+  #detailView .web072-fix13-map-section {
+    margin-top: 0 !important;
+  }
+
+  /* Les autres grandes rubriques directes restent espacées de 2 mm. */
+  #detailView > .web072-fix13-major-section {
+    margin-bottom: 0 !important;
+  }
+
+  #detailView
+  > .web072-fix13-major-section
+  + .web072-fix13-major-section {
+    margin-top: 2mm !important;
+  }
+
+  /*
+   * Surtout : disparition définitive des barres/surbandeaux vides
+   * repérés entre stats et Matériel/Repères.
+   */
+  .web072-fix13-parasite {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5512,7 +5599,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-FIX12B-DETAIL-ANCHOR007-SPACING004-HOMEDEFAULT002"></script>
+  <script type="module" src="./app.js?v=WEB072-FIX13-MANUALTAB001-DETAIL-SPACING005-PARASITE002"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

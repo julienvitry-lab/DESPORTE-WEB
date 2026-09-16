@@ -1051,6 +1051,7 @@ function uxPageConfig() {
         ["equipment-map","Matériel auto"],
         ["maps","Cartes"],
         ["files","Fichiers"],
+        ["manual","Ajout manuel"],
         ["import","Import"],
         ["sync","Synchronisation"],
         ["health","Santé sync"],
@@ -19757,3 +19758,550 @@ if (!window.__web072Fix12BHomeInstalled) {
 }
 
 /* WEB072_FIX12B_DETAIL_ANCHOR007_END */
+
+
+/* WEB072_FIX13_MANUALTAB001_START */
+
+function web072Fix13Text(el) {
+  return String(el?.textContent || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function web072Fix13Mm2Px() {
+  let probe =
+    document.getElementById("web072Fix13MmProbe");
+
+  if (!probe) {
+    probe = document.createElement("div");
+    probe.id = "web072Fix13MmProbe";
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.pointerEvents = "none";
+    probe.style.width = "2mm";
+    probe.style.height = "2mm";
+    document.body.appendChild(probe);
+  }
+
+  return probe.getBoundingClientRect().height || 8;
+}
+
+function web072Fix13MatchesToolbar(el) {
+  const text = web072Fix13Text(el);
+
+  return (
+    /Répertoire/i.test(text) &&
+    /Ajout manuel/i.test(text) &&
+    /Mettre à la corbeille/i.test(text) &&
+    /Activité précédente/i.test(text) &&
+    /Activité suivante/i.test(text)
+  );
+}
+
+function web072Fix13FindToolbar() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return null;
+
+  const detailRect = detail.getBoundingClientRect();
+
+  const candidates =
+    Array.from(
+      detail.querySelectorAll("div, nav, section")
+    )
+      .filter((el) => {
+        if (el === detail) return false;
+        if (!web072Fix13MatchesToolbar(el)) return false;
+
+        const rect = el.getBoundingClientRect();
+
+        return (
+          rect.height > 0 &&
+          rect.height <= 125 &&
+          rect.width >= detailRect.width * 0.72
+        );
+      });
+
+  if (!candidates.length) return null;
+
+  const depth = (node) => {
+    let d = 0;
+    let cur = node;
+
+    while (cur && cur !== detail) {
+      d += 1;
+      cur = cur.parentElement;
+    }
+
+    return d;
+  };
+
+  /* conteneur externe compact */
+  candidates.sort((a, b) => depth(a) - depth(b));
+
+  return candidates[0];
+}
+
+function web072Fix13ToolbarTop() {
+  const gap = web072Fix13Mm2Px();
+
+  const nav =
+    document.getElementById("uxPrimaryNav") ||
+    document.querySelector('[data-ux-primary-nav]');
+
+  if (nav) {
+    const rect = nav.getBoundingClientRect();
+
+    if (
+      rect.height > 0 &&
+      rect.bottom > 0 &&
+      rect.bottom < window.innerHeight
+    ) {
+      return Math.ceil(rect.bottom + gap);
+    }
+  }
+
+  return Math.ceil(gap);
+}
+
+/*
+ * Nettoyage des anciens moteurs de positionnement.
+ * On conserve leurs autres acquis mais ils ne doivent plus réserver
+ * d'espace dans le flux.
+ */
+function web072Fix13CleanupToolbarLayout() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return;
+
+  detail
+    .querySelectorAll(
+      ".web072-fix11-toolbar-placeholder, " +
+      ".web072-fix10-toolbar-placeholder, " +
+      ".web072-fix10-toolbar-anchor, " +
+      ".web072-fix12b-toolbar-placeholder"
+    )
+    .forEach((el) => el.remove());
+
+  for (
+    const old of
+    detail.querySelectorAll(
+      ".web072-fix11-toolbar-fixed, " +
+      ".web072-fix10-toolbar-fixed, " +
+      ".web072-fix12b-toolbar-fixed, " +
+      ".web072-fix9-toolbar-sticky"
+    )
+  ) {
+    old.classList.remove(
+      "web072-fix11-toolbar-fixed",
+      "web072-fix10-toolbar-fixed",
+      "web072-fix12b-toolbar-fixed",
+      "web072-fix9-toolbar-sticky"
+    );
+
+    for (const prop of [
+      "position",
+      "top",
+      "left",
+      "width",
+      "z-index"
+    ]) {
+      old.style.removeProperty(prop);
+    }
+  }
+}
+
+/*
+ * Barre parasite : on ne se contente plus du voisin direct.
+ * Tout élément vide, large et bas situé ENTRE la ligne de stats
+ * et la ligne Matériel/Repères est supprimé.
+ */
+function web072Fix13HideParasites() {
+  const detail = document.getElementById("detailView");
+
+  const summary =
+    detail?.querySelector(
+      ".detail-hero-two-lines > .detail-summary-row"
+    );
+
+  const controls =
+    detail?.querySelector(
+      ".detail-hero-two-lines > .detail-controls-row"
+    );
+
+  if (!detail || !summary || !controls) return;
+
+  const summaryRect = summary.getBoundingClientRect();
+  const controlsRect = controls.getBoundingClientRect();
+  const detailRect = detail.getBoundingClientRect();
+
+  const hero =
+    summary.parentElement === controls.parentElement
+      ? summary.parentElement
+      : detail;
+
+  for (
+    const node of
+    hero.querySelectorAll("div, hr, section")
+  ) {
+    if (
+      node === summary ||
+      node === controls ||
+      node.contains(summary) ||
+      node.contains(controls) ||
+      summary.contains(node) ||
+      controls.contains(node)
+    ) {
+      continue;
+    }
+
+    const rect = node.getBoundingClientRect();
+
+    if (
+      rect.bottom < summaryRect.bottom - 2 ||
+      rect.top > controlsRect.top + 2
+    ) {
+      continue;
+    }
+
+    const text = web072Fix13Text(node);
+
+    const interactive =
+      Boolean(
+        node.querySelector(
+          "button, input, select, textarea, a"
+        )
+      );
+
+    const wide =
+      rect.width >= detailRect.width * 0.68;
+
+    const low =
+      rect.height > 0 &&
+      rect.height <= 32;
+
+    const named =
+      /divider|separator|progress|status|sync|bar|spacer/i.test(
+        String(node.id || "") +
+        " " +
+        String(node.className || "")
+      );
+
+    if (
+      !text &&
+      !interactive &&
+      ((wide && low) || named)
+    ) {
+      node.classList.add(
+        "web072-fix13-parasite"
+      );
+
+      node.style.setProperty(
+        "display",
+        "none",
+        "important"
+      );
+    }
+  }
+
+  /*
+   * Cas fréquent : l'élément parasite est un frère direct du résumé
+   * ou des contrôles, mais pas dans le même wrapper.
+   */
+  for (
+    const node of
+    detail.querySelectorAll("div, hr, section")
+  ) {
+    if (
+      node === summary ||
+      node === controls ||
+      node.contains(summary) ||
+      node.contains(controls)
+    ) {
+      continue;
+    }
+
+    const rect = node.getBoundingClientRect();
+    const text = web072Fix13Text(node);
+
+    if (
+      !text &&
+      !node.querySelector(
+        "button, input, select, textarea, a"
+      ) &&
+      rect.height > 0 &&
+      rect.height <= 24 &&
+      rect.width >= detailRect.width * 0.75 &&
+      rect.top >= summaryRect.bottom - 4 &&
+      rect.bottom <= controlsRect.top + 4
+    ) {
+      node.classList.add(
+        "web072-fix13-parasite"
+      );
+
+      node.style.setProperty(
+        "display",
+        "none",
+        "important"
+      );
+    }
+  }
+}
+
+/*
+ * Positionnement PAR DÉFAUT, à l'ouverture.
+ * Aucun listener scroll : l'écart ne varie donc jamais avec l'ascenseur.
+ */
+function web072Fix13FixToolbarAndSpacing() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return;
+
+  web072Fix13CleanupToolbarLayout();
+
+  const toolbar = web072Fix13FindToolbar();
+
+  const stats =
+    document.getElementById("web061SingleMetricRow") ||
+    detail.querySelector(
+      ".detail-hero-two-lines > .detail-summary-row"
+    );
+
+  if (!toolbar || !stats) return;
+
+  toolbar.classList.add(
+    "web072-fix13-toolbar-fixed"
+  );
+
+  const top = web072Fix13ToolbarTop();
+
+  const detailRect =
+    detail.getBoundingClientRect();
+
+  const left =
+    Math.max(0, Math.round(detailRect.left));
+
+  const width =
+    Math.max(
+      0,
+      Math.min(
+        detailRect.width,
+        window.innerWidth - left
+      )
+    );
+
+  toolbar.style.setProperty(
+    "position",
+    "fixed",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "top",
+    top + "px",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "left",
+    left + "px",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "width",
+    width + "px",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "z-index",
+    "10000",
+    "important"
+  );
+
+  /*
+   * Remise à zéro puis mesure du placement naturel des stats.
+   */
+  detail.classList.add(
+    "web072-fix13-detail"
+  );
+
+  detail.style.setProperty(
+    "padding-top",
+    "0px",
+    "important"
+  );
+
+  detail.style.setProperty(
+    "margin-top",
+    "0px",
+    "important"
+  );
+
+  const toolbarHeight =
+    Math.ceil(
+      toolbar.getBoundingClientRect().height
+    );
+
+  const desiredStatsTop =
+    top +
+    toolbarHeight +
+    web072Fix13Mm2Px();
+
+  const naturalStatsTop =
+    stats.getBoundingClientRect().top;
+
+  const padding =
+    Math.max(
+      0,
+      Math.ceil(
+        desiredStatsTop - naturalStatsTop
+      )
+    );
+
+  detail.style.setProperty(
+    "padding-top",
+    padding + "px",
+    "important"
+  );
+}
+
+function web072Fix13MarkSections() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return;
+
+  for (const child of Array.from(detail.children)) {
+    child.classList.remove(
+      "web072-fix13-major-section"
+    );
+
+    if (
+      child.classList.contains(
+        "web072-fix13-toolbar-fixed"
+      )
+    ) {
+      continue;
+    }
+
+    const style = getComputedStyle(child);
+    const rect = child.getBoundingClientRect();
+
+    if (
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      rect.height > 0
+    ) {
+      child.classList.add(
+        "web072-fix13-major-section"
+      );
+    }
+  }
+
+  const mapTitle =
+    Array.from(
+      detail.querySelectorAll(
+        "h1, h2, h3, h4, strong, div"
+      )
+    ).find((el) =>
+      /^Carte et profil altimétrique$/i.test(
+        web072Fix13Text(el)
+      )
+    );
+
+  if (mapTitle) {
+    let section = mapTitle;
+
+    while (
+      section.parentElement &&
+      section.parentElement !== detail
+    ) {
+      const parent = section.parentElement;
+      const rect = parent.getBoundingClientRect();
+
+      section = parent;
+
+      if (
+        rect.width >=
+          detail.getBoundingClientRect().width * 0.75 &&
+        rect.height >= 100
+      ) {
+        break;
+      }
+    }
+
+    section.classList.add(
+      "web072-fix13-map-section"
+    );
+  }
+}
+
+function web072Fix13ApplyDetail() {
+  try {
+    web072Fix13HideParasites();
+    web072Fix13FixToolbarAndSpacing();
+    web072Fix13MarkSections();
+  } catch (_) {}
+}
+
+/*
+ * Après rendu du détail : 3 passes seulement.
+ * Aucun recalcul au scroll.
+ */
+const web072Fix13PreviousRenderDetail =
+  renderDetail;
+
+renderDetail =
+  function web072Fix13RenderDetail(...args) {
+    const result =
+      web072Fix13PreviousRenderDetail.apply(
+        this,
+        args
+      );
+
+    const apply = () => {
+      requestAnimationFrame(
+        web072Fix13ApplyDetail
+      );
+
+      setTimeout(
+        web072Fix13ApplyDetail,
+        50
+      );
+
+      setTimeout(
+        web072Fix13ApplyDetail,
+        180
+      );
+    };
+
+    if (
+      result &&
+      typeof result.then === "function"
+    ) {
+      result.finally(apply);
+    } else {
+      apply();
+    }
+
+    return result;
+  };
+
+if (!window.__web072Fix13Installed) {
+  window.__web072Fix13Installed = true;
+
+  document.addEventListener(
+    "DOMContentLoaded",
+    web072Fix13ApplyDetail
+  );
+
+  window.addEventListener(
+    "resize",
+    web072Fix13ApplyDetail,
+    { passive: true }
+  );
+
+  setTimeout(
+    web072Fix13ApplyDetail,
+    300
+  );
+}
+
+/* WEB072_FIX13_MANUALTAB001_END */
