@@ -4465,6 +4465,117 @@ select {
   }
 }
 </style>
+
+<style id="cgweb083-fix5-activityheader-css">
+/* CGWEB083 FIX5 · ACTIVITYHEADER001 */
+
+/* ------------------------------------------------------------------
+   1. ESPACEMENT VERTICAL UNIFORME ENTRE LES RUBRIQUES DE L'ONGLET
+      ACTIVITES : 2 mm = 7,559 px à 96 dpi.
+   On cible uniquement les enfants directs de la rubrique Répertoire,
+   jamais les lignes individuelles d'activité.
+   ------------------------------------------------------------------ */
+body.ux-activities-page #activityDirectorySection{
+  --cgweb083-section-gap: 7.559px;
+}
+
+body.ux-activities-page #activityDirectorySection > *{
+  margin-top:0!important;
+  margin-bottom:0!important;
+}
+
+body.ux-activities-page #activityDirectorySection > * + *{
+  margin-top:var(--cgweb083-section-gap)!important;
+}
+
+/* Les wrappers de filtres/actions injectés historiquement suivent la même règle. */
+body.ux-activities-page #activityDirectorySection >
+.activity-filters-disclosure-web048,
+body.ux-activities-page #activityDirectorySection >
+.activity-filters-web049,
+body.ux-activities-page #activityDirectorySection >
+.directory-load-actions-bottom,
+body.ux-activities-page #activityDirectorySection >
+.directory-load-actions-web049,
+body.ux-activities-page #activityDirectorySection >
+#activityLoadActionsWeb059{
+  margin-bottom:0!important;
+}
+
+/* ------------------------------------------------------------------
+   2. BARRE DE TITRE ANCRÉE.
+   web059RefreshStickyTop() calcule déjà la hauteur des navigations et
+   renseigne --web059-sticky-top.
+   ------------------------------------------------------------------ */
+body.ux-activities-page #activityDirectoryHeaderWeb059{
+  position:sticky!important;
+  top:var(--web059-sticky-top, 0px)!important;
+  z-index:3600!important;
+  isolation:isolate!important;
+  background:var(--panel-bg, var(--panel, #0b100c))!important;
+  box-shadow:
+    0 1px 0 rgba(190,255,55,.18),
+    0 -1px 0 rgba(190,255,55,.10)!important;
+}
+
+/* Fond opaque de sécurité pour éviter que les activités ne transparaissent. */
+body.ux-activities-page #activityDirectoryHeaderWeb059::before{
+  content:""!important;
+  position:absolute!important;
+  inset:0!important;
+  z-index:-1!important;
+  background:inherit!important;
+  pointer-events:none!important;
+}
+
+/* ------------------------------------------------------------------
+   3. DEPLACEMENTS DES TITRES.
+   Structure exacte :
+   1 spacer
+   2 Date
+   3 Heure
+   4 Distance
+   5 D+
+   6 Temps
+   7 Matériel
+   8 Repères
+   9 Charge
+
+   On neutralise d'abord les anciens left/transform inline.
+   ------------------------------------------------------------------ */
+body.ux-activities-page #activityDirectoryHeaderWeb059 > strong{
+  position:relative!important;
+  left:0!important;
+  right:auto!important;
+  transform:none!important;
+  white-space:nowrap!important;
+}
+
+/* Date : +2 mm */
+body.ux-activities-page #activityDirectoryHeaderWeb059 > strong:nth-child(2){
+  transform:translateX(7.559px)!important;
+}
+
+/* Temps : -1 mm */
+body.ux-activities-page #activityDirectoryHeaderWeb059 > strong:nth-child(6){
+  transform:translateX(-3.780px)!important;
+}
+
+/* Matériel : +2,5 cm */
+body.ux-activities-page #activityDirectoryHeaderWeb059 > strong:nth-child(7){
+  transform:translateX(94.488px)!important;
+}
+
+/* Repères : -1 cm */
+body.ux-activities-page #activityDirectoryHeaderWeb059 > strong:nth-child(8){
+  transform:translateX(-37.795px)!important;
+}
+
+/* Charge : +1 cm */
+body.ux-activities-page #activityDirectoryHeaderWeb059 > strong:nth-child(9){
+  transform:translateX(37.795px)!important;
+}
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -5958,7 +6069,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB083-FIX4-FITICON001"></script>
+  <script type="module" src="./app.js?v=CGWEB083-FIX5-ACTIVITYHEADER001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

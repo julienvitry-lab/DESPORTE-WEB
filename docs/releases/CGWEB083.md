@@ -1,32 +1,33 @@
-# CGWEB083 · ACTIVITYDIRECTORYUX003 · FIX3
+# CGWEB083 · FIX5 · ACTIVITYHEADER001
 
-## Répertoire Activités
+## Barre de titre Activités
 
-### Affichage initial
-100 dernières activités.
+La barre `activityDirectoryHeaderWeb059` est maintenant ciblée directement.
 
-### Afficher 20 de plus
-La position verticale du navigateur est conservée exactement :
-- mémorisation de `window.scrollY` ;
-- suppression du focus du bouton avant rerender ;
-- aucun `scrollIntoView` ;
-- restauration immédiate puis sur deux frames supplémentaires.
-
-L'utilisateur reste donc exactement à l'endroit où il était avant de demander 20 activités supplémentaires.
-
-### Titres
+Décalages :
 - Date : +2 mm ;
 - Temps : -1 mm ;
 - Matériel : +2,5 cm ;
 - Repères : -1 cm ;
 - Charge : +1 cm.
 
-### FIT
-- bureau : 13 × 13 px ;
-- petit écran : 12 × 12 px ;
-- disponible : couleur d'origine ;
-- indisponible : gris discret ;
-- aucune barre.
+Les anciens `left` / `transform` injectés par les correctifs précédents sont neutralisés par CSS `!important`.
 
-## Données
-Backend, activités et pipeline FIT inchangés.
+## Ancrage
+
+La barre de titre est `position: sticky` et utilise `--web059-sticky-top`, déjà calculé à partir des navigations visibles.
+
+## Espacement vertical
+
+Les rubriques directes du Répertoire Activités sont séparées uniformément de 2 mm (7,559 px).
+
+Les lignes d'activités elles-mêmes ne sont pas concernées par ce nouvel espacement.
+
+## Conservé
+
+- 100 dernières activités au départ ;
+- ancrage de scroll sur « Afficher 20 de plus » ;
+- pictogramme FIT FIX4 ;
+- pipeline FIT ;
+- backend ;
+- données Firestore.
