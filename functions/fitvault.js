@@ -360,6 +360,293 @@ function createFitVault() {
   }
   /* CGWEB076_FITROUNDTRIP001_HELPERS_END */
 
+/* CGWEB078_FITVERSION001_HELPERS_START */
+  function v078Finite(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function v078FirstFinite(...values) {
+    for (const value of values) {
+      const n = v078Finite(value);
+      if (n != null) return n;
+    }
+    return null;
+  }
+
+  function v078Array(route, ...keys) {
+    for (const key of keys) {
+      const value = route?.[key];
+      if (Array.isArray(value)) return value;
+    }
+    return [];
+  }
+
+  function v078DurationMs(activity) {
+    const direct = v078FirstFinite(
+      activity?.elapsed_time_ms,
+      activity?.duration_ms,
+      activity?.timer_time_ms,
+      activity?.moving_time_ms
+    );
+    if (direct != null && direct >= 0) return direct;
+    const start = v078Finite(activity?.start_time_ms);
+    const end = v078Finite(activity?.end_time_ms);
+    if (start != null && end != null && end >= start) return end - start;
+    return 0;
+  }
+
+  function v078BuildPayload(activity, route) {
+    const startMs = v078Finite(activity?.start_time_ms);
+    const sport = v078Finite(activity?.sport);
+    const subSport = v078FirstFinite(activity?.sub_sport, activity?.subSport, 0) ?? 0;
+
+    if (startMs == null || startMs <= 0) {
+      throw Object.assign(new Error("FITVERSION001 : start_time_ms absent."), {status: 422});
+    }
+    if (sport == null) {
+      throw Object.assign(new Error("FITVERSION001 : sport absent."), {status: 422});
+    }
+
+    const durationMs = Math.max(0, v078DurationMs(activity));
+    const timerMs = Math.max(
+      0,
+      v078FirstFinite(activity?.timer_time_ms, activity?.moving_time_ms, durationMs) ?? durationMs
+    );
+    const totalDistance = Math.max(0, v078FirstFinite(activity?.distance_m, 0) ?? 0);
+
+    const lat = v078Array(route, "lat", "latitude", "latitudes");
+    const lon = v078Array(route, "lon", "lng", "longitude", "longitudes");
+    const alt = v078Array(route, "alt_m", "altitude_m", "altitude", "altitudes");
+    const dist = v078Array(route, "distance_m", "distance", "distances");
+    const times = v078Array(route, "time_ms", "timestamp_ms", "timestamps_ms");
+    const hrs = v078Array(route, "hr_bpm", "heart_rate_bpm", "heart_rate", "hr");
+    const cadence = v078Array(route, "cadence", "cadence_rpm");
+    const power = v078Array(route, "power", "watts", "power_w");
+    const speed = v078Array(route, "speed_mps", "enhanced_speed_mps", "speed");
+
+    const count = Math.max(
+      lat.length,
+      lon.length,
+      alt.length,
+      dist.length,
+      times.length,
+      hrs.length,
+      cadence.length,
+      power.length,
+      speed.length,
+      0
+    );
+
+    const finiteTimes = times
+      .map(v078Finite)
+      .filter((value) => value != null);
+
+    const useRouteTiming =
+      finiteTimes.length >= 2 &&
+      finiteTimes[finiteTimes.length - 1] > finiteTimes[0];
+
+    const routeStart = useRouteTiming ? finiteTimes[0] : null;
+    const routeSpan = useRouteTiming
+      ? finiteTimes[finiteTimes.length - 1] - finiteTimes[0]
+      : null;
+
+    const finiteDistances = dist
+      .map(v078Finite)
+      .filter((value) => value != null && value >= 0);
+
+    const routeLastDistance = finiteDistances.length
+      ? finiteDistances[finiteDistances.length - 1]
+      : null;
+
+    const points = [];
+
+    for (let i = 0; i < count; i += 1) {
+      const progress = count > 1 ? i / (count - 1) : 0;
+
+      let relative = progress;
+      const rawTime = v078Finite(times[i]);
+      if (useRouteTiming && rawTime != null && routeSpan > 0) {
+        relative = Math.max(0, Math.min(1, (rawTime - routeStart) / routeSpan));
+      }
+
+      let pointDistance = v078Finite(dist[i]);
+      if (routeLastDistance != null && routeLastDistance > 0 && pointDistance != null) {
+        pointDistance = Math.max(0, pointDistance * (totalDistance / routeLastDistance));
+      } else {
+        pointDistance = totalDistance * relative;
+      }
+
+      const latitude = v078Finite(lat[i]);
+      const longitude = v078Finite(lon[i]);
+
+      const point = {
+        timestamp_ms: startMs + Math.round(durationMs * relative),
+        distance_m: pointDistance,
+        altitude_m: v078Finite(alt[i]),
+        heart_rate: v078Finite(hrs[i]),
+        cadence: v078Finite(cadence[i]),
+        power: v078Finite(power[i]),
+        speed_mps: v078Finite(speed[i])
+      };
+
+      if (
+        latitude != null && longitude != null &&
+        latitude >= -90 && latitude <= 90 &&
+        longitude >= -180 && longitude <= 180
+      ) {
+        point.lat = latitude;
+        point.lon = longitude;
+      }
+
+      for (const key of Object.keys(point)) {
+        if (point[key] == null) delete point[key];
+      }
+
+      points.push(point);
+    }
+
+    if (!points.length) {
+      points.push({
+        timestamp_ms: startMs,
+        distance_m: 0,
+        heart_rate: v078Finite(activity?.avg_hr)
+      });
+
+      if (durationMs > 0) {
+        points.push({
+          timestamp_ms: startMs + durationMs,
+          distance_m: totalDistance,
+          heart_rate: v078FirstFinite(activity?.max_hr, activity?.avg_hr)
+        });
+      }
+    } else {
+      points[0].timestamp_ms = startMs;
+      if (durationMs > 0) {
+        if (points.length === 1) {
+          points.push({
+            ...points[0],
+            timestamp_ms: startMs + durationMs,
+            distance_m: totalDistance
+          });
+        } else {
+          points[points.length - 1].timestamp_ms = startMs + durationMs;
+          points[points.length - 1].distance_m = totalDistance;
+        }
+      }
+    }
+
+    return {
+      payload: {
+        start_time_ms: startMs,
+        sport,
+        sub_sport: subSport,
+        duration_s: durationMs / 1000,
+        total_timer_time_s: timerMs / 1000,
+        distance_m: totalDistance,
+        total_ascent_m: v078Finite(activity?.ascent_m),
+        avg_hr: v078Finite(activity?.avg_hr),
+        max_hr: v078Finite(activity?.max_hr),
+        points
+      },
+      source: {
+        startMs,
+        durationMs,
+        timerMs,
+        distance: totalDistance,
+        ascent: v078Finite(activity?.ascent_m),
+        avgHr: v078Finite(activity?.avg_hr),
+        maxHr: v078Finite(activity?.max_hr),
+        sport,
+        subSport,
+        pointCount: points.length
+      }
+    };
+  }
+
+  function v078ApplyOverrides(prepared, body) {
+    const payload = prepared.payload;
+    const source = prepared.source;
+
+    const offsetSeconds = Math.max(
+      -86400,
+      Math.min(86400, v078Finite(body?.start_offset_s) ?? 0)
+    );
+    const offsetMs = Math.round(offsetSeconds * 1000);
+
+    if (offsetMs !== 0) {
+      payload.start_time_ms += offsetMs;
+      payload.points = payload.points.map((point) => ({
+        ...point,
+        timestamp_ms: Number(point.timestamp_ms) + offsetMs
+      }));
+    }
+
+    const avgOverride = v078Finite(body?.avg_hr_override);
+    const maxOverride = v078Finite(body?.max_hr_override);
+    const hasHrOverride = avgOverride != null || maxOverride != null;
+
+    let avgHr = avgOverride ?? source.avgHr;
+    let maxHr = maxOverride ?? source.maxHr;
+
+    if (hasHrOverride) {
+      if (avgHr == null && maxHr != null) avgHr = Math.round(maxHr * 0.82);
+      if (maxHr == null && avgHr != null) maxHr = Math.round(avgHr + 18);
+      if (avgHr != null) avgHr = Math.max(20, Math.min(250, Math.round(avgHr)));
+      if (maxHr != null) maxHr = Math.max(20, Math.min(260, Math.round(maxHr)));
+      if (avgHr != null && maxHr != null && maxHr < avgHr) maxHr = avgHr;
+
+      payload.avg_hr = avgHr;
+      payload.max_hr = maxHr;
+
+      if (avgHr != null && maxHr != null && payload.points.length) {
+        const spread = Math.max(0, maxHr - avgHr);
+        payload.points = payload.points.map((point, index, rows) => {
+          const progress = rows.length > 1 ? index / (rows.length - 1) : 0.5;
+          const wave = Math.pow(Math.sin(Math.PI * progress), 4);
+          const low = Math.max(20, avgHr - Math.round(spread * 0.30));
+          const simulated = Math.round(low + (maxHr - low) * wave);
+          return {...point, heart_rate: simulated};
+        });
+      }
+    }
+
+    return {
+      payload,
+      edits: {
+        start_offset_s: offsetSeconds,
+        start_time_ms_source: source.startMs,
+        start_time_ms_version: payload.start_time_ms,
+        heart_rate_mode: hasHrOverride ? "SIMULATED" : "SOURCE",
+        avg_hr_override: hasHrOverride ? avgHr : null,
+        max_hr_override: hasHrOverride ? maxHr : null
+      }
+    };
+  }
+
+  async function v078NextVersionIndex(uid, activityId) {
+    const snap = await files(uid)
+      .where("activity_id", "==", String(activityId))
+      .limit(500)
+      .get();
+
+    let max = 1;
+    for (const docSnap of snap.docs) {
+      const row = docSnap.data() || {};
+      if (row.deleted_at_ms != null) continue;
+      const n = Number(row.version_index || 1);
+      if (Number.isFinite(n) && n > max) max = Math.floor(n);
+    }
+    return max + 1;
+  }
+
+  function v078VersionedName(baseName, versionIndex) {
+    const safe = safeName(baseName || "activity.fit");
+    const suffix = String(Math.max(2, Number(versionIndex) || 2)).padStart(2, "0");
+    return safe.replace(/(?:_\d{2})?\.fit$/i, `_${suffix}.fit`);
+  }
+  /* CGWEB078_FITVERSION001_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -773,6 +1060,213 @@ function createFitVault() {
           });
         }
         /* CGWEB076_FITROUNDTRIP001_ACTION_END */
+/* CGWEB078_FITVERSION001_ACTION_START */
+        if (action === "version") {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+
+          let body = req.body;
+          if (Buffer.isBuffer(body)) {
+            try { body = JSON.parse(body.toString("utf8")); }
+            catch { body = null; }
+          }
+          if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
+
+          const activityId = String(body.activity_id || "").trim();
+          if (!activityId || activityId.includes("/")) {
+            return res.status(400).json({error: "FITVERSION001 : activity_id requis."});
+          }
+
+          const parentHash = String(body.parent_sha256 || "").trim().toLowerCase();
+          let parent = null;
+
+          if (parentHash) {
+            if (!/^[a-f0-9]{64}$/.test(parentHash)) {
+              return res.status(400).json({error: "FITVERSION001 : parent_sha256 invalide."});
+            }
+            const parentSnap = await fileDoc(uid, parentHash).get();
+            if (!parentSnap.exists) {
+              return res.status(404).json({error: "FITVERSION001 : FIT parent introuvable."});
+            }
+            parent = parentSnap.data() || {};
+            if (parent.deleted_at_ms != null) {
+              return res.status(409).json({error: "FITVERSION001 : FIT parent supprimé."});
+            }
+            if (parent.activity_id && String(parent.activity_id) !== activityId) {
+              return res.status(409).json({error: "FITVERSION001 : FIT parent lié à une autre activité."});
+            }
+          }
+
+          const activityRef = db.doc(`${ROOT}/${uid}/activities/${activityId}`);
+          const routeRef = db.doc(`${ROOT}/${uid}/activity_routes/${activityId}`);
+          const [activitySnap, routeSnap] = await Promise.all([
+            activityRef.get(),
+            routeRef.get()
+          ]);
+
+          if (!activitySnap.exists) {
+            return res.status(404).json({error: `FITVERSION001 : activité ${activityId} absente.`});
+          }
+
+          const activity = activitySnap.data() || {};
+          if (activity.deleted_at_ms != null) {
+            return res.status(422).json({error: "FITVERSION001 : activité source supprimée."});
+          }
+
+          const route = routeSnap.exists ? routeSnap.data() || {} : {};
+          const prepared = v078BuildPayload(activity, route);
+          const edited = v078ApplyOverrides(prepared, body);
+          const generated = await encodeCanonicalFit(edited.payload);
+          const validation = await inspectFitBuffer(generated.buffer);
+
+          if (!validation.ok) {
+            return res.status(500).json({
+              error: "FITVERSION001 : FIT généré invalide.",
+              validation
+            });
+          }
+
+          const decodedFit = await decodeCanonicalFitSummary(generated.buffer);
+          if (!decodedFit.integrity || decodedFit.activityCount !== 1 || decodedFit.sessionCount !== 1) {
+            return res.status(500).json({
+              error: "FITVERSION001 : structure FIT non conforme.",
+              decoded: decodedFit
+            });
+          }
+
+          const versionIndex = await v078NextVersionIndex(uid, activityId);
+          const fileName = v078VersionedName(
+            generated.fileName || parent?.file_name || "activity.fit",
+            versionIndex
+          );
+          const hash = sha256(generated.buffer);
+
+          if (parentHash && hash === parentHash) {
+            return res.status(409).json({
+              error: "FITVERSION001 : la version générée est identique au FIT parent ; aucun fichier remplacé."
+            });
+          }
+
+          const ref = fileDoc(uid, hash);
+          const existing = await ref.get();
+          const previous = existing.exists ? existing.data() || {} : {};
+
+          if (existing.exists && previous.deleted_at_ms == null) {
+            if (String(previous.activity_id || "") !== activityId) {
+              return res.status(409).json({
+                error: "FITVERSION001 : ce contenu existe déjà dans le coffre sous un autre lien ; aucun manifeste modifié."
+              });
+            }
+            return res.json({
+              ok: true,
+              service: "FITVERSION001",
+              activity_id: activityId,
+              version_index: Number(previous.version_index || versionIndex),
+              parent_sha256: previous.parent_sha256 || parentHash || null,
+              edits: edited.edits,
+              file: previous,
+              validation,
+              fit: decodedFit,
+              stored: true,
+              deduplicated: true,
+              reused_existing_version: true,
+              activity_modified: false,
+              activities_created: 0,
+              activities_modified: 0
+            });
+          }
+
+          const path = objectPath(uid, hash, edited.payload.start_time_ms);
+          const object = bucket().file(path);
+          const [exists] = await object.exists();
+
+          const familyId = String(
+            parent?.version_family_id ||
+            parent?.sha256 ||
+            parentHash ||
+            hash
+          );
+
+          if (!exists) {
+            await object.save(generated.buffer, {
+              resumable: false,
+              validation: "crc32c",
+              contentType: "application/vnd.ant.fit",
+              metadata: {
+                cacheControl: "private, no-store",
+                metadata: {
+                  sha256: hash,
+                  owner_uid: uid,
+                  source: "WEB_FITVERSION",
+                  mode: "VERSIONED_CANONICAL",
+                  writer: "FITWRITER001",
+                  versioner: "FITVERSION001",
+                  version_family_id: familyId,
+                  parent_sha256: parentHash || ""
+                }
+              }
+            });
+          }
+
+          const now = Date.now();
+          const metadata = {
+            file_id: hash,
+            sha256: hash,
+            object_path: path,
+            file_name: fileName,
+            original_name: previous.original_name || fileName,
+            size_bytes: generated.buffer.length,
+            mime_type: "application/vnd.ant.fit",
+            source: "WEB_FITVERSION",
+            upload_mode: "VERSIONED_CANONICAL",
+            start_time_ms: edited.payload.start_time_ms,
+            sport: generated.stats.sport,
+            sub_sport: generated.stats.subSport,
+            activity_id: activityId,
+            link_status: "LINKED_VERSION",
+            point_count: generated.stats.pointCount,
+            fit_integrity: true,
+            fitwriter_version: "FITWRITER001",
+            fitversion_version: "FITVERSION001",
+            version_index: versionIndex,
+            version_family_id: familyId,
+            parent_sha256: parentHash || null,
+            version_kind: "EDITED_CANONICAL",
+            start_offset_s: edited.edits.start_offset_s,
+            start_time_ms_source: edited.edits.start_time_ms_source,
+            heart_rate_mode: edited.edits.heart_rate_mode,
+            avg_hr_override: edited.edits.avg_hr_override,
+            max_hr_override: edited.edits.max_hr_override,
+            route_source_present: Boolean(routeSnap.exists),
+            first_uploaded_at_ms: Number(previous.first_uploaded_at_ms || now),
+            uploaded_at_ms: now,
+            last_seen_at_ms: now,
+            deleted_at_ms: null,
+            storage_version: "FITCLOUD001"
+          };
+
+          await ref.set(metadata, {merge: true});
+
+          return res.json({
+            ok: true,
+            service: "FITVERSION001",
+            activity_id: activityId,
+            version_index: versionIndex,
+            parent_sha256: parentHash || null,
+            edits: edited.edits,
+            file: metadata,
+            validation,
+            fit: decodedFit,
+            stored: true,
+            deduplicated: Boolean(existing.exists || exists),
+            activity_modified: false,
+            activities_created: 0,
+            activities_modified: 0
+          });
+        }
+        /* CGWEB078_FITVERSION001_ACTION_END */
+
 
         if (action === "upload") {
           if (req.method !== "POST") return res.status(405).json({error: "POST requis."});

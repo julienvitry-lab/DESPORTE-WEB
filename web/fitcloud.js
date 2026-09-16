@@ -180,6 +180,117 @@ async function remove(row) {
   await renderCloud();
 }
 
+/* CGWEB078_FITVERSION001_WEB_START */
+function v078VersionText(row) {
+  const version = Number(row?.version_index || 0);
+  if (!version || version <= 1) return "";
+
+  const parts = [`v${version}`];
+  const offset = Number(row?.start_offset_s || 0);
+  if (Number.isFinite(offset) && offset !== 0) {
+    parts.push(`départ ${offset >= 0 ? "+" : ""}${offset}s`);
+  }
+
+  if (String(row?.heart_rate_mode || "") === "SIMULATED") {
+    const avg = Number(row?.avg_hr_override);
+    const max = Number(row?.max_hr_override);
+    const fc = [
+      Number.isFinite(avg) ? Math.round(avg) : null,
+      Number.isFinite(max) ? Math.round(max) : null
+    ].filter((value) => value != null);
+    parts.push(fc.length ? `FC simulée ${fc.join("/")}` : "FC simulée");
+  }
+
+  return ` · ${parts.join(" · ")}`;
+}
+
+function v078OptionalNumber(raw, label, min, max) {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+  const n = Number(value.replace(",", "."));
+  if (!Number.isFinite(n) || n < min || n > max) {
+    throw new Error(`${label} invalide (${min} à ${max}).`);
+  }
+  return n;
+}
+
+async function v078CreateVersion(row) {
+  const status = node("webFitCloudStatus");
+  const activityId = String(row?.activity_id || "").trim();
+
+  if (!activityId) {
+    throw new Error("Ce FIT n’est lié à aucune activité SPORT.");
+  }
+
+  const offsetRaw = window.prompt(
+    "Décalage de l’heure de départ en secondes.\n\nExemples : 60 = +1 min ; -30 = -30 s ; 0 = inchangé.",
+    "0"
+  );
+  if (offsetRaw == null) return null;
+
+  const avgRaw = window.prompt(
+    "FC moyenne cible (bpm).\n\nLaisser vide pour conserver la FC source.",
+    ""
+  );
+  if (avgRaw == null) return null;
+
+  const maxRaw = window.prompt(
+    "FC maximale cible (bpm).\n\nLaisser vide pour conserver la FC source.",
+    ""
+  );
+  if (maxRaw == null) return null;
+
+  const offset = v078OptionalNumber(offsetRaw, "Décalage", -86400, 86400) ?? 0;
+  const avgHr = v078OptionalNumber(avgRaw, "FC moyenne", 20, 250);
+  const maxHr = v078OptionalNumber(maxRaw, "FC maximale", 20, 260);
+
+  if (avgHr != null && maxHr != null && maxHr < avgHr) {
+    throw new Error("La FC maximale doit être supérieure ou égale à la FC moyenne.");
+  }
+
+  if (offset === 0 && avgHr == null && maxHr == null) {
+    throw new Error("Aucune modification demandée : version non créée.");
+  }
+
+  const summary = [
+    `Activité #${activityId}`,
+    `Décalage départ : ${offset >= 0 ? "+" : ""}${offset}s`,
+    avgHr != null || maxHr != null
+      ? `FC simulée : ${avgHr ?? "auto"}/${maxHr ?? "auto"} bpm`
+      : "FC : source conservée",
+    "",
+    "Le FIT parent et l’activité SPORT resteront inchangés."
+  ].join("\n");
+
+  if (!window.confirm(`Créer une nouvelle version FIT ?\n\n${summary}`)) return null;
+
+  if (status) status.textContent = `FIT version : génération pour activité #${activityId}…`;
+
+  const result = await request("version", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      activity_id: activityId,
+      parent_sha256: String(row?.sha256 || ""),
+      start_offset_s: offset,
+      avg_hr_override: avgHr,
+      max_hr_override: maxHr
+    })
+  });
+
+  await renderCloud();
+
+  if (status) {
+    status.textContent =
+      `FIT version OK · v${result?.version_index || "?"} · ` +
+      `${result?.file?.file_name || "FIT"} · ` +
+      `activité inchangée · intégrité OK.`;
+  }
+
+  return result;
+}
+/* CGWEB078_FITVERSION001_WEB_END */
+
 function renderList() {
   const host = node("webFitCloudList");
   if (!host) return;
@@ -195,15 +306,30 @@ function renderList() {
       <div class="web-fit-cloud-card-main">
         <div>
           <strong>${bridge().escapeHtml(row.file_name || "activity.fit")}</strong>
-          <small>${bridge().escapeHtml(bridge().formatBytes(row.size_bytes))} · ${bridge().escapeHtml(linkLabel(row))}</small>
+          <small>${bridge().escapeHtml(bridge().formatBytes(row.size_bytes))} · ${bridge().escapeHtml(linkLabel(row))}${bridge().escapeHtml(v078VersionText(row))}</small>
         </div>
         <span class="web-file-sha" title="${bridge().escapeHtml(row.sha256 || "")}">${bridge().escapeHtml(String(row.sha256 || "").slice(0, 14))}…</span>
       </div>
       <div class="web-fit-cloud-card-actions">
         <button class="secondary compact web074-download" type="button">Télécharger</button>
+        <button class="secondary compact web078-version" type="button">Créer version</button>
         <button class="secondary compact danger-soft web074-delete" type="button">Supprimer Cloud</button>
       </div>`;
     card.querySelector(".web074-download")?.addEventListener("click", () => void download(row));
+    const versionButtonNode = card.querySelector(".web078-version");
+    if (versionButtonNode) {
+      versionButtonNode.disabled = !row?.activity_id;
+      versionButtonNode.title = row?.activity_id
+        ? "Créer une nouvelle version FIT sans modifier l’activité"
+        : "FIT non lié à une activité SPORT";
+      versionButtonNode.addEventListener("click", () => {
+        void v078CreateVersion(row).catch((error) => {
+          const status = node("webFitCloudStatus");
+          if (status) status.textContent = `FIT version en erreur : ${error?.message || error}`;
+          console.error("FITVERSION001", error);
+        });
+      });
+    }
     card.querySelector(".web074-delete")?.addEventListener("click", () => void remove(row));
     host.appendChild(card);
   }
