@@ -17401,8 +17401,16 @@ function cgweb084MapThumbnailNode(activity) {
 
 function cgweb084PeriodBounds() {
   const mode =
-    document.getElementById("cgweb084ExportMode")?.value ||
-    "month";
+    document.getElementById("cgweb084ExportMode")?.value || "month";
+
+  if (mode === "all") {
+    return {
+      mode: "all",
+      label: "TOUT",
+      start: null,
+      end: null
+    };
+  }
 
   if (mode === "year") {
     const year = Number(
@@ -17421,17 +17429,12 @@ function cgweb084PeriodBounds() {
     };
   }
 
-  const raw =
-    String(
-      document.getElementById("cgweb084ExportMonth")?.value ||
-      ""
-    );
+  const raw = String(
+    document.getElementById("cgweb084ExportMonth")?.value || ""
+  );
 
   const match = /^(\d{4})-(\d{2})$/.exec(raw);
-
-  if (!match) {
-    throw new Error("Mois invalide.");
-  }
+  if (!match) throw new Error("Mois invalide.");
 
   const year = Number(match[1]);
   const month = Number(match[2]) - 1;
@@ -17444,15 +17447,21 @@ function cgweb084PeriodBounds() {
   };
 }
 
-async function cgweb084FetchPeriodActivities(period) {
-  const snap = await getDocs(
-    query(
-      userCollection("activities"),
-      where("start_time_ms", ">=", period.start),
-      where("start_time_ms", "<", period.end),
-      orderBy("start_time_ms", "asc")
-    )
-  );
+async async function cgweb084FetchPeriodActivities(period) {
+  let snap = null;
+
+  if (period.mode === "all") {
+    snap = await getDocs(userCollection("activities"));
+  } else {
+    snap = await getDocs(
+      query(
+        userCollection("activities"),
+        where("start_time_ms", ">=", period.start),
+        where("start_time_ms", "<", period.end),
+        orderBy("start_time_ms", "asc")
+      )
+    );
+  }
 
   const rows = [];
 
@@ -17462,10 +17471,15 @@ async function cgweb084FetchPeriodActivities(period) {
       ...item.data()
     };
 
-    if (row.deleted_at_ms == null) {
+    if (period.mode === "all" || row.deleted_at_ms == null) {
       rows.push(row);
     }
   });
+
+  rows.sort(
+    (a, b) =>
+      Number(a.start_time_ms || 0) - Number(b.start_time_ms || 0)
+  );
 
   return rows;
 }
@@ -17555,64 +17569,166 @@ function cgweb084DownloadBlob(blob, fileName) {
 
 function cgweb084SetExportModeUi() {
   const mode =
-    document.getElementById("cgweb084ExportMode")?.value ||
-    "month";
+    document.getElementById("cgweb084ExportMode")?.value || "month";
 
-  const month =
-    document.getElementById("cgweb084ExportMonth");
+  const month = document.getElementById("cgweb084ExportMonth");
+  const year = document.getElementById("cgweb084ExportYear");
+  const versions = document.getElementById(
+    "cgweb085bAllFitVersionsWrap"
+  );
 
-  const year =
-    document.getElementById("cgweb084ExportYear");
+  if (month) {
+    month.closest("label")?.classList.toggle("hidden", mode !== "month");
+  }
 
-  if (month) month.classList.toggle("hidden", mode !== "month");
-  if (year) year.classList.toggle("hidden", mode !== "year");
+  if (year) {
+    year.closest("label")?.classList.toggle("hidden", mode !== "year");
+  }
+
+  if (versions) {
+    versions.classList.toggle("hidden", mode !== "all");
+  }
 }
 
-async function cgweb084ExportPeriod() {
-  const button =
-    document.getElementById("cgweb084ExportButton");
 
-  const status =
-    document.getElementById("cgweb084ExportStatus");
+/* CGWEB085B_FULLARCHIVE001_APP_START */
+
+async function cgweb085bCollectionRows(name) {
+  const snap = await getDocs(userCollection(name));
+  const rows = [];
+
+  snap.forEach((item) => {
+    rows.push({
+      __docId: item.id,
+      ...item.data()
+    });
+  });
+
+  return rows;
+}
+
+function cgweb085bSafePathPart(value) {
+  return String(value ?? "")
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 120) || "unknown";
+}
+
+function cgweb085bPreferredFitRow(rows) {
+  const list = [...rows];
+
+  list.sort((a, b) => {
+    const activeA = a?.is_active_version === true ? 0 : 1;
+    const activeB = b?.is_active_version === true ? 0 : 1;
+
+    if (activeA !== activeB) return activeA - activeB;
+
+    const rootA =
+      !a?.parent_sha256 && Number(a?.version_index || 1) <= 1 ? 0 : 1;
+
+    const rootB =
+      !b?.parent_sha256 && Number(b?.version_index || 1) <= 1 ? 0 : 1;
+
+    return (
+      rootA - rootB ||
+      Number(b?.version_index || 1) - Number(a?.version_index || 1) ||
+      Number(b?.uploaded_at_ms || 0) - Number(a?.uploaded_at_ms || 0)
+    );
+  });
+
+  return list[0] || null;
+}
+
+async function cgweb085bAddFullData(zip, status) {
+  const collections = [
+    "equipment",
+    "equipment_mappings",
+    "landmarks",
+    "landmark_references",
+    "activity_landmarks",
+    "records",
+    "activity_revisions"
+  ];
+
+  const counts = {};
+
+  for (let i = 0; i < collections.length; i += 1) {
+    const name = collections[i];
+
+    if (status) {
+      status.textContent =
+        "Données " + (i + 1) + "/" + collections.length + " · " + name;
+    }
+
+    const rows = await cgweb085bCollectionRows(name);
+    counts[name] = rows.length;
+
+    zip.file(
+      "DATA/" + name + ".json",
+      JSON.stringify(rows, null, 2)
+    );
+  }
+
+  if (status) status.textContent = "Données · activity_routes…";
+
+  const routes = await cgweb085bCollectionRows("activity_routes");
+  counts.activity_routes = routes.length;
+
+  for (const route of routes) {
+    const id = cgweb085bSafePathPart(route.__docId || route.id);
+
+    zip.file(
+      "DATA/activity_routes/" + id + ".json",
+      JSON.stringify(route, null, 2)
+    );
+  }
+
+  try {
+    const state = await getDoc(
+      doc(db, ROOT, currentUser.uid, "meta", "state")
+    );
+
+    zip.file(
+      "DATA/meta_state.json",
+      JSON.stringify(state.exists() ? state.data() : {}, null, 2)
+    );
+  } catch (_) {}
+
+  return counts;
+}
+
+/* CGWEB085B_FULLARCHIVE001_APP_END */
+
+async async function cgweb084ExportPeriod() {
+  const button = document.getElementById("cgweb084ExportButton");
+  const status = document.getElementById("cgweb084ExportStatus");
 
   if (!button || !status) return;
 
   button.disabled = true;
 
   try {
-    if (!currentUser) {
-      throw new Error("Connexion Firebase absente.");
-    }
-
-    if (!window.JSZip) {
-      throw new Error("Bibliothèque ZIP non chargée.");
-    }
+    if (!currentUser) throw new Error("Connexion Firebase absente.");
+    if (!window.JSZip) throw new Error("Bibliothèque ZIP non chargée.");
 
     const period = cgweb084PeriodBounds();
 
-    status.textContent =
-      "Lecture des activités " + period.label + "…";
+    status.textContent = "Lecture des activités " + period.label + "…";
 
-    const rows =
-      await cgweb084FetchPeriodActivities(period);
+    const activityRows = await cgweb084FetchPeriodActivities(period);
 
-    if (!rows.length) {
-      throw new Error(
-        "Aucune activité sur la période " + period.label + "."
-      );
+    if (!activityRows.length) {
+      throw new Error("Aucune activité sur la période " + period.label + ".");
     }
 
     const zip = new window.JSZip();
 
-    zip.file(
-      "activities.csv",
-      cgweb084ActivitiesCsv(rows)
-    );
+    zip.file("activities.csv", cgweb084ActivitiesCsv(activityRows));
 
     zip.file(
       "activities.json",
       JSON.stringify(
-        rows.map(cgweb084CleanActivitySnapshot),
+        activityRows.map(cgweb084CleanActivitySnapshot),
         null,
         2
       )
@@ -17621,60 +17737,109 @@ async function cgweb084ExportPeriod() {
     const includeFit =
       document.getElementById("cgweb084ExportFits")?.checked !== false;
 
-    const fitFolder =
-      includeFit ? zip.folder("FIT") : null;
-
-    const missingFits = [];
-    let fitCount = 0;
+    const allVersions =
+      period.mode === "all" &&
+      document.getElementById("cgweb085bAllFitVersions")?.checked === true;
 
     const fitApi = window.SPORT_FIT_EXPORT;
+    let fitCount = 0;
+    const missingFits = [];
 
     if (includeFit) {
-      if (!fitApi?.refresh || !fitApi?.downloadActivityBlob) {
-        throw new Error(
-          "API FIT Cloud d’export non disponible."
-        );
+      if (!fitApi?.allRows || !fitApi?.downloadRowBlob) {
+        throw new Error("FULLARCHIVE001 : API FIT indisponible.");
       }
 
-      status.textContent =
-        "Lecture du Coffre FIT Cloud…";
+      status.textContent = "Lecture complète du Coffre FIT…";
 
-      await fitApi.refresh(true);
+      const allFitRows = await fitApi.allRows();
+      const activityIds = new Set(
+        activityRows.map((activity) => String(activityKey(activity) || ""))
+      );
 
-      for (let i = 0; i < rows.length; i += 1) {
-        const activity = rows[i];
-        const key = String(activityKey(activity) || "").trim();
+      const linked = allFitRows.filter(
+        (row) =>
+          row?.deleted_at_ms == null &&
+          activityIds.has(String(row?.activity_id || ""))
+      );
 
-        status.textContent =
-          "FIT " +
-          (i + 1) +
-          "/" +
-          rows.length +
-          " · activité #" +
-          key;
+      let selected = [];
 
-        try {
-          const result =
-            await fitApi.downloadActivityBlob(key);
+      if (allVersions) {
+        selected = linked;
+      } else {
+        const byActivity = new Map();
 
-          if (result?.blob && result?.fileName) {
-            fitFolder.file(
-              result.fileName,
-              result.blob
-            );
+        for (const row of linked) {
+          const key = String(row.activity_id || "");
+          const list = byActivity.get(key) || [];
+          list.push(row);
+          byActivity.set(key, list);
+        }
 
-            fitCount += 1;
-          } else {
+        for (const activity of activityRows) {
+          const key = String(activityKey(activity) || "");
+          const preferred = cgweb085bPreferredFitRow(byActivity.get(key) || []);
+
+          if (preferred) {
+            selected.push(preferred);
+          } else if (activity.deleted_at_ms == null) {
             missingFits.push(key);
           }
+        }
+      }
+
+      for (let i = 0; i < selected.length; i += 1) {
+        const row = selected[i];
+
+        status.textContent =
+          "FIT " + (i + 1) + "/" + selected.length + " · " + (row.file_name || row.sha256);
+
+        try {
+          const result = await fitApi.downloadRowBlob(row);
+
+          const start = Number(row.start_time_ms || 0);
+          const date =
+            Number.isFinite(start) && start > 0 ? new Date(start) : null;
+
+          const year = date ? String(date.getFullYear()) : "unknown";
+          const month = date
+            ? String(date.getMonth() + 1).padStart(2, "0")
+            : "unknown";
+
+          let path = "";
+
+          if (allVersions) {
+            const activityId = cgweb085bSafePathPart(row.activity_id);
+            const version =
+              "v" + String(Number(row.version_index || 1)).padStart(2, "0");
+
+            path =
+              "FIT_VERSIONS/" + activityId + "/" + version + "/" + result.fileName;
+          } else {
+            path = "FIT/" + year + "/" + month + "/" + result.fileName;
+          }
+
+          zip.file(path, result.blob);
+          fitCount += 1;
         } catch (error) {
-          missingFits.push(key);
+          missingFits.push(String(row.activity_id || row.sha256 || "?"));
         }
       }
     }
 
+    let dataCounts = {};
+
+    if (period.mode === "all") {
+      dataCounts = await cgweb085bAddFullData(zip, status);
+    }
+
+    const deletedCount = activityRows.filter(
+      (row) => row.deleted_at_ms != null
+    ).length;
+
     const manifest = {
-      export_version: "PERIODZIP001",
+      export_version: "FULLARCHIVE001",
       exported_at: new Date().toISOString(),
       period: {
         mode: period.mode,
@@ -17682,51 +17847,53 @@ async function cgweb084ExportPeriod() {
         start_ms: period.start,
         end_ms: period.end
       },
-      activity_count: rows.length,
+      activity_count: activityRows.length,
+      deleted_activity_count: deletedCount,
       fit_requested: includeFit,
+      all_fit_versions: allVersions,
       fit_count: fitCount,
-      fit_missing_count: missingFits.length,
-      fit_missing_activity_ids: missingFits
+      fit_missing_count: [...new Set(missingFits)].length,
+      fit_missing_activity_ids: [...new Set(missingFits)],
+      data_collections: dataCounts
     };
 
+    zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+
     zip.file(
-      "manifest.json",
-      JSON.stringify(manifest, null, 2)
+      "README.txt",
+      [
+        "SPORT Web · FULLARCHIVE001",
+        "",
+        "activities.csv / activities.json : activités SPORT",
+        "FIT/ : version active/préférée de chaque activité",
+        "FIT_VERSIONS/ : toutes les versions si option activée",
+        "DATA/ : matériel, repères, records, historique et tracés",
+        "",
+        "Les noms FIT canoniques sont conservés sans suffixe ajouté par l’export."
+      ].join("\n")
     );
 
-    status.textContent =
-      "Compression ZIP…";
+    status.textContent = "Compression ZIP…";
 
-    const blob =
-      await zip.generateAsync({
-        type: "blob",
-        compression: "DEFLATE",
-        compressionOptions: { level: 6 }
-      });
+    const blob = await zip.generateAsync({
+      type: "blob",
+      compression: "DEFLATE",
+      compressionOptions: {level: 6}
+    });
 
     const safeLabel =
-      period.label.replace(/[^0-9A-Za-z_-]+/g, "_");
+      period.mode === "all"
+        ? "COMPLETE_" + new Date().toISOString().slice(0, 10)
+        : period.label.replace(/[^0-9A-Za-z_-]+/g, "_");
 
-    const fileName =
-      "SPORT_" +
-      safeLabel +
-      "_FIT_CSV_JSON.zip";
-
-    cgweb084DownloadBlob(blob, fileName);
+    cgweb084DownloadBlob(blob, "SPORT_" + safeLabel + ".zip");
 
     status.textContent =
-      rows.length +
-      " activité(s) · " +
-      fitCount +
-      " FIT · " +
-      missingFits.length +
-      " FIT manquant(s) · ZIP téléchargé.";
+      activityRows.length + " activité(s) · " + fitCount + " FIT · " +
+      [...new Set(missingFits)].length + " FIT manquant(s) · ZIP téléchargé.";
   } catch (error) {
-    console.error("CGWEB084 export", error);
-
-    status.textContent =
-      "Export impossible : " +
-      (error?.message || error);
+    console.error("CGWEB085B export", error);
+    status.textContent = "Export impossible : " + (error?.message || error);
   } finally {
     button.disabled = false;
   }

@@ -5096,6 +5096,18 @@ body.ux-activities-page main{
 }
 </style>
 
+
+<style id="cgweb085b-css">
+#cgweb084PeriodExport .cgweb084-period-export-controls{
+  grid-template-columns:150px minmax(150px,210px) minmax(110px,150px) minmax(190px,1fr) minmax(220px,1fr) auto;
+}
+@media(max-width:1000px){
+  #cgweb084PeriodExport .cgweb084-period-export-controls{
+    grid-template-columns:1fr 1fr;
+  }
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5494,6 +5506,7 @@ body.ux-activities-page main{
       <select id="cgweb084ExportMode">
         <option value="month">Mois</option>
         <option value="year">Année</option>
+        <option value="all">Tout</option>
       </select>
     </label>
     <label>
@@ -5507,6 +5520,10 @@ body.ux-activities-page main{
     <label class="cgweb084-export-fit-check">
       <input id="cgweb084ExportFits" type="checkbox" checked>
       <span>Inclure les FIT Cloud</span>
+    </label>
+    <label id="cgweb085bAllFitVersionsWrap" class="cgweb084-export-fit-check hidden">
+      <input id="cgweb085bAllFitVersions" type="checkbox">
+      <span>Inclure toutes les versions FIT</span>
     </label>
     <button id="cgweb084ExportButton" class="primary compact" type="button">Exporter ZIP</button>
   </div>
@@ -6686,7 +6703,7 @@ body.ux-activities-page main{
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB085A-FITEDITOR001"></script>
+  <script type="module" src="./app.js?v=CGWEB085B-FULLARCHIVE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

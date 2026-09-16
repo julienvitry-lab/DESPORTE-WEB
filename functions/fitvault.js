@@ -1704,6 +1704,35 @@ function createFitVault() {
           });
         }
 
+
+        /* CGWEB085B_FULLARCHIVE001_BACKEND_START */
+        if (action === "list_all") {
+          const requested = Math.max(
+            1,
+            Math.min(10000, Number(req.query.limit || 10000))
+          );
+
+          const snap = await files(uid)
+            .orderBy("uploaded_at_ms", "desc")
+            .limit(requested)
+            .get();
+
+          const rows = snap.docs
+            .map((docSnap) => ({
+              id: docSnap.id,
+              ...(docSnap.data() || {})
+            }))
+            .filter((row) => row.deleted_at_ms == null);
+
+          return res.json({
+            ok: true,
+            service: "FULLARCHIVE001",
+            files: rows,
+            count: rows.length
+          });
+        }
+        /* CGWEB085B_FULLARCHIVE001_BACKEND_END */
+
         if (action === "list") {
           const requested = Math.max(1, Math.min(1000, Number(req.query.limit || 250)));
           const snap = await files(uid).orderBy("uploaded_at_ms", "desc").limit(requested).get();
