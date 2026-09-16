@@ -18348,6 +18348,28 @@ function web072Fix7RequestApply() {
     });
 }
 
+
+/* WEB072_FIX7_FIX2_NO_OBSERVER002 */
+if (!window.__web072Fix7RenderActivitiesHookInstalled) {
+  window.__web072Fix7RenderActivitiesHookInstalled = true;
+
+  const web072Fix7OriginalRenderActivities = renderActivities;
+
+  renderActivities = function web072Fix7RenderActivitiesHook(...args) {
+    const result =
+      web072Fix7OriginalRenderActivities.apply(this, args);
+
+    /*
+     * Le rendu peut continuer sur la microtask suivante.
+     * Deux passages courts suffisent sans observer le DOM en permanence.
+     */
+    requestAnimationFrame(web072Fix7RequestApply);
+    setTimeout(web072Fix7RequestApply, 40);
+
+    return result;
+  };
+}
+
 if (!window.__web072Fix7Installed) {
   window.__web072Fix7Installed = true;
 
@@ -18362,7 +18384,27 @@ if (!window.__web072Fix7Installed) {
     true
   );
 
+
   document.addEventListener(
+    "click",
+    (event) => {
+      const target =
+        event.target instanceof Element
+          ? event.target
+          : null;
+
+      if (
+        target?.closest('[data-ux-page="activities"]') ||
+        /Activités/i.test(String(target?.textContent || ""))
+      ) {
+        setTimeout(web072Fix7RequestApply, 0);
+        setTimeout(web072Fix7RequestApply, 120);
+      }
+    },
+    true
+  );
+
+document.addEventListener(
     "change",
     () => setTimeout(web072Fix7RequestApply, 0),
     true
@@ -18379,20 +18421,7 @@ if (!window.__web072Fix7Installed) {
    * toute reconstruction asynchrone du Répertoire déclenche le recalage.
    * Plus besoin de F5.
    */
-  const observer =
-    new MutationObserver(() => {
-      web072Fix7RequestApply();
-    });
-
-  observer.observe(
-    document.body,
-    {
-      childList: true,
-      subtree: true
-    }
-  );
-
-  setTimeout(web072Fix7RequestApply, 50);
+setTimeout(web072Fix7RequestApply, 50);
   setTimeout(web072Fix7RequestApply, 300);
   setTimeout(web072Fix7RequestApply, 1000);
 }
