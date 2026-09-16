@@ -17894,21 +17894,23 @@ function localeSort(a, b) {
 
 
 
-/* WEB072_FIX6_UI_STABILITY002_START */
 
-function web072Fix6StoredSport() {
+
+
+/* WEB072_FIX7_DIRECTORY_RENDER003_START */
+
+function web072Fix7StoredSport() {
   try {
-    const value = Number(
+    return Number(
       localStorage.getItem("sport_web_web055_home_sport")
-    );
-    return value === 2 ? 2 : 1;
+    ) === 2 ? 2 : 1;
   } catch (_) {
     return 1;
   }
 }
 
-function web072Fix6RestoreHomeSport() {
-  const sport = web072Fix6StoredSport();
+function web072Fix7RestoreHomeSport() {
+  const sport = web072Fix7StoredSport();
 
   dashboardSport = sport;
 
@@ -17923,18 +17925,17 @@ function web072Fix6RestoreHomeSport() {
   );
 }
 
-const web072Fix6OriginalSetSport = web055SetSport;
+/* Protection du choix Accueil Course/Vélo héritée du FIX6. */
+const web072Fix7OriginalSetSport = web055SetSport;
 
-web055SetSport = function web072Fix6LockedSetSport(sport) {
+web055SetSport = function web072Fix7LockedSetSport(sport) {
   let requested = Number(sport) === 2 ? 2 : 1;
-
-  const explicit =
-    Number(window.__web072Fix6ExplicitSport);
+  const explicit = Number(window.__web072Fix7ExplicitSport);
 
   if (explicit === 1 || explicit === 2) {
     requested = explicit;
   } else {
-    requested = web072Fix6StoredSport();
+    requested = web072Fix7StoredSport();
   }
 
   dashboardSport = requested;
@@ -17950,15 +17951,15 @@ web055SetSport = function web072Fix6LockedSetSport(sport) {
   );
 };
 
-const web072Fix6OriginalLoadDashboard = loadWebDashboard;
+const web072Fix7OriginalLoadDashboard = loadWebDashboard;
 
-loadWebDashboard = async function web072Fix6LoadDashboard(...args) {
-  web072Fix6RestoreHomeSport();
-  return web072Fix6OriginalLoadDashboard.apply(this, args);
+loadWebDashboard = async function web072Fix7LoadDashboard(...args) {
+  web072Fix7RestoreHomeSport();
+  return web072Fix7OriginalLoadDashboard.apply(this, args);
 };
 
-if (!window.__web072Fix6HomeCaptureInstalled) {
-  window.__web072Fix6HomeCaptureInstalled = true;
+if (!window.__web072Fix7HomeCaptureInstalled) {
+  window.__web072Fix7HomeCaptureInstalled = true;
 
   document.addEventListener(
     "click",
@@ -17987,13 +17988,13 @@ if (!window.__web072Fix6HomeCaptureInstalled) {
         );
       } catch (_) {}
 
-      window.__web072Fix6ExplicitSport = sport;
+      window.__web072Fix7ExplicitSport = sport;
 
       setTimeout(() => {
         if (
-          Number(window.__web072Fix6ExplicitSport) === sport
+          Number(window.__web072Fix7ExplicitSport) === sport
         ) {
-          delete window.__web072Fix6ExplicitSport;
+          delete window.__web072Fix7ExplicitSport;
         }
       }, 0);
     },
@@ -18001,13 +18002,16 @@ if (!window.__web072Fix6HomeCaptureInstalled) {
   );
 }
 
-function web072Fix6Text(el) {
+function web072Fix7Text(el) {
   return String(el?.textContent || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function web072Fix6DecorateSportCells() {
+/* ---------------------------------------------------------------
+   1. Icônes : classification après CHAQUE mutation du Répertoire.
+   --------------------------------------------------------------- */
+function web072Fix7DecorateSportCells() {
   document
     .querySelectorAll("#activityList .web071-fix1-activity-main")
     .forEach((cell) => {
@@ -18031,7 +18035,10 @@ function web072Fix6DecorateSportCells() {
     });
 }
 
-function web072Fix6FindDirectoryHeader() {
+/* ---------------------------------------------------------------
+   2. Entête : centres MESURES, pas une estimation par grille.
+   --------------------------------------------------------------- */
+function web072Fix7FindDirectoryHeader() {
   const list = document.getElementById("activityList");
   if (!list) return null;
 
@@ -18051,13 +18058,12 @@ function web072Fix6FindDirectoryHeader() {
   ];
 
   for (const el of root.querySelectorAll("div")) {
-    const texts =
-      Array.from(el.children)
-        .map((child) => web072Fix6Text(child));
+    const children = Array.from(el.children);
+    const texts = children.map((child) => web072Fix7Text(child));
 
     if (
       wanted.every((label) => texts.includes(label)) &&
-      texts.length <= 9
+      texts.length <= 10
     ) {
       return el;
     }
@@ -18066,52 +18072,102 @@ function web072Fix6FindDirectoryHeader() {
   return null;
 }
 
-function web072Fix6AlignDirectoryHeader() {
+function web072Fix7FirstVisibleActivityRow() {
   const list = document.getElementById("activityList");
-  const sportCell =
-    list?.querySelector(".web071-fix1-activity-main");
-  const row = sportCell?.parentElement;
-  const header = web072Fix6FindDirectoryHeader();
+  if (!list) return null;
 
-  if (!row || !header) return;
+  for (const row of Array.from(list.children)) {
+    const rect = row.getBoundingClientRect();
 
-  const texts =
-    Array.from(header.children)
-      .map((child) => web072Fix6Text(child));
-
-  if (
-    texts[0] === "Date" &&
-    !header.querySelector(".web072-fix6-header-spacer")
-  ) {
-    const spacer = document.createElement("span");
-    spacer.className =
-      "web072-fix6-header-spacer";
-    spacer.setAttribute("aria-hidden", "true");
-    header.prepend(spacer);
+    if (
+      rect.width > 100 &&
+      rect.height > 20 &&
+      getComputedStyle(row).display !== "none"
+    ) {
+      return row;
+    }
   }
 
-  const style = getComputedStyle(row);
-
-  header.classList.add("web072-fix6-directory-header");
-  header.style.display = "grid";
-
-  if (
-    style.gridTemplateColumns &&
-    style.gridTemplateColumns !== "none"
-  ) {
-    header.style.gridTemplateColumns =
-      style.gridTemplateColumns;
-  }
-
-  header.style.columnGap =
-    style.columnGap || "0px";
-  header.style.paddingLeft =
-    style.paddingLeft || "0px";
-  header.style.paddingRight =
-    style.paddingRight || "0px";
+  return null;
 }
 
-function web072Fix6FindToolbar() {
+function web072Fix7AlignDirectoryHeader() {
+  const header = web072Fix7FindDirectoryHeader();
+  const row = web072Fix7FirstVisibleActivityRow();
+
+  if (!header || !row) return;
+
+  /*
+   * Nettoyage des anciens spacers de FIX5/FIX6.
+   */
+  header
+    .querySelectorAll(
+      ".web072-fix5-header-spacer, .web072-fix6-header-spacer"
+    )
+    .forEach((el) => el.remove());
+
+  const labels = [
+    "Date",
+    "Heure",
+    "Distance",
+    "D+",
+    "Temps",
+    "Matériel",
+    "Repères"
+  ];
+
+  const headerRect = header.getBoundingClientRect();
+
+  if (headerRect.width <= 0) return;
+
+  let cells =
+    Array.from(row.children)
+      .filter((cell) => {
+        const r = cell.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+
+  /*
+   * Les 7 dernières cellules visibles correspondent aux 7 colonnes
+   * nommées, que la ligne possède ou non une colonne icône séparée.
+   */
+  if (cells.length < 7) return;
+  cells = cells.slice(-7);
+
+  header.classList.add("web072-fix7-directory-header");
+
+  const currentHeight =
+    Math.max(
+      32,
+      Math.ceil(headerRect.height)
+    );
+
+  header.style.height = currentHeight + "px";
+
+  labels.forEach((label, index) => {
+    const title =
+      Array.from(header.children)
+        .find((child) => web072Fix7Text(child) === label);
+
+    const cell = cells[index];
+
+    if (!title || !cell) return;
+
+    const cellRect = cell.getBoundingClientRect();
+    const center =
+      cellRect.left +
+      cellRect.width / 2 -
+      headerRect.left;
+
+    title.classList.add("web072-fix7-header-label");
+    title.style.left = center + "px";
+  });
+}
+
+/* ---------------------------------------------------------------
+   3. Navigation détail conservée du FIX6.
+   --------------------------------------------------------------- */
+function web072Fix7FindToolbar() {
   const detail = document.getElementById("detailView");
   if (!detail) return null;
 
@@ -18123,7 +18179,7 @@ function web072Fix6FindToolbar() {
     );
 
   for (const candidate of candidates) {
-    const text = web072Fix6Text(candidate);
+    const text = web072Fix7Text(candidate);
 
     if (
       /Répertoire/i.test(text) &&
@@ -18135,34 +18191,10 @@ function web072Fix6FindToolbar() {
     }
   }
 
-  const trash =
-    Array.from(detail.querySelectorAll("button, a"))
-      .find((el) =>
-        /Mettre à la corbeille/i.test(web072Fix6Text(el))
-      );
-
-  if (!trash) return null;
-
-  let node = trash.parentElement;
-
-  while (node && node !== detail) {
-    const text = web072Fix6Text(node);
-
-    if (
-      /Répertoire/i.test(text) &&
-      /Activité précédente/i.test(text) &&
-      /Activité suivante/i.test(text)
-    ) {
-      return node;
-    }
-
-    node = node.parentElement;
-  }
-
   return null;
 }
 
-function web072Fix6EnsureManual(toolbar) {
+function web072Fix7EnsureManual(toolbar) {
   if (!toolbar) return;
 
   for (
@@ -18172,20 +18204,17 @@ function web072Fix6EnsureManual(toolbar) {
     if (!toolbar.contains(old)) old.remove();
   }
 
-  if (toolbar.querySelector(".web072-manual-add-btn")) {
-    return;
-  }
+  if (toolbar.querySelector(".web072-manual-add-btn")) return;
 
   const trash =
     Array.from(toolbar.querySelectorAll("button, a"))
       .find((el) =>
-        /Mettre à la corbeille/i.test(web072Fix6Text(el))
+        /Mettre à la corbeille/i.test(web072Fix7Text(el))
       );
 
-  const template =
-    trash || toolbar.querySelector("button");
-
+  const template = trash || toolbar.querySelector("button");
   const button = document.createElement("button");
+
   button.type = "button";
   button.className =
     ((template?.className || "secondary") +
@@ -18204,7 +18233,7 @@ function web072Fix6EnsureManual(toolbar) {
   }
 }
 
-function web072Fix6RemoveBottomNav() {
+function web072Fix7RemoveBottomNav() {
   const detail = document.getElementById("detailView");
   if (!detail) return;
 
@@ -18226,9 +18255,8 @@ function web072Fix6RemoveBottomNav() {
   }
 }
 
-function web072Fix6ToolbarTop() {
-  const nav =
-    document.getElementById("uxPrimaryNav");
+function web072Fix7ToolbarTop() {
+  const nav = document.getElementById("uxPrimaryNav");
 
   if (nav) {
     const rect = nav.getBoundingClientRect();
@@ -18244,16 +18272,16 @@ function web072Fix6ToolbarTop() {
   return 8;
 }
 
-function web072Fix6SyncToolbar() {
+function web072Fix7SyncToolbar() {
   const detail = document.getElementById("detailView");
-  const toolbar = web072Fix6FindToolbar();
+  const toolbar = web072Fix7FindToolbar();
 
   if (!detail || !toolbar) return;
 
-  web072Fix6EnsureManual(toolbar);
-  web072Fix6RemoveBottomNav();
+  web072Fix7EnsureManual(toolbar);
+  web072Fix7RemoveBottomNav();
 
-  toolbar.classList.add("web072-fix6-toolbar-fixed");
+  toolbar.classList.add("web072-fix7-toolbar-fixed");
 
   const rect = detail.getBoundingClientRect();
   const left = Math.max(8, Math.round(rect.left));
@@ -18266,95 +18294,107 @@ function web072Fix6SyncToolbar() {
       )
     );
 
-  toolbar.style.setProperty(
-    "position",
-    "fixed",
-    "important"
-  );
+  toolbar.style.setProperty("position", "fixed", "important");
   toolbar.style.setProperty(
     "top",
-    web072Fix6ToolbarTop() + "px",
+    web072Fix7ToolbarTop() + "px",
     "important"
   );
-  toolbar.style.setProperty(
-    "left",
-    left + "px",
-    "important"
-  );
-  toolbar.style.setProperty(
-    "width",
-    width + "px",
-    "important"
-  );
-  toolbar.style.setProperty(
-    "z-index",
-    "9999",
-    "important"
-  );
+  toolbar.style.setProperty("left", left + "px", "important");
+  toolbar.style.setProperty("width", width + "px", "important");
+  toolbar.style.setProperty("z-index", "9999", "important");
 
   let spacer = toolbar.previousElementSibling;
 
   if (
     !spacer ||
     !spacer.classList.contains(
-      "web072-fix6-toolbar-spacer"
+      "web072-fix7-toolbar-spacer"
     )
   ) {
     spacer = document.createElement("div");
-    spacer.className =
-      "web072-fix6-toolbar-spacer";
+    spacer.className = "web072-fix7-toolbar-spacer";
     toolbar.insertAdjacentElement("beforebegin", spacer);
   }
 
   spacer.style.height =
     (
-      Math.ceil(
-        toolbar.getBoundingClientRect().height
-      ) + 8
+      Math.ceil(toolbar.getBoundingClientRect().height) + 8
     ) + "px";
 }
 
-function web072Fix6Apply() {
-  try {
-    web072Fix6DecorateSportCells();
-    web072Fix6AlignDirectoryHeader();
-    web072Fix6RemoveBottomNav();
-    web072Fix6SyncToolbar();
+/* ---------------------------------------------------------------
+   4. Un seul rafraîchissement cadencé.
+   --------------------------------------------------------------- */
+let web072Fix7Raf = 0;
 
-    if (document.body.dataset.uxPage === "home") {
-      web072Fix6RestoreHomeSport();
-    }
-  } catch (_) {}
+function web072Fix7RequestApply() {
+  if (web072Fix7Raf) return;
+
+  web072Fix7Raf =
+    requestAnimationFrame(() => {
+      web072Fix7Raf = 0;
+
+      try {
+        web072Fix7DecorateSportCells();
+        web072Fix7AlignDirectoryHeader();
+        web072Fix7RemoveBottomNav();
+        web072Fix7SyncToolbar();
+
+        if (document.body.dataset.uxPage === "home") {
+          web072Fix7RestoreHomeSport();
+        }
+      } catch (_) {}
+    });
 }
 
-if (!window.__web072Fix6Installed) {
-  window.__web072Fix6Installed = true;
+if (!window.__web072Fix7Installed) {
+  window.__web072Fix7Installed = true;
 
-  const refresh = () =>
-    requestAnimationFrame(web072Fix6Apply);
+  document.addEventListener(
+    "DOMContentLoaded",
+    web072Fix7RequestApply
+  );
 
-  document.addEventListener("DOMContentLoaded", refresh);
   document.addEventListener(
     "click",
-    () => setTimeout(refresh, 0),
+    () => setTimeout(web072Fix7RequestApply, 0),
     true
   );
+
   document.addEventListener(
     "change",
-    () => setTimeout(refresh, 0),
+    () => setTimeout(web072Fix7RequestApply, 0),
     true
   );
+
   window.addEventListener(
     "resize",
-    refresh,
+    web072Fix7RequestApply,
     { passive: true }
   );
 
-  setTimeout(refresh, 50);
-  setTimeout(refresh, 400);
-  setTimeout(refresh, 1200);
-  setTimeout(refresh, 3000);
-  setTimeout(refresh, 5000);
+  /*
+   * Point essentiel du FIX7 :
+   * toute reconstruction asynchrone du Répertoire déclenche le recalage.
+   * Plus besoin de F5.
+   */
+  const observer =
+    new MutationObserver(() => {
+      web072Fix7RequestApply();
+    });
+
+  observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+
+  setTimeout(web072Fix7RequestApply, 50);
+  setTimeout(web072Fix7RequestApply, 300);
+  setTimeout(web072Fix7RequestApply, 1000);
 }
 
-/* WEB072_FIX6_UI_STABILITY002_END */
+/* WEB072_FIX7_DIRECTORY_RENDER003_END */

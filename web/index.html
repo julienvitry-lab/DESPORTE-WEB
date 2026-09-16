@@ -3693,26 +3693,47 @@ select {
 
 
 
-<style id="web072-fix6-ui-stability-css">
-  /* WEB072 FIX6 · UI_STABILITY002 / HOME_SPORT_LOCK001 */
 
+<style id="web072-fix7-directory-render-css">
+  /* WEB072 FIX7 · DIRECTORY_RENDER003 / HEADER_ALIGN002 */
+
+  #activityList .web071-fix1-sport-icon {
+    position: relative !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 0 !important;
+    margin: auto !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
+  }
+
+  /*
+   * Course : règle directe sur aria-label.
+   * Elle s'applique dès le premier rendu, sans attendre web072-run-cell.
+   */
+  #activityList .web071-fix1-sport-icon[aria-label*="course" i] img,
+  #activityList .web071-fix1-sport-icon[aria-label*="course" i] svg,
+  #activityList .web071-fix1-sport-icon[aria-label*="running" i] img,
+  #activityList .web071-fix1-sport-icon[aria-label*="running" i] svg,
   #activityList .web072-run-cell .web071-fix1-sport-icon img,
   #activityList .web072-run-cell .web071-fix1-sport-icon svg,
   #activityList .web072-run-cell .web071-fix1-sport-icon .sport-icon-c1v1 {
     width: 21.6px !important;
     height: 21.6px !important;
+    min-width: 21.6px !important;
+    min-height: 21.6px !important;
     max-width: 21.6px !important;
     max-height: 21.6px !important;
-    margin: auto !important;
     object-fit: contain !important;
     object-position: center center !important;
+    margin: auto !important;
+    padding: 0 !important;
     transform: none !important;
-  }
-
-  #activityList .web072-bike-cell .web071-fix1-sport-icon {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
   }
 
   #activityList .web072-bike-cell .web071-fix1-sport-icon img,
@@ -3720,27 +3741,69 @@ select {
   #activityList .web072-bike-cell .web071-fix1-sport-icon .sport-icon-c1v1 {
     width: 30px !important;
     height: 21px !important;
+    min-width: 30px !important;
+    min-height: 21px !important;
     max-width: 30px !important;
     max-height: 21px !important;
-    margin: auto !important;
     object-fit: contain !important;
     object-position: center center !important;
+    margin: auto !important;
+    padding: 0 !important;
     transform: none !important;
   }
 
-  .web071-indoor-badge.web071-indoor-lightning {
+  /*
+   * Indoor : l'éclair est entièrement A GAUCHE du conteneur icône.
+   * right: calc(100% + 5px) garantit un espace vide de 5 px :
+   * il ne peut donc plus toucher le guidon.
+   */
+  #activityList .web071-fix1-sport-icon
+  > .web071-indoor-badge.web071-indoor-lightning {
+    left: auto !important;
+    right: calc(100% + 5px) !important;
+    top: 50% !important;
+    bottom: auto !important;
+    transform: translateY(-50%) !important;
     font-size: 21px !important;
     line-height: 1 !important;
+    margin: 0 !important;
   }
 
-  #web061SingleMetricRow .web071-indoor-badge.web071-indoor-lightning {
+  #web061SingleMetricRow
+  .web071-indoor-badge.web071-indoor-lightning {
     font-size: 24px !important;
   }
 
-  #detailView .web072-fix6-toolbar-fixed,
-  #detailView .web059-detail-toolbar.web072-fix6-toolbar-fixed,
-  #detailView .detail-toolbar-web049.web072-fix6-toolbar-fixed,
-  #detailView > .detail-toolbar.web072-fix6-toolbar-fixed {
+  /*
+   * Entête Répertoire :
+   * les titres sont positionnés par JS sur le CENTRE MESURE
+   * des 7 cellules de la première activité visible.
+   */
+  .web072-fix7-directory-header {
+    position: relative !important;
+    display: block !important;
+    min-height: 32px !important;
+    box-sizing: border-box !important;
+  }
+
+  .web072-fix7-directory-header
+  > .web072-fix7-header-label {
+    position: absolute !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: max-content !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+  }
+
+  /* Bandeau détail conservé du FIX6. */
+  #detailView .web072-fix7-toolbar-fixed,
+  #detailView .web059-detail-toolbar.web072-fix7-toolbar-fixed,
+  #detailView .detail-toolbar-web049.web072-fix7-toolbar-fixed,
+  #detailView > .detail-toolbar.web072-fix7-toolbar-fixed {
     position: fixed !important;
     z-index: 9999 !important;
     margin: 0 !important;
@@ -3750,12 +3813,13 @@ select {
     -webkit-backdrop-filter: blur(8px) !important;
   }
 
-  .web072-fix6-toolbar-spacer {
+  .web072-fix7-toolbar-spacer {
     display: block !important;
     width: 100% !important;
     pointer-events: none !important;
   }
 
+  /* Les 3 boutons historiques du bas restent définitivement interdits. */
   #detailView .web059-detail-bottom-nav,
   #detailView .detail-bottom-nav,
   #detailView #nextActivityBottomButton,
@@ -3775,30 +3839,6 @@ select {
     margin: 0 !important;
     border: 0 !important;
     overflow: hidden !important;
-    pointer-events: none !important;
-  }
-
-  .web072-orphan-manual-toolbar,
-  .web072-bottom-nav-duplicate,
-  .web072-hide-divider {
-    display: none !important;
-  }
-
-  .web072-fix6-directory-header {
-    align-items: center !important;
-  }
-
-  .web072-fix6-directory-header > * {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    width: 100% !important;
-    text-align: center !important;
-    justify-self: stretch !important;
-  }
-
-  .web072-fix6-header-spacer {
-    visibility: hidden !important;
     pointer-events: none !important;
   }
 </style>
@@ -5246,7 +5286,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-FIX6-UI-STABILITY002-HOME-SPORT-LOCK001"></script>
+  <script type="module" src="./app.js?v=WEB072-FIX7-DIRECTORY-RENDER003-HEADER-ALIGN002"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
