@@ -4286,6 +4286,66 @@ select {
   }
 }
 </style>
+
+<style id="cgweb083-activitydirectoryux-css">
+/* CGWEB083 · ACTIVITYDIRECTORYUX001 */
+
+/* Pictogramme plus petit */
+#activityList .activity-card{
+  padding-right:31px!important;
+}
+#activityList .web081-fit-quick{
+  right:5px!important;
+  width:20px!important;
+  height:20px!important;
+  border-radius:50%!important;
+}
+#activityList .web081-fit-quick svg{
+  width:12px!important;
+  height:12px!important;
+}
+
+/* Disponible : couleur d'origine */
+#activityList .web081-fit-quick.is-available{
+  color:#d9ff79!important;
+  border-color:rgba(190,255,55,.72)!important;
+  opacity:1!important;
+}
+
+/* Indisponible / erreur : grisé, sans barre */
+#activityList .web081-fit-quick.is-unavailable,
+#activityList .web081-fit-quick.is-error{
+  color:rgba(175,182,176,.72)!important;
+  border-color:rgba(175,182,176,.28)!important;
+  opacity:.72!important;
+  cursor:default!important;
+}
+
+/* On neutralise la barre CGWEB082 */
+#activityList .web081-fit-quick.is-unavailable::after,
+#activityList .web081-fit-quick.is-error::after{
+  content:none!important;
+}
+
+/* Pas d'effet de survol sur un bouton indisponible */
+#activityList .web081-fit-quick.is-unavailable:hover,
+#activityList .web081-fit-quick.is-error:hover{
+  transform:translateY(-50%)!important;
+}
+
+@media (max-width:700px){
+  #activityList .activity-card{padding-right:28px!important;}
+  #activityList .web081-fit-quick{
+    right:4px!important;
+    width:18px!important;
+    height:18px!important;
+  }
+  #activityList .web081-fit-quick svg{
+    width:11px!important;
+    height:11px!important;
+  }
+}
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -5779,7 +5839,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB082-FITAVAILABILITY001"></script>
+  <script type="module" src="./app.js?v=CGWEB083-ACTIVITYDIRECTORYUX001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
@@ -5788,6 +5848,6 @@ select {
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB082-FITAVAILABILITY001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB083-ACTIVITYDIRECTORYUX001"></script>
 </body>
 </html>

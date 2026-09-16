@@ -127,7 +127,7 @@ let loading = false;
 let loadingAll = false;
 let catalogScrollY = 0;
 let currentDetailId = null;
-let activityVisibleLimit = 20;
+let activityVisibleLimit = 100;
 let uxCurrentPage = "home";
 let uxCurrentSubpage = "main";
 let trashActivities = new Map();
@@ -1369,7 +1369,7 @@ function wireEvents() {
   ].forEach((element) => {
     element.addEventListener(element.tagName === "INPUT" ? "input" : "change", (event) => {
       if (event.isTrusted && dashboardDrilldownStartMs > 0) clearDashboardDrilldown(false);
-      activityVisibleLimit = 20;
+      activityVisibleLimit = 100;
       applyFiltersAndRender();
     });
   });
@@ -1609,7 +1609,7 @@ async function reloadAll() {
   journalEntries = new Map();
   trashActivities = new Map();
   currentDetailId = null;
-  activityVisibleLimit = 20;
+  activityVisibleLimit = 100;
   globalMapRouteCache = new Map();
   clearGlobalActivityMap();
 
@@ -6042,6 +6042,99 @@ window.addEventListener("sport-fit-quick-updated", () => {
 });
 /* CGWEB081_FITQUICKDOWNLOAD001_APP_END */
 
+/* CGWEB083_ACTIVITYDIRECTORYUX001_START */
+const V083_MM = 3.7795275591;
+const V083_CM = 37.795275591;
+
+function v083ActivityKey(activity) {
+  if (typeof v081ActivityId === "function") {
+    const key = String(v081ActivityId(activity) || "").trim();
+    if (key) return key;
+  }
+  return String(
+    activity?.id ??
+    activity?.__docId ??
+    activity?.activity_id ??
+    activity?.__sportKey ??
+    ""
+  ).trim();
+}
+
+function v083ApplyLoadMoreAnchor(anchor) {
+  if (!anchor) return;
+  const attempt = () => {
+    let target = null;
+    if (anchor.activityId) {
+      const escaped = (window.CSS && typeof CSS.escape === "function")
+        ? CSS.escape(anchor.activityId)
+        : anchor.activityId.replace(/["\\]/g, "\\$&");
+      target = document.querySelector('#activityList .activity-card[data-activity-id="' + escaped + '"]');
+    }
+    if (target) {
+      target.scrollIntoView({block: "end", inline: "nearest"});
+      window.scrollBy({top: -72, left: 0, behavior: "auto"});
+      return;
+    }
+    if (Number.isFinite(anchor.scrollY)) {
+      window.scrollTo({top: anchor.scrollY, left: 0, behavior: "auto"});
+    }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(attempt));
+}
+
+function v083HeaderShiftPx(label) {
+  switch (label) {
+    case "Date": return 2 * V083_MM;
+    case "Temps": return -1 * V083_MM;
+    case "Matériel": return 2 * V083_CM;
+    case "Repères": return -1 * V083_CM;
+    case "Charge": return 5 * V083_MM;
+    default: return 0;
+  }
+}
+
+function v083NudgeDirectoryHeaders() {
+  const wanted = ["Date", "Heure", "Distance", "D+", "Temps", "Matériel", "Repères", "Charge"];
+  const nodes = Array.from(document.querySelectorAll("div, span, th, label, strong"));
+  let headerRoot = null;
+
+  for (const node of nodes) {
+    const descendants = Array.from(node.querySelectorAll("*"));
+    const bucket = [];
+    for (const child of descendants) {
+      if (child.children.length) continue;
+      const text = String(child.textContent || "").replace(/\s+/g, " ").trim();
+      if (wanted.includes(text)) bucket.push(text);
+    }
+    const ok = wanted.every((label) => bucket.includes(label));
+    if (ok) {
+      headerRoot = node;
+      break;
+    }
+  }
+
+  if (!headerRoot) return;
+
+  const targets = Array.from(headerRoot.querySelectorAll("*")).filter((el) => {
+    if (el.children.length) return false;
+    const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
+    return wanted.includes(text);
+  });
+
+  for (const el of targets) {
+    const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
+    const shift = v083HeaderShiftPx(text);
+    if (!shift) continue;
+    el.style.display = "inline-block";
+    el.style.transform = "translateX(" + shift + "px)";
+  }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  queueMicrotask(() => v083NudgeDirectoryHeaders());
+});
+/* CGWEB083_ACTIVITYDIRECTORYUX001_END */
+
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;
   ui.loadedLabel.textContent =
@@ -6068,6 +6161,7 @@ function renderActivities() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "activity-card";
+    button.dataset.activityId = v083ActivityKey(activity);
     button.dataset.activityKeyWeb058 = activityKey(activity);
     button.dataset.subSportWeb054 = activitySubSportValueWeb054(activity);
     button.addEventListener("click", () => showActivity(activity));
@@ -6087,6 +6181,7 @@ function renderActivities() {
   }
 
   ui.activityList.appendChild(fragment);
+  queueMicrotask(() => v083NudgeDirectoryHeaders());
   queueMicrotask(() => void v081RefreshFitQuickControls());
 
   if (filteredActivities.length > visibleRows.length) {
@@ -6100,8 +6195,13 @@ function renderActivities() {
     more.className = "secondary";
     more.textContent = "Afficher 20 de plus";
     more.addEventListener("click", () => {
+      const anchor = {
+        scrollY: window.scrollY,
+        activityId: v083ActivityKey(visibleRows[visibleRows.length - 1] || null)
+      };
       activityVisibleLimit += 20;
       renderActivities();
+      v083ApplyLoadMoreAnchor(anchor);
     });
     footer.append(info,more);
     ui.activityList.appendChild(footer);
@@ -6303,7 +6403,7 @@ function applyActivitySubSportFilterWeb054() {
   const select = document.getElementById("activitySubSportFilterWeb054");
   if (!select) return;
 
-  activityVisibleLimit = 20;
+  activityVisibleLimit = 100;
   applyFiltersAndRender();
   updateActivitySubSportFilterStatusWeb054();
 }
