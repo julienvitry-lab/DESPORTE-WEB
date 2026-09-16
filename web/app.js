@@ -6133,6 +6133,7 @@ window.addEventListener("sport-fit-quick-updated", () => {
 
 
 /* CGWEB083_FIX9B_HOTFIX2_JSBOOT002 */
+/* CGWEB083_HOTFIX2_FIX1_HEADERBOOT003 */
 /* CGWEB083_FIX9_HEADERMEASURE001_START */
 
 function cgweb083Fix9Mm2Px(mm = 2) {
@@ -6626,7 +6627,7 @@ function renderActivities() {
   }
 
   ui.activityList.appendChild(fragment);
-  cgweb083Fix9ScheduleHeaderCenter();
+  cgweb083Fix9ScheduleHeaderSync();
   queueMicrotask(() => cgweb083Fix6ApplyActivityHeader());
   queueMicrotask(() => v083Fix4ApplyDownloadIcon());
   queueMicrotask(() => v083NudgeDirectoryHeaders());
