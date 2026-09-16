@@ -4625,6 +4625,57 @@ body.ux-activities-page main{
   display:none!important;
 }
 </style>
+
+<style id="cgweb083-fix9-headercenter-css">
+/* CGWEB083 FIX9 · HEADERCENTER001 */
+
+/*
+ * LE HOST N'EST PAS TOUCHE :
+ * son ancrage sticky actuel reste exactement celui qui fonctionne.
+ */
+
+#cgweb083CustomActivityHeader
+.cgweb083-custom-header-grid{
+  /*
+   * Les titres sont désormais positionnés sur les centres réels
+   * des cellules d'activité. On neutralise seulement la grille interne.
+   */
+  display:block!important;
+  position:relative!important;
+
+  padding-left:0!important;
+  padding-right:0!important;
+
+  column-gap:0!important;
+}
+
+#cgweb083CustomActivityHeader
+.cgweb083-header-spacer{
+  display:none!important;
+}
+
+#cgweb083CustomActivityHeader
+.cgweb083-custom-header-grid
+> strong{
+  position:absolute!important;
+
+  top:50%!important;
+
+  width:auto!important;
+  max-width:none!important;
+
+  margin:0!important;
+  padding:0!important;
+
+  justify-self:auto!important;
+  align-self:auto!important;
+
+  text-align:center!important;
+  white-space:nowrap!important;
+
+  transform:translate(-50%, -50%)!important;
+}
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -6118,7 +6169,7 @@ body.ux-activities-page main{
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB083-FIX9B-HOTFIX2-JSBOOT002"></script>
+  <script type="module" src="./app.js?v=CGWEB083-FIX9-HEADERCENTER001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

@@ -6481,6 +6481,253 @@ if (!window.__cgweb083Fix9Installed) {
 /* CGWEB083_FIX9_HEADERMEASURE001_END */
 
 
+
+/* CGWEB083_FIX9_HEADERCENTER001_START */
+
+/*
+ * FIX9 : on ne tente PLUS de reproduire la grille.
+ *
+ * Les lignes d'activité sont le référentiel unique.
+ * Chaque titre reçoit le centre horizontal REEL de la cellule
+ * correspondante de la première activité visible.
+ */
+function cgweb083Fix9CenterHeaderOnRealColumns() {
+  const host =
+    document.getElementById(
+      "cgweb083CustomActivityHeader"
+    );
+
+  const track =
+    host?.querySelector(
+      ".cgweb083-custom-header-grid"
+    );
+
+  const card =
+    document.querySelector(
+      "#activityList .activity-card"
+    );
+
+  if (!host || !track || !card) return;
+
+  const cells =
+    Array.from(
+      card.querySelectorAll(
+        ":scope > .datum"
+      )
+    ).slice(0, 8);
+
+  const titles =
+    Array.from(
+      track.querySelectorAll(
+        ":scope > strong"
+      )
+    );
+
+  if (
+    cells.length !== 8 ||
+    titles.length !== 8
+  ) {
+    return;
+  }
+
+  const trackRect =
+    track.getBoundingClientRect();
+
+  if (
+    !Number.isFinite(trackRect.left) ||
+    trackRect.width <= 0
+  ) {
+    return;
+  }
+
+  /*
+   * Le spacer de l'ancienne grille n'est plus nécessaire.
+   */
+  const spacer =
+    track.querySelector(
+      ".cgweb083-header-spacer"
+    );
+
+  if (spacer) {
+    spacer.style.setProperty(
+      "display",
+      "none",
+      "important"
+    );
+  }
+
+  track.style.setProperty(
+    "display",
+    "block",
+    "important"
+  );
+
+  track.style.setProperty(
+    "position",
+    "relative",
+    "important"
+  );
+
+  /*
+   * IMPORTANT :
+   * pas de padding horizontal ni de gap dans le référentiel.
+   * Les coordonnées viennent directement du viewport.
+   */
+  track.style.setProperty(
+    "padding-left",
+    "0",
+    "important"
+  );
+
+  track.style.setProperty(
+    "padding-right",
+    "0",
+    "important"
+  );
+
+  track.style.setProperty(
+    "column-gap",
+    "0",
+    "important"
+  );
+
+  cells.forEach((cell, index) => {
+    const title = titles[index];
+
+    if (!title) return;
+
+    const style =
+      getComputedStyle(cell);
+
+    const rect =
+      cell.getBoundingClientRect();
+
+    const visible =
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      rect.width > 0 &&
+      rect.height > 0;
+
+    if (!visible) {
+      title.style.setProperty(
+        "display",
+        "none",
+        "important"
+      );
+      return;
+    }
+
+    /*
+     * Centre absolu de la cellule dans le viewport,
+     * converti en coordonnée locale du header.
+     */
+    const centerX =
+      rect.left +
+      rect.width / 2 -
+      trackRect.left;
+
+    title.style.setProperty(
+      "display",
+      "block",
+      "important"
+    );
+
+    title.style.setProperty(
+      "position",
+      "absolute",
+      "important"
+    );
+
+    title.style.setProperty(
+      "left",
+      centerX + "px",
+      "important"
+    );
+
+    title.style.setProperty(
+      "top",
+      "50%",
+      "important"
+    );
+
+    title.style.setProperty(
+      "width",
+      "auto",
+      "important"
+    );
+
+    title.style.setProperty(
+      "margin",
+      "0",
+      "important"
+    );
+
+    title.style.setProperty(
+      "padding",
+      "0",
+      "important"
+    );
+
+    title.style.setProperty(
+      "text-align",
+      "center",
+      "important"
+    );
+
+    title.style.setProperty(
+      "transform",
+      "translate(-50%, -50%)",
+      "important"
+    );
+
+    title.style.setProperty(
+      "white-space",
+      "nowrap",
+      "important"
+    );
+  });
+}
+
+function cgweb083Fix9ScheduleHeaderCenter() {
+  const run = () => {
+    try {
+      cgweb083Fix9CenterHeaderOnRealColumns();
+    } catch (_) {}
+  };
+
+  /*
+   * WEB072 FIX11 réapplique sa grille après renderActivities
+   * avec plusieurs délais. On se recale donc après chacune
+   * de ces passes, notamment APRES sa passe à 280 ms.
+   */
+  requestAnimationFrame(() => {
+    run();
+    requestAnimationFrame(run);
+  });
+
+  setTimeout(run, 40);
+  setTimeout(run, 150);
+  setTimeout(run, 320);
+}
+
+if (!window.__cgweb083Fix9HeaderCenterInstalled) {
+  window.__cgweb083Fix9HeaderCenterInstalled = true;
+
+  window.addEventListener(
+    "resize",
+    cgweb083Fix9ScheduleHeaderCenter,
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb083Fix9ScheduleHeaderCenter
+  );
+}
+
+/* CGWEB083_FIX9_HEADERCENTER001_END */
+
+
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;
   ui.loadedLabel.textContent =
@@ -6527,6 +6774,7 @@ function renderActivities() {
   }
 
   ui.activityList.appendChild(fragment);
+  cgweb083Fix9ScheduleHeaderCenter();
   queueMicrotask(() => cgweb083Fix6ApplyActivityHeader());
   queueMicrotask(() => v083Fix4ApplyDownloadIcon());
   queueMicrotask(() => v083NudgeDirectoryHeaders());
@@ -20011,6 +20259,9 @@ function web072Fix11ApplyDetail() {
 function web072Fix11ApplyDirectory() {
   try {
     web072Fix11AlignDirectoryHeader();
+    if (typeof cgweb083Fix9CenterHeaderOnRealColumns === "function") {
+      requestAnimationFrame(() => cgweb083Fix9CenterHeaderOnRealColumns());
+    }
   } catch (_) {}
 }
 

@@ -1,71 +1,57 @@
-# CGWEB083 · FIX9 · HEADERMEASURE001
+# CGWEB083 · FIX9 · HEADERCENTER001
 
-## Cause identifiée
+## Objectif
 
-Les correctifs précédents modifiaient le header CGWEB083 alors que
-`WEB072 FIX11` continuait, après chaque rendu, à :
+Conserver l'ancrage de la barre de titre, désormais satisfaisant,
+et corriger uniquement le centrage horizontal des libellés.
 
-- remettre `#activityDirectoryHeaderWeb059` en `display:grid !important` ;
-- imposer sa propre grille aux lignes ;
-- retravailler l'ancien header.
+## Principe
 
-Cela expliquait le double header et les écarts persistants.
+Les activités sont déjà correctement disposées dans leurs
+« colonnes invisibles ».
 
-## Nouvelle architecture
+FIX9 ne reconstruit donc plus cette grille.
 
-### 1. Ancien header supprimé
+Il mesure directement les huit cellules `.datum` de la première
+activité visible :
 
-`#activityDirectoryHeaderWeb059` n'est plus créé par WEB059.
+1. Date
+2. Heure / Départ
+3. Distance
+4. D+
+5. Temps / Durée
+6. Matériel
+7. Repères
+8. Charge
 
-`WEB072 FIX11` conserve son rôle utile sur les lignes d'activités
-mais ne peut plus créer ou afficher un header.
+Pour chaque cellule :
 
-### 2. Header indépendant
+`centre = left réel + width réelle / 2`
 
-Création de :
+Le titre correspondant est placé exactement sur ce centre avec :
 
-`#cgweb083MeasuredActivityHeader`
+`transform: translate(-50%, -50%)`
 
-Il est inséré directement après `#uxSecondaryNav`
-(Répertoire / Corbeille), donc avant `<main>`.
+## Synchronisation
 
-### 3. Ancrage sans mouvement initial
+WEB072 FIX11 réapplique sa grille après le rendu.
 
-Le header possède naturellement 2 mm de marge sous
-Répertoire / Corbeille.
+FIX9 se recale :
+- immédiatement ;
+- après 40 ms ;
+- après 150 ms ;
+- après 320 ms ;
+- et juste après `web072Fix11AlignDirectoryHeader()`.
 
-Son `top` sticky est calculé sur :
+Ainsi le calcul utilise la géométrie définitive des lignes.
 
-`bottom(Répertoire / Corbeille) + 2 mm`
+## Inchangé
 
-La position naturelle et le seuil sticky sont donc identiques :
-le header n'a aucun déplacement à effectuer au premier scroll.
-
-### 4. Alignement par mesure réelle
-
-Aucune grille théorique n'est utilisée pour les titres.
-
-Après rendu, FIX9 mesure les rectangles des huit `.datum`
-de la première `.activity-card` :
-
-- Date
-- Heure
-- Distance
-- D+
-- Temps
-- Matériel
-- Repères
-- Charge
-
-Chaque titre reçoit exactement le même `left` et la même `width`
-que sa cellule correspondante, puis `text-align:center`.
-
-## Conservé
-
+- ancrage de la barre ;
 - espacement vertical 2 mm ;
-- Tri des activités sous le header ;
+- Tri des activités ;
 - 100 activités au démarrage ;
-- ancre « Afficher 20 de plus » ;
-- pictogramme FIT FIX4 ;
+- « Afficher 20 de plus » ;
+- pictogramme FIT ;
 - pipeline FIT ;
-- backend et Firestore inchangés.
+- backend.
