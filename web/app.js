@@ -20448,3 +20448,16 @@ if (!window.__web072Fix13Installed) {
 }
 
 /* WEB072_FIX13_MANUALTAB001_END */
+
+
+/* WEB074_FITCLOUD001_BRIDGE_START */
+window.SPORT_WEB_BRIDGE = {
+  getUser: () => currentUser,
+  getActivities: () => activities,
+  decodeFitActivity,
+  activityKey,
+  formatBytes,
+  escapeHtml,
+  triggerBlobDownload
+};
+/* WEB074_FITCLOUD001_BRIDGE_END */

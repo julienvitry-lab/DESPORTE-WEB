@@ -2623,3 +2623,21 @@ footer {
 .web-strava-tech-actions{display:flex;gap:8px;margin-top:9px}
 @media(max-width:900px){.web-strava-preview-metrics{grid-template-columns:repeat(3,minmax(100px,1fr))}.web-strava-controls{grid-template-columns:1fr}}
 @media(max-width:600px){.web-strava-preview-metrics{grid-template-columns:repeat(2,minmax(100px,1fr))}}
+
+
+/* WEB074_FITCLOUD001_CSS_START */
+.web-fit-cloud-panel{margin-top:14px;padding:16px;border:1px solid var(--line,#29352f);border-radius:16px;background:rgba(12,17,14,.72)}
+.web-fit-cloud-head,.web-fit-cloud-picker-row,.web-fit-cloud-card-main,.web-fit-cloud-card-actions{display:flex;gap:10px;align-items:center}
+.web-fit-cloud-head{justify-content:space-between;align-items:flex-start}
+.web-fit-cloud-head>div:first-child{display:grid;gap:4px}
+.web-fit-cloud-actions{display:flex;gap:8px;align-items:center}
+.web-fit-cloud-migration{display:grid;gap:10px;margin-top:14px;padding:12px;border:1px solid var(--line,#29352f);border-radius:12px}
+.web-fit-cloud-picker{cursor:pointer}
+.web-fit-cloud-progress{width:100%}
+.web-fit-cloud-list{display:grid;gap:8px;margin-top:14px;max-height:520px;overflow:auto}
+.web-fit-cloud-card{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line,#29352f);border-radius:12px;background:rgba(0,0,0,.14)}
+.web-fit-cloud-card-main{min-width:0;flex:1;justify-content:space-between}
+.web-fit-cloud-card-main>div{display:grid;min-width:0;gap:2px}
+.web-fit-cloud-card-main strong,.web-fit-cloud-card-main small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:760px){.web-fit-cloud-head,.web-fit-cloud-card,.web-fit-cloud-picker-row{align-items:stretch;flex-direction:column}.web-fit-cloud-actions,.web-fit-cloud-card-actions{flex-wrap:wrap}}
+/* WEB074_FITCLOUD001_CSS_END */

@@ -4538,7 +4538,45 @@ select {
           <div id="webFilesStatus" class="muted">Chargement du coffre…</div>
           <div id="webFilesList" class="web-files-list"></div>
 
-          <section class="web-drive-panel">
+                    <!-- WEB074_FITCLOUD001_HTML_START -->
+          <section class="web-fit-cloud-panel">
+            <div class="web-fit-cloud-head">
+              <div>
+                <p class="eyebrow">WEB074 · FITCLOUD001</p>
+                <strong>Coffre FIT Cloud</strong>
+                <span id="webFitCloudStatus" class="muted">Non initialisé.</span>
+              </div>
+              <div class="web-fit-cloud-actions">
+                <span id="webFitCloudBadge" class="pill neutral">Cloud —</span>
+                <button id="webFitCloudRefreshButton" class="secondary compact" type="button">Actualiser Cloud</button>
+              </div>
+            </div>
+
+            <div class="web-fit-cloud-migration">
+              <div>
+                <strong>Migration historique sans doublonnage</strong>
+                <p class="muted">Les FIT sont stockés et rapprochés des activités existantes. Ce mode ne crée jamais d'activité.</p>
+              </div>
+              <div class="web-fit-cloud-picker-row">
+                <label class="secondary compact web-fit-cloud-picker">
+                  Sélectionner des FIT
+                  <input id="webFitCloudFiles" type="file" accept=".fit,application/vnd.ant.fit" multiple hidden>
+                </label>
+                <label class="secondary compact web-fit-cloud-picker">
+                  Dossier historique
+                  <input id="webFitCloudFolder" type="file" accept=".fit,application/vnd.ant.fit" multiple webkitdirectory directory hidden>
+                </label>
+                <button id="webFitCloudUploadButton" class="primary compact" type="button" disabled>Importer dans le Cloud</button>
+              </div>
+              <div id="webFitCloudSelection" class="muted">Aucun FIT sélectionné.</div>
+              <progress id="webFitCloudProgress" max="1" value="0" class="web-fit-cloud-progress hidden"></progress>
+            </div>
+
+            <div id="webFitCloudList" class="web-fit-cloud-list"></div>
+          </section>
+          <!-- WEB074_FITCLOUD001_HTML_END -->
+
+<section class="web-drive-panel">
             <div class="web-drive-head">
               <div>
                 <p class="eyebrow">WEB039 · WEBDRIVE001</p>
@@ -5615,5 +5653,6 @@ select {
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
+  <script type="module" src="./fitcloud.js?v=WEB074-FITCLOUD001"></script>
 </body>
 </html>
