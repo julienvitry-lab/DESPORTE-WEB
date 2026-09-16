@@ -4418,6 +4418,53 @@ select {
   }
 }
 </style>
+
+<style id="cgweb083-fix4-fiticon-css">
+#activityList .activity-card{padding-right:42px!important;}
+#activityList .web081-fit-quick{
+  right:6px!important;
+  width:28px!important;height:28px!important;
+  min-width:28px!important;min-height:28px!important;
+  max-width:28px!important;max-height:28px!important;
+  border-radius:7px!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  background:transparent!important;
+}
+#activityList .web081-fit-quick svg{
+  width:20px!important;height:20px!important;
+  min-width:20px!important;min-height:20px!important;
+  max-width:20px!important;max-height:20px!important;
+  overflow:visible!important;
+}
+#activityList .web081-fit-quick svg path{stroke-width:2!important;}
+#activityList .web081-fit-quick.is-available{
+  color:#cfff5c!important;
+  border-color:rgba(190,255,55,.62)!important;
+  opacity:.96!important;
+}
+#activityList .web081-fit-quick.is-unavailable,
+#activityList .web081-fit-quick.is-error{
+  color:rgba(160,166,162,.72)!important;
+  border-color:rgba(160,166,162,.24)!important;
+  opacity:.64!important;
+}
+#activityList .web081-fit-quick.is-unavailable::after,
+#activityList .web081-fit-quick.is-error::after{content:none!important;}
+@media (max-width:700px){
+  #activityList .activity-card{padding-right:38px!important;}
+  #activityList .web081-fit-quick{
+    right:5px!important;
+    width:24px!important;height:24px!important;
+    min-width:24px!important;min-height:24px!important;
+    max-width:24px!important;max-height:24px!important;
+  }
+  #activityList .web081-fit-quick svg{
+    width:17px!important;height:17px!important;
+    min-width:17px!important;min-height:17px!important;
+    max-width:17px!important;max-height:17px!important;
+  }
+}
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -5911,7 +5958,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB083-FIX3-ACTIVITYDIRECTORYUX003"></script>
+  <script type="module" src="./app.js?v=CGWEB083-FIX4-FITICON001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

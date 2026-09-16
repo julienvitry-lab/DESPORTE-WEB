@@ -6140,6 +6140,28 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 /* CGWEB083_ACTIVITYDIRECTORYUX001_END */
 
+
+/* CGWEB083_FIX4_FITICON_START */
+function v083Fix4ApplyDownloadIcon() {
+  const controls = Array.from(document.querySelectorAll("#activityList .web081-fit-quick"));
+  for (const control of controls) {
+    control.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<path d="M12 3v10.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M8.5 10.3 12 13.8l3.5-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M5 16.5v3h14v-3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg>';
+  }
+}
+
+window.addEventListener("sport-fit-quick-ready", () => {
+  queueMicrotask(() => v083Fix4ApplyDownloadIcon());
+});
+window.addEventListener("sport-fit-quick-updated", () => {
+  queueMicrotask(() => v083Fix4ApplyDownloadIcon());
+});
+/* CGWEB083_FIX4_FITICON_END */
+
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;
   ui.loadedLabel.textContent =
@@ -6186,6 +6208,7 @@ function renderActivities() {
   }
 
   ui.activityList.appendChild(fragment);
+  queueMicrotask(() => v083Fix4ApplyDownloadIcon());
   queueMicrotask(() => v083NudgeDirectoryHeaders());
   queueMicrotask(() => void v081RefreshFitQuickControls());
 
