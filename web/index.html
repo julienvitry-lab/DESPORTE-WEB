@@ -3988,6 +3988,87 @@ select {
   }
 </style>
 
+
+<style id="web072-fix12b-anchor-spacing-home-css">
+  /* WEB072 FIX12B · DETAIL_ANCHOR007 / SPACING004 / HOMEDEFAULT002 */
+
+  /* SPADA : aucune retouche aux icônes, Charge, header Répertoire ou autres acquis FIX11. */
+
+  /* Fixe le CONTENEUR EXTERNE complet du bandeau. */
+  #detailView .web072-fix12b-toolbar-fixed {
+    position: fixed !important;
+    top: var(--web072-fix12b-toolbar-top, 2mm) !important;
+    z-index: 10000 !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    background: rgba(8,14,10,.995) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+  }
+
+  .web072-fix12b-toolbar-placeholder {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    pointer-events: none !important;
+  }
+
+  /* Supprime tout vestige fin / vide autour du bandeau ou entre rubriques. */
+  .web072-fix12b-parasite-bar {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+  }
+
+  /* Espacement uniforme de 2 mm entre les grandes rubriques du détail. */
+  #detailView.web072-fix12b-spacing {
+    margin-top: 2mm !important;
+    padding-top: 0 !important;
+  }
+
+  #detailView.web072-fix12b-spacing > .web072-fix12b-major-section {
+    margin-bottom: 0 !important;
+  }
+
+  #detailView.web072-fix12b-spacing
+  > .web072-fix12b-major-section
+  + .web072-fix12b-major-section {
+    margin-top: 2mm !important;
+  }
+
+  /* Cas explicitement demandé : Matériel / Repères -> Carte. */
+  #detailView .web072-fix12b-material-section {
+    margin-bottom: 0 !important;
+  }
+
+  #detailView .web072-fix12b-map-section {
+    margin-top: 2mm !important;
+  }
+
+  /* Stats -> Matériel / Repères : même règle. */
+  #detailView #web061SingleMetricRow {
+    margin-bottom: 2mm !important;
+  }
+
+  #detailView .detail-controls-row {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5431,7 +5512,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB072-FIX11-DETAIL-ANCHOR006-SPACING003-DIRECTORY-CHARGE001"></script>
+  <script type="module" src="./app.js?v=WEB072-FIX12B-DETAIL-ANCHOR007-SPACING004-HOMEDEFAULT002"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

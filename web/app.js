@@ -17912,15 +17912,30 @@ function localeSort(a, b) {
 
 /* WEB072_FIX9D_STICKY_ALIGN004_START */
 
+let web072Fix12BHomeDefaultConsumed = false;
+
 function web072Fix9StoredSport() {
-  try {
-    return Number(
-      localStorage.getItem("sport_web_web055_home_sport")
-    ) === 2 ? 2 : 1;
-  } catch (_) {
-    return 1;
+    try {
+      if (!web072Fix12BHomeDefaultConsumed) {
+        web072Fix12BHomeDefaultConsumed = true;
+
+        localStorage.setItem(
+          "sport_web_web055_home_sport",
+          "1"
+        );
+
+        return 1;
+      }
+
+      return Number(
+        localStorage.getItem(
+          "sport_web_web055_home_sport"
+        )
+      ) === 2 ? 2 : 1;
+    } catch (_) {
+      return 1;
+    }
   }
-}
 
 function web072Fix9RestoreHomeSport() {
   const sport = web072Fix9StoredSport();
@@ -19126,3 +19141,619 @@ if (!window.__web072Fix11Installed) {
 }
 
 /* WEB072_FIX11_DETAIL_ANCHOR006_END */
+
+
+/* WEB072_FIX12B_DETAIL_ANCHOR007_START */
+
+function web072Fix12BText(el) {
+  return String(el?.textContent || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function web072Fix12BMatchesToolbar(el) {
+  const text = web072Fix12BText(el);
+
+  return (
+    /Répertoire/i.test(text) &&
+    /Ajout manuel/i.test(text) &&
+    /Mettre à la corbeille/i.test(text) &&
+    /Activité précédente/i.test(text) &&
+    /Activité suivante/i.test(text)
+  );
+}
+
+/*
+ * Retourne le CONTENEUR EXTERNE compact du bandeau complet.
+ * C'est lui qui devient fixe : plus de surbandeau parent laissé derrière.
+ */
+function web072Fix12BFindToolbar() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return null;
+
+  const detailRect = detail.getBoundingClientRect();
+
+  const candidates =
+    Array.from(detail.querySelectorAll("div, nav, section"))
+      .filter((el) => {
+        if (el === detail) return false;
+        if (!web072Fix12BMatchesToolbar(el)) return false;
+
+        const rect = el.getBoundingClientRect();
+
+        return (
+          rect.height > 0 &&
+          rect.height <= 125 &&
+          rect.width >= detailRect.width * 0.72
+        );
+      });
+
+  if (!candidates.length) return null;
+
+  const depth = (node) => {
+    let d = 0;
+    let cur = node;
+
+    while (cur && cur !== detail) {
+      d += 1;
+      cur = cur.parentElement;
+    }
+
+    return d;
+  };
+
+  candidates.sort((a, b) => depth(a) - depth(b));
+
+  return candidates[0];
+}
+
+function web072Fix12BMm2Px() {
+  let probe =
+    document.getElementById("web072Fix12BMmProbe");
+
+  if (!probe) {
+    probe = document.createElement("div");
+    probe.id = "web072Fix12BMmProbe";
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.pointerEvents = "none";
+    probe.style.width = "2mm";
+    probe.style.height = "2mm";
+    document.body.appendChild(probe);
+  }
+
+  return probe.getBoundingClientRect().height || 8;
+}
+
+function web072Fix12BToolbarTop() {
+  const gap = web072Fix12BMm2Px();
+
+  const nav =
+    document.getElementById("uxPrimaryNav") ||
+    document.querySelector('[data-ux-primary-nav]');
+
+  if (nav) {
+    const rect = nav.getBoundingClientRect();
+
+    if (
+      rect.height > 0 &&
+      rect.bottom > 0 &&
+      rect.bottom < window.innerHeight
+    ) {
+      return Math.ceil(rect.bottom + gap);
+    }
+  }
+
+  return Math.ceil(gap);
+}
+
+function web072Fix12BCleanupOldToolbarState() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return;
+
+  for (
+    const old of
+    detail.querySelectorAll(
+      ".web072-fix11-toolbar-fixed, " +
+      ".web072-fix10-toolbar-fixed, " +
+      ".web072-fix9-toolbar-sticky"
+    )
+  ) {
+    old.classList.remove(
+      "web072-fix11-toolbar-fixed",
+      "web072-fix10-toolbar-fixed",
+      "web072-fix9-toolbar-sticky"
+    );
+
+    for (const prop of [
+      "position",
+      "top",
+      "left",
+      "width",
+      "z-index"
+    ]) {
+      old.style.removeProperty(prop);
+    }
+  }
+
+  detail
+    .querySelectorAll(
+      ".web072-fix11-toolbar-placeholder, " +
+      ".web072-fix10-toolbar-placeholder, " +
+      ".web072-fix10-toolbar-anchor"
+    )
+    .forEach((el) => el.remove());
+}
+
+function web072Fix12BHideToolbarParasites(toolbar) {
+  if (!toolbar) return;
+
+  const detail = document.getElementById("detailView");
+  const detailRect = detail?.getBoundingClientRect();
+
+  if (!detailRect) return;
+
+  const suspects = [];
+
+  let node = toolbar.previousElementSibling;
+
+  for (let i = 0; node && i < 3; i += 1) {
+    suspects.push(node);
+    node = node.previousElementSibling;
+  }
+
+  node = toolbar.nextElementSibling;
+
+  for (let i = 0; node && i < 2; i += 1) {
+    suspects.push(node);
+    node = node.nextElementSibling;
+  }
+
+  for (const el of suspects) {
+    const rect = el.getBoundingClientRect();
+    const text = web072Fix12BText(el);
+
+    const interactive =
+      Boolean(
+        el.querySelector(
+          "button, input, select, textarea, a"
+        )
+      );
+
+    if (
+      !text &&
+      !interactive &&
+      rect.height > 0 &&
+      rect.height <= 20 &&
+      rect.width >= detailRect.width * 0.70
+    ) {
+      el.classList.add(
+        "web072-fix12b-parasite-bar"
+      );
+    }
+  }
+}
+
+function web072Fix12BFixToolbarImmediately() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return;
+
+  web072Fix12BCleanupOldToolbarState();
+
+  const toolbar = web072Fix12BFindToolbar();
+  if (!toolbar) return;
+
+  web072Fix12BHideToolbarParasites(toolbar);
+
+  toolbar.classList.add(
+    "web072-fix12b-toolbar-fixed"
+  );
+
+  let placeholder = toolbar.previousElementSibling;
+
+  if (
+    !placeholder ||
+    !placeholder.classList.contains(
+      "web072-fix12b-toolbar-placeholder"
+    )
+  ) {
+    placeholder = document.createElement("div");
+
+    placeholder.className =
+      "web072-fix12b-toolbar-placeholder";
+
+    toolbar.insertAdjacentElement(
+      "beforebegin",
+      placeholder
+    );
+  }
+
+  const top = web072Fix12BToolbarTop();
+
+  document.documentElement.style.setProperty(
+    "--web072-fix12b-toolbar-top",
+    top + "px"
+  );
+
+  const detailRect = detail.getBoundingClientRect();
+
+  const left =
+    Math.max(0, Math.round(detailRect.left));
+
+  const width =
+    Math.max(
+      0,
+      Math.min(
+        detailRect.width,
+        window.innerWidth - left
+      )
+    );
+
+  toolbar.style.setProperty(
+    "position",
+    "fixed",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "top",
+    top + "px",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "left",
+    left + "px",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "width",
+    width + "px",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "z-index",
+    "10000",
+    "important"
+  );
+
+  const height =
+    Math.ceil(toolbar.getBoundingClientRect().height);
+
+  placeholder.style.height =
+    (height + web072Fix12BMm2Px()) + "px";
+}
+
+function web072Fix12BFindCompactSection(terms) {
+  const detail = document.getElementById("detailView");
+  if (!detail) return null;
+
+  const detailRect = detail.getBoundingClientRect();
+
+  const candidates =
+    Array.from(
+      detail.querySelectorAll("div, section, article")
+    )
+      .filter((el) => {
+        const text = web072Fix12BText(el);
+
+        if (
+          !terms.every((term) =>
+            text.toLowerCase().includes(
+              term.toLowerCase()
+            )
+          )
+        ) {
+          return false;
+        }
+
+        const rect = el.getBoundingClientRect();
+
+        return (
+          rect.height > 0 &&
+          rect.width >= detailRect.width * 0.70
+        );
+      });
+
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) =>
+    a.getBoundingClientRect().height -
+    b.getBoundingClientRect().height
+  );
+
+  return candidates[0];
+}
+
+function web072Fix12BMarkMajorSections() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return;
+
+  detail.classList.remove("web072-fix11-spacing");
+  detail.classList.add("web072-fix12b-spacing");
+
+  for (const child of Array.from(detail.children)) {
+    child.classList.remove(
+      "web072-fix11-major-section",
+      "web072-fix12-major-section",
+      "web072-fix12b-major-section"
+    );
+
+    if (
+      child.classList.contains(
+        "web072-fix12b-toolbar-placeholder"
+      ) ||
+      child.classList.contains(
+        "web072-fix12b-toolbar-fixed"
+      )
+    ) {
+      continue;
+    }
+
+    const style = getComputedStyle(child);
+    const rect = child.getBoundingClientRect();
+
+    if (
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      rect.height > 0
+    ) {
+      child.classList.add(
+        "web072-fix12b-major-section"
+      );
+    }
+  }
+
+  const material =
+    web072Fix12BFindCompactSection([
+      "Matériel",
+      "Repères"
+    ]);
+
+  if (material) {
+    material.classList.add(
+      "web072-fix12b-material-section"
+    );
+
+    material.style.setProperty(
+      "margin-bottom",
+      "0",
+      "important"
+    );
+  }
+
+  const mapTitle =
+    Array.from(
+      detail.querySelectorAll(
+        "h1, h2, h3, h4, strong, div"
+      )
+    ).find((el) =>
+      /^Carte et profil altimétrique$/i.test(
+        web072Fix12BText(el)
+      )
+    );
+
+  if (mapTitle) {
+    let mapSection = mapTitle;
+
+    while (
+      mapSection.parentElement &&
+      mapSection.parentElement !== detail
+    ) {
+      const parent = mapSection.parentElement;
+      const rect = parent.getBoundingClientRect();
+      const detailRect = detail.getBoundingClientRect();
+
+      mapSection = parent;
+
+      if (
+        rect.width >= detailRect.width * 0.75 &&
+        rect.height >= 100
+      ) {
+        break;
+      }
+    }
+
+    mapSection.classList.add(
+      "web072-fix12b-map-section"
+    );
+
+    mapSection.style.setProperty(
+      "margin-top",
+      "2mm",
+      "important"
+    );
+  }
+}
+
+function web072Fix12BHideParasiteBars() {
+  const detail = document.getElementById("detailView");
+  const stats =
+    document.getElementById("web061SingleMetricRow");
+
+  const material =
+    web072Fix12BFindCompactSection([
+      "Matériel",
+      "Repères"
+    ]);
+
+  if (!detail || !stats || !material) return;
+
+  const statsRect = stats.getBoundingClientRect();
+  const materialRect = material.getBoundingClientRect();
+  const detailRect = detail.getBoundingClientRect();
+
+  for (
+    const node of
+    detail.querySelectorAll("div, hr, section")
+  ) {
+    if (
+      node === stats ||
+      node === material ||
+      node.contains(stats) ||
+      node.contains(material) ||
+      stats.contains(node) ||
+      material.contains(node)
+    ) {
+      continue;
+    }
+
+    const rect = node.getBoundingClientRect();
+
+    if (
+      rect.top < statsRect.bottom - 2 ||
+      rect.bottom > materialRect.top + 2
+    ) {
+      continue;
+    }
+
+    const text = web072Fix12BText(node);
+
+    const interactive =
+      Boolean(
+        node.querySelector(
+          "button, input, select, textarea, a"
+        )
+      );
+
+    const thinWide =
+      rect.height > 0 &&
+      rect.height <= 22 &&
+      rect.width >= detailRect.width * 0.68;
+
+    const named =
+      /divider|separator|progress|status|sync|bar/i.test(
+        String(node.id || "") +
+        " " +
+        String(node.className || "")
+      );
+
+    if (
+      (thinWide || named) &&
+      !text &&
+      !interactive
+    ) {
+      node.classList.add(
+        "web072-fix12b-parasite-bar"
+      );
+    }
+  }
+}
+
+function web072Fix12BApplyDetail() {
+  try {
+    web072Fix12BFixToolbarImmediately();
+    web072Fix12BMarkMajorSections();
+    web072Fix12BHideParasiteBars();
+  } catch (_) {}
+}
+
+/*
+ * Hook détail APRÈS FIX11.
+ */
+const web072Fix12BPreviousRenderDetail =
+  renderDetail;
+
+renderDetail =
+  function web072Fix12BRenderDetail(...args) {
+    const result =
+      web072Fix12BPreviousRenderDetail.apply(
+        this,
+        args
+      );
+
+    const apply = () => {
+      requestAnimationFrame(
+        web072Fix12BApplyDetail
+      );
+
+      setTimeout(
+        web072Fix12BApplyDetail,
+        40
+      );
+
+      setTimeout(
+        web072Fix12BApplyDetail,
+        160
+      );
+    };
+
+    if (
+      result &&
+      typeof result.then === "function"
+    ) {
+      result.finally(apply);
+    } else {
+      apply();
+    }
+
+    return result;
+  };
+
+/*
+ * À chaque entrée dans Accueil : Course à pied d'abord.
+ * Ensuite le bouton Vélo reste libre.
+ */
+if (!window.__web072Fix12BHomeInstalled) {
+  window.__web072Fix12BHomeInstalled = true;
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target =
+        event.target instanceof Element
+          ? event.target.closest(
+              "button, a, [data-ux-page]"
+            )
+          : null;
+
+      if (!target) return;
+
+      const isHome =
+        target.getAttribute("data-ux-page") === "home" ||
+        /^Accueil$/i.test(
+          web072Fix12BText(target)
+        );
+
+      if (!isHome) return;
+
+      try {
+        localStorage.setItem(
+          "sport_web_web055_home_sport",
+          "1"
+        );
+      } catch (_) {}
+
+      dashboardSport = 1;
+
+      document
+        .getElementById("web055RunningButton")
+        ?.classList.add("active");
+
+      document
+        .getElementById("web055CyclingButton")
+        ?.classList.remove("active");
+    },
+    true
+  );
+
+  document.addEventListener(
+    "DOMContentLoaded",
+    web072Fix12BApplyDetail
+  );
+
+  window.addEventListener(
+    "resize",
+    web072Fix12BApplyDetail,
+    { passive: true }
+  );
+
+  setTimeout(
+    web072Fix12BApplyDetail,
+    250
+  );
+}
+
+/* WEB072_FIX12B_DETAIL_ANCHOR007_END */
