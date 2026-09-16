@@ -1,40 +1,42 @@
-# CGWEB083 · FIX7 · ACTIVITYHEADER003
+# CGWEB083 · FIX8 · CUSTOMHEADER001
 
-## Barre de titre
+## Objectif
 
-La barre `#activityDirectoryHeaderWeb059` est désormais placée **avant**
-`#activityDirectorySection`, et non plus à l'intérieur.
+Les décalages successifs sur la barre historique n'étant pas satisfaisants,
+la solution est remplacée par une nouvelle barre de titre dédiée.
 
-Objectif : empêcher les anciennes règles d'`overflow` du Répertoire de
-neutraliser `position: sticky`.
+## Nouveau header
 
-La barre reste ancrée sous les navigations via :
+Création de `#cgweb083CustomActivityHeader`, placé juste avant
+`#activityDirectorySection`.
 
-`top: var(--web059-sticky-top, 0px)`.
+Ce nouveau header :
 
-## Tri des activités
+- est `sticky` ;
+- possède son propre fond, ses bordures et son ombre ;
+- masque complètement l'ancien `#activityDirectoryHeaderWeb059` ;
+- centre les textes horizontalement dans les colonnes correspondantes.
 
-La barre **Tri des activités** reste dans `#activityDirectorySection`.
-Puisque le header est maintenant juste avant cette section, le Tri est
-physiquement placé sous la barre de titre.
+## Alignement aux colonnes
 
-Au défilement, le Tri et les activités passent derrière la barre de titre.
+La grille du nouveau header reprend dynamiquement le
+`grid-template-columns` de la première `.activity-card` visible.
 
-## Déplacements supplémentaires
+Ainsi les libellés :
+- Date
+- Heure
+- Distance
+- D+
+- Temps
+- Matériel
+- Repères
+- Charge
 
-Le mot « encore » est interprété comme un déplacement additionnel par rapport
-à FIX6.
-
-Positions cumulées :
-
-- Date : +2 mm ;
-- Temps : -4 mm ;
-- Matériel : +48 mm ;
-- Repères : -20 mm ;
-- Charge : +12 mm.
+s'alignent directement avec les vraies colonnes des activités.
 
 ## Conservé
 
+- Tri des activités sous le header ;
 - espacement vertical de 2 mm ;
 - 100 activités au démarrage ;
 - ancre « Afficher 20 de plus » ;

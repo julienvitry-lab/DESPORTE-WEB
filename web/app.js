@@ -6136,107 +6136,65 @@ window.addEventListener("sport-fit-quick-updated", () => {
 /* CGWEB083_FIX6_ACTIVITYHEADER002_START */
 
 function cgweb083Fix6ApplyActivityHeader() {
-  const header = document.getElementById("activityDirectoryHeaderWeb059");
+  const nativeHeader = document.getElementById("activityDirectoryHeaderWeb059");
   const section = document.getElementById("activityDirectorySection");
+  const list = document.getElementById("activityList");
 
-  if (!header || !section || !section.parentNode) return;
+  if (!section || !section.parentNode) return;
 
-  /*
-   * FIX7 : le header quitte le conteneur Répertoire.
-   * Cela le libère des anciens overflow qui empêchaient le sticky.
-   * Le Répertoire commence ensuite par "Tri des activités".
-   */
-  if (
-    header.parentNode !== section.parentNode ||
-    header.nextElementSibling !== section
-  ) {
-    section.parentNode.insertBefore(header, section);
+  if (nativeHeader) {
+    nativeHeader.style.setProperty("display", "none", "important");
+    nativeHeader.setAttribute("aria-hidden", "true");
+  }
+
+  let host = document.getElementById("cgweb083CustomActivityHeader");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "cgweb083CustomActivityHeader";
+    host.innerHTML = [
+      '<div class="cgweb083-custom-header-grid">',
+      '<span class="cgweb083-header-spacer" aria-hidden="true"></span>',
+      '<strong>Date</strong>',
+      '<strong>Heure</strong>',
+      '<strong>Distance</strong>',
+      '<strong>D+</strong>',
+      '<strong>Temps</strong>',
+      '<strong>Matériel</strong>',
+      '<strong>Repères</strong>',
+      '<strong>Charge</strong>',
+      '</div>'
+    ].join("");
+  }
+
+  if (host.parentNode !== section.parentNode || host.nextElementSibling !== section) {
+    section.parentNode.insertBefore(host, section);
+  }
+
+  const grid = host.querySelector(".cgweb083-custom-header-grid");
+  if (!grid) return;
+
+  let template = "";
+  const firstCard = list ? list.querySelector(".activity-card") : null;
+
+  if (firstCard) {
+    template = getComputedStyle(firstCard).gridTemplateColumns || "";
+  }
+
+  if ((!template || template === "none") && nativeHeader) {
+    template = getComputedStyle(nativeHeader).gridTemplateColumns || "";
+  }
+
+  if (template && template !== "none") {
+    grid.style.setProperty("grid-template-columns", template, "important");
   }
 
   if (typeof web059RefreshStickyTop === "function") {
     web059RefreshStickyTop();
   }
 
-  /*
-   * Positions CUMULÉES :
-   * Date      : +2 mm
-   * Temps     : -1 mm ancien -3 mm encore = -4 mm
-   * Matériel  : +25 mm ancien +23 mm encore = +48 mm
-   * Repères   : -10 mm ancien -10 mm encore = -20 mm
-   * Charge    : +10 mm ancien +2 mm encore = +12 mm
-   */
-  const shifts = new Map([
-    ["Date", "7.559px"],
-    ["Heure", "0px"],
-    ["Distance", "0px"],
-    ["D+", "0px"],
-    ["Temps", "-15.118px"],
-    ["Matériel", "181.417px"],
-    ["Repères", "-75.591px"],
-    ["Charge", "45.354px"]
-  ]);
-
-  header.classList.remove("cgweb083-fix6-header");
-  header.classList.add("cgweb083-fix7-header");
-
-  for (const label of Array.from(header.querySelectorAll(":scope > strong"))) {
-    const text = String(label.textContent || "")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    const x = shifts.get(text) ?? "0px";
-
-    label.style.setProperty("position", "relative", "important");
-    label.style.setProperty("left", "0", "important");
-    label.style.setProperty("right", "auto", "important");
-    label.style.setProperty("margin-left", "0", "important");
-    label.style.setProperty("margin-right", "0", "important");
-    label.style.setProperty(
-      "transform",
-      "translateX(" + x + ")",
-      "important"
-    );
-    label.style.setProperty("white-space", "nowrap", "important");
-  }
-
-  header.style.setProperty("display", "grid", "important");
-  header.style.setProperty("position", "sticky", "important");
-  header.style.setProperty(
-    "top",
-    "var(--web059-sticky-top, 0px)",
-    "important"
-  );
-  header.style.setProperty("z-index", "5200", "important");
-  header.style.setProperty("align-self", "stretch", "important");
-  header.style.setProperty("min-height", "34px", "important");
-  header.style.setProperty("height", "34px", "important");
-  header.style.setProperty("padding", "5px 12px", "important");
-  header.style.setProperty(
-    "margin",
-    "0 12px 7.559px 12px",
-    "important"
-  );
-  header.style.setProperty("box-sizing", "border-box", "important");
-  header.style.setProperty(
-    "background",
-    "rgba(8,14,10,.995)",
-    "important"
-  );
-  header.style.setProperty(
-    "border-top",
-    "1px solid rgba(210,180,95,.22)",
-    "important"
-  );
-  header.style.setProperty(
-    "border-bottom",
-    "1px solid rgba(210,180,95,.34)",
-    "important"
-  );
-  header.style.setProperty(
-    "box-shadow",
-    "0 2px 5px rgba(0,0,0,.26)",
-    "important"
-  );
+  host.style.setProperty("position", "sticky", "important");
+  host.style.setProperty("top", "var(--web059-sticky-top, 0px)", "important");
+  host.style.setProperty("z-index", "5400", "important");
 }
 
 /* CGWEB083_FIX6_ACTIVITYHEADER002_END */
@@ -6251,6 +6209,15 @@ function cgweb083Fix6ApplyActivityHeader() {
  * - déplacements cumulés.
  */
 /* CGWEB083_FIX7_ACTIVITYHEADER003_END */
+
+
+/* CGWEB083_FIX8_CUSTOMHEADER001_START */
+window.addEventListener("resize", () => {
+  if (typeof cgweb083Fix6ApplyActivityHeader === "function") {
+    queueMicrotask(() => cgweb083Fix6ApplyActivityHeader());
+  }
+});
+/* CGWEB083_FIX8_CUSTOMHEADER001_END */
 
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;

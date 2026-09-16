@@ -4468,34 +4468,34 @@ select {
 
 
 
-<style id="cgweb083-fix7-activityheader-css">
-/* CGWEB083 FIX7 · ACTIVITYHEADER003 */
 
-/* ================================================================
-   1. HEADER EXTERIEUR AU REPERTOIRE = STICKY ROBUSTE
-   ================================================================ */
+<style id="cgweb083-fix8-customheader-css">
+/* CGWEB083 FIX8 · CUSTOMHEADER001 */
 
+/* Ancien header totalement masqué. */
 #activityDirectoryHeaderWeb059{
-  display:grid!important;
+  display:none!important;
+}
 
+/* Le nouveau header vit hors du Répertoire, juste avant celui-ci. */
+#cgweb083CustomActivityHeader{
   position:sticky!important;
   top:var(--web059-sticky-top, 0px)!important;
-  z-index:5200!important;
+  z-index:5400!important;
 
-  align-self:stretch!important;
+  margin:0 12px 7.559px 12px!important;
+  padding:0!important;
+}
+
+#cgweb083CustomActivityHeader .cgweb083-custom-header-grid{
+  display:grid!important;
+  align-items:center!important;
+
   min-height:34px!important;
   height:34px!important;
-
   box-sizing:border-box!important;
+
   padding:5px 12px!important;
-
-  /*
-   * 2 mm avant le Répertoire.
-   * La section elle-même n'ajoute plus de padding supérieur.
-   */
-  margin:0 12px 7.559px 12px!important;
-
-  align-items:center!important;
   gap:8px!important;
 
   background:rgba(8,14,10,.995)!important;
@@ -4506,21 +4506,21 @@ select {
   box-shadow:0 2px 5px rgba(0,0,0,.26)!important;
 }
 
-/*
- * Prioritaire même sur l'ancienne règle WEB059 <= 1050 px
- * qui remettait historiquement le header en position relative.
- */
-@media (max-width:1050px){
-  #activityDirectoryHeaderWeb059{
-    position:sticky!important;
-    top:var(--web059-sticky-top, 0px)!important;
-  }
+#cgweb083CustomActivityHeader .cgweb083-header-spacer{
+  visibility:hidden!important;
 }
 
-/* ================================================================
-   2. REPERTOIRE : TRI DIRECTEMENT SOUS LE HEADER
-   ================================================================ */
+#cgweb083CustomActivityHeader strong{
+  display:block!important;
+  justify-self:center!important;
+  align-self:center!important;
+  text-align:center!important;
+  white-space:nowrap!important;
+  font-weight:500!important;
+  line-height:22px!important;
+}
 
+/* Répertoire : Tri reste juste sous le header, espacement 2 mm conservé. */
 #activityDirectorySection{
   --cgweb083-gap-2mm:7.559px;
 
@@ -4530,8 +4530,6 @@ select {
 
   margin-top:0!important;
   margin-bottom:0!important;
-
-  /* Le 2 mm supérieur est désormais porté par le header. */
   padding-top:0!important;
   padding-bottom:var(--cgweb083-gap-2mm)!important;
 }
@@ -4567,9 +4565,7 @@ select {
   display:inline-block!important;
   visibility:visible!important;
   opacity:1!important;
-
   margin:0!important;
-
   font-size:.88rem!important;
   line-height:22px!important;
 }
@@ -4578,44 +4574,12 @@ select {
   display:none!important;
 }
 
-/* ================================================================
-   3. DEPLACEMENTS CUMULES DES TITRES
-   ================================================================ */
-
-#activityDirectoryHeaderWeb059 > strong{
-  position:relative!important;
-  left:0!important;
-  right:auto!important;
-  margin-left:0!important;
-  margin-right:0!important;
-  font-weight:500!important;
-  text-align:center!important;
-  white-space:nowrap!important;
-}
-
-/* Date : +2 mm inchangé */
-#activityDirectoryHeaderWeb059 > strong:nth-child(2){
-  transform:translateX(7.559px)!important;
-}
-
-/* Temps : -4 mm au total */
-#activityDirectoryHeaderWeb059 > strong:nth-child(6){
-  transform:translateX(-15.118px)!important;
-}
-
-/* Matériel : +48 mm au total */
-#activityDirectoryHeaderWeb059 > strong:nth-child(7){
-  transform:translateX(181.417px)!important;
-}
-
-/* Repères : -20 mm au total */
-#activityDirectoryHeaderWeb059 > strong:nth-child(8){
-  transform:translateX(-75.591px)!important;
-}
-
-/* Charge : +12 mm au total */
-#activityDirectoryHeaderWeb059 > strong:nth-child(9){
-  transform:translateX(45.354px)!important;
+/* Prioritaire même sous 1050 px. */
+@media (max-width:1050px){
+  #cgweb083CustomActivityHeader{
+    position:sticky!important;
+    top:var(--web059-sticky-top, 0px)!important;
+  }
 }
 </style>
 </head>
@@ -6111,7 +6075,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB083-FIX7-ACTIVITYHEADER003"></script>
+  <script type="module" src="./app.js?v=CGWEB083-FIX8-CUSTOMHEADER001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
