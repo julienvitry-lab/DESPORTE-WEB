@@ -1,45 +1,43 @@
-# CGWEB083 · FIX6 · ACTIVITYHEADER002
-
-## Reprise propre après la régression FIX5
-
-FIX5 est supprimé.
-
-La correction ne dépend plus de `body.ux-activities-page`.
+# CGWEB083 · FIX7 · ACTIVITYHEADER003
 
 ## Barre de titre
 
-La barre réelle `#activityDirectoryHeaderWeb059` est restaurée :
+La barre `#activityDirectoryHeaderWeb059` est désormais placée **avant**
+`#activityDirectorySection`, et non plus à l'intérieur.
 
-- hauteur : 34 px ;
-- fond opaque ;
-- bord supérieur et inférieur ;
-- `position: sticky` ;
-- offset : `--web059-sticky-top`.
+Objectif : empêcher les anciennes règles d'`overflow` du Répertoire de
+neutraliser `position: sticky`.
 
-## Décalages horizontaux
+La barre reste ancrée sous les navigations via :
 
-Appliqués après chaque reconstruction du header avec `style.setProperty(..., "important")` :
+`top: var(--web059-sticky-top, 0px)`.
+
+## Tri des activités
+
+La barre **Tri des activités** reste dans `#activityDirectorySection`.
+Puisque le header est maintenant juste avant cette section, le Tri est
+physiquement placé sous la barre de titre.
+
+Au défilement, le Tri et les activités passent derrière la barre de titre.
+
+## Déplacements supplémentaires
+
+Le mot « encore » est interprété comme un déplacement additionnel par rapport
+à FIX6.
+
+Positions cumulées :
 
 - Date : +2 mm ;
-- Temps : -1 mm ;
-- Matériel : +2,5 cm ;
-- Repères : -1 cm ;
-- Charge : +1 cm.
-
-Le moteur historique `v083NudgeDirectoryHeaders` délègue maintenant à FIX6 et ne peut plus annuler ces positions.
-
-## Espacement vertical
-
-`#activityDirectorySection` devient une pile verticale explicite avec `gap: 2 mm`.
-
-Les marges historiques des enfants directs sont neutralisées.
-
-Le bandeau replié « Tri des activités » reçoit une hauteur compacte de 34 px afin de supprimer toute zone vide fantôme.
+- Temps : -4 mm ;
+- Matériel : +48 mm ;
+- Repères : -20 mm ;
+- Charge : +12 mm.
 
 ## Conservé
 
+- espacement vertical de 2 mm ;
 - 100 activités au démarrage ;
-- « Afficher 20 de plus » sans saut de scroll ;
+- ancre « Afficher 20 de plus » ;
 - pictogramme FIT FIX4 ;
 - pipeline FIT ;
 - backend et Firestore inchangés.

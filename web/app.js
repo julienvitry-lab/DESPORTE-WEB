@@ -6137,23 +6137,53 @@ window.addEventListener("sport-fit-quick-updated", () => {
 
 function cgweb083Fix6ApplyActivityHeader() {
   const header = document.getElementById("activityDirectoryHeaderWeb059");
-  if (!header) return;
+  const section = document.getElementById("activityDirectorySection");
 
+  if (!header || !section || !section.parentNode) return;
+
+  /*
+   * FIX7 : le header quitte le conteneur Répertoire.
+   * Cela le libère des anciens overflow qui empêchaient le sticky.
+   * Le Répertoire commence ensuite par "Tri des activités".
+   */
+  if (
+    header.parentNode !== section.parentNode ||
+    header.nextElementSibling !== section
+  ) {
+    section.parentNode.insertBefore(header, section);
+  }
+
+  if (typeof web059RefreshStickyTop === "function") {
+    web059RefreshStickyTop();
+  }
+
+  /*
+   * Positions CUMULÉES :
+   * Date      : +2 mm
+   * Temps     : -1 mm ancien -3 mm encore = -4 mm
+   * Matériel  : +25 mm ancien +23 mm encore = +48 mm
+   * Repères   : -10 mm ancien -10 mm encore = -20 mm
+   * Charge    : +10 mm ancien +2 mm encore = +12 mm
+   */
   const shifts = new Map([
     ["Date", "7.559px"],
     ["Heure", "0px"],
     ["Distance", "0px"],
     ["D+", "0px"],
-    ["Temps", "-3.780px"],
-    ["Matériel", "94.488px"],
-    ["Repères", "-37.795px"],
-    ["Charge", "37.795px"]
+    ["Temps", "-15.118px"],
+    ["Matériel", "181.417px"],
+    ["Repères", "-75.591px"],
+    ["Charge", "45.354px"]
   ]);
 
-  header.classList.add("cgweb083-fix6-header");
+  header.classList.remove("cgweb083-fix6-header");
+  header.classList.add("cgweb083-fix7-header");
 
   for (const label of Array.from(header.querySelectorAll(":scope > strong"))) {
-    const text = String(label.textContent || "").replace(/\s+/g, " ").trim();
+    const text = String(label.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim();
+
     const x = shifts.get(text) ?? "0px";
 
     label.style.setProperty("position", "relative", "important");
@@ -6161,27 +6191,66 @@ function cgweb083Fix6ApplyActivityHeader() {
     label.style.setProperty("right", "auto", "important");
     label.style.setProperty("margin-left", "0", "important");
     label.style.setProperty("margin-right", "0", "important");
-    label.style.setProperty("transform", "translateX(" + x + ")", "important");
+    label.style.setProperty(
+      "transform",
+      "translateX(" + x + ")",
+      "important"
+    );
     label.style.setProperty("white-space", "nowrap", "important");
   }
 
   header.style.setProperty("display", "grid", "important");
   header.style.setProperty("position", "sticky", "important");
-  header.style.setProperty("top", "var(--web059-sticky-top, 0px)", "important");
-  header.style.setProperty("z-index", "4200", "important");
+  header.style.setProperty(
+    "top",
+    "var(--web059-sticky-top, 0px)",
+    "important"
+  );
+  header.style.setProperty("z-index", "5200", "important");
+  header.style.setProperty("align-self", "stretch", "important");
   header.style.setProperty("min-height", "34px", "important");
   header.style.setProperty("height", "34px", "important");
   header.style.setProperty("padding", "5px 12px", "important");
-  header.style.setProperty("margin", "0", "important");
+  header.style.setProperty(
+    "margin",
+    "0 12px 7.559px 12px",
+    "important"
+  );
   header.style.setProperty("box-sizing", "border-box", "important");
-  header.style.setProperty("background", "rgba(8,14,10,.985)", "important");
-  header.style.setProperty("border-top", "1px solid rgba(210,180,95,.22)", "important");
-  header.style.setProperty("border-bottom", "1px solid rgba(210,180,95,.34)", "important");
-  header.style.setProperty("box-shadow", "0 2px 5px rgba(0,0,0,.22)", "important");
+  header.style.setProperty(
+    "background",
+    "rgba(8,14,10,.995)",
+    "important"
+  );
+  header.style.setProperty(
+    "border-top",
+    "1px solid rgba(210,180,95,.22)",
+    "important"
+  );
+  header.style.setProperty(
+    "border-bottom",
+    "1px solid rgba(210,180,95,.34)",
+    "important"
+  );
+  header.style.setProperty(
+    "box-shadow",
+    "0 2px 5px rgba(0,0,0,.26)",
+    "important"
+  );
 }
 
 /* CGWEB083_FIX6_ACTIVITYHEADER002_END */
 
+
+
+/* CGWEB083_FIX7_ACTIVITYHEADER003_START */
+/*
+ * Header hors #activityDirectorySection :
+ * - sticky robuste ;
+ * - Tri des activités sous le header ;
+ * - déplacements cumulés.
+ */
+/* CGWEB083_FIX7_ACTIVITYHEADER003_END */
 
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;

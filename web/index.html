@@ -4467,11 +4467,58 @@ select {
 </style>
 
 
-<style id="cgweb083-fix6-activityheader-css">
-/* CGWEB083 FIX6 · ACTIVITYHEADER002 */
+
+<style id="cgweb083-fix7-activityheader-css">
+/* CGWEB083 FIX7 · ACTIVITYHEADER003 */
 
 /* ================================================================
-   1. ONGLET ACTIVITES : RUBRIQUES ESPACEES DE 2 MM
+   1. HEADER EXTERIEUR AU REPERTOIRE = STICKY ROBUSTE
+   ================================================================ */
+
+#activityDirectoryHeaderWeb059{
+  display:grid!important;
+
+  position:sticky!important;
+  top:var(--web059-sticky-top, 0px)!important;
+  z-index:5200!important;
+
+  align-self:stretch!important;
+  min-height:34px!important;
+  height:34px!important;
+
+  box-sizing:border-box!important;
+  padding:5px 12px!important;
+
+  /*
+   * 2 mm avant le Répertoire.
+   * La section elle-même n'ajoute plus de padding supérieur.
+   */
+  margin:0 12px 7.559px 12px!important;
+
+  align-items:center!important;
+  gap:8px!important;
+
+  background:rgba(8,14,10,.995)!important;
+  color:var(--muted,#c7c7a4)!important;
+
+  border-top:1px solid rgba(210,180,95,.22)!important;
+  border-bottom:1px solid rgba(210,180,95,.34)!important;
+  box-shadow:0 2px 5px rgba(0,0,0,.26)!important;
+}
+
+/*
+ * Prioritaire même sur l'ancienne règle WEB059 <= 1050 px
+ * qui remettait historiquement le header en position relative.
+ */
+@media (max-width:1050px){
+  #activityDirectoryHeaderWeb059{
+    position:sticky!important;
+    top:var(--web059-sticky-top, 0px)!important;
+  }
+}
+
+/* ================================================================
+   2. REPERTOIRE : TRI DIRECTEMENT SOUS LE HEADER
    ================================================================ */
 
 #activityDirectorySection{
@@ -4483,18 +4530,19 @@ select {
 
   margin-top:0!important;
   margin-bottom:0!important;
-  padding-top:var(--cgweb083-gap-2mm)!important;
+
+  /* Le 2 mm supérieur est désormais porté par le header. */
+  padding-top:0!important;
   padding-bottom:var(--cgweb083-gap-2mm)!important;
 }
 
-/* Neutraliser les anciennes marges qui créaient le grand vide. */
 #activityDirectorySection > *{
   margin-top:0!important;
   margin-bottom:0!important;
 }
 
-/* Bandeau "Tri des activités" : visible, compact, sans zone fantôme. */
 #activityDirectorySection > details{
+  order:-100!important;
   margin:0!important;
   padding:0!important;
 }
@@ -4519,7 +4567,9 @@ select {
   display:inline-block!important;
   visibility:visible!important;
   opacity:1!important;
+
   margin:0!important;
+
   font-size:.88rem!important;
   line-height:22px!important;
 }
@@ -4528,79 +4578,44 @@ select {
   display:none!important;
 }
 
-/* Pas de marge parasite autour du header et de la liste. */
-#activityDirectoryHeaderWeb059,
-#activityList,
-#activityLoadActionsWeb059,
-.directory-load-actions-bottom,
-.directory-load-actions-web049{
-  margin-top:0!important;
-  margin-bottom:0!important;
-}
-
 /* ================================================================
-   2. BARRE TITRE RESTAUREE ET ANCREE
+   3. DEPLACEMENTS CUMULES DES TITRES
    ================================================================ */
 
-#activityDirectoryHeaderWeb059{
-  display:grid!important;
-  position:sticky!important;
-  top:var(--web059-sticky-top, 0px)!important;
-  z-index:4200!important;
-
-  min-height:34px!important;
-  height:34px!important;
-  box-sizing:border-box!important;
-
-  padding:5px 12px!important;
-  margin:0!important;
-
-  align-items:center!important;
-  gap:8px!important;
-
-  background:rgba(8,14,10,.985)!important;
-  color:var(--muted,#c7c7a4)!important;
-
-  border-top:1px solid rgba(210,180,95,.22)!important;
-  border-bottom:1px solid rgba(210,180,95,.34)!important;
-  box-shadow:0 2px 5px rgba(0,0,0,.22)!important;
-}
-
 #activityDirectoryHeaderWeb059 > strong{
+  position:relative!important;
+  left:0!important;
+  right:auto!important;
+  margin-left:0!important;
+  margin-right:0!important;
   font-weight:500!important;
   text-align:center!important;
   white-space:nowrap!important;
 }
 
-/*
- * CSS de secours : le JS FIX6 applique les mêmes valeurs inline !important
- * après chaque reconstruction du header.
- */
+/* Date : +2 mm inchangé */
 #activityDirectoryHeaderWeb059 > strong:nth-child(2){
-  transform:translateX(7.559px)!important;   /* Date +2 mm */
-}
-#activityDirectoryHeaderWeb059 > strong:nth-child(6){
-  transform:translateX(-3.780px)!important;  /* Temps -1 mm */
-}
-#activityDirectoryHeaderWeb059 > strong:nth-child(7){
-  transform:translateX(94.488px)!important;  /* Matériel +2,5 cm */
-}
-#activityDirectoryHeaderWeb059 > strong:nth-child(8){
-  transform:translateX(-37.795px)!important; /* Repères -1 cm */
-}
-#activityDirectoryHeaderWeb059 > strong:nth-child(9){
-  transform:translateX(37.795px)!important;  /* Charge +1 cm */
+  transform:translateX(7.559px)!important;
 }
 
-/*
- * WEB059 avait une règle @media qui désactivait le sticky sous 1050 px.
- * FIX6 doit rester prioritaire.
- */
-@media (max-width:1050px){
-  #activityDirectoryHeaderWeb059{
-    position:sticky!important;
-    top:var(--web059-sticky-top, 0px)!important;
-  }
+/* Temps : -4 mm au total */
+#activityDirectoryHeaderWeb059 > strong:nth-child(6){
+  transform:translateX(-15.118px)!important;
+}
+
+/* Matériel : +48 mm au total */
+#activityDirectoryHeaderWeb059 > strong:nth-child(7){
+  transform:translateX(181.417px)!important;
+}
+
+/* Repères : -20 mm au total */
+#activityDirectoryHeaderWeb059 > strong:nth-child(8){
+  transform:translateX(-75.591px)!important;
+}
+
+/* Charge : +12 mm au total */
+#activityDirectoryHeaderWeb059 > strong:nth-child(9){
+  transform:translateX(45.354px)!important;
 }
 </style>
 </head>
@@ -6096,7 +6111,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB083-FIX6-ACTIVITYHEADER002"></script>
+  <script type="module" src="./app.js?v=CGWEB083-FIX7-ACTIVITYHEADER003"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
