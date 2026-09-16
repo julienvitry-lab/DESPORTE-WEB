@@ -734,6 +734,7 @@ function installWeb049UiContract() {
     applyWeb049UiContract();
     syncWeb049StickyOffsets();
   });
+web072ApplyDetailToolbarTweaks();
 
   refresh();
   window.addEventListener("resize", refresh, { passive: true });
@@ -17858,4 +17859,63 @@ function formatRecordValue(record) {
 
 function localeSort(a, b) {
   return String(a).localeCompare(String(b), "fr", { sensitivity: "base" });
+}
+
+
+/* WEB072_DETAIL_NAV_UI001 */
+function web072ApplyDetailToolbarTweaks() {
+  try {
+    const navButtons = Array.from(document.querySelectorAll("button, a"));
+    const prevBtn = navButtons.find((el) => /Activité précédente/i.test((el.textContent || "").trim()));
+    const nextBtn = navButtons.find((el) => /Activité suivante/i.test((el.textContent || "").trim()));
+
+    if (prevBtn && nextBtn) {
+      const toolbar = prevBtn.closest("div");
+      if (toolbar) {
+        toolbar.classList.add("web072-detail-nav-toolbar");
+      }
+    }
+
+    const row = document.getElementById("web061SingleMetricRow");
+    if (row) {
+      const next = row.nextElementSibling;
+      if (next && (
+        next.tagName === "HR" ||
+        /divider|separator|toolbar/i.test(next.className || "")
+      )) {
+        next.classList.add("web072-hide-divider");
+      }
+    }
+
+    const repoBtn = navButtons.find((el) => /^Répertoire$/i.test((el.textContent || "").trim()));
+    const corbeilleBtn = navButtons.find((el) => /^Corbeille$/i.test((el.textContent || "").trim()));
+    if (repoBtn && corbeilleBtn) {
+      const host = repoBtn.closest("div");
+      if (host && !host.querySelector(".web072-manual-add-btn")) {
+        const existingManual = navButtons.find((el) =>
+          /Ajout manuel/i.test((el.textContent || "").trim())
+        );
+
+        const btn = document.createElement(existingManual?.tagName === "A" ? "a" : "button");
+        btn.className = (existingManual?.className || repoBtn.className || "").trim() + " web072-manual-add-btn";
+        btn.type = "button";
+        btn.textContent = "Ajout manuel";
+
+        btn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          const manual = Array.from(document.querySelectorAll("button, a"))
+            .find((el) => /Ajout manuel/i.test((el.textContent || "").trim()) && !el.classList.contains("web072-manual-add-btn"));
+          if (manual) {
+            manual.click();
+            return;
+          }
+          const plus = Array.from(document.querySelectorAll("button, a"))
+            .find((el) => /Ajout manuel/i.test((el.getAttribute("aria-label") || "")));
+          if (plus) plus.click();
+        });
+
+        host.appendChild(btn);
+      }
+    }
+  } catch (_) {}
 }

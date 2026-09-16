@@ -3689,6 +3689,145 @@ select {
   }
 </style>
 
+
+<style id="web072-detail-nav-ui-css">
+  /* WEB072 FIX3 · DETAIL_NAV_UI001 */
+
+  /* A. recentrage des libellés / valeurs dans le détail */
+  #web061SingleMetricRow {
+    position: relative !important;
+    align-items: stretch !important;
+  }
+
+  #web061SingleMetricRow > * {
+    display: flex !important;
+    align-items: stretch !important;
+  }
+
+  #web061SingleMetricRow > * > *,
+  #web061SingleMetricRow .metric-card,
+  #web061SingleMetricRow .stat-card,
+  #web061SingleMetricRow .web061-single-metric-card {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 6px !important;
+    min-height: 88px !important;
+    height: 100% !important;
+    text-align: center !important;
+    box-sizing: border-box !important;
+  }
+
+  #web061SingleMetricRow .label,
+  #web061SingleMetricRow .metric-label,
+  #web061SingleMetricRow .stat-label,
+  #web061SingleMetricRow small,
+  #web061SingleMetricRow .muted {
+    margin: 0 !important;
+    line-height: 1.1 !important;
+    text-align: center !important;
+    transform: none !important;
+  }
+
+  #web061SingleMetricRow .value,
+  #web061SingleMetricRow .metric-value,
+  #web061SingleMetricRow .stat-value,
+  #web061SingleMetricRow strong {
+    margin: 0 !important;
+    line-height: 1.12 !important;
+    text-align: center !important;
+    transform: none !important;
+  }
+
+  /* B. icônes légèrement réduites pour ne plus toucher le bandeau */
+  #activityList .web071-fix1-sport-icon {
+    width: 44px !important;
+    height: 36px !important;
+    min-width: 44px !important;
+    min-height: 36px !important;
+    max-width: 44px !important;
+    max-height: 36px !important;
+  }
+
+  #activityList .web071-fix1-sport-icon img[src*="sport-running"],
+  #activityList .web071-fix1-sport-icon img[alt*="Course"],
+  #activityList .web071-fix1-sport-icon img[alt*="course"] {
+    width: 26px !important;
+    height: 26px !important;
+    max-width: 26px !important;
+    max-height: 26px !important;
+    transform: translateY(0px) !important;
+  }
+
+  #activityList .web071-fix1-sport-icon img[src*="sport-bike"],
+  #activityList .web071-fix1-sport-icon img[alt*="Vélo"],
+  #activityList .web071-fix1-sport-icon img[alt*="velo"],
+  #activityList .web071-fix1-sport-icon img[alt*="Velo"] {
+    width: 32px !important;
+    height: 23px !important;
+    max-width: 32px !important;
+    max-height: 23px !important;
+    transform: translateY(0px) !important;
+  }
+
+  /* B bis. éclair indoor en haut à gauche */
+  .web071-indoor-badge.web071-indoor-lightning {
+    left: -2px !important;
+    right: auto !important;
+    top: -2px !important;
+    bottom: auto !important;
+    font-size: 14px !important;
+  }
+
+  #web061SingleMetricRow .web071-indoor-badge.web071-indoor-lightning {
+    left: 4px !important;
+    right: auto !important;
+    top: 4px !important;
+    font-size: 16px !important;
+  }
+
+  /* C. suppression de la grande barre entre métriques et encart suivant */
+  #web061SingleMetricRow + hr,
+  #web061SingleMetricRow + .divider,
+  #web061SingleMetricRow + .separator,
+  #web061SingleMetricRow + .toolbar-separator,
+  #web061SingleMetricRow + .web-divider,
+  #web061SingleMetricRow::after {
+    display: none !important;
+    content: none !important;
+    border: 0 !important;
+    height: 0 !important;
+  }
+
+  .web072-hide-divider {
+    display: none !important;
+  }
+
+  /* D. bandeau sticky de navigation dans le détail */
+  .web072-detail-nav-toolbar {
+    position: sticky !important;
+    top: 58px !important;
+    z-index: 65 !important;
+    background: rgba(7, 14, 10, 0.96) !important;
+    backdrop-filter: blur(4px) !important;
+  }
+
+  .web072-detail-nav-toolbar + * {
+    scroll-margin-top: 130px !important;
+  }
+
+  /* Bouton Ajout manuel dans le bandeau Activités */
+  .web072-manual-add-btn {
+    margin-left: 8px !important;
+  }
+
+  /* option demandée : masquer d'éventuels boutons secondaires redondants */
+  .web072-secondary-detail-buttons {
+    display: none !important;
+  }
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5132,7 +5271,7 @@ select {
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=WEB071-FIX3-ICON-BALANCE001"></script>
+  <script type="module" src="./app.js?v=WEB072-FIX3-DETAIL-NAV-UI001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
