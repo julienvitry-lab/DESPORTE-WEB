@@ -91,3 +91,44 @@ Pour chaque échec, l'interface affiche :
 - identifiant de l'autre activité en cas de conflit SHA.
 
 Le diagnostic peut être copié directement dans le presse-papiers.
+
+
+## FIX4 · FITRECOVERY_NORMALIZE001
+
+Normalisation non destructive des données historiques avant génération et
+validation des FIT de rattrapage.
+
+### Fréquence cardiaque
+
+Les anciennes valeurs `avg_hr` / `max_hr` nulles, vides ou <= 0 sont traitées
+comme **absentes**, et non comme une vraie fréquence cardiaque.
+
+Conséquence :
+- une FC réellement présente reste strictement contrôlée ;
+- une ancienne valeur `0` ne bloque plus un FIT dont la courbe de points permet
+  au Writer de reconstruire une FC cohérente ;
+- aucune valeur n'est écrite dans le document `activities`.
+
+### Sous-sport
+
+Le sous-sport reste comparé strictement.
+
+Une seule normalisation est autorisée :
+- si le Writer Garmin encode une ancienne valeur non représentable en
+  `sub_sport = 0` (`generic`), ce rabattement est accepté ;
+- toute autre divergence de sous-sport reste une erreur.
+
+Le sport principal, la date, la durée, la distance, le D+, l'intégrité FIT,
+le nombre de sessions/laps/activities et les FC réellement renseignées restent
+contrôlés.
+
+### Traçabilité
+
+Chaque FIT créé par FITBACKFILL001 conserve dans ses métadonnées :
+- `fitrecovery_normalize_version = FITRECOVERY_NORMALIZE001` ;
+- `recovery_normalized_fields` avec les normalisations réellement appliquées.
+
+Le diagnostic FIX3 affiche également ces normalisations.
+
+Aucun FIT déjà existant n'est remplacé et aucun document `activities` n'est
+modifié.

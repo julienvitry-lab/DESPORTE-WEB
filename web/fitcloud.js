@@ -2273,6 +2273,17 @@ function cgweb088DiagLineForRow(row,index) {
           : "OK"
       )
     );
+
+    const normalized=Array.isArray(row.validation.normalized_fields)
+      ? row.validation.normalized_fields
+      : [];
+
+    if (normalized.length) {
+      lines.push(
+        "    normalisé   : "+
+        normalized.join(", ")
+      );
+    }
   }
 
   const d=row?.decoded;
@@ -2541,6 +2552,13 @@ queueMicrotask(cgweb088DiagWire);
 
 /* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_WEB_END */
 
+
+
+/* CGWEB088_FIX4_FITRECOVERY_NORMALIZE001_WEB_START */
+window.SPORT_FIT_RECOVERY_NORMALIZE=Object.freeze({
+  version:"FITRECOVERY_NORMALIZE001"
+});
+/* CGWEB088_FIX4_FITRECOVERY_NORMALIZE001_WEB_END */
 
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));

@@ -903,26 +903,83 @@ function createFitVault() {
     return {ok:!missing.length,missing,startMs,sport,subSport,durationMs,distance};
   }
 
+  /* CGWEB088_FIX4_FITRECOVERY_NORMALIZE001_START */
+
+  function v088MeaningfulHr(value) {
+    if (value==null || value==="") return null;
+    const n=Number(value);
+    return Number.isFinite(n) && n>0 ? n : null;
+  }
+
+  function v088HrNormalizations(activity) {
+    const out=[];
+    for (const [field,value] of [
+      ["avg_hr",activity?.avg_hr],
+      ["max_hr",activity?.max_hr]
+    ]) {
+      if (value==null || value==="") continue;
+      const n=Number(value);
+      if (Number.isFinite(n) && n<=0) {
+        out.push(field+":"+n+"->ABSENT");
+      }
+    }
+    return out;
+  }
+
+  function v088NormalizePrepared(prepared,activity) {
+    const out={
+      ...prepared,
+      payload:{...(prepared?.payload||{})},
+      source:{...(prepared?.source||{})},
+      normalizations:[
+        ...(Array.isArray(prepared?.normalizations)
+          ? prepared.normalizations
+          : []),
+        ...v088HrNormalizations(activity)
+      ]
+    };
+
+    const avg=v088MeaningfulHr(activity?.avg_hr);
+    const max=v088MeaningfulHr(activity?.max_hr);
+
+    out.source.avgHr=avg;
+    out.source.maxHr=max;
+
+    if (avg==null) delete out.payload.avg_hr;
+    else out.payload.avg_hr=avg;
+
+    if (max==null) delete out.payload.max_hr;
+    else out.payload.max_hr=max;
+
+    out.normalizations=[...new Set(out.normalizations)];
+    return out;
+  }
+
+  /* CGWEB088_FIX4_FITRECOVERY_NORMALIZE001_END */
+
   function v088SummaryPayload(activity) {
     const c=v088Core(activity);
     if (!c.ok) throw Object.assign(
       new Error("FITRECOVERY001 : données insuffisantes ("+c.missing.join(", ")+")."),
       {status:422}
     );
-    const avgHr=rtFinite(activity?.avg_hr);
-    const maxHr=rtFinite(activity?.max_hr);
+    const avgHr=v088MeaningfulHr(activity?.avg_hr);
+    const maxHr=v088MeaningfulHr(activity?.max_hr);
     const endHr=rtFirstFinite(maxHr,avgHr);
     const points=[
       {timestamp_ms:c.startMs,distance_m:0,...(avgHr!=null?{heart_rate:avgHr}:{})},
       {timestamp_ms:c.startMs+c.durationMs,distance_m:c.distance,...(endHr!=null?{heart_rate:endHr}:{})}
     ];
+    const payload={
+      start_time_ms:c.startMs,sport:c.sport,sub_sport:c.subSport,
+      duration_s:c.durationMs/1000,total_timer_time_s:c.durationMs/1000,
+      distance_m:c.distance,total_ascent_m:rtFinite(activity?.ascent_m),
+      points
+    };
+    if (avgHr!=null) payload.avg_hr=avgHr;
+    if (maxHr!=null) payload.max_hr=maxHr;
     return {
-      payload:{
-        start_time_ms:c.startMs,sport:c.sport,sub_sport:c.subSport,
-        duration_s:c.durationMs/1000,total_timer_time_s:c.durationMs/1000,
-        distance_m:c.distance,total_ascent_m:rtFinite(activity?.ascent_m),
-        avg_hr:avgHr,max_hr:maxHr,points
-      },
+      payload,
       source:{
         startMs:c.startMs,durationMs:c.durationMs,distance:c.distance,
         ascent:rtFinite(activity?.ascent_m),avgHr,maxHr,
@@ -930,7 +987,8 @@ function createFitVault() {
         sourcePointCount:0,previewPointCount:2,
         routeHasTime:false,routeHasHeartRate:false
       },
-      routeMode:"SUMMARY_ONLY"
+      routeMode:"SUMMARY_ONLY",
+      normalizations:v088HrNormalizations(activity)
     };
   }
 
@@ -938,13 +996,19 @@ function createFitVault() {
     if (route && typeof route==="object") {
       try {
         const full=rtBuildPayload(activity,route);
-        return {...full,routeMode:"ROUTE_PREVIEW"};
+        return v088NormalizePrepared(
+          {...full,routeMode:"ROUTE_PREVIEW"},
+          activity
+        );
       } catch (error) {
         const m=String(error?.message||error||"");
         if (!m.includes("activity_routes") && !m.includes("2 points GPS")) throw error;
       }
     }
-    return v088SummaryPayload(activity);
+    return v088NormalizePrepared(
+      v088SummaryPayload(activity),
+      activity
+    );
   }
 
   function v088Near(a,b,t) {
@@ -961,17 +1025,54 @@ function createFitVault() {
       Number(decoded.activityCount)===1 &&
       Number(decoded.lapCount)>=1
     );
+
+    const normalizations=Array.isArray(prepared?.normalizations)
+      ? [...prepared.normalizations]
+      : [];
+
+    const sourceSub=rtFinite(prepared?.source?.subSport);
+    const fitSub=rtFinite(decoded?.subSport);
+
+    let subSportOk=v088Near(sourceSub,fitSub,0);
+
+    /*
+     * FIT SDK : si une ancienne valeur sub_sport n'est pas représentable
+     * pour le sport concerné, l'encodage canonique retombe sur 0 = generic.
+     * Le sport principal reste obligatoire et strictement contrôlé.
+     *
+     * On accepte UNIQUEMENT ce rabattement vers generic.
+     * Toute autre divergence de sous-sport continue de bloquer le FIT.
+     */
+    if (
+      !subSportOk &&
+      fitSub===0 &&
+      sourceSub!=null &&
+      sourceSub!==0
+    ) {
+      subSportOk=true;
+      normalizations.push(
+        "sub_sport:"+sourceSub+"->0(FIT_GENERIC)"
+      );
+    }
+
     const metrics={
       start:v088Near(prepared.source.startMs,decoded.startMs,1000),
       sport:v088Near(prepared.source.sport,decoded.sport,0),
-      sub_sport:v088Near(prepared.source.subSport,decoded.subSport,0),
+      sub_sport:subSportOk,
       duration:v088Near(prepared.source.durationMs/1000,decoded.timerSeconds,0.1),
       distance:v088Near(prepared.source.distance,decoded.totalDistance,1),
       ascent:v088Near(prepared.source.ascent,decoded.totalAscent,2),
       avg_hr:v088Near(prepared.source.avgHr,decoded.avgHeartRate,1),
       max_hr:v088Near(prepared.source.maxHr,decoded.maxHeartRate,1)
     };
-    return {ok:structure&&Object.values(metrics).every(Boolean),structure_ok:structure,metrics};
+
+    return {
+      ok:structure&&Object.values(metrics).every(Boolean),
+      structure_ok:structure,
+      metrics,
+      normalization_version:"FITRECOVERY_NORMALIZE001",
+      normalized_fields:[...new Set(normalizations)]
+    };
   }
 
   async function v088LinkedIds(uid) {
@@ -1083,6 +1184,10 @@ function createFitVault() {
       fit_signature_serial:Number(generated.stats.serialNumber||0)||null,
       fit_signature_seed_source:generated.stats.fitSignatureSeedSource||null,
       fitrecovery_version:"FITRECOVERY001",fitbackfill_version:"FITBACKFILL001",
+      fitrecovery_normalize_version:"FITRECOVERY_NORMALIZE001",
+      recovery_normalized_fields:Array.isArray(checked.normalized_fields)
+        ? checked.normalized_fields
+        : [],
       recovery_route_mode:prepared.routeMode,recovery_is_canonical:true,
       lossless_source_reconstruction:false,parent_sha256:prior.parent_sha256||null,
       version_index:Number(prior.version_index||1),
