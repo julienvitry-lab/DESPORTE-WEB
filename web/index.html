@@ -5212,6 +5212,65 @@ body.ux-activities-page main{
 /* CGWEB088_FITRECOVERY001_CSS_END */
 </style>
 
+
+<style id="cgweb088-fix2-auto-css">
+/* CGWEB088_FIX2_FITBACKFILL_AUTO001_CSS_START */
+#cgweb088AutoPanel{
+  margin:10px 0 14px;
+  padding:12px;
+  border:1px solid rgba(190,255,55,.18);
+  border-radius:14px;
+  background:rgba(255,255,255,.02)
+}
+#cgweb088AutoPanel .cgweb088-auto-actions{
+  display:grid;
+  grid-template-columns:minmax(220px,1fr) minmax(220px,1fr);
+  gap:10px
+}
+#cgweb088AutoPanel .cgweb088-auto-progress-wrap{
+  display:grid;
+  gap:7px;
+  margin-top:12px
+}
+#cgweb088AutoPanel .cgweb088-auto-progress-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px
+}
+#cgweb088AutoPanel .cgweb088-auto-progress{
+  position:relative;
+  width:100%;
+  height:14px;
+  overflow:hidden;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.08)
+}
+#cgweb088AutoPanel .cgweb088-auto-progress-bar{
+  width:0%;
+  height:100%;
+  border-radius:inherit;
+  background:currentColor;
+  transition:width .25s ease
+}
+#cgweb088AutoPanel[data-state="running"] .cgweb088-auto-progress-bar{
+  opacity:.95
+}
+#cgweb088AutoPanel[data-state="error"]{
+  border-color:rgba(255,90,90,.45)
+}
+#cgweb088AutoPanel[data-state="done"]{
+  border-color:rgba(190,255,55,.42)
+}
+@media(max-width:760px){
+  #cgweb088AutoPanel .cgweb088-auto-actions{
+    grid-template-columns:1fr
+  }
+}
+/* CGWEB088_FIX2_FITBACKFILL_AUTO001_CSS_END */
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5684,6 +5743,40 @@ body.ux-activities-page main{
     </label>
     <button id="cgweb088Run" type="button" disabled>Générer le prochain lot</button>
   </div>
+
+<!-- CGWEB088_FIX2_FITBACKFILL_AUTO001_HTML_START -->
+<div id="cgweb088AutoPanel" class="cgweb088-auto-panel">
+  <div class="cgweb088-auto-actions">
+    <button id="cgweb088AutoStart" type="button">
+      Tout rattraper automatiquement
+    </button>
+    <button id="cgweb088AutoStop" type="button" disabled>
+      Arrêter après le lot en cours
+    </button>
+  </div>
+
+  <div class="cgweb088-auto-progress-wrap" aria-live="polite">
+    <div class="cgweb088-auto-progress-head">
+      <strong id="cgweb088AutoProgressText">Automatique non lancé</strong>
+      <span id="cgweb088AutoPercent">0 %</span>
+    </div>
+    <div
+      id="cgweb088AutoProgress"
+      class="cgweb088-auto-progress"
+      role="progressbar"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+    >
+      <div id="cgweb088AutoProgressBar" class="cgweb088-auto-progress-bar"></div>
+    </div>
+    <div id="cgweb088AutoDetail" class="muted">
+      Traitement séquentiel sécurisé par lots de 50. Relançable après interruption.
+    </div>
+  </div>
+</div>
+<!-- CGWEB088_FIX2_FITBACKFILL_AUTO001_HTML_END -->
+
   <div id="cgweb088Status" class="muted">Dry-run obligatoire avant toute génération.</div>
   <div id="cgweb088Summary" class="cgweb088-summary"></div>
   <pre id="cgweb088Results" class="cgweb088-results"></pre>
@@ -6910,6 +7003,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB088-FITRECOVERY001-FITBACKFILL001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB088-FIX2-FITBACKFILL-AUTO001"></script>
 </body>
 </html>

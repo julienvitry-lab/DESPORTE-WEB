@@ -1823,6 +1823,379 @@ queueMicrotask(cgweb088Wire);
 /* CGWEB088_FITRECOVERY001_WEB_END */
 
 
+
+/* CGWEB088_FIX2_FITBACKFILL_AUTO001_WEB_START */
+
+let cgweb088AutoRunning = false;
+let cgweb088AutoStopRequested = false;
+let cgweb088AutoWakeLock = null;
+
+function cgweb088AutoSetProgress(done, total, label, detail, state="running") {
+  const panel = cgweb088Node("cgweb088AutoPanel");
+  const bar = cgweb088Node("cgweb088AutoProgressBar");
+  const text = cgweb088Node("cgweb088AutoProgressText");
+  const pctNode = cgweb088Node("cgweb088AutoPercent");
+  const detailNode = cgweb088Node("cgweb088AutoDetail");
+  const progress = cgweb088Node("cgweb088AutoProgress");
+
+  const safeTotal = Math.max(0, Number(total || 0));
+  const safeDone = Math.max(0, Math.min(safeTotal || Number(done || 0), Number(done || 0)));
+  const pct = safeTotal > 0
+    ? Math.max(0, Math.min(100, Math.round((safeDone / safeTotal) * 100)))
+    : (state === "done" ? 100 : 0);
+
+  if (panel) panel.dataset.state = state;
+  if (bar) bar.style.width = pct + "%";
+  if (text) text.textContent = label || "";
+  if (pctNode) pctNode.textContent = pct + " %";
+  if (detailNode) detailNode.textContent = detail || "";
+  if (progress) {
+    progress.setAttribute("aria-valuenow", String(pct));
+    progress.setAttribute("aria-valuetext", label || (pct + " %"));
+  }
+}
+
+function cgweb088AutoButtons(running) {
+  const start = cgweb088Node("cgweb088AutoStart");
+  const stop = cgweb088Node("cgweb088AutoStop");
+  const plan = cgweb088Node("cgweb088Plan");
+  const run = cgweb088Node("cgweb088Run");
+  const size = cgweb088Node("cgweb088BatchSize");
+
+  if (start) start.disabled = running;
+  if (stop) stop.disabled = !running;
+  if (plan) plan.disabled = running;
+  if (run) run.disabled = running;
+  if (size) size.disabled = running;
+}
+
+async function cgweb088AutoAcquireWakeLock() {
+  try {
+    if ("wakeLock" in navigator && document.visibilityState === "visible") {
+      cgweb088AutoWakeLock = await navigator.wakeLock.request("screen");
+    }
+  } catch (error) {
+    console.warn("FITBACKFILL_AUTO001 wake lock", error);
+  }
+}
+
+async function cgweb088AutoReleaseWakeLock() {
+  try {
+    if (cgweb088AutoWakeLock) {
+      await cgweb088AutoWakeLock.release();
+    }
+  } catch (error) {
+    console.warn("FITBACKFILL_AUTO001 wake release", error);
+  } finally {
+    cgweb088AutoWakeLock = null;
+  }
+}
+
+function cgweb088AutoAppendLog(lines, line) {
+  lines.push(line);
+  if (lines.length > 45) {
+    lines.splice(0, lines.length - 45);
+  }
+
+  const out = cgweb088Node("cgweb088Results");
+  if (out) {
+    out.textContent = [
+      "FITBACKFILL_AUTO001 · journal des derniers lots",
+      "",
+      ...lines
+    ].join("\n");
+    out.scrollTop = out.scrollHeight;
+  }
+}
+
+async function cgweb088AutoRefreshPlan() {
+  const plan = await request("recovery_plan", {query:{limit:50}});
+  if (!plan?.ok) {
+    throw new Error(plan?.error || "Analyse FITBACKFILL impossible.");
+  }
+  cgweb088Render(plan);
+  return plan;
+}
+
+async function cgweb088AutoStart() {
+  if (cgweb088AutoRunning || cgweb088Busy) return;
+
+  let plan = await cgweb088AutoRefreshPlan();
+  const initialRemaining = Number(plan?.summary?.reconstructible || 0);
+
+  if (initialRemaining <= 0) {
+    cgweb088AutoSetProgress(
+      0,
+      0,
+      "Rattrapage terminé",
+      "Aucun FIT reconstructible restant.",
+      "done"
+    );
+    return;
+  }
+
+  const estimatedLots = Math.ceil(initialRemaining / 50);
+
+  if (!confirm(
+    "Rattraper automatiquement " +
+    initialRemaining +
+    " FIT canoniques ?\n\n" +
+    "Traitement séquentiel par lots de 50 (" +
+    estimatedLots +
+    " lot(s) maximum).\n\n" +
+    "0 activité modifiée.\n" +
+    "Aucun FIT existant remplacé.\n" +
+    "Arrêt automatique à la première erreur."
+  )) return;
+
+  cgweb088AutoRunning = true;
+  cgweb088AutoStopRequested = false;
+  cgweb088AutoButtons(true);
+  await cgweb088AutoAcquireWakeLock();
+
+  const log = [];
+  let totalStored = 0;
+  let lot = 0;
+  let previousRemaining = initialRemaining;
+
+  cgweb088AutoSetProgress(
+    0,
+    initialRemaining,
+    "Démarrage du rattrapage automatique…",
+    initialRemaining + " FIT à générer · lots de 50",
+    "running"
+  );
+
+  try {
+    while (true) {
+      if (cgweb088AutoStopRequested) {
+        cgweb088AutoSetProgress(
+          totalStored,
+          initialRemaining,
+          "Arrêt demandé",
+          "Aucun nouveau lot ne sera lancé.",
+          "stopped"
+        );
+        break;
+      }
+
+      const remaining = Number(plan?.summary?.reconstructible || 0);
+
+      if (remaining <= 0) {
+        cgweb088AutoSetProgress(
+          initialRemaining,
+          initialRemaining,
+          "Rattrapage terminé",
+          totalStored + " FIT généré(s) pendant cette session.",
+          "done"
+        );
+        break;
+      }
+
+      lot += 1;
+      const batchSize = Math.min(50, remaining);
+
+      cgweb088AutoSetProgress(
+        totalStored,
+        initialRemaining,
+        "Lot " + lot + " en cours…",
+        batchSize + " FIT · " + remaining + " restant(s) avant ce lot",
+        "running"
+      );
+
+      const x = await request("recovery_batch", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({batch_size: batchSize})
+      });
+
+      const selected = Number(x?.selected || 0);
+      const stored = Number(x?.stored || 0);
+      const already = Number(x?.already_present || 0);
+      const failed = Number(x?.failed || 0);
+
+      if (!x?.ok || failed > 0) {
+        const firstError = (x?.results || []).find(row => !row?.ok);
+        throw new Error(
+          "Lot " + lot + " : " +
+          failed + " erreur(s)" +
+          (firstError?.activity_id ? " · activité #" + firstError.activity_id : "") +
+          (firstError?.error ? " · " + firstError.error : "")
+        );
+      }
+
+      totalStored += stored;
+
+      cgweb088AutoAppendLog(
+        log,
+        "✓ Lot " + lot +
+        " · sélectionnés " + selected +
+        " · stockés " + stored +
+        (already ? " · déjà présents " + already : "")
+      );
+
+      plan = await cgweb088AutoRefreshPlan();
+
+      const nextRemaining = Number(plan?.summary?.reconstructible || 0);
+      const progressed = previousRemaining - nextRemaining;
+
+      if (nextRemaining > 0 && progressed <= 0) {
+        throw new Error(
+          "Protection anti-boucle : aucun progrès après le lot " + lot + "."
+        );
+      }
+
+      previousRemaining = nextRemaining;
+
+      const effectiveDone =
+        Math.max(
+          totalStored,
+          initialRemaining - nextRemaining
+        );
+
+      cgweb088AutoSetProgress(
+        effectiveDone,
+        initialRemaining,
+        nextRemaining > 0
+          ? "Lot " + lot + " terminé"
+          : "Rattrapage terminé",
+        nextRemaining > 0
+          ? nextRemaining + " FIT restant(s)"
+          : totalStored + " FIT généré(s) pendant cette session.",
+        nextRemaining > 0 ? "running" : "done"
+      );
+
+      if (nextRemaining <= 0) {
+        break;
+      }
+
+      if (cgweb088AutoStopRequested) {
+        cgweb088AutoSetProgress(
+          effectiveDone,
+          initialRemaining,
+          "Rattrapage arrêté proprement",
+          nextRemaining + " FIT restant(s). Tu peux reprendre plus tard.",
+          "stopped"
+        );
+        break;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
+  } catch (error) {
+    console.error("FITBACKFILL_AUTO001", error);
+
+    cgweb088AutoSetProgress(
+      Math.max(totalStored, initialRemaining - previousRemaining),
+      initialRemaining,
+      "Rattrapage interrompu sur erreur",
+      error?.message || String(error),
+      "error"
+    );
+
+    cgweb088AutoAppendLog(
+      log,
+      "✗ ARRÊT · " + (error?.message || String(error))
+    );
+
+    const st = cgweb088Node("cgweb088Status");
+    if (st) {
+      st.textContent =
+        "Automatique interrompu : " +
+        (error?.message || String(error));
+    }
+  } finally {
+    cgweb088AutoRunning = false;
+    cgweb088AutoStopRequested = false;
+    cgweb088AutoButtons(false);
+    await cgweb088AutoReleaseWakeLock();
+
+    try {
+      plan = await cgweb088AutoRefreshPlan();
+    } catch (error) {
+      console.warn("FITBACKFILL_AUTO001 final plan", error);
+    }
+
+    const start = cgweb088Node("cgweb088AutoStart");
+    const remaining = Number(plan?.summary?.reconstructible || 0);
+    if (start) {
+      start.textContent =
+        remaining > 0
+          ? "Reprendre tout le rattrapage"
+          : "Rattrapage terminé";
+      start.disabled = remaining <= 0;
+    }
+
+    const run = cgweb088Node("cgweb088Run");
+    if (run) {
+      run.disabled = remaining <= 0;
+    }
+  }
+}
+
+function cgweb088AutoStop() {
+  if (!cgweb088AutoRunning) return;
+
+  cgweb088AutoStopRequested = true;
+
+  const stop = cgweb088Node("cgweb088AutoStop");
+  if (stop) stop.disabled = true;
+
+  const detail = cgweb088Node("cgweb088AutoDetail");
+  if (detail) {
+    detail.textContent =
+      "Arrêt demandé : le lot actuellement en cours se termine, puis le traitement s'arrête.";
+  }
+}
+
+function cgweb088AutoWire() {
+  const start = cgweb088Node("cgweb088AutoStart");
+  const stop = cgweb088Node("cgweb088AutoStop");
+
+  if (start && start.dataset.w088fix2 !== "1") {
+    start.dataset.w088fix2 = "1";
+    start.addEventListener("click", () => {
+      void cgweb088AutoStart().catch(error => {
+        console.error("FITBACKFILL_AUTO001 start", error);
+        cgweb088AutoSetProgress(
+          0,
+          0,
+          "Démarrage impossible",
+          error?.message || String(error),
+          "error"
+        );
+      });
+    });
+  }
+
+  if (stop && stop.dataset.w088fix2 !== "1") {
+    stop.dataset.w088fix2 = "1";
+    stop.addEventListener("click", cgweb088AutoStop);
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (
+      cgweb088AutoRunning &&
+      document.visibilityState === "visible" &&
+      !cgweb088AutoWakeLock
+    ) {
+      void cgweb088AutoAcquireWakeLock();
+    }
+  });
+}
+
+window.SPORT_FIT_BACKFILL_AUTO = Object.freeze({
+  version: "FITBACKFILL_AUTO001",
+  start: cgweb088AutoStart,
+  stop: cgweb088AutoStop,
+  running: () => cgweb088AutoRunning
+});
+
+queueMicrotask(cgweb088AutoWire);
+
+/* CGWEB088_FIX2_FITBACKFILL_AUTO001_WEB_END */
+
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
