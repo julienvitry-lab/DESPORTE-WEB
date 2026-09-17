@@ -16563,8 +16563,211 @@ function setInteropStatus(text, state = "ok") {
     "pill ok";
 }
 
+
+/* CGWEB086_AUTOEQUIP_PERMANENCE001_START
+ *
+ * INVARIANT :
+ * - uniquement à la CREATION d'une nouvelle activité Web ;
+ * - aucune réaffectation silencieuse de l'historique ;
+ * - choix manuel / matériel déjà fourni = souverain ;
+ * - resolver unique existant = WEBEQUIPMAP005 puis règles exactes/générales ;
+ * - le même patch part dans le document Firestore ET dans /changes ;
+ * - fonctionne avant mise en file hors-ligne ;
+ * - cache local des mappings par UID comme filet de sécurité.
+ */
+const CGWEB086_AUTOEQUIP_VERSION =
+  "CGWEB086-AUTOEQUIP_PERMANENCE001";
+
+let cgweb086MappingsLoadedForUid = "";
+
+function cgweb086MappingCacheKey() {
+  const uid = String(currentUser?.uid || "").trim();
+  return uid ? "SPORT_CGWEB086_EQUIPMENT_MAPPINGS_" + uid : "";
+}
+
+function cgweb086RememberMappings() {
+  const key = cgweb086MappingCacheKey();
+  if (!key || !Array.isArray(equipmentMappingRows)) return;
+
+  try {
+    const clean = equipmentMappingRows.map((row) => {
+      const copy = {...row};
+      return copy;
+    });
+    localStorage.setItem(key, JSON.stringify(clean));
+  } catch (error) {
+    console.warn("CGWEB086 cache mappings", error);
+  }
+}
+
+function cgweb086RestoreMappingsFromCache() {
+  const key = cgweb086MappingCacheKey();
+  if (!key) return false;
+
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : null;
+
+    if (!Array.isArray(parsed)) return false;
+
+    equipmentMappingRows = parsed.filter(
+      (row) => row && typeof row === "object"
+    );
+
+    return true;
+  } catch (error) {
+    console.warn("CGWEB086 restore mappings", error);
+    return false;
+  }
+}
+
+async function cgweb086EnsureEquipmentMappingsLoaded() {
+  const uid = String(currentUser?.uid || "").trim();
+  if (!uid) return;
+
+  if (
+    cgweb086MappingsLoadedForUid === uid &&
+    Array.isArray(equipmentMappingRows)
+  ) {
+    cgweb086RememberMappings();
+    return;
+  }
+
+  if (navigator.onLine) {
+    try {
+      const snap = await getDocs(userCollection("equipment_mappings"));
+      const rows = [];
+
+      snap.forEach((item) => {
+        rows.push({
+          __docId: item.id,
+          ...item.data()
+        });
+      });
+
+      equipmentMappingRows = rows;
+      cgweb086MappingsLoadedForUid = uid;
+      cgweb086RememberMappings();
+      return;
+    } catch (error) {
+      console.warn(
+        "CGWEB086 lecture equipment_mappings : repli cache",
+        error
+      );
+    }
+  }
+
+  if (
+    (!Array.isArray(equipmentMappingRows) ||
+      equipmentMappingRows.length === 0)
+  ) {
+    cgweb086RestoreMappingsFromCache();
+  }
+
+  cgweb086MappingsLoadedForUid = uid;
+  cgweb086RememberMappings();
+}
+
+function cgweb086IsNewActivityMutation(args) {
+  if (!args || typeof args !== "object") return false;
+
+  if (String(args.table || "").toLowerCase() !== "activities") {
+    return false;
+  }
+
+  if (String(args.operation || "UPSERT").toUpperCase() !== "UPSERT") {
+    return false;
+  }
+
+  /*
+   * Le compteur activityCount est le contrat de CREATION déjà utilisé
+   * par Strava Web, import FIT, ajout manuel et découpes.
+   * Une édition/restauration historique ne porte pas cet incrément.
+   */
+  return Number(args?.metaIncrements?.activityCount || 0) > 0;
+}
+
+async function cgweb086PrepareNewActivityEquipment(args) {
+  if (!cgweb086IsNewActivityMutation(args)) return args;
+
+  const row =
+    args.row && typeof args.row === "object"
+      ? args.row
+      : null;
+
+  const materialized =
+    args.materializedData &&
+    typeof args.materializedData === "object"
+      ? args.materializedData
+      : null;
+
+  const candidate = {
+    ...(materialized || {}),
+    ...(row || {})
+  };
+
+  if (!candidate || candidate.deleted_at_ms != null) return args;
+
+  if (Number(candidate.equipment_manual) === 1) {
+    return args;
+  }
+
+  if (String(candidate.equipment_name || "").trim()) {
+    return args;
+  }
+
+  await cgweb086EnsureEquipmentMappingsLoaded();
+
+  if (typeof resolveAutomaticEquipmentMapping !== "function") {
+    throw new Error(
+      "AUTOEQUIP_PERMANENCE001 : resolver matériel absent."
+    );
+  }
+
+  const rule = resolveAutomaticEquipmentMapping(candidate);
+  const equipmentName =
+    String(rule?.equipment_name || "").trim();
+
+  if (!rule || rule.enabled === false || !equipmentName) {
+    return args;
+  }
+
+  const mappingId =
+    String(
+      rule?.__docId ||
+      rule?.profile_key ||
+      ""
+    ).trim() || null;
+
+  const patch = {
+    equipment_name: equipmentName,
+    equipment_manual: 0,
+    equipment_mapping_id: mappingId,
+    equipment_assignment_source: "CGWEB086_AUTOEQUIP",
+    equipment_assignment_version: CGWEB086_AUTOEQUIP_VERSION
+  };
+
+  if (row) Object.assign(row, patch);
+  if (materialized) Object.assign(materialized, patch);
+
+  console.info(
+    "CGWEB086 AUTOEQUIP",
+    String(args.rowKey || candidate.id || ""),
+    "→",
+    equipmentName,
+    mappingId || ""
+  );
+
+  return args;
+}
+/* CGWEB086_AUTOEQUIP_PERMANENCE001_END */
+
+
 async function commitWebMutation(args) {
   if (!currentUser) throw new Error("Connexion Firebase absente.");
+
+  /* CGWEB086_AUTOEQUIP_CREATION_HOOK */
+  args = await cgweb086PrepareNewActivityEquipment(args);
 
   const payload = normalizePendingMutation(args);
 

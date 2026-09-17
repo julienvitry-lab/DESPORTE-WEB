@@ -1,0 +1,33 @@
+name: CGWEB086 AutoEquip permanence
+
+on:
+  push:
+    paths:
+      - "web/app.js"
+      - "web/index.html"
+      - "scripts/verify-autoequip-permanence.mjs"
+      - ".github/workflows/cgweb086-autoequip-permanence.yml"
+  pull_request:
+    paths:
+      - "web/app.js"
+      - "web/index.html"
+      - "scripts/verify-autoequip-permanence.mjs"
+      - ".github/workflows/cgweb086-autoequip-permanence.yml"
+
+jobs:
+  verify-autoequip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntaxe app.js
+        run: node --check web/app.js
+
+      - name: Contrat AUTOEQUIP
+        run: node scripts/verify-autoequip-permanence.mjs
