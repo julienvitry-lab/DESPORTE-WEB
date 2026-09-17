@@ -1,0 +1,26 @@
+name: CGWEB087 FITAUDIT low memory
+
+on:
+  push:
+    paths:
+      - "functions/fitvault.js"
+      - "web/fitcloud.js"
+      - "scripts/verify-fitaudit-lowmem.mjs"
+      - ".github/workflows/cgweb087-fitaudit-lowmem.yml"
+  pull_request:
+    paths:
+      - "functions/fitvault.js"
+      - "web/fitcloud.js"
+      - "scripts/verify-fitaudit-lowmem.mjs"
+      - ".github/workflows/cgweb087-fitaudit-lowmem.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --check functions/fitvault.js
+      - run: node scripts/verify-fitaudit-lowmem.mjs

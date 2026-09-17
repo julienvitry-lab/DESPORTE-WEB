@@ -1426,7 +1426,13 @@ function cgweb087RowsTable(rows) {
       "<td>" + cgweb087Escape(cgweb087DateTime(row.start_time_ms)) + "</td>" +
       "<td>" + cgweb087Escape(cgweb087SportLabel(row)) + "</td>" +
       "<td>" + cgweb087Escape(row.source || "—") + "</td>" +
-      "<td>" + (row.route_present ? "Oui" : "Non") + "</td>" +
+      "<td>" +
+      (
+        row.route_checked === false
+          ? "Non audité"
+          : (row.route_present ? "Oui" : "Non")
+      ) +
+      "</td>" +
       "<td>" + cgweb087StatusHtml(row) + "</td>" +
       '<td class="cgweb087-id">' +
       cgweb087Escape(row.activity_id || "") +

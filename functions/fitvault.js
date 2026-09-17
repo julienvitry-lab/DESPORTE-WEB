@@ -1710,6 +1710,7 @@ function createFitVault() {
 
 
 
+
         /* CGWEB087_FITAUDIT001_BACKEND_START */
         if (action === "audit") {
           if (req.method !== "GET") {
@@ -1735,62 +1736,155 @@ function createFitVault() {
             )
           );
 
-          const [
-            activitySnap,
-            fitSnap,
-            routeSnap
-          ] = await Promise.all([
-            db.collection(`${ROOT}/${uid}/activities`).get(),
-            files(uid).get(),
-            db.collection(`${ROOT}/${uid}/activity_routes`).get()
-          ]);
+          /*
+           * CGWEB087 FIX2 · LOWMEM_AUDIT001
+           * Les logs ont confirmé un crash V8 heap out of memory.
+           * Ici :
+           * - aucun QuerySnapshot global ;
+           * - activities et activity_files sont lus via .stream() ;
+           * - aucun activity_routes n'est lu ;
+           * - seuls des objets compacts sont conservés.
+           */
 
-          const activities = activitySnap.docs
-            .map((docSnap) => ({
-              __docId: docSnap.id,
-              ...(docSnap.data() || {})
-            }))
-            .filter((row) => row.deleted_at_ms == null);
+          const activityQuery =
+            db.collection(`${ROOT}/${uid}/activities`)
+              .select(
+                "start_time_ms",
+                "sport",
+                "sub_sport",
+                "custom_title",
+                "name",
+                "title",
+                "import_source",
+                "source",
+                "import_profile",
+                "strava_source",
+                "created_source",
+                "web_source",
+                "origin",
+                "strava_id",
+                "strava_activity_id",
+                "deleted_at_ms"
+              );
 
-          const fitRows = fitSnap.docs
-            .map((docSnap) => ({
-              __docId: docSnap.id,
-              ...(docSnap.data() || {})
-            }))
-            .filter((row) => row.deleted_at_ms == null);
+          const fitQuery =
+            files(uid)
+              .select(
+                "activity_id",
+                "version_index",
+                "parent_sha256",
+                "is_active_version",
+                "start_time_ms",
+                "sport",
+                "sub_sport",
+                "sha256",
+                "file_name",
+                "link_status",
+                "source",
+                "upload_mode",
+                "deleted_at_ms"
+              );
 
-          const routeIds = new Set(
-            routeSnap.docs
-              .filter((docSnap) => {
-                const row = docSnap.data() || {};
-                return row.deleted_at_ms == null;
-              })
-              .map((docSnap) => String(docSnap.id))
-          );
+          const activities = [];
+          const activityIds = new Set();
 
-          const activityIds = new Set(
-            activities.map((row) => String(row.__docId))
-          );
+          for await (const docSnap of activityQuery.stream()) {
+            const row = docSnap.data() || {};
+            if (row.deleted_at_ms != null) continue;
+
+            const compact = {
+              __docId: String(docSnap.id),
+              start_time_ms: Number(row.start_time_ms || 0),
+              sport: Number(row.sport) || 0,
+              sub_sport: Number(row.sub_sport) || 0,
+              custom_title: String(row.custom_title || ""),
+              name: String(row.name || ""),
+              title: String(row.title || ""),
+              import_source: String(row.import_source || ""),
+              source: String(row.source || ""),
+              import_profile: String(row.import_profile || ""),
+              strava_source: String(row.strava_source || ""),
+              created_source: String(row.created_source || ""),
+              web_source: String(row.web_source || ""),
+              origin: String(row.origin || ""),
+              strava_id: row.strava_id ?? null,
+              strava_activity_id: row.strava_activity_id ?? null
+            };
+
+            activities.push(compact);
+            activityIds.add(compact.__docId);
+          }
 
           const linkedByActivity = new Map();
           const orphanFits = [];
+
+          let fitFilesActive = 0;
           let fitRootCount = 0;
           let fitActiveVersionCount = 0;
           let fitUnlinkedCount = 0;
           let fitDanglingCount = 0;
 
-          for (const row of fitRows) {
-            const activityId =
-              String(row.activity_id || "").trim();
+          function compactFit(docSnap, row) {
+            return {
+              __docId: String(docSnap.id),
+              activity_id: String(row.activity_id || "").trim(),
+              version_index: Number(row.version_index || 1),
+              parent_sha256: String(row.parent_sha256 || "").trim(),
+              is_active_version: row.is_active_version === true,
+              start_time_ms: Number(row.start_time_ms || 0),
+              sport: Number(row.sport) || 0,
+              sub_sport: Number(row.sub_sport) || 0,
+              sha256: String(row.sha256 || docSnap.id || ""),
+              file_name: String(row.file_name || ""),
+              link_status: String(row.link_status || ""),
+              source: String(row.source || row.upload_mode || "")
+            };
+          }
 
-            const versionIndex =
-              Number(row.version_index || 1);
-            const parent =
-              String(row.parent_sha256 || "").trim();
+          function rank(row) {
+            const version = Number(row?.version_index || 1);
+            const parent = String(row?.parent_sha256 || "").trim();
+
+            return {
+              active: row?.is_active_version === true ? 0 : 1,
+              root:
+                !parent &&
+                (!Number.isFinite(version) || version <= 1)
+                  ? 0
+                  : 1,
+              version: Number.isFinite(version) ? version : 999999
+            };
+          }
+
+          function better(candidate, current) {
+            if (!current) return true;
+            const a = rank(candidate);
+            const b = rank(current);
+
+            return (
+              a.active < b.active ||
+              (a.active === b.active && a.root < b.root) ||
+              (
+                a.active === b.active &&
+                a.root === b.root &&
+                a.version < b.version
+              )
+            );
+          }
+
+          for await (const docSnap of fitQuery.stream()) {
+            const raw = docSnap.data() || {};
+            if (raw.deleted_at_ms != null) continue;
+
+            fitFilesActive += 1;
+            const row = compactFit(docSnap, raw);
+
+            const version = Number(row.version_index || 1);
+            const parent = String(row.parent_sha256 || "").trim();
 
             if (
               !parent &&
-              (!Number.isFinite(versionIndex) || versionIndex <= 1)
+              (!Number.isFinite(version) || version <= 1)
             ) {
               fitRootCount += 1;
             }
@@ -1799,11 +1893,20 @@ function createFitVault() {
               fitActiveVersionCount += 1;
             }
 
+            const activityId = String(row.activity_id || "").trim();
+
             if (activityId && activityIds.has(activityId)) {
-              const bucket =
-                linkedByActivity.get(activityId) || [];
-              bucket.push(row);
-              linkedByActivity.set(activityId, bucket);
+              const state =
+                linkedByActivity.get(activityId) || {
+                  count: 0,
+                  preferred: null
+                };
+
+              state.count += 1;
+              if (better(row, state.preferred)) {
+                state.preferred = row;
+              }
+              linkedByActivity.set(activityId, state);
             } else {
               if (!activityId) fitUnlinkedCount += 1;
               else fitDanglingCount += 1;
@@ -1813,21 +1916,22 @@ function createFitVault() {
 
           const orphanBuckets = new Map();
 
-          function minuteBucket(startMs) {
-            const n = Number(startMs || 0);
-            if (!Number.isFinite(n) || n <= 0) return null;
-            return Math.floor(n / 60000);
+          function bucketMinute(ms) {
+            const n = Number(ms || 0);
+            return Number.isFinite(n) && n > 0
+              ? Math.floor(n / 60000)
+              : null;
           }
 
-          function orphanBucketKey(sport, minute) {
+          function bucketKey(sport, minute) {
             return String(Number(sport) || 0) + "|" + String(minute);
           }
 
           for (const row of orphanFits) {
-            const minute = minuteBucket(row.start_time_ms);
+            const minute = bucketMinute(row.start_time_ms);
             if (minute == null) continue;
 
-            const key = orphanBucketKey(row.sport, minute);
+            const key = bucketKey(row.sport, minute);
             const bucket = orphanBuckets.get(key) || [];
             bucket.push(row);
             orphanBuckets.set(key, bucket);
@@ -1841,13 +1945,15 @@ function createFitVault() {
             const center = Math.floor(start / 60000);
             let best = null;
 
-            for (let minute = center - 3; minute <= center + 3; minute += 1) {
-              const keys = [
-                orphanBucketKey(sport, minute),
-                orphanBucketKey(0, minute)
-              ];
-
-              for (const key of keys) {
+            for (
+              let minute = center - 3;
+              minute <= center + 3;
+              minute += 1
+            ) {
+              for (const key of [
+                bucketKey(sport, minute),
+                bucketKey(0, minute)
+              ]) {
                 const rows = orphanBuckets.get(key) || [];
 
                 for (const row of rows) {
@@ -1877,7 +1983,7 @@ function createFitVault() {
                       sport: fitSport,
                       sub_sport: Number(row.sub_sport) || 0,
                       link_status: String(row.link_status || ""),
-                      source: String(row.source || row.upload_mode || ""),
+                      source: String(row.source || ""),
                       delta_ms: deltaMs
                     };
                   }
@@ -1899,9 +2005,10 @@ function createFitVault() {
               activity.origin
             ];
 
-            const found = fields
-              .map((value) => String(value || "").trim())
-              .find(Boolean);
+            const found =
+              fields
+                .map((value) => String(value || "").trim())
+                .find(Boolean);
 
             if (found) return found;
 
@@ -1937,11 +2044,13 @@ function createFitVault() {
 
           for (const activity of activities) {
             const id = String(activity.__docId);
-            const linked = linkedByActivity.get(id) || [];
-            const hasFit = linked.length > 0;
-            const candidate = hasFit
-              ? null
-              : nearestOrphanCandidate(activity);
+            const state = linkedByActivity.get(id) || null;
+            const linkedCount = Number(state?.count || 0);
+            const preferred = state?.preferred || null;
+            const hasFit = linkedCount > 0;
+
+            const candidate =
+              hasFit ? null : nearestOrphanCandidate(activity);
 
             const startMs = Number(activity.start_time_ms || 0);
             const recent =
@@ -1961,13 +2070,14 @@ function createFitVault() {
             }
 
             const year = yearKey(startMs);
-            const yearRow = byYear.get(year) || {
-              year,
-              activities: 0,
-              linked: 0,
-              missing: 0,
-              orphan_candidates: 0
-            };
+            const yearRow =
+              byYear.get(year) || {
+                year,
+                activities: 0,
+                linked: 0,
+                missing: 0,
+                orphan_candidates: 0
+              };
 
             yearRow.activities += 1;
             if (hasFit) yearRow.linked += 1;
@@ -1988,72 +2098,86 @@ function createFitVault() {
                   ""
                 ),
                 source: sourceLabel(activity),
-                route_present: routeIds.has(id),
-                fit_status: hasFit
-                  ? "LINKED"
-                  : (candidate ? "ORPHAN_CANDIDATE" : "ABSENT"),
-                linked_fit_count: linked.length,
-                preferred_fit: linked.length
-                  ? {
-                      sha256: String(linked[0].sha256 || linked[0].__docId || ""),
-                      file_name: String(linked[0].file_name || ""),
-                      version_index: Number(linked[0].version_index || 1),
-                      is_active_version: linked[0].is_active_version === true,
-                      source: String(
-                        linked[0].source ||
-                        linked[0].upload_mode ||
-                        ""
-                      )
-                    }
-                  : null,
+                route_present: null,
+                route_checked: false,
+                fit_status:
+                  hasFit
+                    ? "LINKED"
+                    : (candidate ? "ORPHAN_CANDIDATE" : "ABSENT"),
+                linked_fit_count: linkedCount,
+                preferred_fit:
+                  preferred
+                    ? {
+                        sha256: String(
+                          preferred.sha256 ||
+                          preferred.__docId ||
+                          ""
+                        ),
+                        file_name: String(preferred.file_name || ""),
+                        version_index: Number(preferred.version_index || 1),
+                        is_active_version:
+                          preferred.is_active_version === true,
+                        source: String(preferred.source || "")
+                      }
+                    : null,
                 orphan_candidate: candidate
               });
             }
           }
 
-          details.sort((a, b) =>
-            Number(b.start_time_ms || 0) -
-            Number(a.start_time_ms || 0)
+          details.sort(
+            (a, b) =>
+              Number(b.start_time_ms || 0) -
+              Number(a.start_time_ms || 0)
           );
 
-          const recentDetails = details
-            .filter((row) =>
-              Number(row.start_time_ms || 0) >= sinceMs
-            )
-            .slice(0, detailLimit);
+          const recentDetails =
+            details
+              .filter(
+                (row) =>
+                  Number(row.start_time_ms || 0) >= sinceMs
+              )
+              .slice(0, detailLimit);
 
-          const gapDetails = details
-            .filter((row) => row.fit_status !== "LINKED")
-            .slice(0, detailLimit);
+          const gapDetails =
+            details
+              .filter((row) => row.fit_status !== "LINKED")
+              .slice(0, detailLimit);
 
-          const years = [...byYear.values()]
-            .sort((a, b) =>
-              String(b.year).localeCompare(String(a.year))
-            );
+          const years =
+            [...byYear.values()]
+              .sort(
+                (a, b) =>
+                  String(b.year).localeCompare(String(a.year))
+              );
 
           return res.json({
             ok: true,
             service: "FITAUDIT001",
-            version: "CGWEB087",
+            version: "CGWEB087_FIX2_LOWMEM_AUDIT001",
             readonly: true,
             generated_at_ms: Date.now(),
             since_ms: sinceMs,
             detail_limit: detailLimit,
             summary: {
               activities_active: activities.length,
-              routes_active: routeIds.size,
-              fit_files_active: fitRows.length,
+              fit_files_active: fitFilesActive,
               fit_root_files: fitRootCount,
               fit_active_versions: fitActiveVersionCount,
               activities_with_fit: linkedActivityCount,
               activities_without_fit: missingActivityCount,
-              activities_with_orphan_candidate: candidateActivityCount,
+              activities_with_orphan_candidate:
+                candidateActivityCount,
               fit_orphans_total: orphanFits.length,
               fit_unlinked_no_activity_id: fitUnlinkedCount,
               fit_dangling_activity_id: fitDanglingCount,
+              route_scan_mode:
+                "DISABLED_FOR_MEMORY_SAFETY",
+              routes_checked: 0,
+              routes_present_in_checked: 0,
               quick_download_list_limit: 1000,
               quick_download_limit_risk:
-                fitRows.length > 1000
+                fitFilesActive > 1000
             },
             recent: {
               activities: recentActivityCount,
