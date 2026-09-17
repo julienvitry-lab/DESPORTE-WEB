@@ -5108,6 +5108,86 @@ body.ux-activities-page main{
 }
 </style>
 
+
+<style id="cgweb087-fitaudit-css">
+/* CGWEB087_FITAUDIT001_CSS_START */
+#cgweb087FitAudit{
+  margin:18px 0;
+}
+#cgweb087FitAudit .cgweb087-controls{
+  display:grid;
+  grid-template-columns:minmax(180px,240px) minmax(150px,190px) auto auto;
+  gap:10px;
+  align-items:end;
+  margin:12px 0;
+}
+#cgweb087FitAudit .cgweb087-controls label{
+  display:grid;
+  gap:5px;
+}
+#cgweb087FitAudit .cgweb087-summary{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:8px;
+  margin:12px 0;
+}
+#cgweb087FitAudit .cgweb087-card{
+  border:1px solid rgba(190,255,55,.18);
+  border-radius:12px;
+  padding:10px 12px;
+  background:rgba(255,255,255,.025);
+}
+#cgweb087FitAudit .cgweb087-card strong{
+  display:block;
+  font-size:1.3rem;
+}
+#cgweb087FitAudit .cgweb087-details{
+  margin-top:10px;
+  border-top:1px solid rgba(255,255,255,.08);
+  padding-top:8px;
+}
+#cgweb087FitAudit .cgweb087-details summary{
+  cursor:pointer;
+  font-weight:700;
+}
+#cgweb087FitAudit .cgweb087-table-wrap{
+  overflow:auto;
+  margin-top:8px;
+}
+#cgweb087FitAudit table{
+  width:100%;
+  border-collapse:collapse;
+  min-width:820px;
+}
+#cgweb087FitAudit th,
+#cgweb087FitAudit td{
+  text-align:left;
+  padding:7px 8px;
+  border-bottom:1px solid rgba(255,255,255,.07);
+  vertical-align:top;
+}
+#cgweb087FitAudit .fit-linked{
+  color:#d9ff79;
+}
+#cgweb087FitAudit .fit-candidate{
+  color:#ffd76a;
+}
+#cgweb087FitAudit .fit-absent{
+  color:#ff8f8f;
+}
+#cgweb087FitAudit .cgweb087-id{
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:.82em;
+  opacity:.72;
+}
+@media(max-width:850px){
+  #cgweb087FitAudit .cgweb087-controls{
+    grid-template-columns:1fr 1fr;
+  }
+}
+/* CGWEB087_FITAUDIT001_CSS_END */
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5492,6 +5572,68 @@ body.ux-activities-page main{
 
 
 <!-- CGWEB084_PERIODZIP001_HTML_START -->
+
+<!-- CGWEB087_FITAUDIT001_HTML_START -->
+<section id="cgweb087FitAudit" class="panel cgweb087-audit">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">CGWEB087 · FITAUDIT001 / FITGAP001</p>
+      <h2>Audit des fichiers FIT</h2>
+      <p class="muted">
+        Lecture seule : compare les activités, les tracés et le Coffre FIT Cloud.
+        Aucun fichier ni aucune activité n'est modifié.
+      </p>
+    </div>
+    <span id="cgweb087AuditBadge" class="pill neutral">Non audité</span>
+  </div>
+
+  <div class="cgweb087-controls">
+    <label>
+      <span>Diagnostic depuis</span>
+      <input id="cgweb087AuditSince" type="date" value="2026-08-26">
+    </label>
+
+    <label>
+      <span>Détails maximum</span>
+      <select id="cgweb087AuditLimit">
+        <option value="200">200</option>
+        <option value="500" selected>500</option>
+        <option value="1000">1000</option>
+      </select>
+    </label>
+
+    <button id="cgweb087AuditRun" type="button">
+      Auditer les FIT
+    </button>
+
+    <button id="cgweb087AuditCsv" class="secondary" type="button" disabled>
+      Télécharger le rapport CSV
+    </button>
+  </div>
+
+  <div id="cgweb087AuditStatus" class="muted">
+    Aucun audit lancé.
+  </div>
+
+  <div id="cgweb087AuditSummary" class="cgweb087-summary"></div>
+
+  <details id="cgweb087RecentDetails" class="cgweb087-details" open>
+    <summary>Depuis la date choisie</summary>
+    <div id="cgweb087RecentTable" class="cgweb087-table-wrap"></div>
+  </details>
+
+  <details id="cgweb087GapDetails" class="cgweb087-details">
+    <summary>Activités sans FIT lié</summary>
+    <div id="cgweb087GapTable" class="cgweb087-table-wrap"></div>
+  </details>
+
+  <details id="cgweb087YearDetails" class="cgweb087-details">
+    <summary>Couverture par année</summary>
+    <div id="cgweb087YearTable" class="cgweb087-table-wrap"></div>
+  </details>
+</section>
+<!-- CGWEB087_FITAUDIT001_HTML_END -->
+
 <section id="cgweb084PeriodExport" class="cgweb084-period-export">
   <div class="cgweb084-period-export-head">
     <div>
@@ -6712,6 +6854,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB085A-FITEDITOR001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB087-FITAUDIT001-FITGAP001"></script>
 </body>
 </html>

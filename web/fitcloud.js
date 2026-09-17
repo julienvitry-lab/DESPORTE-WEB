@@ -1320,6 +1320,427 @@ window.SPORT_FIT_EXPORT = Object.freeze({
 /* CGWEB084_PERIODZIP001_FIT_END */
 
 
+
+/* CGWEB087_FITAUDIT001_WEB_START */
+let cgweb087LastAudit = null;
+
+function cgweb087Node(id) {
+  return document.getElementById(id);
+}
+
+function cgweb087Escape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function cgweb087DateTime(ms) {
+  const n = Number(ms || 0);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+
+  return new Intl.DateTimeFormat(
+    "fr-FR",
+    {
+      dateStyle: "short",
+      timeStyle: "short"
+    }
+  ).format(new Date(n));
+}
+
+function cgweb087SportLabel(row) {
+  const sport = Number(row?.sport) || 0;
+  const sub = Number(row?.sub_sport) || 0;
+
+  const sportLabel = {
+    1: "Course",
+    2: "Vélo"
+  }[sport] || ("Sport " + sport);
+
+  if (sport === 1 && [3, 6].includes(sub)) {
+    return "Trail (" + sport + "/" + sub + ")";
+  }
+
+  return sportLabel + " (" + sport + "/" + sub + ")";
+}
+
+function cgweb087StatusHtml(row) {
+  const status = String(row?.fit_status || "");
+
+  if (status === "LINKED") {
+    const file = String(
+      row?.preferred_fit?.file_name || "FIT lié"
+    );
+
+    return (
+      '<span class="fit-linked">LIÉ</span><br>' +
+      '<span class="muted">' +
+      cgweb087Escape(file) +
+      "</span>"
+    );
+  }
+
+  if (status === "ORPHAN_CANDIDATE") {
+    const candidate = row?.orphan_candidate || {};
+    const seconds = Math.round(
+      Number(candidate.delta_ms || 0) / 1000
+    );
+
+    return (
+      '<span class="fit-candidate">CANDIDAT ORPHELIN</span><br>' +
+      '<span class="muted">' +
+      cgweb087Escape(candidate.file_name || candidate.sha256 || "") +
+      " · Δ " +
+      seconds +
+      " s</span>"
+    );
+  }
+
+  return '<span class="fit-absent">ABSENT</span>';
+}
+
+function cgweb087RowsTable(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+
+  if (!list.length) {
+    return '<p class="muted">Aucune ligne.</p>';
+  }
+
+  return (
+    "<table>" +
+    "<thead><tr>" +
+    "<th>Date</th>" +
+    "<th>Sport</th>" +
+    "<th>Source</th>" +
+    "<th>Tracé</th>" +
+    "<th>FIT</th>" +
+    "<th>ID activité</th>" +
+    "</tr></thead><tbody>" +
+    list.map((row) =>
+      "<tr>" +
+      "<td>" + cgweb087Escape(cgweb087DateTime(row.start_time_ms)) + "</td>" +
+      "<td>" + cgweb087Escape(cgweb087SportLabel(row)) + "</td>" +
+      "<td>" + cgweb087Escape(row.source || "—") + "</td>" +
+      "<td>" + (row.route_present ? "Oui" : "Non") + "</td>" +
+      "<td>" + cgweb087StatusHtml(row) + "</td>" +
+      '<td class="cgweb087-id">' +
+      cgweb087Escape(row.activity_id || "") +
+      "</td>" +
+      "</tr>"
+    ).join("") +
+    "</tbody></table>"
+  );
+}
+
+function cgweb087YearTable(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+
+  if (!list.length) {
+    return '<p class="muted">Aucune année.</p>';
+  }
+
+  return (
+    "<table>" +
+    "<thead><tr>" +
+    "<th>Année</th>" +
+    "<th>Activités</th>" +
+    "<th>Avec FIT</th>" +
+    "<th>Sans FIT</th>" +
+    "<th>Candidats orphelins</th>" +
+    "</tr></thead><tbody>" +
+    list.map((row) =>
+      "<tr>" +
+      "<td>" + cgweb087Escape(row.year) + "</td>" +
+      "<td>" + Number(row.activities || 0) + "</td>" +
+      "<td>" + Number(row.linked || 0) + "</td>" +
+      "<td>" + Number(row.missing || 0) + "</td>" +
+      "<td>" + Number(row.orphan_candidates || 0) + "</td>" +
+      "</tr>"
+    ).join("") +
+    "</tbody></table>"
+  );
+}
+
+function cgweb087SummaryCards(payload) {
+  const summary = payload?.summary || {};
+  const recent = payload?.recent || {};
+
+  const cards = [
+    ["Activités", summary.activities_active],
+    ["FIT Cloud", summary.fit_files_active],
+    ["Activités avec FIT", summary.activities_with_fit],
+    ["Activités sans FIT", summary.activities_without_fit],
+    ["FIT orphelins", summary.fit_orphans_total],
+    ["Depuis la date", recent.activities],
+    ["Récentes avec FIT", recent.linked],
+    ["Récentes sans FIT", recent.missing],
+    ["Candidats orphelins récents", recent.orphan_candidates]
+  ];
+
+  return cards.map(([label, value]) =>
+    '<div class="cgweb087-card">' +
+    "<span>" + cgweb087Escape(label) + "</span>" +
+    "<strong>" + Number(value || 0) + "</strong>" +
+    "</div>"
+  ).join("");
+}
+
+function cgweb087CsvCell(value) {
+  const text = String(value ?? "");
+  return '"' + text.replaceAll('"', '""') + '"';
+}
+
+function cgweb087BuildCsv(payload) {
+  const rows = [
+    [
+      "activity_id",
+      "date",
+      "sport",
+      "sub_sport",
+      "source",
+      "route_present",
+      "fit_status",
+      "linked_fit_count",
+      "fit_file_name",
+      "orphan_candidate",
+      "candidate_delta_s"
+    ]
+  ];
+
+  const seen = new Set();
+  const combined = [
+    ...(payload?.recent_details || []),
+    ...(payload?.gap_details || [])
+  ];
+
+  for (const row of combined) {
+    const key = String(row.activity_id || "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+
+    rows.push([
+      key,
+      cgweb087DateTime(row.start_time_ms),
+      Number(row.sport || 0),
+      Number(row.sub_sport || 0),
+      row.source || "",
+      row.route_present ? "1" : "0",
+      row.fit_status || "",
+      Number(row.linked_fit_count || 0),
+      row.preferred_fit?.file_name || "",
+      row.orphan_candidate?.file_name ||
+        row.orphan_candidate?.sha256 ||
+        "",
+      row.orphan_candidate
+        ? Math.round(
+            Number(row.orphan_candidate.delta_ms || 0) / 1000
+          )
+        : ""
+    ]);
+  }
+
+  return rows
+    .map((row) => row.map(cgweb087CsvCell).join(";"))
+    .join("\n");
+}
+
+function cgweb087DownloadCsv() {
+  if (!cgweb087LastAudit) return;
+
+  const csv =
+    "\uFEFF" + cgweb087BuildCsv(cgweb087LastAudit);
+
+  const blob = new Blob(
+    [csv],
+    {type: "text/csv;charset=utf-8"}
+  );
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  a.href = url;
+  a.download =
+    "SPORT_FITAUDIT_" +
+    new Date().toISOString().slice(0, 10) +
+    ".csv";
+
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function cgweb087RunAudit() {
+  const button = cgweb087Node("cgweb087AuditRun");
+  const csvButton = cgweb087Node("cgweb087AuditCsv");
+  const status = cgweb087Node("cgweb087AuditStatus");
+  const badge = cgweb087Node("cgweb087AuditBadge");
+
+  const sinceInput =
+    cgweb087Node("cgweb087AuditSince")?.value || "2026-08-26";
+
+  const limit =
+    Number(cgweb087Node("cgweb087AuditLimit")?.value || 500);
+
+  const sinceDate =
+    new Date(sinceInput + "T00:00:00");
+
+  if (!Number.isFinite(sinceDate.getTime())) {
+    throw new Error("Date d'audit invalide.");
+  }
+
+  if (button) button.disabled = true;
+  if (csvButton) csvButton.disabled = true;
+
+  if (status) {
+    status.textContent =
+      "Audit en cours… lecture des activités, routes et FIT Cloud.";
+  }
+
+  if (badge) {
+    badge.textContent = "Audit…";
+  }
+
+  try {
+    const payload = await request(
+      "audit",
+      {
+        query: {
+          since_ms: sinceDate.getTime(),
+          detail_limit: limit
+        }
+      }
+    );
+
+    if (!payload?.ok) {
+      throw new Error(
+        payload?.error || "Réponse FITAUDIT001 invalide."
+      );
+    }
+
+    cgweb087LastAudit = payload;
+
+    const summary = payload.summary || {};
+    const recent = payload.recent || {};
+
+    const summaryNode =
+      cgweb087Node("cgweb087AuditSummary");
+
+    if (summaryNode) {
+      summaryNode.innerHTML =
+        cgweb087SummaryCards(payload);
+    }
+
+    const recentNode =
+      cgweb087Node("cgweb087RecentTable");
+
+    if (recentNode) {
+      recentNode.innerHTML =
+        cgweb087RowsTable(payload.recent_details);
+    }
+
+    const gapNode =
+      cgweb087Node("cgweb087GapTable");
+
+    if (gapNode) {
+      gapNode.innerHTML =
+        cgweb087RowsTable(payload.gap_details);
+    }
+
+    const yearNode =
+      cgweb087Node("cgweb087YearTable");
+
+    if (yearNode) {
+      yearNode.innerHTML =
+        cgweb087YearTable(payload.by_year);
+    }
+
+    const risk =
+      summary.quick_download_limit_risk
+        ? " · ⚠ plus de 1000 FIT : cache téléchargement rapide à surveiller"
+        : "";
+
+    if (status) {
+      status.textContent =
+        "Audit terminé · " +
+        Number(summary.activities_active || 0) +
+        " activités · " +
+        Number(summary.fit_files_active || 0) +
+        " FIT Cloud · " +
+        Number(summary.activities_without_fit || 0) +
+        " activité(s) sans FIT · depuis la date : " +
+        Number(recent.missing || 0) +
+        " sans FIT" +
+        risk +
+        (payload.detail_truncated
+          ? " · détails limités à " + Number(payload.detail_limit || 0)
+          : "");
+    }
+
+    if (badge) {
+      badge.textContent =
+        Number(summary.activities_without_fit || 0) +
+        " sans FIT";
+    }
+
+    if (csvButton) csvButton.disabled = false;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function cgweb087WireAudit() {
+  const button = cgweb087Node("cgweb087AuditRun");
+  const csvButton = cgweb087Node("cgweb087AuditCsv");
+
+  if (button && button.dataset.cgweb087Wired !== "1") {
+    button.dataset.cgweb087Wired = "1";
+
+    button.addEventListener("click", () => {
+      void cgweb087RunAudit().catch((error) => {
+        console.error("CGWEB087 FITAUDIT001", error);
+
+        const status =
+          cgweb087Node("cgweb087AuditStatus");
+
+        const badge =
+          cgweb087Node("cgweb087AuditBadge");
+
+        if (status) {
+          status.textContent =
+            "Audit impossible : " +
+            (error?.message || error);
+        }
+
+        if (badge) badge.textContent = "Erreur";
+      });
+    });
+  }
+
+  if (
+    csvButton &&
+    csvButton.dataset.cgweb087Wired !== "1"
+  ) {
+    csvButton.dataset.cgweb087Wired = "1";
+    csvButton.addEventListener(
+      "click",
+      cgweb087DownloadCsv
+    );
+  }
+}
+
+window.SPORT_FIT_AUDIT = Object.freeze({
+  version: "FITAUDIT001/FITGAP001",
+  run: cgweb087RunAudit,
+  last: () => cgweb087LastAudit
+});
+
+queueMicrotask(cgweb087WireAudit);
+/* CGWEB087_FITAUDIT001_WEB_END */
+
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));

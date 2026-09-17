@@ -1706,6 +1706,367 @@ function createFitVault() {
 
 
         /* CGWEB085B_FULLARCHIVE001_BACKEND_START */
+
+        /* CGWEB087_FITAUDIT001_BACKEND_START */
+        if (action === "audit") {
+          if (req.method !== "GET") {
+            return res.status(405).json({
+              error: "GET requis pour FITAUDIT001."
+            });
+          }
+
+          const requestedSince = Number(req.query.since_ms || 0);
+          const sinceMs =
+            Number.isFinite(requestedSince) && requestedSince > 0
+              ? requestedSince
+              : Date.UTC(2026, 7, 26, 0, 0, 0);
+
+          const requestedDetail = Number(req.query.detail_limit || 500);
+          const detailLimit = Math.max(
+            20,
+            Math.min(
+              1000,
+              Number.isFinite(requestedDetail)
+                ? Math.floor(requestedDetail)
+                : 500
+            )
+          );
+
+          const [
+            activitySnap,
+            fitSnap,
+            routeSnap
+          ] = await Promise.all([
+            db.collection(`${ROOT}/${uid}/activities`).get(),
+            files(uid).get(),
+            db.collection(`${ROOT}/${uid}/activity_routes`).get()
+          ]);
+
+          const activities = activitySnap.docs
+            .map((docSnap) => ({
+              __docId: docSnap.id,
+              ...(docSnap.data() || {})
+            }))
+            .filter((row) => row.deleted_at_ms == null);
+
+          const fitRows = fitSnap.docs
+            .map((docSnap) => ({
+              __docId: docSnap.id,
+              ...(docSnap.data() || {})
+            }))
+            .filter((row) => row.deleted_at_ms == null);
+
+          const routeIds = new Set(
+            routeSnap.docs
+              .filter((docSnap) => {
+                const row = docSnap.data() || {};
+                return row.deleted_at_ms == null;
+              })
+              .map((docSnap) => String(docSnap.id))
+          );
+
+          const activityIds = new Set(
+            activities.map((row) => String(row.__docId))
+          );
+
+          const linkedByActivity = new Map();
+          const orphanFits = [];
+          let fitRootCount = 0;
+          let fitActiveVersionCount = 0;
+          let fitUnlinkedCount = 0;
+          let fitDanglingCount = 0;
+
+          for (const row of fitRows) {
+            const activityId =
+              String(row.activity_id || "").trim();
+
+            const versionIndex =
+              Number(row.version_index || 1);
+            const parent =
+              String(row.parent_sha256 || "").trim();
+
+            if (
+              !parent &&
+              (!Number.isFinite(versionIndex) || versionIndex <= 1)
+            ) {
+              fitRootCount += 1;
+            }
+
+            if (row.is_active_version === true) {
+              fitActiveVersionCount += 1;
+            }
+
+            if (activityId && activityIds.has(activityId)) {
+              const bucket =
+                linkedByActivity.get(activityId) || [];
+              bucket.push(row);
+              linkedByActivity.set(activityId, bucket);
+            } else {
+              if (!activityId) fitUnlinkedCount += 1;
+              else fitDanglingCount += 1;
+              orphanFits.push(row);
+            }
+          }
+
+          const orphanBuckets = new Map();
+
+          function minuteBucket(startMs) {
+            const n = Number(startMs || 0);
+            if (!Number.isFinite(n) || n <= 0) return null;
+            return Math.floor(n / 60000);
+          }
+
+          function orphanBucketKey(sport, minute) {
+            return String(Number(sport) || 0) + "|" + String(minute);
+          }
+
+          for (const row of orphanFits) {
+            const minute = minuteBucket(row.start_time_ms);
+            if (minute == null) continue;
+
+            const key = orphanBucketKey(row.sport, minute);
+            const bucket = orphanBuckets.get(key) || [];
+            bucket.push(row);
+            orphanBuckets.set(key, bucket);
+          }
+
+          function nearestOrphanCandidate(activity) {
+            const start = Number(activity.start_time_ms || 0);
+            if (!Number.isFinite(start) || start <= 0) return null;
+
+            const sport = Number(activity.sport) || 0;
+            const center = Math.floor(start / 60000);
+            let best = null;
+
+            for (let minute = center - 3; minute <= center + 3; minute += 1) {
+              const keys = [
+                orphanBucketKey(sport, minute),
+                orphanBucketKey(0, minute)
+              ];
+
+              for (const key of keys) {
+                const rows = orphanBuckets.get(key) || [];
+
+                for (const row of rows) {
+                  const fitSport = Number(row.sport) || 0;
+
+                  if (
+                    sport > 0 &&
+                    fitSport > 0 &&
+                    sport !== fitSport
+                  ) {
+                    continue;
+                  }
+
+                  const fitStart = Number(row.start_time_ms || 0);
+                  if (!Number.isFinite(fitStart) || fitStart <= 0) {
+                    continue;
+                  }
+
+                  const deltaMs = Math.abs(fitStart - start);
+                  if (deltaMs > 180000) continue;
+
+                  if (!best || deltaMs < best.delta_ms) {
+                    best = {
+                      sha256: String(row.sha256 || row.__docId || ""),
+                      file_name: String(row.file_name || ""),
+                      start_time_ms: fitStart,
+                      sport: fitSport,
+                      sub_sport: Number(row.sub_sport) || 0,
+                      link_status: String(row.link_status || ""),
+                      source: String(row.source || row.upload_mode || ""),
+                      delta_ms: deltaMs
+                    };
+                  }
+                }
+              }
+            }
+
+            return best;
+          }
+
+          function sourceLabel(activity) {
+            const fields = [
+              activity.import_source,
+              activity.source,
+              activity.import_profile,
+              activity.strava_source,
+              activity.created_source,
+              activity.web_source,
+              activity.origin
+            ];
+
+            const found = fields
+              .map((value) => String(value || "").trim())
+              .find(Boolean);
+
+            if (found) return found;
+
+            if (
+              activity.strava_id != null ||
+              activity.strava_activity_id != null
+            ) {
+              return "STRAVA";
+            }
+
+            return "INCONNUE";
+          }
+
+          function yearKey(startMs) {
+            const n = Number(startMs || 0);
+            if (!Number.isFinite(n) || n <= 0) return "unknown";
+
+            const year = new Date(n).getUTCFullYear();
+            return Number.isInteger(year) ? String(year) : "unknown";
+          }
+
+          const byYear = new Map();
+          const details = [];
+
+          let linkedActivityCount = 0;
+          let missingActivityCount = 0;
+          let candidateActivityCount = 0;
+
+          let recentActivityCount = 0;
+          let recentLinkedCount = 0;
+          let recentMissingCount = 0;
+          let recentCandidateCount = 0;
+
+          for (const activity of activities) {
+            const id = String(activity.__docId);
+            const linked = linkedByActivity.get(id) || [];
+            const hasFit = linked.length > 0;
+            const candidate = hasFit
+              ? null
+              : nearestOrphanCandidate(activity);
+
+            const startMs = Number(activity.start_time_ms || 0);
+            const recent =
+              Number.isFinite(startMs) &&
+              startMs >= sinceMs;
+
+            if (hasFit) linkedActivityCount += 1;
+            else missingActivityCount += 1;
+
+            if (candidate) candidateActivityCount += 1;
+
+            if (recent) {
+              recentActivityCount += 1;
+              if (hasFit) recentLinkedCount += 1;
+              else recentMissingCount += 1;
+              if (candidate) recentCandidateCount += 1;
+            }
+
+            const year = yearKey(startMs);
+            const yearRow = byYear.get(year) || {
+              year,
+              activities: 0,
+              linked: 0,
+              missing: 0,
+              orphan_candidates: 0
+            };
+
+            yearRow.activities += 1;
+            if (hasFit) yearRow.linked += 1;
+            else yearRow.missing += 1;
+            if (candidate) yearRow.orphan_candidates += 1;
+            byYear.set(year, yearRow);
+
+            if (recent || !hasFit) {
+              details.push({
+                activity_id: id,
+                start_time_ms: startMs || null,
+                sport: Number(activity.sport) || 0,
+                sub_sport: Number(activity.sub_sport) || 0,
+                title: String(
+                  activity.custom_title ||
+                  activity.name ||
+                  activity.title ||
+                  ""
+                ),
+                source: sourceLabel(activity),
+                route_present: routeIds.has(id),
+                fit_status: hasFit
+                  ? "LINKED"
+                  : (candidate ? "ORPHAN_CANDIDATE" : "ABSENT"),
+                linked_fit_count: linked.length,
+                preferred_fit: linked.length
+                  ? {
+                      sha256: String(linked[0].sha256 || linked[0].__docId || ""),
+                      file_name: String(linked[0].file_name || ""),
+                      version_index: Number(linked[0].version_index || 1),
+                      is_active_version: linked[0].is_active_version === true,
+                      source: String(
+                        linked[0].source ||
+                        linked[0].upload_mode ||
+                        ""
+                      )
+                    }
+                  : null,
+                orphan_candidate: candidate
+              });
+            }
+          }
+
+          details.sort((a, b) =>
+            Number(b.start_time_ms || 0) -
+            Number(a.start_time_ms || 0)
+          );
+
+          const recentDetails = details
+            .filter((row) =>
+              Number(row.start_time_ms || 0) >= sinceMs
+            )
+            .slice(0, detailLimit);
+
+          const gapDetails = details
+            .filter((row) => row.fit_status !== "LINKED")
+            .slice(0, detailLimit);
+
+          const years = [...byYear.values()]
+            .sort((a, b) =>
+              String(b.year).localeCompare(String(a.year))
+            );
+
+          return res.json({
+            ok: true,
+            service: "FITAUDIT001",
+            version: "CGWEB087",
+            readonly: true,
+            generated_at_ms: Date.now(),
+            since_ms: sinceMs,
+            detail_limit: detailLimit,
+            summary: {
+              activities_active: activities.length,
+              routes_active: routeIds.size,
+              fit_files_active: fitRows.length,
+              fit_root_files: fitRootCount,
+              fit_active_versions: fitActiveVersionCount,
+              activities_with_fit: linkedActivityCount,
+              activities_without_fit: missingActivityCount,
+              activities_with_orphan_candidate: candidateActivityCount,
+              fit_orphans_total: orphanFits.length,
+              fit_unlinked_no_activity_id: fitUnlinkedCount,
+              fit_dangling_activity_id: fitDanglingCount,
+              quick_download_list_limit: 1000,
+              quick_download_limit_risk:
+                fitRows.length > 1000
+            },
+            recent: {
+              activities: recentActivityCount,
+              linked: recentLinkedCount,
+              missing: recentMissingCount,
+              orphan_candidates: recentCandidateCount
+            },
+            by_year: years,
+            recent_details: recentDetails,
+            gap_details: gapDetails,
+            detail_truncated:
+              details.length > detailLimit
+          });
+        }
+        /* CGWEB087_FITAUDIT001_BACKEND_END */
+
         if (action === "list_all") {
           const requested = Math.max(
             1,
