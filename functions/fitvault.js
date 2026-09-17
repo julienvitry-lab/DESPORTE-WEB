@@ -1034,6 +1034,8 @@ function createFitVault() {
 
     const route=routeSnap.exists ? (routeSnap.data()||{}) : null;
     const prepared=v088BuildPayload(activity,route);
+    prepared.payload.activity_id=id;
+    prepared.payload.fit_signature_seed=id;
     const generated=await encodeCanonicalFit(prepared.payload);
     const validation=await inspectFitBuffer(generated.buffer);
     const decoded=await decodeCanonicalFitSummary(generated.buffer);
@@ -1076,6 +1078,10 @@ function createFitVault() {
       sub_sport:prepared.source.subSport,activity_id:id,
       link_status:"LINKED_RECOVERY",point_count:generated.stats.pointCount,
       fit_integrity:true,fitwriter_version:"FITWRITER001",
+      fit_signature:generated.stats.fitSignature||null,
+      fit_signature_version:generated.stats.fitSignatureVersion||null,
+      fit_signature_serial:Number(generated.stats.serialNumber||0)||null,
+      fit_signature_seed_source:generated.stats.fitSignatureSeedSource||null,
       fitrecovery_version:"FITRECOVERY001",fitbackfill_version:"FITBACKFILL001",
       recovery_route_mode:prepared.routeMode,recovery_is_canonical:true,
       lossless_source_reconstruction:false,parent_sha256:prior.parent_sha256||null,
@@ -1095,6 +1101,7 @@ function createFitVault() {
   }
   /* CGWEB088_FITRECOVERY001_HELPERS_END */
 
+  /* CGWEB088_FIX1_FITSIGNATURE001_BACKEND */
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -1316,6 +1323,15 @@ function createFitVault() {
             fitwriter_version:
               "FITWRITER001",
 
+            fit_signature:
+              generated.stats.fitSignature || null,
+            fit_signature_version:
+              generated.stats.fitSignatureVersion || null,
+            fit_signature_serial:
+              Number(generated.stats.serialNumber || 0) || null,
+            fit_signature_seed_source:
+              generated.stats.fitSignatureSeedSource || null,
+
             first_uploaded_at_ms:
               Number(
                 previous.first_uploaded_at_ms ||
@@ -1395,6 +1411,8 @@ function createFitVault() {
 
           const route = routeSnap.data() || {};
           const prepared = rtBuildPayload(activity, route);
+          prepared.payload.activity_id = activityId;
+          prepared.payload.fit_signature_seed = activityId;
           const generated = await encodeCanonicalFit(prepared.payload);
           const validation = await inspectFitBuffer(generated.buffer);
 
@@ -1475,6 +1493,10 @@ function createFitVault() {
             point_count: generated.stats.pointCount,
             fit_integrity: Boolean(decodedFit.integrity),
             fitwriter_version: "FITWRITER001",
+            fit_signature: generated.stats.fitSignature || null,
+            fit_signature_version: generated.stats.fitSignatureVersion || null,
+            fit_signature_serial: Number(generated.stats.serialNumber || 0) || null,
+            fit_signature_seed_source: generated.stats.fitSignatureSeedSource || null,
             fitroundtrip_version: "FITROUNDTRIP001",
             fitroundtrip_ok: roundtripOk,
             roundtrip_is_preview_test: true,

@@ -1,5 +1,7 @@
 "use strict";
 
+const {createHash} = require("node:crypto");
+
 /*
  * CGWEB075 · FITWRITER001
  *
@@ -491,6 +493,95 @@ function cleanMessage(values) {
   return output;
 }
 
+
+/* CGWEB088_FIX1_FITSIGNATURE001_HELPERS_START */
+
+/*
+ * FITSIGNATURE001
+ * ----------------
+ * Une activité canonique SPORT possède une identité stable indépendante
+ * de ses futures versions FIT.
+ *
+ * - source prioritaire : fit_signature_seed explicite ;
+ * - sinon : activity_id ;
+ * - sinon : comportement historique basé sur start_time_ms.
+ *
+ * La signature SHA-256 complète est conservée dans les métadonnées du coffre.
+ * Les 32 premiers bits alimentent FILE_ID.serialNumber et DEVICE_INFO.serialNumber.
+ * Cela rend deux activités distinctes binaires distinctes même si leurs mesures
+ * sont par ailleurs identiques, sans modifier date, distance, durée, GPS, D+ ou FC.
+ */
+function fitSignatureIdentity(payload, startMs) {
+  const explicit =
+    String(
+      payload?.fit_signature_seed ??
+      payload?.fitSignatureSeed ??
+      ""
+    ).trim();
+
+  const activityId =
+    String(
+      payload?.activity_id ??
+      payload?.activityId ??
+      ""
+    ).trim();
+
+  const seed =
+    explicit ||
+    activityId;
+
+  if (!seed) {
+    return {
+      signature: null,
+      version: null,
+      seedSource: "LEGACY_START_TIME",
+      serialNumber:
+        (
+          Math.abs(
+            Math.trunc(startMs)
+          ) % 4294967294
+        ) + 1
+    };
+  }
+
+  const canonical =
+    "FITSIGNATURE001|ACTIVITY|" +
+    seed;
+
+  const digest =
+    createHash("sha256")
+      .update(canonical, "utf8")
+      .digest();
+
+  let serialNumber =
+    digest.readUInt32BE(0);
+
+  if (
+    serialNumber === 0 ||
+    serialNumber === 4294967295
+  ) {
+    serialNumber =
+      (
+        digest.readUInt32BE(4) %
+        4294967294
+      ) + 1;
+  }
+
+  return {
+    signature:
+      digest.toString("hex"),
+    version:
+      "FITSIGNATURE001",
+    seedSource:
+      explicit
+        ? "EXPLICIT_SEED"
+        : "ACTIVITY_ID",
+    serialNumber
+  };
+}
+
+/* CGWEB088_FIX1_FITSIGNATURE001_HELPERS_END */
+
 async function encodeCanonicalFit(payload = {}) {
   const {
     Encoder,
@@ -535,12 +626,14 @@ async function encodeCanonicalFit(payload = {}) {
   const endDate =
     new Date(stats.endMs);
 
+  const fitSignature =
+    fitSignatureIdentity(
+      payload,
+      stats.startMs
+    );
+
   const serialNumber =
-    (
-      Math.abs(
-        Math.trunc(stats.startMs)
-      ) % 4294967294
-    ) + 1;
+    fitSignature.serialNumber;
 
   const encoder =
     new Encoder();
@@ -764,7 +857,14 @@ async function encodeCanonicalFit(payload = {}) {
       sport,
       subSport,
       pointCount:
-        normalized.points.length
+        normalized.points.length,
+      serialNumber,
+      fitSignature:
+        fitSignature.signature,
+      fitSignatureVersion:
+        fitSignature.version,
+      fitSignatureSeedSource:
+        fitSignature.seedSource
     },
     writerVersion:
       "FITWRITER001"
