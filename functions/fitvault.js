@@ -903,6 +903,8 @@ function createFitVault() {
     return {ok:!missing.length,missing,startMs,sport,subSport,durationMs,distance};
   }
 
+
+
   /* CGWEB088_FIX4_FITRECOVERY_NORMALIZE001_START */
 
   function v088MeaningfulHr(value) {
@@ -1184,6 +1186,10 @@ function createFitVault() {
       fit_signature_serial:Number(generated.stats.serialNumber||0)||null,
       fit_signature_seed_source:generated.stats.fitSignatureSeedSource||null,
       fitrecovery_version:"FITRECOVERY001",fitbackfill_version:"FITBACKFILL001",
+      fitrecovery_normalize_version:"FITRECOVERY_NORMALIZE001",
+      recovery_normalized_fields:Array.isArray(checked.normalized_fields)
+        ? checked.normalized_fields
+        : [],
       fitrecovery_normalize_version:"FITRECOVERY_NORMALIZE001",
       recovery_normalized_fields:Array.isArray(checked.normalized_fields)
         ? checked.normalized_fields
