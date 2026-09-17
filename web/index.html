@@ -5317,6 +5317,38 @@ body.ux-activities-page main{
 /* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_CSS_END */
 </style>
 
+
+<style id="cgweb089-files-reorganize-css">
+/* CGWEB089_FILES_REORGANIZE001_CSS_START */
+#webFilesSection.cgweb089-files-root{display:block}
+#webFilesSection .cgweb089-files-shell-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px}
+#webFilesSection .cgweb089-files-shell-head>div{display:grid;gap:3px}
+#webFilesSection .cgweb089-files-shell-head h2{margin:0}
+#webFilesSection .cgweb089-file-tabs{display:flex;gap:7px;align-items:center;overflow-x:auto;padding:4px 1px 10px;margin:0 0 10px;scrollbar-width:thin}
+#webFilesSection .cgweb089-file-tab{flex:0 0 auto;min-height:36px;padding:7px 13px;border-radius:999px;white-space:nowrap}
+#webFilesSection .cgweb089-file-tab.active{border-color:rgba(190,255,55,.58);background:rgba(190,255,55,.10)}
+#webFilesSection .cgweb089-file-pane{display:block;min-width:0}
+#webFilesSection .cgweb089-file-pane[hidden]{display:none!important}
+#webFilesSection .cgweb089-file-pane>:first-child{margin-top:0!important}
+#webFilesSection .cgweb089-file-pane>:last-child{margin-bottom:0!important}
+#webFilesSection [id="activityDirectorySection"],
+#webFilesSection [id="activityList"],
+#webFilesSection .activity-directory-copy,
+#webFilesSection [data-activity-directory-copy="1"]{display:none!important}
+#webFilesSection #cgweb087FitAudit,
+#webFilesSection #cgweb088Recovery,
+#webFilesSection #cgweb084PeriodExport,
+#webFilesSection .web-fit-cloud-panel,
+#webFilesSection .web-drive-panel{margin-top:0}
+#webFilesSection .cgweb089-file-pane[data-file-pane="local"]>.panel-title-row{margin-bottom:12px}
+@media(max-width:760px){
+  #webFilesSection .cgweb089-files-shell-head{flex-direction:column}
+  #webFilesSection .cgweb089-file-tabs{margin-inline:-2px}
+  #webFilesSection .cgweb089-file-tab{min-height:34px;padding:6px 11px}
+}
+/* CGWEB089_FILES_REORGANIZE001_CSS_END */
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -7071,7 +7103,7 @@ body.ux-activities-page main{
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB086-FIX1-AUTOEQUIP-FINALIZE001"></script>
+  <script type="module" src="./app.js?v=CGWEB089-FILES-REORGANIZE001-DIRECTORY-CLEANUP001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

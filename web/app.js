@@ -23429,3 +23429,296 @@ window.SPORT_WEB_BRIDGE = {
   triggerBlobDownload
 };
 /* WEB074_FITCLOUD001_BRIDGE_END */
+
+/* CGWEB089_FILES_REORGANIZE001_START */
+
+const CGWEB089_FILE_TAB_STORAGE = "sport_web_files_subsubtab";
+
+function cgweb089Text(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function cgweb089SafeKey(value, fallback = "other") {
+  const key = cgweb089Text(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return key || fallback;
+}
+
+function cgweb089DirectoryCanonical() {
+  const filesRoot = document.getElementById("webFilesSection");
+  const candidates = [...document.querySelectorAll('[id="activityDirectorySection"]')];
+  return candidates.find((node) => !filesRoot?.contains(node)) || candidates[0] || null;
+}
+
+function cgweb089RemoveDirectoryCopies() {
+  const filesRoot = document.getElementById("webFilesSection");
+  const canonical = cgweb089DirectoryCanonical();
+
+  for (const node of [...document.querySelectorAll('[id="activityDirectorySection"]')]) {
+    if (node !== canonical) node.remove();
+  }
+
+  const canonicalList =
+    canonical?.querySelector('[id="activityList"]') ||
+    (
+      document.getElementById("activityList") &&
+      !filesRoot?.contains(document.getElementById("activityList"))
+        ? document.getElementById("activityList")
+        : null
+    );
+
+  for (const node of [...document.querySelectorAll('[id="activityList"]')]) {
+    if (node === canonicalList) continue;
+    const wrapper = node.closest(
+      'section, article, [data-activity-directory-copy="1"], .activity-directory-copy'
+    );
+    if (wrapper && wrapper !== canonical && filesRoot?.contains(wrapper)) wrapper.remove();
+    else node.remove();
+  }
+
+  if (!filesRoot) return;
+
+  const blocks = [
+    ...filesRoot.querySelectorAll(
+      'section, article, .panel, [data-activity-directory-copy="1"], .activity-directory-copy'
+    )
+  ];
+
+  for (const block of blocks) {
+    if (!block.isConnected) continue;
+    const heading = block.querySelector(
+      ':scope > h1, :scope > h2, :scope > h3, :scope > strong, :scope > .panel-title-row h2, :scope > .section-heading h2'
+    );
+    const title = cgweb089Text(heading?.textContent);
+    const explicitlyDirectory =
+      block.matches('[data-activity-directory-copy="1"], .activity-directory-copy') ||
+      /^répertoire(?:\s+des)?\s+activit/i.test(title);
+    if (explicitlyDirectory) block.remove();
+  }
+}
+
+function cgweb089InferLabel(node, fallback = "Autre") {
+  const heading = node.querySelector(
+    ':scope > .section-heading h2, :scope > .panel-title-row h2, :scope > h2, :scope > h3, :scope > strong, :scope > div > strong'
+  );
+  const text = cgweb089Text(heading?.textContent);
+  if (!text) return fallback;
+  return text
+    .replace(/^Coffre de fichiers$/i, "Coffre local")
+    .replace(/^Coffre FIT Cloud$/i, "FIT Cloud")
+    .replace(/^Sauvegarde Google Drive$/i, "Google Drive")
+    .replace(/^Rattrapage des fichiers FIT$/i, "Rattrapage FIT")
+    .replace(/^Audit des fichiers FIT$/i, "Audit FIT")
+    .replace(/^Export période$/i, "Exports");
+}
+
+function cgweb089CreatePane(key, label) {
+  const pane = document.createElement("div");
+  pane.className = "cgweb089-file-pane";
+  pane.dataset.filePane = key;
+  pane.dataset.fileLabel = label;
+  pane.hidden = true;
+  return pane;
+}
+
+function cgweb089KnownTopLevel(root) {
+  const configs = [
+    ["audit", "Audit FIT", "#cgweb087FitAudit"],
+    ["recovery", "Rattrapage FIT", "#cgweb088Recovery"],
+    ["export", "Exports", "#cgweb084PeriodExport"],
+    ["cloud", "FIT Cloud", ".web-fit-cloud-panel"],
+    ["drive", "Google Drive", ".web-drive-panel"]
+  ];
+  const result = [];
+
+  for (const [key, label, selector] of configs) {
+    const node = root.querySelector(selector);
+    if (!node) continue;
+    let top = node;
+    while (top.parentElement && top.parentElement !== root) top = top.parentElement;
+    if (top.parentElement !== root) continue;
+    if (!result.some((entry) => entry.node === top)) result.push({key, label, node: top});
+  }
+  return result;
+}
+
+function cgweb089ActivateFileTab(root, key, remember = true) {
+  const tabs = [...root.querySelectorAll(".cgweb089-file-tab")];
+  const panes = [...root.querySelectorAll(".cgweb089-file-pane")];
+  const available = new Set(panes.map((pane) => pane.dataset.filePane));
+  const wanted = available.has(key)
+    ? key
+    : (available.has("local") ? "local" : panes[0]?.dataset.filePane);
+
+  for (const tab of tabs) {
+    const active = tab.dataset.fileTab === wanted;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+    tab.tabIndex = active ? 0 : -1;
+  }
+
+  for (const pane of panes) pane.hidden = pane.dataset.filePane !== wanted;
+
+  if (remember && wanted) {
+    try { sessionStorage.setItem(CGWEB089_FILE_TAB_STORAGE, wanted); } catch (_) {}
+  }
+
+  cgweb089RemoveDirectoryCopies();
+}
+
+function cgweb089OrganizeFiles() {
+  const root = document.getElementById("webFilesSection");
+  if (!root) return;
+
+  cgweb089RemoveDirectoryCopies();
+
+  if (root.dataset.cgweb089FilesReorganize === "FILES_REORGANIZE001") return;
+
+  const originalChildren = [...root.children];
+  const known = cgweb089KnownTopLevel(root);
+  const knownNodes = new Set(known.map((entry) => entry.node));
+  const localNodes = [];
+  const extraSections = [];
+
+  for (const child of originalChildren) {
+    if (!child.isConnected || knownNodes.has(child)) continue;
+
+    const title = cgweb089Text(
+      child.querySelector?.(
+        ':scope > h1, :scope > h2, :scope > h3, :scope > strong, :scope > .panel-title-row h2, :scope > .section-heading h2'
+      )?.textContent
+    );
+
+    if (
+      child.matches?.('[id="activityDirectorySection"], [data-activity-directory-copy="1"], .activity-directory-copy') ||
+      /^répertoire(?:\s+des)?\s+activit/i.test(title)
+    ) {
+      child.remove();
+      continue;
+    }
+
+    if (child.tagName === "SECTION" || child.matches?.("article.panel")) extraSections.push(child);
+    else localNodes.push(child);
+  }
+
+  const shellHead = document.createElement("div");
+  shellHead.className = "cgweb089-files-shell-head";
+  shellHead.innerHTML =
+    '<div>' +
+      '<p class="eyebrow">CGWEB089 · FILES_REORGANIZE001 / DIRECTORY_CLEANUP001</p>' +
+      '<h2>Fichiers</h2>' +
+      '<p class="muted">Chaque fonction possède son propre sous-sous-onglet. Le Répertoire des activités reste exclusivement dans Activités.</p>' +
+    '</div>' +
+    '<span class="pill ok">Interface nettoyée</span>';
+
+  const tabs = document.createElement("div");
+  tabs.id = "cgweb089FileTabs";
+  tabs.className = "cgweb089-file-tabs";
+  tabs.setAttribute("role", "tablist");
+  tabs.setAttribute("aria-label", "Fonctions Fichiers");
+
+  const host = document.createElement("div");
+  host.id = "cgweb089FilePanes";
+
+  const panes = [];
+
+  if (localNodes.length) {
+    const pane = cgweb089CreatePane("local", "Coffre local");
+    for (const node of localNodes) pane.appendChild(node);
+    panes.push(pane);
+  }
+
+  for (const entry of known) {
+    const pane = cgweb089CreatePane(entry.key, entry.label);
+    pane.appendChild(entry.node);
+    panes.push(pane);
+  }
+
+  let extraIndex = 0;
+  for (const node of extraSections) {
+    if (!node.isConnected || knownNodes.has(node)) continue;
+
+    const label = cgweb089InferLabel(node, "Autre");
+    const keyBase = cgweb089SafeKey(label, "other");
+    let key = keyBase;
+
+    while (panes.some((pane) => pane.dataset.filePane === key)) {
+      extraIndex += 1;
+      key = keyBase + "-" + extraIndex;
+    }
+
+    const pane = cgweb089CreatePane(key, label);
+    pane.appendChild(node);
+    panes.push(pane);
+  }
+
+  root.replaceChildren(shellHead, tabs, host);
+
+  for (const pane of panes) {
+    host.appendChild(pane);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "cgweb089-file-tab secondary compact";
+    button.dataset.fileTab = pane.dataset.filePane;
+    button.setAttribute("role", "tab");
+    button.textContent = pane.dataset.fileLabel;
+
+    button.addEventListener("click", () => {
+      cgweb089ActivateFileTab(root, pane.dataset.filePane);
+    });
+
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      const buttons = [...tabs.querySelectorAll(".cgweb089-file-tab")];
+      const index = buttons.indexOf(button);
+      if (index < 0) return;
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const next = buttons[(index + direction + buttons.length) % buttons.length];
+      event.preventDefault();
+      next.focus();
+      next.click();
+    });
+
+    tabs.appendChild(button);
+  }
+
+  root.classList.add("cgweb089-files-root");
+  root.dataset.cgweb089FilesReorganize = "FILES_REORGANIZE001";
+
+  let saved = null;
+  try { saved = sessionStorage.getItem(CGWEB089_FILE_TAB_STORAGE); } catch (_) {}
+  cgweb089ActivateFileTab(root, saved || "local", false);
+}
+
+function cgweb089InitFilesUi() {
+  cgweb089OrganizeFiles();
+  cgweb089RemoveDirectoryCopies();
+
+  for (const delay of [0, 400, 1400]) {
+    window.setTimeout(() => cgweb089RemoveDirectoryCopies(), delay);
+  }
+}
+
+window.SPORT_FILES_REORGANIZE = Object.freeze({
+  version: "FILES_REORGANIZE001",
+  directoryCleanupVersion: "DIRECTORY_CLEANUP001",
+  organize: cgweb089OrganizeFiles,
+  cleanup: cgweb089RemoveDirectoryCopies,
+  activate: (key) => {
+    const root = document.getElementById("webFilesSection");
+    if (root) cgweb089ActivateFileTab(root, key);
+  }
+});
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", cgweb089InitFilesUi, {once:true});
+} else {
+  queueMicrotask(cgweb089InitFilesUi);
+}
+
+/* CGWEB089_FILES_REORGANIZE001_END */
