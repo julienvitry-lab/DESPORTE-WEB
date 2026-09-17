@@ -5193,6 +5193,20 @@ body.ux-activities-page main{
 /* CGWEB087_FITAUDIT001_CSS_END */
 </style>
 
+
+<style id="cgweb088-css">
+/* CGWEB088_FITRECOVERY001_CSS_START */
+#cgweb088Recovery{margin:18px 0}
+#cgweb088Recovery .cgweb088-controls{display:grid;grid-template-columns:auto minmax(130px,180px) auto;gap:10px;align-items:end;margin:12px 0}
+#cgweb088Recovery .cgweb088-controls label{display:grid;gap:5px}
+#cgweb088Recovery .cgweb088-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:12px 0}
+#cgweb088Recovery .cgweb088-card{border:1px solid rgba(190,255,55,.18);border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.025)}
+#cgweb088Recovery .cgweb088-card strong{display:block;font-size:1.3rem}
+#cgweb088Recovery .cgweb088-results{max-height:320px;overflow:auto;white-space:pre-wrap;font-size:.82rem}
+@media(max-width:760px){#cgweb088Recovery .cgweb088-controls{grid-template-columns:1fr}}
+/* CGWEB088_FITRECOVERY001_CSS_END */
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5641,6 +5655,32 @@ body.ux-activities-page main{
   </details>
 </section>
 <!-- CGWEB087_FITAUDIT001_HTML_END -->
+
+
+<!-- CGWEB088_FITRECOVERY001_HTML_START -->
+<section id="cgweb088Recovery" class="panel">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">CGWEB088 · FITRECOVERY001 / FITBACKFILL001</p>
+      <h2>Rattrapage des fichiers FIT</h2>
+      <p class="muted">FIT canoniques uniquement pour les activités sans FIT. Activités et FIT existants protégés.</p>
+    </div>
+    <span id="cgweb088Badge" class="pill neutral">Non analysé</span>
+  </div>
+  <div class="cgweb088-controls">
+    <button id="cgweb088Plan" type="button">Analyser le rattrapage</button>
+    <label><span>Taille du lot</span>
+      <select id="cgweb088BatchSize">
+        <option value="10">10</option><option value="25" selected>25</option><option value="50">50</option>
+      </select>
+    </label>
+    <button id="cgweb088Run" type="button" disabled>Générer le prochain lot</button>
+  </div>
+  <div id="cgweb088Status" class="muted">Dry-run obligatoire avant toute génération.</div>
+  <div id="cgweb088Summary" class="cgweb088-summary"></div>
+  <pre id="cgweb088Results" class="cgweb088-results"></pre>
+</section>
+<!-- CGWEB088_FITRECOVERY001_HTML_END -->
 
 <section id="cgweb084PeriodExport" class="cgweb084-period-export">
   <div class="cgweb084-period-export-head">
@@ -6862,6 +6902,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB087-FITAUDIT001-FITGAP001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB088-FITRECOVERY001-FITBACKFILL001"></script>
 </body>
 </html>

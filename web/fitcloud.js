@@ -1751,6 +1751,74 @@ queueMicrotask(cgweb087WireAudit);
 /* CGWEB087_FITAUDIT001_WEB_END */
 
 
+
+/* CGWEB088_FITRECOVERY001_WEB_START */
+let cgweb088LastPlan=null, cgweb088Busy=false;
+function cgweb088Node(id){return document.getElementById(id);}
+function cgweb088Cards(s){
+  return [["Activités",s?.activities_active],["Déjà avec FIT",s?.already_with_fit],["FIT manquants",s?.missing_fit],["Reconstructibles",s?.reconstructible],["Insuffisantes",s?.insufficient]]
+    .map(([l,v])=>'<div class="cgweb088-card"><span>'+l+'</span><strong>'+Number(v||0)+'</strong></div>').join("");
+}
+function cgweb088Render(plan){
+  cgweb088LastPlan=plan;
+  const s=plan?.summary||{};
+  const sum=cgweb088Node("cgweb088Summary"), badge=cgweb088Node("cgweb088Badge"), run=cgweb088Node("cgweb088Run"), out=cgweb088Node("cgweb088Results");
+  if(sum)sum.innerHTML=cgweb088Cards(s);
+  if(badge)badge.textContent=Number(s.reconstructible||0)+" à générer";
+  if(run)run.disabled=Number(s.reconstructible||0)<=0;
+  if(out){
+    const lines=["DRY-RUN · aucune écriture","Prochaines activités :"];
+    for(const r of (plan?.next_candidates||[]).slice(0,20))
+      lines.push("  "+new Date(Number(r.start_time_ms||0)).toLocaleString("fr-FR")+" · #"+r.activity_id+" · sport "+r.sport+"/"+r.sub_sport);
+    if((plan?.insufficient_examples||[]).length){
+      lines.push("","Exemples insuffisants :");
+      for(const r of plan.insufficient_examples.slice(0,10)) lines.push("  #"+r.activity_id+" · manque "+(r.missing||[]).join(", "));
+    }
+    out.textContent=lines.join("\n");
+  }
+}
+async function cgweb088Plan(){
+  if(cgweb088Busy)return;
+  cgweb088Busy=true;
+  const p=cgweb088Node("cgweb088Plan"),r=cgweb088Node("cgweb088Run"),st=cgweb088Node("cgweb088Status");
+  if(p)p.disabled=true;if(r)r.disabled=true;if(st)st.textContent="Analyse du patrimoine FIT…";
+  try{
+    const plan=await request("recovery_plan",{query:{limit:50}});
+    if(!plan?.ok)throw new Error(plan?.error||"Dry-run invalide.");
+    cgweb088Render(plan);
+    if(st)st.textContent="Analyse terminée · "+Number(plan.summary?.reconstructible||0)+" reconstructible(s) · "+Number(plan.summary?.insufficient||0)+" insuffisante(s).";
+  }finally{cgweb088Busy=false;if(p)p.disabled=false;}
+}
+async function cgweb088RunBatch(){
+  if(cgweb088Busy||!cgweb088LastPlan)return;
+  const size=Number(cgweb088Node("cgweb088BatchSize")?.value||25);
+  const left=Number(cgweb088LastPlan?.summary?.reconstructible||0);
+  if(left<=0)return;
+  if(!confirm("Générer "+Math.min(size,left)+" FIT canoniques ?\n\n0 activité modifiée. Aucun FIT existant remplacé."))return;
+  cgweb088Busy=true;
+  const p=cgweb088Node("cgweb088Plan"),r=cgweb088Node("cgweb088Run"),st=cgweb088Node("cgweb088Status"),out=cgweb088Node("cgweb088Results");
+  if(p)p.disabled=true;if(r)r.disabled=true;if(st)st.textContent="Génération du lot…";
+  try{
+    const x=await request("recovery_batch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({batch_size:size})});
+    const lines=["FITBACKFILL001 · sélectionnés "+Number(x?.selected||0)+" · stockés "+Number(x?.stored||0)+" · erreurs "+Number(x?.failed||0)];
+    for(const row of (x?.results||[])) lines.push((row.ok?"✓ ":"✗ ")+"#"+row.activity_id+" · "+row.status+(row.route_mode?" · "+row.route_mode:"")+(row.error?" · "+row.error:""));
+    if(out)out.textContent=lines.join("\n");
+    if(st)st.textContent="Lot terminé · "+Number(x?.stored||0)+" FIT ajouté(s) · "+Number(x?.failed||0)+" erreur(s) · 0 activité modifiée.";
+  }finally{
+    cgweb088Busy=false;if(p)p.disabled=false;
+    try{await cgweb088Plan();}catch(error){console.warn("CGWEB088 replan",error);}
+  }
+}
+function cgweb088Wire(){
+  const p=cgweb088Node("cgweb088Plan"),r=cgweb088Node("cgweb088Run");
+  if(p&&p.dataset.w088!=="1"){p.dataset.w088="1";p.addEventListener("click",()=>void cgweb088Plan().catch(e=>{cgweb088Node("cgweb088Status").textContent="Analyse impossible : "+(e?.message||e);}));}
+  if(r&&r.dataset.w088!=="1"){r.dataset.w088="1";r.addEventListener("click",()=>void cgweb088RunBatch().catch(e=>{cgweb088Node("cgweb088Status").textContent="Rattrapage interrompu : "+(e?.message||e);}));}
+}
+window.SPORT_FIT_RECOVERY=Object.freeze({version:"FITRECOVERY001/FITBACKFILL001",plan:cgweb088Plan,runBatch:cgweb088RunBatch,lastPlan:()=>cgweb088LastPlan});
+queueMicrotask(cgweb088Wire);
+/* CGWEB088_FITRECOVERY001_WEB_END */
+
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));

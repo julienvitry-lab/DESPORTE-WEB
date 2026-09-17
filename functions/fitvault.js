@@ -887,6 +887,212 @@ function createFitVault() {
 
   /* CGWEB078_FITVERSION001_HELPERS_END */
 
+  /* CGWEB088_FITRECOVERY001_HELPERS_START */
+  function v088Core(activity) {
+    const startMs = rtFinite(activity?.start_time_ms);
+    const sport = rtFinite(activity?.sport);
+    const subSport = rtFirstFinite(activity?.sub_sport, activity?.subSport, 0) ?? 0;
+    const durationMs = rtDurationMs(activity);
+    const distance = Math.max(0, rtFirstFinite(activity?.distance_m, 0) ?? 0);
+    const missing = [];
+    if (startMs == null || startMs <= 0) missing.push("start_time_ms");
+    if (sport == null) missing.push("sport");
+    if (durationMs == null || durationMs <= 0) missing.push("duration");
+    return {ok:!missing.length,missing,startMs,sport,subSport,durationMs,distance};
+  }
+
+  function v088SummaryPayload(activity) {
+    const c=v088Core(activity);
+    if (!c.ok) throw Object.assign(
+      new Error("FITRECOVERY001 : données insuffisantes ("+c.missing.join(", ")+")."),
+      {status:422}
+    );
+    const avgHr=rtFinite(activity?.avg_hr);
+    const maxHr=rtFinite(activity?.max_hr);
+    const endHr=rtFirstFinite(maxHr,avgHr);
+    const points=[
+      {timestamp_ms:c.startMs,distance_m:0,...(avgHr!=null?{heart_rate:avgHr}:{})},
+      {timestamp_ms:c.startMs+c.durationMs,distance_m:c.distance,...(endHr!=null?{heart_rate:endHr}:{})}
+    ];
+    return {
+      payload:{
+        start_time_ms:c.startMs,sport:c.sport,sub_sport:c.subSport,
+        duration_s:c.durationMs/1000,total_timer_time_s:c.durationMs/1000,
+        distance_m:c.distance,total_ascent_m:rtFinite(activity?.ascent_m),
+        avg_hr:avgHr,max_hr:maxHr,points
+      },
+      source:{
+        startMs:c.startMs,durationMs:c.durationMs,distance:c.distance,
+        ascent:rtFinite(activity?.ascent_m),avgHr,maxHr,
+        sport:c.sport,subSport:c.subSport,
+        sourcePointCount:0,previewPointCount:2,
+        routeHasTime:false,routeHasHeartRate:false
+      },
+      routeMode:"SUMMARY_ONLY"
+    };
+  }
+
+  function v088BuildPayload(activity,route) {
+    if (route && typeof route==="object") {
+      try {
+        const full=rtBuildPayload(activity,route);
+        return {...full,routeMode:"ROUTE_PREVIEW"};
+      } catch (error) {
+        const m=String(error?.message||error||"");
+        if (!m.includes("activity_routes") && !m.includes("2 points GPS")) throw error;
+      }
+    }
+    return v088SummaryPayload(activity);
+  }
+
+  function v088Near(a,b,t) {
+    if (a==null) return true;
+    a=Number(a); b=Number(b);
+    return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)<=t;
+  }
+
+  function v088Validate(prepared,decoded,validation) {
+    const structure=Boolean(
+      validation?.ok && decoded?.integrity &&
+      Array.isArray(decoded?.errors) && decoded.errors.length===0 &&
+      Number(decoded.sessionCount)===1 &&
+      Number(decoded.activityCount)===1 &&
+      Number(decoded.lapCount)>=1
+    );
+    const metrics={
+      start:v088Near(prepared.source.startMs,decoded.startMs,1000),
+      sport:v088Near(prepared.source.sport,decoded.sport,0),
+      sub_sport:v088Near(prepared.source.subSport,decoded.subSport,0),
+      duration:v088Near(prepared.source.durationMs/1000,decoded.timerSeconds,0.1),
+      distance:v088Near(prepared.source.distance,decoded.totalDistance,1),
+      ascent:v088Near(prepared.source.ascent,decoded.totalAscent,2),
+      avg_hr:v088Near(prepared.source.avgHr,decoded.avgHeartRate,1),
+      max_hr:v088Near(prepared.source.maxHr,decoded.maxHeartRate,1)
+    };
+    return {ok:structure&&Object.values(metrics).every(Boolean),structure_ok:structure,metrics};
+  }
+
+  async function v088LinkedIds(uid) {
+    const set=new Set();
+    const stream=files(uid).select("activity_id","deleted_at_ms").stream();
+    for await (const snap of stream) {
+      const row=snap.data()||{};
+      if (row.deleted_at_ms!=null) continue;
+      const id=String(row.activity_id||"").trim();
+      if (id) set.add(id);
+    }
+    return set;
+  }
+
+  async function v088Inventory(uid) {
+    const linked=await v088LinkedIds(uid);
+    const candidates=[], insufficient=[];
+    let active=0, already=0;
+    const stream=db.collection(`${ROOT}/${uid}/activities`).select(
+      "start_time_ms","sport","sub_sport","elapsed_time_ms","timer_time_ms",
+      "moving_time_ms","duration_ms","end_time_ms","distance_m","ascent_m",
+      "avg_hr","max_hr","custom_title","name","title","deleted_at_ms"
+    ).stream();
+
+    for await (const snap of stream) {
+      const a=snap.data()||{};
+      if (a.deleted_at_ms!=null) continue;
+      active++;
+      const id=String(snap.id);
+      if (linked.has(id)) { already++; continue; }
+      const c=v088Core(a);
+      if (!c.ok) {
+        insufficient.push({activity_id:id,start_time_ms:c.startMs,missing:c.missing});
+        continue;
+      }
+      candidates.push({
+        activity_id:id,start_time_ms:c.startMs,sport:c.sport,
+        sub_sport:c.subSport,duration_ms:c.durationMs,
+        distance_m:c.distance,title:String(a.custom_title||a.name||a.title||"")
+      });
+    }
+    candidates.sort((a,b)=>Number(b.start_time_ms||0)-Number(a.start_time_ms||0));
+    insufficient.sort((a,b)=>Number(b.start_time_ms||0)-Number(a.start_time_ms||0));
+    return {active,already,candidates,insufficient};
+  }
+
+  async function v088RecoverOne(uid,candidate) {
+    const id=String(candidate.activity_id||"").trim();
+    const activityRef=db.doc(`${ROOT}/${uid}/activities/${id}`);
+    const routeRef=db.doc(`${ROOT}/${uid}/activity_routes/${id}`);
+    const [activitySnap,routeSnap]=await Promise.all([activityRef.get(),routeRef.get()]);
+    if (!activitySnap.exists) return {ok:false,activity_id:id,status:"ACTIVITY_MISSING"};
+    const activity=activitySnap.data()||{};
+    if (activity.deleted_at_ms!=null) return {ok:false,activity_id:id,status:"ACTIVITY_DELETED"};
+
+    const existingLink=await files(uid).where("activity_id","==",id).limit(1).get();
+    if (existingLink.docs.some(x=>(x.data()||{}).deleted_at_ms==null)) {
+      return {ok:true,activity_id:id,status:"ALREADY_HAS_FIT",stored:false};
+    }
+
+    const route=routeSnap.exists ? (routeSnap.data()||{}) : null;
+    const prepared=v088BuildPayload(activity,route);
+    const generated=await encodeCanonicalFit(prepared.payload);
+    const validation=await inspectFitBuffer(generated.buffer);
+    const decoded=await decodeCanonicalFitSummary(generated.buffer);
+    const checked=v088Validate(prepared,decoded,validation);
+    if (!checked.ok) return {
+      ok:false,activity_id:id,status:"VALIDATION_FAILED",
+      route_mode:prepared.routeMode,validation:checked
+    };
+
+    const hash=sha256(generated.buffer);
+    const ref=fileDoc(uid,hash);
+    const priorSnap=await ref.get();
+    const prior=priorSnap.exists?(priorSnap.data()||{}):{};
+    if (
+      priorSnap.exists && prior.deleted_at_ms==null &&
+      String(prior.activity_id||"").trim() &&
+      String(prior.activity_id)!==id
+    ) return {ok:false,activity_id:id,status:"HASH_CONFLICT_OTHER_ACTIVITY",sha256:hash};
+
+    const path=prior.object_path||objectPath(uid,hash,prepared.source.startMs);
+    const object=bucket().file(path);
+    const [objectExists]=await object.exists();
+    if (!objectExists) await object.save(generated.buffer,{
+      resumable:false,validation:"crc32c",contentType:"application/vnd.ant.fit",
+      metadata:{cacheControl:"private, no-store",metadata:{
+        sha256:hash,owner_uid:uid,source:"WEB_FITRECOVERY",
+        mode:"BACKFILL_CANONICAL",writer:"FITWRITER001",
+        recovery:"FITRECOVERY001",backfill:"FITBACKFILL001"
+      }}
+    });
+
+    const now=Date.now();
+    const fileName=safeName(prior.file_name||generated.fileName||"activity.fit");
+    const metadata={
+      file_id:hash,sha256:hash,object_path:path,file_name:fileName,
+      original_name:prior.original_name||fileName,size_bytes:generated.buffer.length,
+      mime_type:"application/vnd.ant.fit",source:prior.source||"WEB_FITRECOVERY",
+      upload_mode:prior.upload_mode||"BACKFILL_CANONICAL",
+      start_time_ms:prepared.source.startMs,sport:prepared.source.sport,
+      sub_sport:prepared.source.subSport,activity_id:id,
+      link_status:"LINKED_RECOVERY",point_count:generated.stats.pointCount,
+      fit_integrity:true,fitwriter_version:"FITWRITER001",
+      fitrecovery_version:"FITRECOVERY001",fitbackfill_version:"FITBACKFILL001",
+      recovery_route_mode:prepared.routeMode,recovery_is_canonical:true,
+      lossless_source_reconstruction:false,parent_sha256:prior.parent_sha256||null,
+      version_index:Number(prior.version_index||1),
+      is_active_version:Boolean(prior.is_active_version),
+      first_uploaded_at_ms:Number(prior.first_uploaded_at_ms||now),
+      uploaded_at_ms:now,last_seen_at_ms:now,deleted_at_ms:null,
+      storage_version:"FITCLOUD001"
+    };
+    await ref.set(metadata,{merge:true});
+    return {
+      ok:true,activity_id:id,status:"STORED",stored:true,
+      deduplicated:Boolean(priorSnap.exists||objectExists),
+      route_mode:prepared.routeMode,sha256:hash,file_name:fileName,
+      size_bytes:generated.buffer.length
+    };
+  }
+  /* CGWEB088_FITRECOVERY001_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -1620,6 +1826,58 @@ function createFitVault() {
         /* CGWEB080_FITDRIVE001_ACTION_END */
 
 
+
+        /* CGWEB088_FITBACKFILL001_ACTION_START */
+        if (action === "recovery_plan") {
+          if (req.method!=="GET") return res.status(405).json({error:"GET requis."});
+          const inv=await v088Inventory(uid);
+          const limit=Math.max(10,Math.min(200,Number(req.query.limit||50)));
+          return res.json({
+            ok:true,service:"FITRECOVERY001",version:"CGWEB088",dry_run:true,
+            activities_modified:0,fit_files_created:0,
+            summary:{
+              activities_active:inv.active,already_with_fit:inv.already,
+              missing_fit:inv.candidates.length+inv.insufficient.length,
+              reconstructible:inv.candidates.length,insufficient:inv.insufficient.length
+            },
+            next_candidates:inv.candidates.slice(0,limit),
+            insufficient_examples:inv.insufficient.slice(0,50)
+          });
+        }
+
+        if (action === "recovery_batch") {
+          if (req.method!=="POST") return res.status(405).json({error:"POST requis."});
+          let body=req.body;
+          if (Buffer.isBuffer(body)) { try{body=JSON.parse(body.toString("utf8"));}catch{body={};} }
+          if (!body||typeof body!=="object"||Array.isArray(body)) body={};
+          const size=Math.max(1,Math.min(50,Number(body.batch_size||25)));
+          const inv=await v088Inventory(uid);
+          const selected=inv.candidates.slice(0,size);
+          const results=new Array(selected.length);
+          let cursor=0;
+          async function worker() {
+            while (true) {
+              const i=cursor++;
+              if (i>=selected.length) return;
+              try { results[i]=await v088RecoverOne(uid,selected[i]); }
+              catch(error) {
+                console.error("FITBACKFILL001",selected[i].activity_id,error);
+                results[i]={ok:false,activity_id:selected[i].activity_id,status:"ERROR",error:error?.message||String(error)};
+              }
+            }
+          }
+          await Promise.all(Array.from({length:Math.min(2,selected.length)},()=>worker()));
+          const stored=results.filter(x=>x?.status==="STORED").length;
+          const already=results.filter(x=>x?.status==="ALREADY_HAS_FIT").length;
+          const failed=results.filter(x=>!x?.ok).length;
+          return res.json({
+            ok:failed===0,service:"FITBACKFILL001",version:"CGWEB088",
+            requested:size,selected:selected.length,stored,already_present:already,failed,
+            remaining_reconstructible:Math.max(0,inv.candidates.length-stored-already),
+            insufficient:inv.insufficient.length,activities_modified:0,results
+          });
+        }
+        /* CGWEB088_FITBACKFILL001_ACTION_END */
 
         if (action === "upload") {
           if (req.method !== "POST") return res.status(405).json({error: "POST requis."});
