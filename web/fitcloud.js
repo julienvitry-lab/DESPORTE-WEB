@@ -2563,6 +2563,653 @@ window.SPORT_FIT_RECOVERY_NORMALIZE=Object.freeze({
 });
 /* CGWEB088_FIX4_FITRECOVERY_NORMALIZE001_WEB_END */
 
+
+/* CGWEB090_HISTORICAL_FIT_TRANSFER001_WEB_START */
+
+let c090SelectedFiles = [];
+let c090Prepared = [];
+let c090Busy = false;
+let c090StopRequested = false;
+let c090WakeLock = null;
+
+function c090Node(id) {
+  return document.getElementById(id);
+}
+
+function c090FormatBytes(value) {
+  try {
+    return bridge().formatBytes(Number(value || 0));
+  } catch {
+    return Number(value || 0) + " o";
+  }
+}
+
+function c090Cards(hostId, rows) {
+  const host = c090Node(hostId);
+  if (!host) return;
+
+  host.innerHTML = rows.map(([label, value]) =>
+    '<div class="cgweb090-card">' +
+      '<span>' + bridge().escapeHtml(label) + '</span>' +
+      '<strong>' + bridge().escapeHtml(String(value ?? 0)) + '</strong>' +
+    '</div>'
+  ).join("");
+}
+
+function c090SetProgress(done, total, text) {
+  const p = c090Node("cgweb090Progress");
+  const label = c090Node("cgweb090ProgressText");
+  const pct = c090Node("cgweb090Percent");
+
+  const safeTotal = Math.max(1, Number(total || 1));
+  const safeDone = Math.max(0, Math.min(safeTotal, Number(done || 0)));
+  const percent = Math.round((safeDone / safeTotal) * 100);
+
+  if (p) {
+    p.max = safeTotal;
+    p.value = safeDone;
+  }
+  if (label) label.textContent = text || "";
+  if (pct) pct.textContent = percent + " %";
+}
+
+async function c090AcquireWakeLock() {
+  try {
+    if ("wakeLock" in navigator && document.visibilityState === "visible") {
+      c090WakeLock = await navigator.wakeLock.request("screen");
+    }
+  } catch (error) {
+    console.warn("CGWEB090 wake lock", error);
+  }
+}
+
+async function c090ReleaseWakeLock() {
+  try {
+    if (c090WakeLock) await c090WakeLock.release();
+  } catch (_) {
+  } finally {
+    c090WakeLock = null;
+  }
+}
+
+async function c090Sha256(buffer) {
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function c090FallbackMetadata(fileName) {
+  if (typeof canonicalNameMetadata === "function") {
+    return canonicalNameMetadata(fileName);
+  }
+  return {startMs:null, sport:null, subSport:0};
+}
+
+async function c090PrepareOne(file) {
+  const buffer = await file.arrayBuffer();
+  const sha256 = await c090Sha256(buffer);
+  const fallback = c090FallbackMetadata(file?.name);
+
+  let startMs = fallback.startMs;
+  let sport = fallback.sport;
+  let subSport = fallback.subSport || 0;
+  let decodeError = null;
+
+  try {
+    const decoded = bridge().decodeFitActivity(buffer, file.name);
+    startMs = Number(decoded?.session?.start_time_ms) || startMs || null;
+    sport = Number(decoded?.session?.sport) || sport || null;
+    subSport = Number(decoded?.session?.sub_sport) || subSport || 0;
+  } catch (error) {
+    decodeError = error?.message || String(error);
+  }
+
+  return {
+    file,
+    sha256,
+    startMs,
+    sport,
+    subSport,
+    decodeError,
+    preflight:null
+  };
+}
+
+async function c090PreflightBatch(items) {
+  const x = await request(
+    "historical_preflight",
+    {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        hashes:items.map((item) => item.sha256)
+      })
+    }
+  );
+
+  const map = new Map(
+    (x?.items || []).map((row) => [
+      String(row.sha256 || ""),
+      row
+    ])
+  );
+
+  for (const item of items) {
+    item.preflight =
+      map.get(item.sha256) ||
+      {
+        sha256:item.sha256,
+        status:"MISSING",
+        needs_upload:true
+      };
+  }
+}
+
+function c090SelectionChanged(fileList) {
+  c090SelectedFiles = [...(fileList || [])]
+    .filter((file) =>
+      String(file?.name || "").toLowerCase().endsWith(".fit")
+    );
+
+  c090Prepared = [];
+
+  const totalBytes = c090SelectedFiles.reduce(
+    (sum, file) => sum + Number(file.size || 0),
+    0
+  );
+
+  const selection = c090Node("cgweb090Selection");
+  const prepare = c090Node("cgweb090Prepare");
+  const transfer = c090Node("cgweb090Transfer");
+  const badge = c090Node("cgweb090Badge");
+
+  if (selection) {
+    selection.textContent =
+      c090SelectedFiles.length
+        ? c090SelectedFiles.length + " FIT · " +
+          c090FormatBytes(totalBytes) +
+          " · analyse SHA-256 requise"
+        : "Aucun FIT sélectionné.";
+  }
+
+  if (prepare) prepare.disabled = !c090SelectedFiles.length || c090Busy;
+  if (transfer) transfer.disabled = true;
+
+  if (badge) {
+    badge.textContent =
+      c090SelectedFiles.length
+        ? c090SelectedFiles.length + " sélectionnés"
+        : "Non préparé";
+  }
+
+  c090Cards("cgweb090TransferSummary", []);
+  c090SetProgress(0, 1, "En attente");
+}
+
+async function c090PrepareArchive() {
+  if (c090Busy || !c090SelectedFiles.length) return;
+
+  c090Busy = true;
+  c090StopRequested = false;
+
+  const prepare = c090Node("cgweb090Prepare");
+  const transfer = c090Node("cgweb090Transfer");
+  const badge = c090Node("cgweb090Badge");
+
+  if (prepare) prepare.disabled = true;
+  if (transfer) transfer.disabled = true;
+
+  c090Prepared = new Array(c090SelectedFiles.length);
+
+  try {
+    for (let i = 0; i < c090SelectedFiles.length; i += 1) {
+      const file = c090SelectedFiles[i];
+
+      c090SetProgress(
+        i,
+        c090SelectedFiles.length,
+        "Analyse " + (i + 1) + "/" + c090SelectedFiles.length + " · " + file.name
+      );
+
+      c090Prepared[i] = await c090PrepareOne(file);
+
+      if ((i + 1) % 20 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+
+    for (let start = 0; start < c090Prepared.length; start += 100) {
+      const batch = c090Prepared.slice(start, start + 100);
+
+      c090SetProgress(
+        start,
+        c090Prepared.length,
+        "Préflight Cloud " + (start + 1) + "–" +
+          Math.min(start + batch.length, c090Prepared.length)
+      );
+
+      await c090PreflightBatch(batch);
+    }
+
+    const missing = c090Prepared.filter(
+      (item) =>
+        item.preflight?.status === "MISSING" ||
+        item.preflight?.status === "DELETED_METADATA"
+    ).length;
+
+    const observation = c090Prepared.filter(
+      (item) =>
+        item.preflight?.status === "EXISTS_NEEDS_ORIGINAL_OBSERVATION"
+    ).length;
+
+    const already = c090Prepared.filter(
+      (item) =>
+        item.preflight?.status === "ALREADY_ARCHIVED_ORIGINAL"
+    ).length;
+
+    const decodeErrors = c090Prepared.filter(
+      (item) => item.decodeError
+    ).length;
+
+    const useful = missing + observation;
+
+    c090Cards(
+      "cgweb090TransferSummary",
+      [
+        ["Sélectionnés", c090Prepared.length],
+        ["Nouveaux à stocker", missing],
+        ["Doublons canoniques à marquer original", observation],
+        ["Originaux déjà archivés", already],
+        ["Décodage partiel", decodeErrors],
+        ["À envoyer", useful]
+      ]
+    );
+
+    c090SetProgress(
+      c090Prepared.length,
+      c090Prepared.length,
+      "Analyse terminée"
+    );
+
+    if (badge) {
+      badge.textContent =
+        useful
+          ? useful + " à transférer"
+          : "Archive déjà transférée";
+    }
+
+    if (transfer) transfer.disabled = useful <= 0;
+  } finally {
+    c090Busy = false;
+    if (prepare) prepare.disabled = !c090SelectedFiles.length;
+  }
+}
+
+async function c090UploadPrepared(item) {
+  const buffer = await item.file.arrayBuffer();
+
+  const headers = {
+    "Content-Type":"application/vnd.ant.fit",
+    "X-Sport-Filename":item.file.name,
+    "X-Sport-Source":"HISTORICAL_ARCHIVE_TRANSFER",
+    "X-Sport-Mode":"HISTORICAL_ORIGINAL"
+  };
+
+  if (item.startMs) {
+    headers["X-Sport-Start-Ms"] = String(item.startMs);
+  }
+
+  if (item.sport) {
+    headers["X-Sport-Sport"] = String(item.sport);
+  }
+
+  headers["X-Sport-Sub-Sport"] = String(item.subSport || 0);
+
+  return request(
+    "upload",
+    {
+      method:"POST",
+      headers,
+      body:buffer
+    }
+  );
+}
+
+async function c090TransferArchive() {
+  if (c090Busy || !c090Prepared.length) return;
+
+  const queue = c090Prepared.filter(
+    (item) => item.preflight?.needs_upload === true
+  );
+
+  if (!queue.length) {
+    await c090RunReconcile();
+    return;
+  }
+
+  const ok = window.confirm(
+    "Transférer " + queue.length + " FIT historique(s) utile(s) ?\n\n" +
+    "Les FIT déjà archivés comme originaux sont ignorés.\n" +
+    "Un original identique à un FIT canonique est conservé comme provenance supplémentaire.\n" +
+    "Aucun FIT canonique n'est supprimé ou remplacé.\n" +
+    "0 activité créée / 0 activité modifiée."
+  );
+
+  if (!ok) return;
+
+  c090Busy = true;
+  c090StopRequested = false;
+
+  const prepare = c090Node("cgweb090Prepare");
+  const transfer = c090Node("cgweb090Transfer");
+  const stop = c090Node("cgweb090Stop");
+  const badge = c090Node("cgweb090Badge");
+
+  if (prepare) prepare.disabled = true;
+  if (transfer) transfer.disabled = true;
+  if (stop) stop.disabled = false;
+
+  await c090AcquireWakeLock();
+
+  let fresh = 0;
+  let duplicate = 0;
+  let observed = 0;
+  let failed = 0;
+  let completed = 0;
+
+  const errors = [];
+  let cursor = 0;
+  const workerCount = Math.min(2, queue.length);
+
+  async function worker() {
+    while (true) {
+      if (c090StopRequested) return;
+
+      const index = cursor++;
+      if (index >= queue.length) return;
+
+      const item = queue[index];
+
+      try {
+        const result = await c090UploadPrepared(item);
+
+        if (result?.deduplicated) duplicate += 1;
+        else fresh += 1;
+
+        if (result?.original_observation_added) {
+          observed += 1;
+        }
+
+        item.preflight = {
+          ...(item.preflight || {}),
+          needs_upload:false,
+          status:"TRANSFERRED"
+        };
+      } catch (error) {
+        failed += 1;
+        errors.push({
+          name:item.file.name,
+          sha256:item.sha256,
+          error:error?.message || String(error)
+        });
+      } finally {
+        completed += 1;
+
+        c090SetProgress(
+          completed,
+          queue.length,
+          "Transfert " + completed + "/" + queue.length +
+          " · " + (item?.file?.name || "")
+        );
+
+        c090Cards(
+          "cgweb090TransferSummary",
+          [
+            ["À envoyer", queue.length],
+            ["Terminés", completed],
+            ["Nouveaux stockés", fresh],
+            ["Doublons exacts", duplicate],
+            ["Provenances original ajoutées", observed],
+            ["Échecs", failed]
+          ]
+        );
+      }
+    }
+  }
+
+  try {
+    await Promise.all(
+      Array.from({length:workerCount}, () => worker())
+    );
+
+    const details = c090Node("cgweb090TransferErrors");
+    const list = c090Node("cgweb090TransferErrorList");
+
+    if (errors.length) {
+      if (details) {
+        details.classList.remove("hidden");
+        details.open = true;
+      }
+
+      if (list) {
+        list.textContent = errors
+          .map(
+            (row) =>
+              "✗ " + row.name +
+              " · " + row.sha256.slice(0, 16) +
+              "… · " + row.error
+          )
+          .join("\n");
+      }
+    } else {
+      if (details) details.classList.add("hidden");
+      if (list) list.textContent = "";
+    }
+
+    if (badge) {
+      badge.textContent =
+        c090StopRequested
+          ? "Transfert arrêté proprement"
+          : (failed ? failed + " échec(s)" : "Transfert terminé");
+    }
+
+    await c090RunReconcile();
+  } finally {
+    c090Busy = false;
+    if (stop) stop.disabled = true;
+    if (prepare) prepare.disabled = !c090SelectedFiles.length;
+    if (transfer) transfer.disabled = true;
+    await c090ReleaseWakeLock();
+  }
+}
+
+function c090Stop() {
+  if (!c090Busy) return;
+  c090StopRequested = true;
+
+  const stop = c090Node("cgweb090Stop");
+  if (stop) stop.disabled = true;
+
+  const badge = c090Node("cgweb090Badge");
+  if (badge) badge.textContent = "Arrêt demandé";
+}
+
+function c090ExampleLine(row) {
+  const date =
+    row?.start_time_ms
+      ? new Date(Number(row.start_time_ms)).toLocaleString("fr-FR")
+      : "date inconnue";
+
+  return (
+    (row?.file_name || row?.activity_id || row?.sha256 || "?") +
+    " · " + date +
+    (row?.link_status ? " · " + row.link_status : "")
+  );
+}
+
+async function c090RunReconcile() {
+  const status = c090Node("cgweb090ReconcileStatus");
+  const button = c090Node("cgweb090Reconcile");
+
+  if (button) button.disabled = true;
+  if (status) status.textContent = "Réconciliation du coffre en cours…";
+
+  try {
+    const x = await request("fit_reconcile");
+    const s = x?.summary || {};
+
+    c090Cards(
+      "cgweb090ReconcileSummary",
+      [
+        ["Activités", s.activities_active],
+        ["Avec au moins un FIT", s.activities_with_any_fit],
+        ["Avec original", s.activities_with_original],
+        ["Original + canonique", s.activities_with_both],
+        ["Canonique uniquement", s.activities_canonical_only],
+        ["Original uniquement", s.activities_original_only],
+        ["Sans FIT", s.activities_without_fit],
+        ["FIT originaux", s.original_files],
+        ["Canoniques backfill", s.canonical_backfill_files],
+        ["Canoniques autres", s.canonical_generated_files],
+        ["Versions éditées", s.edited_version_files],
+        ["Originaux non liés", s.unlinked_original_files],
+        ["Originaux ambigus", s.ambiguous_original_files]
+      ]
+    );
+
+    const canonical = c090Node("cgweb090CanonicalOnlyList");
+    if (canonical) {
+      const rows = s.canonical_only_examples || [];
+      canonical.textContent =
+        rows.length
+          ? rows.map(
+              (row) =>
+                "#" + row.activity_id +
+                " · " + row.canonical_count + " FIT canonique(s)"
+            ).join("\n")
+          : "Aucune activité uniquement canonique.";
+    }
+
+    const unlinked = c090Node("cgweb090UnlinkedList");
+    if (unlinked) {
+      const rows = s.unlinked_original_examples || [];
+      unlinked.textContent =
+        rows.length
+          ? rows.map(c090ExampleLine).join("\n")
+          : "Aucun FIT original non lié.";
+    }
+
+    if (status) {
+      status.textContent =
+        "Réconciliation terminée · " +
+        Number(s.activities_with_original || 0) + "/" +
+        Number(s.activities_active || 0) +
+        " activité(s) disposent d'au moins un original · " +
+        Number(s.activities_canonical_only || 0) +
+        " reposent uniquement sur un canonique.";
+    }
+
+    return x;
+  } catch (error) {
+    if (status) {
+      status.textContent =
+        "Réconciliation impossible : " +
+        (error?.message || String(error));
+    }
+    throw error;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function c090Wire() {
+  const folder = c090Node("cgweb090Folder");
+  const files = c090Node("cgweb090Files");
+  const prepare = c090Node("cgweb090Prepare");
+  const transfer = c090Node("cgweb090Transfer");
+  const stop = c090Node("cgweb090Stop");
+  const reconcile = c090Node("cgweb090Reconcile");
+
+  if (folder && folder.dataset.c090 !== "1") {
+    folder.dataset.c090 = "1";
+    folder.addEventListener(
+      "change",
+      (event) => c090SelectionChanged(event.currentTarget.files)
+    );
+  }
+
+  if (files && files.dataset.c090 !== "1") {
+    files.dataset.c090 = "1";
+    files.addEventListener(
+      "change",
+      (event) => c090SelectionChanged(event.currentTarget.files)
+    );
+  }
+
+  if (prepare && prepare.dataset.c090 !== "1") {
+    prepare.dataset.c090 = "1";
+    prepare.addEventListener(
+      "click",
+      () => void c090PrepareArchive().catch((error) => {
+        const badge = c090Node("cgweb090Badge");
+        if (badge) badge.textContent = "Analyse interrompue";
+        console.error("HISTORICAL_FIT_TRANSFER001 prepare", error);
+      })
+    );
+  }
+
+  if (transfer && transfer.dataset.c090 !== "1") {
+    transfer.dataset.c090 = "1";
+    transfer.addEventListener(
+      "click",
+      () => void c090TransferArchive().catch((error) => {
+        console.error("HISTORICAL_FIT_TRANSFER001 transfer", error);
+      })
+    );
+  }
+
+  if (stop && stop.dataset.c090 !== "1") {
+    stop.dataset.c090 = "1";
+    stop.addEventListener("click", c090Stop);
+  }
+
+  if (reconcile && reconcile.dataset.c090 !== "1") {
+    reconcile.dataset.c090 = "1";
+    reconcile.addEventListener(
+      "click",
+      () => void c090RunReconcile().catch(() => {})
+    );
+  }
+
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (
+        c090Busy &&
+        document.visibilityState === "visible" &&
+        !c090WakeLock
+      ) {
+        void c090AcquireWakeLock();
+      }
+    }
+  );
+}
+
+window.SPORT_HISTORICAL_FIT_TRANSFER = Object.freeze({
+  version:"HISTORICAL_FIT_TRANSFER001",
+  reconcileVersion:"FIT_RECONCILE001",
+  prepare:c090PrepareArchive,
+  transfer:c090TransferArchive,
+  reconcile:c090RunReconcile,
+  stop:c090Stop
+});
+
+queueMicrotask(c090Wire);
+
+/* CGWEB090_HISTORICAL_FIT_TRANSFER001_WEB_END */
+
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));

@@ -5349,6 +5349,58 @@ body.ux-activities-page main{
 /* CGWEB089_FILES_REORGANIZE001_CSS_END */
 </style>
 
+
+<style id="cgweb090-historical-fit-css">
+/* CGWEB090_HISTORICAL_FIT_TRANSFER001_CSS_START */
+#cgweb090HistoricalTransfer{margin:0}
+#cgweb090HistoricalTransfer .cgweb090-safety{
+  display:grid;gap:4px;margin:10px 0 14px;padding:11px 12px;
+  border:1px solid rgba(190,255,55,.22);border-radius:12px;
+  background:rgba(190,255,55,.035)
+}
+#cgweb090HistoricalTransfer .cgweb090-picker-row{
+  display:grid;grid-template-columns:auto auto auto auto auto;
+  gap:8px;align-items:center;margin:10px 0
+}
+#cgweb090HistoricalTransfer .cgweb090-picker{cursor:pointer;text-align:center}
+#cgweb090HistoricalTransfer .cgweb090-progress-wrap{display:grid;gap:6px;margin:12px 0}
+#cgweb090HistoricalTransfer .cgweb090-progress-head{
+  display:flex;justify-content:space-between;gap:10px;align-items:center
+}
+#cgweb090HistoricalTransfer progress{width:100%}
+#cgweb090HistoricalTransfer .cgweb090-card-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));
+  gap:8px;margin:12px 0
+}
+#cgweb090HistoricalTransfer .cgweb090-card{
+  border:1px solid rgba(190,255,55,.18);border-radius:12px;
+  padding:10px 12px;background:rgba(255,255,255,.025)
+}
+#cgweb090HistoricalTransfer .cgweb090-card span{display:block;font-size:.82rem;opacity:.78}
+#cgweb090HistoricalTransfer .cgweb090-card strong{display:block;font-size:1.25rem}
+#cgweb090HistoricalTransfer .cgweb090-reconcile-head{
+  display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+  margin-top:18px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)
+}
+#cgweb090HistoricalTransfer .cgweb090-reconcile-head>div{display:grid;gap:3px}
+#cgweb090HistoricalTransfer .cgweb090-details,
+#cgweb090HistoricalTransfer .cgweb090-errors{
+  margin-top:10px;border-top:1px solid rgba(255,255,255,.07);padding-top:8px
+}
+#cgweb090HistoricalTransfer pre{
+  max-height:300px;overflow:auto;white-space:pre-wrap;
+  overflow-wrap:anywhere;font-size:.82rem
+}
+@media(max-width:1100px){
+  #cgweb090HistoricalTransfer .cgweb090-picker-row{grid-template-columns:1fr 1fr}
+}
+@media(max-width:700px){
+  #cgweb090HistoricalTransfer .cgweb090-picker-row{grid-template-columns:1fr}
+  #cgweb090HistoricalTransfer .cgweb090-reconcile-head{flex-direction:column}
+}
+/* CGWEB090_HISTORICAL_FIT_TRANSFER001_CSS_END */
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5738,6 +5790,95 @@ body.ux-activities-page main{
 
 
 <!-- CGWEB087_FITAUDIT001_HTML_START -->
+
+<!-- CGWEB090_HISTORICAL_FIT_TRANSFER001_HTML_START -->
+<section id="cgweb090HistoricalTransfer" class="panel cgweb090-historical-transfer">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">CGWEB090 · HISTORICAL_FIT_TRANSFER001 / FIT_RECONCILE001</p>
+      <h2>Transfert FIT historiques</h2>
+      <p class="muted">
+        Archive les FIT originaux sans remplacer les FIT canoniques déjà présents.
+        Les doublons exacts sont reconnus par SHA-256.
+      </p>
+    </div>
+    <span id="cgweb090Badge" class="pill neutral">Non préparé</span>
+  </div>
+
+  <div class="cgweb090-safety">
+    <strong>Principe de conservation</strong>
+    <span>
+      Original et canonique peuvent cohabiter pour la même activité.
+      Aucune activité n'est créée, modifiée ou supprimée par ce transfert.
+    </span>
+  </div>
+
+  <div class="cgweb090-picker-row">
+    <label class="secondary cgweb090-picker">
+      Sélectionner un dossier FIT
+      <input id="cgweb090Folder" type="file" accept=".fit,application/vnd.ant.fit"
+             multiple webkitdirectory directory hidden>
+    </label>
+
+    <label class="secondary cgweb090-picker">
+      Sélectionner des FIT
+      <input id="cgweb090Files" type="file" accept=".fit,application/vnd.ant.fit"
+             multiple hidden>
+    </label>
+
+    <button id="cgweb090Prepare" type="button" disabled>Analyser l'archive</button>
+    <button id="cgweb090Transfer" class="primary" type="button" disabled>
+      Transférer les originaux utiles
+    </button>
+    <button id="cgweb090Stop" class="secondary" type="button" disabled>
+      Arrêter après les envois en cours
+    </button>
+  </div>
+
+  <div id="cgweb090Selection" class="muted">Aucun FIT sélectionné.</div>
+
+  <div class="cgweb090-progress-wrap">
+    <div class="cgweb090-progress-head">
+      <strong id="cgweb090ProgressText">En attente</strong>
+      <span id="cgweb090Percent">0 %</span>
+    </div>
+    <progress id="cgweb090Progress" max="1" value="0"></progress>
+  </div>
+
+  <div id="cgweb090TransferSummary" class="cgweb090-card-grid"></div>
+
+  <details id="cgweb090TransferErrors" class="cgweb090-errors hidden">
+    <summary>Erreurs / fichiers à reprendre</summary>
+    <pre id="cgweb090TransferErrorList"></pre>
+  </details>
+
+  <div class="cgweb090-reconcile-head">
+    <div>
+      <strong>Réconciliation du patrimoine FIT</strong>
+      <span class="muted">
+        Compare les activités avec les originaux et les canoniques présents dans le coffre.
+      </span>
+    </div>
+    <button id="cgweb090Reconcile" class="secondary" type="button">
+      Réconcilier le coffre
+    </button>
+  </div>
+
+  <div id="cgweb090ReconcileStatus" class="muted">Réconciliation non lancée.</div>
+  <div id="cgweb090ReconcileSummary" class="cgweb090-card-grid"></div>
+
+  <details id="cgweb090CanonicalOnlyDetails" class="cgweb090-details">
+    <summary>Activités reposant uniquement sur un FIT canonique</summary>
+    <pre id="cgweb090CanonicalOnlyList">Non analysé.</pre>
+  </details>
+
+  <details id="cgweb090UnlinkedDetails" class="cgweb090-details">
+    <summary>FIT originaux non liés</summary>
+    <pre id="cgweb090UnlinkedList">Non analysé.</pre>
+  </details>
+</section>
+<!-- CGWEB090_HISTORICAL_FIT_TRANSFER001_HTML_END -->
+
 <section id="cgweb087FitAudit" class="panel cgweb087-audit">
   <div class="section-heading">
     <div>
@@ -7112,6 +7253,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB088-FIX4-FITRECOVERY-NORMALIZE001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB090-HISTORICAL-FIT-TRANSFER001-FIT-RECONCILE001"></script>
 </body>
 </html>

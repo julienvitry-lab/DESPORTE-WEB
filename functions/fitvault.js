@@ -1339,6 +1339,329 @@ function createFitVault() {
   /* CGWEB088_FITRECOVERY001_HELPERS_END */
 
   /* CGWEB088_FIX1_FITSIGNATURE001_BACKEND */
+
+  /* CGWEB090_FIT_RECONCILE001_HELPERS_START */
+
+  const C090_ROLE_ORIGINAL = "ORIGINAL_HISTORICAL";
+  const C090_ROLE_BACKFILL = "CANONICAL_BACKFILL";
+  const C090_ROLE_GENERATED = "CANONICAL_GENERATED";
+  const C090_ROLE_EDITED = "EDITED_VERSION";
+  const C090_ROLE_UNKNOWN = "UNKNOWN";
+
+  function c090Strings(values) {
+    const out = [];
+    const seen = new Set();
+
+    for (const value of values || []) {
+      const text = String(value ?? "").trim();
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      out.push(text);
+    }
+
+    return out;
+  }
+
+  function c090IncomingRole(source, mode) {
+    const src = String(source || "").toUpperCase();
+    const md = String(mode || "").toUpperCase();
+
+    if (
+      md === "HISTORICAL_ORIGINAL" ||
+      md === "HISTORICAL_FILE_ONLY" ||
+      md === "FUTURE_IMPORT_ORIGINAL" ||
+      src === "HISTORICAL_ARCHIVE_TRANSFER" ||
+      src === "HISTORICAL_PHONE_MIGRATION" ||
+      src === "WEB_MANUAL_FIT_FUTURE"
+    ) {
+      return C090_ROLE_ORIGINAL;
+    }
+
+    if (
+      md === "BACKFILL_CANONICAL" ||
+      src === "WEB_FITRECOVERY"
+    ) {
+      return C090_ROLE_BACKFILL;
+    }
+
+    if (
+      md === "VERSIONED_CANONICAL" ||
+      src === "WEB_FITEDITOR" ||
+      src === "WEB_FITVERSION"
+    ) {
+      return C090_ROLE_EDITED;
+    }
+
+    if (
+      md.includes("CANONICAL") ||
+      src.includes("FITWRITER") ||
+      src.includes("STRAVA")
+    ) {
+      return C090_ROLE_GENERATED;
+    }
+
+    return C090_ROLE_UNKNOWN;
+  }
+
+  function c090Roles(row) {
+    const roles = new Set(
+      Array.isArray(row?.archive_roles)
+        ? row.archive_roles.map((x) => String(x || "").trim()).filter(Boolean)
+        : []
+    );
+
+    const inferred = c090IncomingRole(
+      String(row?.source || ""),
+      String(row?.upload_mode || "")
+    );
+
+    if (inferred !== C090_ROLE_UNKNOWN) {
+      roles.add(inferred);
+    }
+
+    if (
+      row?.fitbackfill_version ||
+      row?.fitrecovery_version ||
+      row?.recovery_is_canonical === true
+    ) {
+      roles.add(C090_ROLE_BACKFILL);
+    }
+
+    if (
+      Number(row?.version_index || 0) > 1 ||
+      row?.fitversion_version ||
+      row?.fit_editor_version ||
+      String(row?.version_kind || "").includes("CANONICAL")
+    ) {
+      roles.add(C090_ROLE_EDITED);
+    }
+
+    if (
+      row?.fitwriter_version &&
+      !roles.has(C090_ROLE_BACKFILL) &&
+      !roles.has(C090_ROLE_EDITED)
+    ) {
+      roles.add(C090_ROLE_GENERATED);
+    }
+
+    if (!roles.size) {
+      roles.add(C090_ROLE_UNKNOWN);
+    }
+
+    return [...roles];
+  }
+
+  function c090MergeArchiveRoles(previous, incomingRole) {
+    return c090Strings([
+      ...(Array.isArray(previous?.archive_roles) ? previous.archive_roles : []),
+      ...c090Roles(previous),
+      incomingRole
+    ]);
+  }
+
+  function c090IsOriginalRole(role) {
+    return String(role) === C090_ROLE_ORIGINAL;
+  }
+
+  function c090IsCanonicalRole(role) {
+    return [
+      C090_ROLE_BACKFILL,
+      C090_ROLE_GENERATED,
+      C090_ROLE_EDITED
+    ].includes(String(role));
+  }
+
+  async function c090Reconcile(uid) {
+    const activityIds = new Set();
+    const states = new Map();
+
+    const activityQuery =
+      db.collection(`${ROOT}/${uid}/activities`)
+        .select("deleted_at_ms");
+
+    for await (const snap of activityQuery.stream()) {
+      const row = snap.data() || {};
+      if (row.deleted_at_ms != null) continue;
+
+      const id = String(snap.id);
+      activityIds.add(id);
+      states.set(id, {
+        any: false,
+        original: false,
+        canonical: false,
+        edited: false,
+        fileCount: 0,
+        originalCount: 0,
+        canonicalCount: 0
+      });
+    }
+
+    const fitQuery =
+      files(uid).select(
+        "activity_id",
+        "sha256",
+        "file_name",
+        "source",
+        "upload_mode",
+        "archive_roles",
+        "observed_sources",
+        "observed_modes",
+        "start_time_ms",
+        "sport",
+        "sub_sport",
+        "link_status",
+        "fitwriter_version",
+        "fitrecovery_version",
+        "fitbackfill_version",
+        "recovery_is_canonical",
+        "fitversion_version",
+        "fit_editor_version",
+        "version_index",
+        "version_kind",
+        "deleted_at_ms"
+      );
+
+    let fitFilesActive = 0;
+    let originalFiles = 0;
+    let canonicalBackfillFiles = 0;
+    let canonicalGeneratedFiles = 0;
+    let editedVersionFiles = 0;
+    let unknownFiles = 0;
+    let unlinkedOriginalFiles = 0;
+    let ambiguousOriginalFiles = 0;
+    let danglingLinkedFiles = 0;
+
+    const unlinkedOriginalExamples = [];
+    const ambiguousOriginalExamples = [];
+    const canonicalOnlyExamples = [];
+
+    for await (const snap of fitQuery.stream()) {
+      const row = snap.data() || {};
+      if (row.deleted_at_ms != null) continue;
+
+      fitFilesActive += 1;
+
+      const roles = c090Roles(row);
+      const original = roles.some(c090IsOriginalRole);
+      const canonical = roles.some(c090IsCanonicalRole);
+
+      if (roles.includes(C090_ROLE_ORIGINAL)) originalFiles += 1;
+      if (roles.includes(C090_ROLE_BACKFILL)) canonicalBackfillFiles += 1;
+      if (roles.includes(C090_ROLE_GENERATED)) canonicalGeneratedFiles += 1;
+      if (roles.includes(C090_ROLE_EDITED)) editedVersionFiles += 1;
+      if (roles.includes(C090_ROLE_UNKNOWN)) unknownFiles += 1;
+
+      const activityId = String(row.activity_id || "").trim();
+      const linkedState = activityId ? states.get(activityId) : null;
+
+      if (linkedState) {
+        linkedState.any = true;
+        linkedState.fileCount += 1;
+
+        if (original) {
+          linkedState.original = true;
+          linkedState.originalCount += 1;
+        }
+
+        if (canonical) {
+          linkedState.canonical = true;
+          linkedState.canonicalCount += 1;
+        }
+
+        if (roles.includes(C090_ROLE_EDITED)) {
+          linkedState.edited = true;
+        }
+      } else {
+        if (activityId && !activityIds.has(activityId)) {
+          danglingLinkedFiles += 1;
+        }
+
+        if (original) {
+          unlinkedOriginalFiles += 1;
+
+          const example = {
+            sha256: String(row.sha256 || snap.id),
+            file_name: String(row.file_name || ""),
+            start_time_ms: Number(row.start_time_ms || 0) || null,
+            sport: Number(row.sport || 0) || null,
+            sub_sport: Number(row.sub_sport || 0) || 0,
+            link_status: String(row.link_status || "UNLINKED"),
+            source: String(row.source || ""),
+            upload_mode: String(row.upload_mode || "")
+          };
+
+          if (unlinkedOriginalExamples.length < 100) {
+            unlinkedOriginalExamples.push(example);
+          }
+
+          if (String(row.link_status || "") === "UNLINKED_AMBIGUOUS") {
+            ambiguousOriginalFiles += 1;
+            if (ambiguousOriginalExamples.length < 100) {
+              ambiguousOriginalExamples.push(example);
+            }
+          }
+        }
+      }
+    }
+
+    let activitiesWithAnyFit = 0;
+    let activitiesWithOriginal = 0;
+    let activitiesCanonicalOnly = 0;
+    let activitiesWithBoth = 0;
+    let activitiesOriginalOnly = 0;
+    let activitiesWithEditedVersion = 0;
+
+    for (const [activityId, state] of states.entries()) {
+      if (state.any) activitiesWithAnyFit += 1;
+      if (state.original) activitiesWithOriginal += 1;
+      if (state.edited) activitiesWithEditedVersion += 1;
+
+      if (state.original && state.canonical) {
+        activitiesWithBoth += 1;
+      } else if (state.original) {
+        activitiesOriginalOnly += 1;
+      } else if (state.canonical) {
+        activitiesCanonicalOnly += 1;
+
+        if (canonicalOnlyExamples.length < 100) {
+          canonicalOnlyExamples.push({
+            activity_id: activityId,
+            canonical_count: state.canonicalCount,
+            file_count: state.fileCount
+          });
+        }
+      }
+    }
+
+    return {
+      activities_active: activityIds.size,
+      activities_with_any_fit: activitiesWithAnyFit,
+      activities_without_fit: Math.max(0, activityIds.size - activitiesWithAnyFit),
+      activities_with_original: activitiesWithOriginal,
+      activities_canonical_only: activitiesCanonicalOnly,
+      activities_with_both: activitiesWithBoth,
+      activities_original_only: activitiesOriginalOnly,
+      activities_with_edited_version: activitiesWithEditedVersion,
+
+      fit_files_active: fitFilesActive,
+      original_files: originalFiles,
+      canonical_backfill_files: canonicalBackfillFiles,
+      canonical_generated_files: canonicalGeneratedFiles,
+      edited_version_files: editedVersionFiles,
+      unknown_files: unknownFiles,
+
+      unlinked_original_files: unlinkedOriginalFiles,
+      ambiguous_original_files: ambiguousOriginalFiles,
+      dangling_linked_files: danglingLinkedFiles,
+
+      unlinked_original_examples: unlinkedOriginalExamples,
+      ambiguous_original_examples: ambiguousOriginalExamples,
+      canonical_only_examples: canonicalOnlyExamples
+    };
+  }
+
+  /* CGWEB090_FIT_RECONCILE001_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -2235,6 +2558,109 @@ function createFitVault() {
         }
         /* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_ACTION_END */
 
+
+        /* CGWEB090_FIT_RECONCILE001_ACTIONS_START */
+
+        if (action === "historical_preflight") {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+
+          let body = req.body;
+
+          if (Buffer.isBuffer(body)) {
+            try {
+              body = JSON.parse(body.toString("utf8"));
+            } catch {
+              body = {};
+            }
+          }
+
+          if (!body || typeof body !== "object" || Array.isArray(body)) {
+            body = {};
+          }
+
+          const hashes = c090Strings(
+            Array.isArray(body.hashes) ? body.hashes : []
+          )
+            .map((x) => x.toLowerCase())
+            .filter((x) => /^[a-f0-9]{64}$/.test(x))
+            .slice(0, 100);
+
+          const items = [];
+
+          for (const hash of hashes) {
+            const snap = await fileDoc(uid, hash).get();
+
+            if (!snap.exists) {
+              items.push({
+                sha256: hash,
+                exists: false,
+                status: "MISSING",
+                needs_upload: true
+              });
+              continue;
+            }
+
+            const row = snap.data() || {};
+
+            if (row.deleted_at_ms != null) {
+              items.push({
+                sha256: hash,
+                exists: true,
+                status: "DELETED_METADATA",
+                needs_upload: true
+              });
+              continue;
+            }
+
+            const roles = c090Roles(row);
+            const hasOriginal = roles.includes(C090_ROLE_ORIGINAL);
+
+            items.push({
+              sha256: hash,
+              exists: true,
+              status: hasOriginal
+                ? "ALREADY_ARCHIVED_ORIGINAL"
+                : "EXISTS_NEEDS_ORIGINAL_OBSERVATION",
+              needs_upload: !hasOriginal,
+              activity_id: row.activity_id || null,
+              link_status: row.link_status || null,
+              archive_roles: roles
+            });
+          }
+
+          return res.json({
+            ok: true,
+            service: "HISTORICAL_FIT_TRANSFER001",
+            version: "CGWEB090",
+            requested: hashes.length,
+            items,
+            activities_created: 0,
+            activities_modified: 0
+          });
+        }
+
+        if (action === "fit_reconcile") {
+          if (req.method !== "GET") {
+            return res.status(405).json({error: "GET requis."});
+          }
+
+          const result = await c090Reconcile(uid);
+
+          return res.json({
+            ok: true,
+            service: "FIT_RECONCILE001",
+            version: "CGWEB090",
+            read_only: true,
+            activities_modified: 0,
+            fit_files_modified: 0,
+            summary: result
+          });
+        }
+
+        /* CGWEB090_FIT_RECONCILE001_ACTIONS_END */
+
         if (action === "upload") {
           if (req.method !== "POST") return res.status(405).json({error: "POST requis."});
 
@@ -2261,6 +2687,25 @@ function createFitVault() {
           const ref = fileDoc(uid, hash);
           const existing = await ref.get();
           const previous = existing.exists ? existing.data() || {} : {};
+
+          const incomingRole = c090IncomingRole(source, mode);
+          const archiveRoles = c090MergeArchiveRoles(previous, incomingRole);
+          const observedSources = c090Strings([
+            ...(Array.isArray(previous.observed_sources) ? previous.observed_sources : []),
+            previous.source,
+            source
+          ]);
+          const observedModes = c090Strings([
+            ...(Array.isArray(previous.observed_modes) ? previous.observed_modes : []),
+            previous.upload_mode,
+            mode
+          ]);
+          const historicalOriginalNames = c090Strings([
+            ...(Array.isArray(previous.historical_original_names)
+              ? previous.historical_original_names
+              : []),
+            ...(incomingRole === C090_ROLE_ORIGINAL ? [fileName] : [])
+          ]);
 
           const link = await resolveActivity(
             uid,
@@ -2294,11 +2739,18 @@ function createFitVault() {
             original_name: previous.original_name || fileName,
             size_bytes: body.length,
             mime_type: "application/vnd.ant.fit",
-            source,
-            upload_mode: mode,
-            start_time_ms: startMs,
-            sport,
-            sub_sport: subSport,
+            source: previous.source || source,
+            upload_mode: previous.upload_mode || mode,
+            observed_sources: observedSources,
+            observed_modes: observedModes,
+            archive_roles: archiveRoles,
+            historical_original_names: historicalOriginalNames,
+            has_original_archive: archiveRoles.includes(C090_ROLE_ORIGINAL),
+            has_canonical_archive: archiveRoles.some(c090IsCanonicalRole),
+            provenance_version: "FIT_RECONCILE001",
+            start_time_ms: startMs || previous.start_time_ms || null,
+            sport: sport || previous.sport || null,
+            sub_sport: subSport || previous.sub_sport || 0,
             activity_id: link.activity_id || previous.activity_id || null,
             link_status: link.activity_id ? link.link_status : (previous.link_status || link.link_status),
             first_uploaded_at_ms: Number(previous.first_uploaded_at_ms || now),
@@ -2313,8 +2765,14 @@ function createFitVault() {
           return res.json({
             ok: true,
             deduplicated: Boolean(existing.exists || exists),
+            original_observation_added:
+              incomingRole === C090_ROLE_ORIGINAL &&
+              !(Array.isArray(previous.archive_roles) &&
+                previous.archive_roles.includes(C090_ROLE_ORIGINAL)),
+            archive_roles: archiveRoles,
             file: metadata,
-            activities_created: 0
+            activities_created: 0,
+            activities_modified: 0
           });
         }
 
