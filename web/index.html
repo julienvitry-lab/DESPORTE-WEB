@@ -5271,6 +5271,52 @@ body.ux-activities-page main{
 /* CGWEB088_FIX2_FITBACKFILL_AUTO001_CSS_END */
 </style>
 
+
+<style id="cgweb088-fix3-diagnostic-css">
+/* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_CSS_START */
+#cgweb088DiagPanel{
+  margin:12px 0 18px;
+  padding:12px;
+  border:1px solid rgba(255,180,70,.25);
+  border-radius:14px;
+  background:rgba(255,255,255,.018)
+}
+#cgweb088DiagPanel .cgweb088-diag-actions{
+  display:grid;
+  grid-template-columns:minmax(220px,1fr) minmax(180px,.55fr);
+  gap:10px;
+  margin:10px 0
+}
+#cgweb088DiagPanel .cgweb088-diag-results{
+  display:none;
+  max-height:430px;
+  overflow:auto;
+  margin:10px 0 0;
+  padding:12px;
+  border-radius:10px;
+  background:rgba(0,0,0,.24);
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  font-size:.82rem;
+  line-height:1.45
+}
+#cgweb088DiagPanel[data-has-results="1"] .cgweb088-diag-results{
+  display:block
+}
+#cgweb088DiagPanel[data-state="error"]{
+  border-color:rgba(255,90,90,.5)
+}
+#cgweb088DiagPanel[data-state="ok"]{
+  border-color:rgba(190,255,55,.35)
+}
+@media(max-width:760px){
+  #cgweb088DiagPanel .cgweb088-diag-actions{
+    grid-template-columns:1fr
+  }
+}
+/* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_CSS_END */
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5776,6 +5822,37 @@ body.ux-activities-page main{
   </div>
 </div>
 <!-- CGWEB088_FIX2_FITBACKFILL_AUTO001_HTML_END -->
+
+<!-- CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_HTML_START -->
+<div id="cgweb088DiagPanel" class="cgweb088-diag-panel">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">CGWEB088 FIX3 · FITBACKFILL_ERROR_DIAGNOSTIC001</p>
+      <h3>Diagnostic des erreurs de rattrapage</h3>
+      <p class="muted">
+        Analyse les 50 prochains FIT manquants sans aucune écriture.
+      </p>
+    </div>
+    <span id="cgweb088DiagBadge" class="pill neutral">Non lancé</span>
+  </div>
+
+  <div class="cgweb088-diag-actions">
+    <button id="cgweb088DiagRun" type="button">
+      Diagnostiquer les prochains 50
+    </button>
+    <button id="cgweb088DiagCopy" type="button" disabled>
+      Copier le diagnostic
+    </button>
+  </div>
+
+  <div id="cgweb088DiagStatus" class="muted">
+    Lecture seule : 0 activité modifiée, 0 FIT créé.
+  </div>
+
+  <pre id="cgweb088DiagResults" class="cgweb088-diag-results"></pre>
+</div>
+<!-- CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_HTML_END -->
+
 
   <div id="cgweb088Status" class="muted">Dry-run obligatoire avant toute génération.</div>
   <div id="cgweb088Summary" class="cgweb088-summary"></div>
@@ -7003,6 +7080,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB088-FIX2-FITBACKFILL-AUTO001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB088-FIX3-ERROR-DIAGNOSTIC001"></script>
 </body>
 </html>

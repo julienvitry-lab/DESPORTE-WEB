@@ -59,3 +59,35 @@ Fonctionnement :
 Le traitement automatique est piloté côté navigateur afin d'éviter une
 Cloud Function monolithique très longue et de conserver un point de contrôle
 entre chaque lot de 50.
+
+
+## FIX3 · FITBACKFILL_ERROR_DIAGNOSTIC001
+
+Ajout d'un diagnostic **strictement sans écriture** pour les FIT qui ne passent
+pas FITBACKFILL001.
+
+Le bouton `Diagnostiquer les prochains 50` :
+- prend les 50 prochaines activités qui n'ont toujours pas de FIT ;
+- reconstruit chaque FIT en mémoire avec FITWRITER001 + FITSIGNATURE001 ;
+- exécute le contrôle d'intégrité Garmin ;
+- relit le FIT avec `decodeCanonicalFitSummary` ;
+- exécute les comparaisons de FITRECOVERY001 ;
+- contrôle les conflits SHA-256 avec une autre activité ;
+- ne sauvegarde aucun objet Storage ;
+- n'écrit aucun document Firestore ;
+- ne modifie aucune activité ;
+- ne crée aucun FIT.
+
+Pour chaque échec, l'interface affiche :
+- `activity_id` ;
+- `status` backend ;
+- mode `ROUTE_PREVIEW` ou `SUMMARY_ONLY` ;
+- message d'erreur éventuel ;
+- SHA-256 ;
+- signature FITSIGNATURE001 et serial FIT ;
+- intégrité et structure ;
+- métriques précises en échec ;
+- résumé du FIT réellement décodé ;
+- identifiant de l'autre activité en cas de conflit SHA.
+
+Le diagnostic peut être copié directement dans le presse-papiers.

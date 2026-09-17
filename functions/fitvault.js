@@ -1099,6 +1099,132 @@ function createFitVault() {
       size_bytes:generated.buffer.length
     };
   }
+  /* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_HELPER_START */
+
+  function v088DiagDecoded(decoded) {
+    return {
+      integrity:Boolean(decoded?.integrity),
+      errors:Array.isArray(decoded?.errors) ? decoded.errors : [],
+      start_ms:rtFinite(decoded?.startMs),
+      sport:rtFinite(decoded?.sport),
+      sub_sport:rtFinite(decoded?.subSport),
+      duration_s:rtFinite(decoded?.timerSeconds),
+      distance_m:rtFinite(decoded?.totalDistance),
+      ascent_m:rtFinite(decoded?.totalAscent),
+      avg_hr:rtFinite(decoded?.avgHeartRate),
+      max_hr:rtFinite(decoded?.maxHeartRate),
+      records:rtFinite(decoded?.recordCount),
+      laps:rtFinite(decoded?.lapCount),
+      sessions:rtFinite(decoded?.sessionCount),
+      activities:rtFinite(decoded?.activityCount)
+    };
+  }
+
+  async function v088DiagnoseOne(uid,candidate) {
+    const id=String(candidate?.activity_id||"").trim();
+    if (!id) {
+      return {ok:false,status:"INVALID_ACTIVITY_ID",activity_id:id};
+    }
+
+    const activityRef=db.doc(`${ROOT}/${uid}/activities/${id}`);
+    const routeRef=db.doc(`${ROOT}/${uid}/activity_routes/${id}`);
+
+    const [activitySnap,routeSnap]=await Promise.all([
+      activityRef.get(),
+      routeRef.get()
+    ]);
+
+    if (!activitySnap.exists) {
+      return {ok:false,activity_id:id,status:"ACTIVITY_MISSING"};
+    }
+
+    const activity=activitySnap.data()||{};
+
+    if (activity.deleted_at_ms!=null) {
+      return {ok:false,activity_id:id,status:"ACTIVITY_DELETED"};
+    }
+
+    const existingLink=await files(uid)
+      .where("activity_id","==",id)
+      .limit(1)
+      .get();
+
+    if (existingLink.docs.some(x=>(x.data()||{}).deleted_at_ms==null)) {
+      return {
+        ok:true,
+        activity_id:id,
+        status:"ALREADY_HAS_FIT",
+        diagnostic_only:true
+      };
+    }
+
+    const route=routeSnap.exists ? (routeSnap.data()||{}) : null;
+    const prepared=v088BuildPayload(activity,route);
+
+    prepared.payload.activity_id=id;
+    prepared.payload.fit_signature_seed=id;
+
+    const generated=await encodeCanonicalFit(prepared.payload);
+    const lowLevel=await inspectFitBuffer(generated.buffer);
+    const decoded=await decodeCanonicalFitSummary(generated.buffer);
+    const checked=v088Validate(prepared,decoded,lowLevel);
+    const hash=sha256(generated.buffer);
+
+    if (!checked.ok) {
+      return {
+        ok:false,
+        activity_id:id,
+        status:"VALIDATION_FAILED",
+        diagnostic_only:true,
+        route_mode:prepared.routeMode,
+        sha256:hash,
+        fit_signature:generated.stats?.fitSignature||null,
+        fit_signature_serial:Number(generated.stats?.serialNumber||0)||null,
+        validation:checked,
+        decoded:v088DiagDecoded(decoded)
+      };
+    }
+
+    const priorSnap=await fileDoc(uid,hash).get();
+    const prior=priorSnap.exists ? (priorSnap.data()||{}) : {};
+
+    if (
+      priorSnap.exists &&
+      prior.deleted_at_ms==null &&
+      String(prior.activity_id||"").trim() &&
+      String(prior.activity_id)!==id
+    ) {
+      return {
+        ok:false,
+        activity_id:id,
+        status:"HASH_CONFLICT_OTHER_ACTIVITY",
+        diagnostic_only:true,
+        route_mode:prepared.routeMode,
+        sha256:hash,
+        conflict_activity_id:String(prior.activity_id),
+        fit_signature:generated.stats?.fitSignature||null,
+        fit_signature_serial:Number(generated.stats?.serialNumber||0)||null,
+        validation:checked,
+        decoded:v088DiagDecoded(decoded)
+      };
+    }
+
+    return {
+      ok:true,
+      activity_id:id,
+      status:"VALID",
+      diagnostic_only:true,
+      route_mode:prepared.routeMode,
+      sha256:hash,
+      fit_signature:generated.stats?.fitSignature||null,
+      fit_signature_serial:Number(generated.stats?.serialNumber||0)||null,
+      validation:checked,
+      decoded:v088DiagDecoded(decoded)
+    };
+  }
+
+  /* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_HELPER_END */
+
   /* CGWEB088_FITRECOVERY001_HELPERS_END */
 
   /* CGWEB088_FIX1_FITSIGNATURE001_BACKEND */
@@ -1904,6 +2030,99 @@ function createFitVault() {
           });
         }
         /* CGWEB088_FITBACKFILL001_ACTION_END */
+
+        /* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_ACTION_START */
+        if (action === "recovery_diagnose") {
+          if (req.method!=="POST") {
+            return res.status(405).json({error:"POST requis."});
+          }
+
+          let body=req.body;
+
+          if (Buffer.isBuffer(body)) {
+            try {
+              body=JSON.parse(body.toString("utf8"));
+            } catch {
+              body={};
+            }
+          }
+
+          if (!body || typeof body!=="object" || Array.isArray(body)) {
+            body={};
+          }
+
+          const size=Math.max(
+            1,
+            Math.min(50,Number(body.batch_size||50))
+          );
+
+          const inv=await v088Inventory(uid);
+          const selected=inv.candidates.slice(0,size);
+          const results=new Array(selected.length);
+          let cursor=0;
+
+          async function worker() {
+            while (true) {
+              const i=cursor++;
+              if (i>=selected.length) return;
+
+              try {
+                results[i]=await v088DiagnoseOne(uid,selected[i]);
+              } catch(error) {
+                console.error(
+                  "FITBACKFILL_ERROR_DIAGNOSTIC001",
+                  selected[i]?.activity_id,
+                  error
+                );
+
+                results[i]={
+                  ok:false,
+                  activity_id:selected[i]?.activity_id||null,
+                  status:"ERROR",
+                  diagnostic_only:true,
+                  error:error?.message||String(error)
+                };
+              }
+            }
+          }
+
+          await Promise.all(
+            Array.from(
+              {length:Math.min(2,selected.length)},
+              ()=>worker()
+            )
+          );
+
+          const valid=results.filter(
+            x=>x?.ok && x?.status==="VALID"
+          ).length;
+
+          const already=results.filter(
+            x=>x?.ok && x?.status==="ALREADY_HAS_FIT"
+          ).length;
+
+          const failed=results.filter(
+            x=>!x?.ok
+          );
+
+          return res.json({
+            ok:true,
+            service:"FITBACKFILL_ERROR_DIAGNOSTIC001",
+            version:"CGWEB088_FIX3",
+            dry_run:true,
+            writes:0,
+            activities_modified:0,
+            fit_files_created:0,
+            requested:size,
+            selected:selected.length,
+            valid,
+            already_present:already,
+            failed:failed.length,
+            remaining_reconstructible:inv.candidates.length,
+            results
+          });
+        }
+        /* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_ACTION_END */
 
         if (action === "upload") {
           if (req.method !== "POST") return res.status(405).json({error: "POST requis."});

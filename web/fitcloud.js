@@ -2196,6 +2196,352 @@ queueMicrotask(cgweb088AutoWire);
 /* CGWEB088_FIX2_FITBACKFILL_AUTO001_WEB_END */
 
 
+
+/* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_WEB_START */
+
+let cgweb088DiagLast=null;
+let cgweb088DiagBusy=false;
+
+function cgweb088DiagFailedMetrics(row) {
+  const metrics=row?.validation?.metrics;
+  if (!metrics || typeof metrics!=="object") return [];
+
+  return Object.entries(metrics)
+    .filter(([,ok])=>ok===false)
+    .map(([name])=>name);
+}
+
+function cgweb088DiagLineForRow(row,index) {
+  const lines=[];
+  const id=String(row?.activity_id??"?");
+  const status=String(row?.status||"UNKNOWN");
+  const route=String(row?.route_mode||"-");
+
+  lines.push(
+    (row?.ok ? "✓ " : "✗ ") +
+    "#" + id +
+    " · " + status +
+    " · route " + route
+  );
+
+  if (row?.error) {
+    lines.push("    erreur      : "+String(row.error));
+  }
+
+  if (row?.conflict_activity_id) {
+    lines.push(
+      "    conflit avec: #"+
+      String(row.conflict_activity_id)
+    );
+  }
+
+  if (row?.sha256) {
+    lines.push("    sha256      : "+String(row.sha256));
+  }
+
+  if (row?.fit_signature) {
+    lines.push(
+      "    signature   : "+
+      String(row.fit_signature)
+    );
+  }
+
+  if (row?.fit_signature_serial!=null) {
+    lines.push(
+      "    serial FIT  : "+
+      String(row.fit_signature_serial)
+    );
+  }
+
+  if (row?.validation) {
+    lines.push(
+      "    structure   : "+
+      (
+        row.validation.structure_ok===true
+          ? "OK"
+          : "ECHEC"
+      )
+    );
+
+    const failedMetrics=cgweb088DiagFailedMetrics(row);
+
+    lines.push(
+      "    métriques   : "+
+      (
+        failedMetrics.length
+          ? "ECHEC -> "+failedMetrics.join(", ")
+          : "OK"
+      )
+    );
+  }
+
+  const d=row?.decoded;
+
+  if (d && typeof d==="object") {
+    lines.push(
+      "    FIT décodé  : "+
+      [
+        "start="+(d.start_ms??"-"),
+        "sport="+(d.sport??"-")+"/"+(d.sub_sport??"-"),
+        "durée="+(d.duration_s??"-")+"s",
+        "distance="+(d.distance_m??"-")+"m",
+        "D+="+(d.ascent_m??"-")+"m",
+        "FC="+(d.avg_hr??"-")+"/"+(d.max_hr??"-"),
+        "records="+(d.records??"-"),
+        "laps="+(d.laps??"-"),
+        "sessions="+(d.sessions??"-"),
+        "activities="+(d.activities??"-"),
+        "integrity="+String(Boolean(d.integrity))
+      ].join(" · ")
+    );
+
+    if (Array.isArray(d.errors) && d.errors.length) {
+      lines.push(
+        "    decoder     : "+
+        d.errors.join(" | ")
+      );
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function cgweb088DiagFormat(data) {
+  const rows=Array.isArray(data?.results)
+    ? data.results
+    : [];
+
+  const failed=rows.filter(row=>!row?.ok);
+  const valid=rows.filter(
+    row=>row?.ok && row?.status==="VALID"
+  );
+
+  const lines=[
+    "FITBACKFILL_ERROR_DIAGNOSTIC001",
+    "================================",
+    "Mode             : DRY-RUN / LECTURE SEULE",
+    "Écritures        : "+Number(data?.writes||0),
+    "Activités modif. : "+Number(data?.activities_modified||0),
+    "FIT créés        : "+Number(data?.fit_files_created||0),
+    "Sélectionnés     : "+Number(data?.selected||0),
+    "Valides          : "+valid.length,
+    "Échecs           : "+failed.length,
+    "Restants         : "+Number(data?.remaining_reconstructible||0),
+    ""
+  ];
+
+  if (!failed.length) {
+    lines.push(
+      "Aucune erreur détectée parmi les "+
+      Number(data?.selected||0)+
+      " prochains FIT."
+    );
+  } else {
+    lines.push(
+      "ERREURS DÉTECTÉES",
+      "------------------"
+    );
+
+    failed.forEach((row,index)=>{
+      if (index) lines.push("");
+      lines.push(
+        cgweb088DiagLineForRow(row,index)
+      );
+    });
+  }
+
+  lines.push(
+    "",
+    "RÉSUMÉ DES FIT VALIDES",
+    "----------------------"
+  );
+
+  for (const row of valid.slice(0,10)) {
+    lines.push(
+      "✓ #"+row.activity_id+
+      " · "+String(row.route_mode||"-")+
+      " · "+String(row.sha256||"").slice(0,16)+"…"
+    );
+  }
+
+  if (valid.length>10) {
+    lines.push(
+      "… "+(valid.length-10)+
+      " autre(s) FIT valide(s)."
+    );
+  }
+
+  return lines.join("\n");
+}
+
+async function cgweb088RunDiagnostic() {
+  if (cgweb088DiagBusy || cgweb088AutoRunning) return;
+
+  cgweb088DiagBusy=true;
+
+  const panel=cgweb088Node("cgweb088DiagPanel");
+  const run=cgweb088Node("cgweb088DiagRun");
+  const copy=cgweb088Node("cgweb088DiagCopy");
+  const status=cgweb088Node("cgweb088DiagStatus");
+  const badge=cgweb088Node("cgweb088DiagBadge");
+  const out=cgweb088Node("cgweb088DiagResults");
+
+  if (run) run.disabled=true;
+  if (copy) copy.disabled=true;
+  if (panel) {
+    panel.dataset.state="";
+    panel.dataset.hasResults="0";
+  }
+  if (badge) badge.textContent="Analyse…";
+  if (status) {
+    status.textContent=
+      "Diagnostic des 50 prochains FIT manquants… aucune écriture.";
+  }
+  if (out) out.textContent="";
+
+  try {
+    const data=await request(
+      "recovery_diagnose",
+      {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({batch_size:50})
+      }
+    );
+
+    if (!data?.ok) {
+      throw new Error(
+        data?.error||
+        "Diagnostic backend invalide."
+      );
+    }
+
+    cgweb088DiagLast=data;
+
+    const failed=Number(data?.failed||0);
+
+    if (out) {
+      out.textContent=cgweb088DiagFormat(data);
+    }
+
+    if (panel) {
+      panel.dataset.hasResults="1";
+      panel.dataset.state=
+        failed>0 ? "error" : "ok";
+    }
+
+    if (badge) {
+      badge.textContent=
+        failed>0
+          ? failed+" erreur(s)"
+          : "0 erreur";
+    }
+
+    if (status) {
+      status.textContent=
+        "Diagnostic terminé · "+
+        Number(data?.selected||0)+
+        " testé(s) · "+
+        failed+
+        " erreur(s) · 0 écriture.";
+    }
+
+    if (copy) copy.disabled=false;
+  } catch(error) {
+    console.error(
+      "FITBACKFILL_ERROR_DIAGNOSTIC001",
+      error
+    );
+
+    if (panel) panel.dataset.state="error";
+    if (badge) badge.textContent="Erreur";
+    if (status) {
+      status.textContent=
+        "Diagnostic impossible : "+
+        (error?.message||String(error));
+    }
+    throw error;
+  } finally {
+    cgweb088DiagBusy=false;
+    if (run) run.disabled=false;
+  }
+}
+
+async function cgweb088CopyDiagnostic() {
+  if (!cgweb088DiagLast) return;
+
+  const text=cgweb088DiagFormat(
+    cgweb088DiagLast
+  );
+
+  try {
+    await navigator.clipboard.writeText(text);
+
+    const status=cgweb088Node(
+      "cgweb088DiagStatus"
+    );
+
+    if (status) {
+      status.textContent=
+        "Diagnostic copié dans le presse-papiers.";
+    }
+  } catch(error) {
+    console.warn(
+      "Copie diagnostic impossible",
+      error
+    );
+
+    const out=cgweb088Node(
+      "cgweb088DiagResults"
+    );
+
+    if (out) {
+      const range=document.createRange();
+      range.selectNodeContents(out);
+      const sel=window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+}
+
+function cgweb088DiagWire() {
+  const run=cgweb088Node("cgweb088DiagRun");
+  const copy=cgweb088Node("cgweb088DiagCopy");
+
+  if (run && run.dataset.w088fix3!=="1") {
+    run.dataset.w088fix3="1";
+    run.addEventListener(
+      "click",
+      ()=>void cgweb088RunDiagnostic()
+        .catch(()=>{})
+    );
+  }
+
+  if (copy && copy.dataset.w088fix3!=="1") {
+    copy.dataset.w088fix3="1";
+    copy.addEventListener(
+      "click",
+      ()=>void cgweb088CopyDiagnostic()
+    );
+  }
+}
+
+window.SPORT_FIT_ERROR_DIAGNOSTIC=
+  Object.freeze({
+    version:"FITBACKFILL_ERROR_DIAGNOSTIC001",
+    run:cgweb088RunDiagnostic,
+    last:()=>cgweb088DiagLast,
+    format:()=>cgweb088DiagLast
+      ? cgweb088DiagFormat(cgweb088DiagLast)
+      : ""
+  });
+
+queueMicrotask(cgweb088DiagWire);
+
+/* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_WEB_END */
+
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
