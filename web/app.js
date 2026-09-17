@@ -16564,78 +16564,90 @@ function setInteropStatus(text, state = "ok") {
 }
 
 
-/* CGWEB086_AUTOEQUIP_PERMANENCE001_START
+
+
+
+
+/* CGWEB086_FIX1_AUTOEQUIP_FINALIZE001_START
  *
- * INVARIANT :
- * - uniquement à la CREATION d'une nouvelle activité Web ;
- * - aucune réaffectation silencieuse de l'historique ;
- * - choix manuel / matériel déjà fourni = souverain ;
- * - resolver unique existant = WEBEQUIPMAP005 puis règles exactes/générales ;
- * - le même patch part dans le document Firestore ET dans /changes ;
- * - fonctionne avant mise en file hors-ligne ;
- * - cache local des mappings par UID comme filet de sécurité.
+ * Contrat de finalisation :
+ *   normalisation sport/sous-sport
+ *   -> résolution du profil
+ *   -> matériel
+ *   -> persistance Firestore / changes
+ *
+ * Aucun balayage des activités historiques.
+ * Aucun choix manuel n'est écrasé.
+ * Aucun matériel déjà fourni n'est écrasé.
  */
-const CGWEB086_AUTOEQUIP_VERSION =
-  "CGWEB086-AUTOEQUIP_PERMANENCE001";
+const CGWEB086_FIX1_VERSION =
+  "CGWEB086-FIX1-AUTOEQUIP_FINALIZE001";
 
-let cgweb086MappingsLoadedForUid = "";
+let cgweb086Fix1MappingsUid = "";
 
-function cgweb086MappingCacheKey() {
+function cgweb086Fix1MappingCacheKey() {
   const uid = String(currentUser?.uid || "").trim();
-  return uid ? "SPORT_CGWEB086_EQUIPMENT_MAPPINGS_" + uid : "";
+  return uid
+    ? "SPORT_CGWEB086_FIX1_EQUIPMENT_MAPPINGS_" + uid
+    : "";
 }
 
-function cgweb086RememberMappings() {
-  const key = cgweb086MappingCacheKey();
+function cgweb086Fix1RememberMappings() {
+  const key = cgweb086Fix1MappingCacheKey();
   if (!key || !Array.isArray(equipmentMappingRows)) return;
 
   try {
-    const clean = equipmentMappingRows.map((row) => {
-      const copy = {...row};
-      return copy;
-    });
-    localStorage.setItem(key, JSON.stringify(clean));
+    localStorage.setItem(
+      key,
+      JSON.stringify(
+        equipmentMappingRows.filter(
+          (row) => row && typeof row === "object"
+        )
+      )
+    );
   } catch (error) {
-    console.warn("CGWEB086 cache mappings", error);
+    console.warn("CGWEB086 FIX1 cache mappings", error);
   }
 }
 
-function cgweb086RestoreMappingsFromCache() {
-  const key = cgweb086MappingCacheKey();
+function cgweb086Fix1RestoreMappings() {
+  const key = cgweb086Fix1MappingCacheKey();
   if (!key) return false;
 
   try {
     const raw = localStorage.getItem(key);
-    const parsed = raw ? JSON.parse(raw) : null;
+    const rows = raw ? JSON.parse(raw) : null;
 
-    if (!Array.isArray(parsed)) return false;
+    if (!Array.isArray(rows)) return false;
 
-    equipmentMappingRows = parsed.filter(
+    equipmentMappingRows = rows.filter(
       (row) => row && typeof row === "object"
     );
 
-    return true;
+    return equipmentMappingRows.length > 0;
   } catch (error) {
-    console.warn("CGWEB086 restore mappings", error);
+    console.warn("CGWEB086 FIX1 restore mappings", error);
     return false;
   }
 }
 
-async function cgweb086EnsureEquipmentMappingsLoaded() {
+async function cgweb086Fix1EnsureMappings() {
   const uid = String(currentUser?.uid || "").trim();
   if (!uid) return;
 
   if (
-    cgweb086MappingsLoadedForUid === uid &&
-    Array.isArray(equipmentMappingRows)
+    cgweb086Fix1MappingsUid === uid &&
+    Array.isArray(equipmentMappingRows) &&
+    equipmentMappingRows.length
   ) {
-    cgweb086RememberMappings();
+    cgweb086Fix1RememberMappings();
     return;
   }
 
   if (navigator.onLine) {
     try {
-      const snap = await getDocs(userCollection("equipment_mappings"));
+      const snap =
+        await getDocs(userCollection("equipment_mappings"));
       const rows = [];
 
       snap.forEach((item) => {
@@ -16646,49 +16658,221 @@ async function cgweb086EnsureEquipmentMappingsLoaded() {
       });
 
       equipmentMappingRows = rows;
-      cgweb086MappingsLoadedForUid = uid;
-      cgweb086RememberMappings();
+      cgweb086Fix1MappingsUid = uid;
+      cgweb086Fix1RememberMappings();
       return;
     } catch (error) {
       console.warn(
-        "CGWEB086 lecture equipment_mappings : repli cache",
+        "CGWEB086 FIX1 lecture equipment_mappings",
         error
       );
     }
   }
 
   if (
-    (!Array.isArray(equipmentMappingRows) ||
-      equipmentMappingRows.length === 0)
+    !Array.isArray(equipmentMappingRows) ||
+    equipmentMappingRows.length === 0
   ) {
-    cgweb086RestoreMappingsFromCache();
+    cgweb086Fix1RestoreMappings();
   }
 
-  cgweb086MappingsLoadedForUid = uid;
-  cgweb086RememberMappings();
+  cgweb086Fix1MappingsUid = uid;
+  cgweb086Fix1RememberMappings();
 }
 
-function cgweb086IsNewActivityMutation(args) {
+function cgweb086Fix1Metadata(activity) {
+  return [
+    activity?.import_source,
+    activity?.import_profile,
+    activity?.strava_type,
+    activity?.strava_sport_type,
+    activity?.strava_device_name,
+    activity?.device_name,
+    activity?.manufacturer,
+    activity?.product,
+    activity?.file_name,
+    activity?.source_file_name,
+    activity?.custom_title
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .toUpperCase();
+}
+
+function cgweb086FinalProfileKey(activity) {
+  if (!activity || activity.deleted_at_ms != null) return "";
+
+  /*
+   * Le classifieur officiel reste prioritaire.
+   */
+  if (
+    typeof equipmentProfileKeyFromActivityWeb058 === "function"
+  ) {
+    const official = String(
+      equipmentProfileKeyFromActivityWeb058(activity) || ""
+    )
+      .trim()
+      .toUpperCase();
+
+    if (official) return official;
+  }
+
+  /*
+   * Filet de sécurité indépendant pour les signatures confirmées.
+   * TRAIL est volontairement explicite : sport 1 / sub_sport 3
+   * est la signature de référence de WEBEQUIPMAP005.
+   */
+  const sport = Number(activity.sport) || 0;
+  const subSport = Number(activity.sub_sport) || 0;
+  const meta = cgweb086Fix1Metadata(activity);
+
+  if (sport === 1) {
+    if (
+      subSport === 21 ||
+      /KINOMAP|VIRTUALRUN|VIRTUAL RUN/.test(meta)
+    ) {
+      return "KINOMAP";
+    }
+
+    if (
+      [3, 6].includes(subSport) ||
+      /TRAILRUN|TRAIL RUN|\bTRAIL\b/.test(meta)
+    ) {
+      return "TRAIL";
+    }
+
+    return "RUN";
+  }
+
+  if (sport === 2) {
+    if (
+      [7, 8, 47].includes(subSport) ||
+      /MOUNTAINBIKERIDE|MOUNTAIN BIKE|\bVTT\b|\bMTB\b/.test(meta)
+    ) {
+      return "MTB";
+    }
+
+    return "BIKE";
+  }
+
+  return "";
+}
+
+function cgweb086FindProfileRule(profileKey) {
+  const key = String(profileKey || "").trim().toUpperCase();
+  if (!key || !Array.isArray(equipmentMappingRows)) return null;
+
+  const enabled = equipmentMappingRows.filter((rule) =>
+    rule &&
+    rule.enabled !== false &&
+    String(rule.equipment_name || "").trim()
+  );
+
+  /*
+   * Recherche prioritaire par profile_key.
+   * On accepte le document WEBEQUIPMAP005 même si une future refonte
+   * déplace/omet mapping_version : la clé de profil reste le contrat.
+   */
+  let rule = enabled.find((item) =>
+    String(item.profile_key || "").trim().toUpperCase() === key &&
+    String(item.mapping_version || "") === "WEBEQUIPMAP005"
+  );
+
+  if (rule) return rule;
+
+  rule = enabled.find((item) =>
+    String(item.profile_key || "").trim().toUpperCase() === key
+  );
+
+  if (rule) return rule;
+
+  /*
+   * Filet de sécurité sur l'ID canonique créé par WEB058.
+   */
+  const expectedId = "PROFILE_WEB058_" + key;
+
+  return enabled.find((item) =>
+    String(item.__docId || "").trim().toUpperCase() === expectedId
+  ) || null;
+}
+
+function cgweb086ResolveFinalEquipment(activity) {
+  const profileKey = cgweb086FinalProfileKey(activity);
+
+  if (profileKey) {
+    const profileRule =
+      cgweb086FindProfileRule(profileKey);
+
+    if (profileRule) {
+      return {
+        profileKey,
+        rule: profileRule,
+        equipmentName:
+          String(profileRule.equipment_name || "").trim()
+      };
+    }
+  }
+
+  /*
+   * Compatibilité avec les anciennes règles exactes/générales.
+   */
+  if (
+    typeof resolveAutomaticEquipmentMapping === "function"
+  ) {
+    const legacyRule =
+      resolveAutomaticEquipmentMapping(activity);
+
+    const equipmentName =
+      String(legacyRule?.equipment_name || "").trim();
+
+    if (
+      legacyRule &&
+      legacyRule.enabled !== false &&
+      equipmentName
+    ) {
+      return {
+        profileKey,
+        rule: legacyRule,
+        equipmentName
+      };
+    }
+  }
+
+  return {
+    profileKey,
+    rule: null,
+    equipmentName: ""
+  };
+}
+
+function cgweb086Fix1IsCreationMutation(args) {
   if (!args || typeof args !== "object") return false;
 
-  if (String(args.table || "").toLowerCase() !== "activities") {
+  if (
+    String(args.table || "").toLowerCase() !== "activities"
+  ) {
     return false;
   }
 
-  if (String(args.operation || "UPSERT").toUpperCase() !== "UPSERT") {
+  if (
+    String(args.operation || "UPSERT").toUpperCase() !== "UPSERT"
+  ) {
     return false;
   }
 
   /*
-   * Le compteur activityCount est le contrat de CREATION déjà utilisé
-   * par Strava Web, import FIT, ajout manuel et découpes.
-   * Une édition/restauration historique ne porte pas cet incrément.
+   * Contrat actuel des créations Web :
+   * Strava / import FIT / ajout manuel / split.
+   * Les éditions/restaurations historiques n'incrémentent pas activityCount.
    */
-  return Number(args?.metaIncrements?.activityCount || 0) > 0;
+  return Number(
+    args?.metaIncrements?.activityCount || 0
+  ) > 0;
 }
 
-async function cgweb086PrepareNewActivityEquipment(args) {
-  if (!cgweb086IsNewActivityMutation(args)) return args;
+async function cgweb086FinalizeCreationMutation(args) {
+  if (!cgweb086Fix1IsCreationMutation(args)) return args;
 
   const row =
     args.row && typeof args.row === "object"
@@ -16706,68 +16890,98 @@ async function cgweb086PrepareNewActivityEquipment(args) {
     ...(row || {})
   };
 
-  if (!candidate || candidate.deleted_at_ms != null) return args;
+  if (!candidate || candidate.deleted_at_ms != null) {
+    return args;
+  }
 
+  /*
+   * Choix utilisateur souverain.
+   */
   if (Number(candidate.equipment_manual) === 1) {
     return args;
   }
 
+  /*
+   * Matériel déjà fourni par la source/session souverain.
+   */
   if (String(candidate.equipment_name || "").trim()) {
     return args;
   }
 
-  await cgweb086EnsureEquipmentMappingsLoaded();
+  await cgweb086Fix1EnsureMappings();
 
-  if (typeof resolveAutomaticEquipmentMapping !== "function") {
-    throw new Error(
-      "AUTOEQUIP_PERMANENCE001 : resolver matériel absent."
+  const resolved =
+    cgweb086ResolveFinalEquipment(candidate);
+
+  if (!resolved.equipmentName) {
+    console.info(
+      "CGWEB086 FIX1 AUTOEQUIP aucun matériel",
+      String(args.rowKey || candidate.id || ""),
+      "profil=" + (resolved.profileKey || "NON_RECONNU")
     );
-  }
-
-  const rule = resolveAutomaticEquipmentMapping(candidate);
-  const equipmentName =
-    String(rule?.equipment_name || "").trim();
-
-  if (!rule || rule.enabled === false || !equipmentName) {
     return args;
   }
 
   const mappingId =
     String(
-      rule?.__docId ||
-      rule?.profile_key ||
+      resolved.rule?.__docId ||
+      resolved.rule?.profile_key ||
       ""
     ).trim() || null;
 
   const patch = {
-    equipment_name: equipmentName,
+    equipment_name: resolved.equipmentName,
     equipment_manual: 0,
     equipment_mapping_id: mappingId,
-    equipment_assignment_source: "CGWEB086_AUTOEQUIP",
-    equipment_assignment_version: CGWEB086_AUTOEQUIP_VERSION
+    equipment_assignment_source:
+      "CGWEB086_FIX1_FINALIZE",
+    equipment_assignment_version:
+      CGWEB086_FIX1_VERSION
   };
 
+  /*
+   * Mutation en place : l'objet poussé ensuite dans `activities`
+   * possède immédiatement le matériel, sans rechargement.
+   */
   if (row) Object.assign(row, patch);
   if (materialized) Object.assign(materialized, patch);
 
+  /*
+   * Invariant fort :
+   * si un profil configuré a été résolu, il est interdit de finaliser
+   * la création avec un equipment_name vide.
+   */
+  if (
+    !String(
+      row?.equipment_name ||
+      materialized?.equipment_name ||
+      ""
+    ).trim()
+  ) {
+    throw new Error(
+      "AUTOEQUIP_FINALIZE001 : profil configuré mais matériel vide."
+    );
+  }
+
   console.info(
-    "CGWEB086 AUTOEQUIP",
+    "CGWEB086 FIX1 AUTOEQUIP",
     String(args.rowKey || candidate.id || ""),
+    "profil=" + (resolved.profileKey || "LEGACY"),
     "→",
-    equipmentName,
-    mappingId || ""
+    resolved.equipmentName
   );
 
   return args;
 }
-/* CGWEB086_AUTOEQUIP_PERMANENCE001_END */
+/* CGWEB086_FIX1_AUTOEQUIP_FINALIZE001_END */
 
 
 async function commitWebMutation(args) {
   if (!currentUser) throw new Error("Connexion Firebase absente.");
 
-  /* CGWEB086_AUTOEQUIP_CREATION_HOOK */
-  args = await cgweb086PrepareNewActivityEquipment(args);
+
+  /* CGWEB086_FIX1_FINALIZE_HOOK */
+  args = await cgweb086FinalizeCreationMutation(args);
 
   const payload = normalizePendingMutation(args);
 

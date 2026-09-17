@@ -5,13 +5,13 @@ on:
     paths:
       - "web/app.js"
       - "web/index.html"
-      - "scripts/verify-autoequip-permanence.mjs"
+      - "scripts/verify-autoequip-finalize.mjs"
       - ".github/workflows/cgweb086-autoequip-permanence.yml"
   pull_request:
     paths:
       - "web/app.js"
       - "web/index.html"
-      - "scripts/verify-autoequip-permanence.mjs"
+      - "scripts/verify-autoequip-finalize.mjs"
       - ".github/workflows/cgweb086-autoequip-permanence.yml"
 
 jobs:
@@ -29,5 +29,5 @@ jobs:
       - name: Syntaxe app.js
         run: node --check web/app.js
 
-      - name: Contrat AUTOEQUIP
-        run: node scripts/verify-autoequip-permanence.mjs
+      - name: Contrat fonctionnel AUTOEQUIP
+        run: node scripts/verify-autoequip-finalize.mjs
