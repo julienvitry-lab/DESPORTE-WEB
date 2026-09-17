@@ -17297,7 +17297,7 @@ function cgweb084RouteSvg(points) {
   );
 }
 
-async async function cgweb084LoadRouteThumbnail(activity) {
+async function cgweb084LoadRouteThumbnail(activity) {
   if (!currentUser || !activity) return "";
 
   const keys = [
@@ -17443,7 +17443,7 @@ function cgweb084PeriodBounds() {
   };
 }
 
-async async function cgweb084FetchPeriodActivities(period) {
+async function cgweb084FetchPeriodActivities(period) {
   let snap = null;
 
   if (period.mode === "all") {
@@ -17695,7 +17695,7 @@ async function cgweb085bAddFullData(zip, status) {
 
 /* CGWEB085B_FULLARCHIVE001_APP_END */
 
-async async function cgweb084ExportPeriod() {
+async function cgweb084ExportPeriod() {
   const button = document.getElementById("cgweb084ExportButton");
   const status = document.getElementById("cgweb084ExportStatus");
 
