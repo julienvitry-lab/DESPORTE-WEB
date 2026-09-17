@@ -887,6 +887,8 @@ function createFitVault() {
 
   /* CGWEB078_FITVERSION001_HELPERS_END */
 
+
+
   /* CGWEB088_FITRECOVERY001_HELPERS_START */
   function v088Core(activity) {
     const startMs = rtFinite(activity?.start_time_ms);
@@ -1824,6 +1826,8 @@ function createFitVault() {
           });
         }
         /* CGWEB080_FITDRIVE001_ACTION_END */
+
+
 
 
 
