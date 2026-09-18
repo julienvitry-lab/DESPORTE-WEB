@@ -24,3 +24,24 @@
   `Originaux locaux`, `Stockage local`, `Liens locaux`.
 
 Aucune modification backend. Aucun FIT n'est généré par l'installation.
+
+## FIX3 · VAULT_COUNTER_RECONCILE001
+
+Tous les compteurs du Coffre local utilisent désormais une seule source
+de vérité : `cgweb094cCounters()`.
+
+Les cartes affichent :
+- Originaux locaux ;
+- Stockage local ;
+- FIT disponibles ;
+- FIT à générer ;
+- Non générables.
+
+Un dérivé sans `activity_id` exploitable est compté comme non générable et
+n'est jamais assimilé à un FIT à générer.
+
+Le message du dry-run, la ligne de synthèse et les cartes utilisent les mêmes
+valeurs, ce qui supprime la divergence observée (`70` affiché alors que le
+dry-run annonçait `1` FIT réellement éligible).
+
+Aucun changement backend. Aucun FIT généré par l'installation.

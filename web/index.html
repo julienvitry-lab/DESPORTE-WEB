@@ -5758,6 +5758,29 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 }
 </style>
 
+
+<style id="cgweb094c-fix3-counter-css">
+#webFilesSection .web-files-overview{
+  grid-template-columns:repeat(5,minmax(120px,1fr))!important;
+}
+
+#webFilesSection .web-files-overview article{
+  min-width:0;
+}
+
+@media(max-width:950px){
+  #webFilesSection .web-files-overview{
+    grid-template-columns:repeat(3,minmax(110px,1fr))!important;
+  }
+}
+
+@media(max-width:620px){
+  #webFilesSection .web-files-overview{
+    grid-template-columns:repeat(2,minmax(110px,1fr))!important;
+  }
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -6112,7 +6135,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
               <strong id="webFilesLocalSize">0 o</strong>
             </article>
             <article>
-              <span>Liens locaux</span>
+              <span>FIT disponibles</span>
               <strong id="webFilesLinkedCount">0</strong>
             </article>
             <article>
@@ -6121,7 +6144,12 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
             </article>
           </div>
 
-          <div class="web-files-controls">
+
+            <article class="cgweb094c-fix3-nongenerable">
+              <span>Non générables</span>
+              <strong id="cgweb094cFitNonGenerableCount">0</strong>
+            </article>
+<div class="web-files-controls">
             <label>
               <span>Afficher</span>
               <select id="webFilesFilter">
@@ -7889,7 +7917,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB094C-FIX2-BATCH-BAR-RESTORE001"></script>
+  <script type="module" src="./app.js?v=CGWEB094C-FIX3-VAULT-COUNTER-RECONCILE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

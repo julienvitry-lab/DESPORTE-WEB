@@ -14387,6 +14387,95 @@ async function cgweb094cApi(){
 function cgweb094cIds(){
   return [...new Set(webFileVaultEntries.filter(x=>x.kind==="derived").map(cgweb094cId).filter(Boolean))];
 }
+
+/* CGWEB094C_FIX3_COUNTER_RECONCILE_START */
+
+/*
+ * Une seule source de vérité pour TOUS les compteurs du Coffre.
+ *
+ * IMPORTANT :
+ * - une entrée dérivée sans activity_id exploitable est bien une entrée
+ *   non générable : elle doit apparaître dans le total, mais jamais dans
+ *   "FIT à générer" ;
+ * - UNKNOWN est séparé tant que le plan Cloud n'a pas répondu ;
+ * - après le plan, la somme doit être :
+ *   disponibles + à générer + non générables + à analyser = dérivés.
+ */
+function cgweb094cCounters() {
+  const originals =
+    webFileVaultEntries.filter((entry) => entry?.kind === "original");
+
+  const derived =
+    webFileVaultEntries.filter((entry) => entry?.kind === "derived");
+
+  let available = 0;
+  let missing = 0;
+  let nonGenerable = 0;
+  let unknown = 0;
+  let missingActivityId = 0;
+
+  for (const entry of derived) {
+    const id = cgweb094cId(entry);
+
+    if (!id) {
+      missingActivityId += 1;
+      nonGenerable += 1;
+      continue;
+    }
+
+    const state =
+      cgweb094cStateByActivity.get(id) ||
+      {activity_id:id, status:"UNKNOWN", eligible:false};
+
+    switch (state.status) {
+      case "HAS_FIT":
+        available += 1;
+        break;
+
+      case "ELIGIBLE":
+        missing += 1;
+        break;
+
+      case "INSUFFICIENT":
+      case "ACTIVITY_MISSING":
+      case "ACTIVITY_DELETED":
+      case "ERROR":
+        nonGenerable += 1;
+        break;
+
+      default:
+        unknown += 1;
+        break;
+    }
+  }
+
+  const localBytes =
+    originals.reduce(
+      (sum, entry) =>
+        sum + numberOrZero(entry.file_size_bytes),
+      0
+    );
+
+  const accounted =
+    available + missing + nonGenerable + unknown;
+
+  return Object.freeze({
+    originals: originals.length,
+    derived: derived.length,
+    total: originals.length + derived.length,
+    localBytes,
+    available,
+    missing,
+    nonGenerable,
+    unknown,
+    missingActivityId,
+    accounted,
+    invariantOk: accounted === derived.length
+  });
+}
+
+/* CGWEB094C_FIX3_COUNTER_RECONCILE_END */
+
 function cgweb094cStatusText(s){
   return s?.status==="HAS_FIT"?"FIT disponible":
     s?.status==="ELIGIBLE"?"FIT à générer":
@@ -14425,24 +14514,51 @@ async function cgweb094cRefresh(explicit=false){
   const api=await cgweb094cApi();
   const ids=cgweb094cIds();
   const next=new Map();
+
   for(let i=0;i<ids.length;i+=CGWEB094C_PLAN_CHUNK){
     const x=await api.plan(ids.slice(i,i+CGWEB094C_PLAN_CHUNK));
-    if(!x?.ok)throw new Error(x?.error||"Dry-run invalide.");
+
+    if(!x?.ok){
+      throw new Error(x?.error||"Dry-run invalide.");
+    }
+
     for(const row of x.rows||[]){
       const id=String(row?.activity_id||"").trim();
       if(id)next.set(id,row);
     }
   }
+
   cgweb094cStateByActivity=next;
+
+  const counters=cgweb094cCounters();
+
+  if(!counters.invariantOk){
+    console.warn(
+      "CGWEB094C FIX3 invariant compteurs",
+      counters
+    );
+  }
+
   if(explicit){
     cgweb094cBatchArmed=true;
-    const e=[...next.values()].filter(x=>x?.status==="ELIGIBLE").length;
-    const h=[...next.values()].filter(x=>x?.status==="HAS_FIT").length;
-    const i=[...next.values()].filter(x=>x?.status==="INSUFFICIENT").length;
-    cgweb094cBatchStatus(`Dry-run terminé · ${e} à générer · ${h} disponibles · ${i} insuffisants.`,0);
+
+    const suffix =
+      counters.unknown > 0
+        ? ` · ${counters.unknown} à analyser`
+        : "";
+
+    cgweb094cBatchStatus(
+      `Dry-run terminé · ${counters.missing} à générer · `+
+      `${counters.available} disponibles · `+
+      `${counters.nonGenerable} non générables${suffix}.`,
+      0
+    );
   }
+
   cgweb094cButtons();
 }
+
+
 async function cgweb094cAnalyze(){
   cgweb094cBatchArmed=false;
   cgweb094cBatchStatus("Analyse des FIT manquants…",0);
@@ -14663,21 +14779,68 @@ function webFileEntryMatchesFilter(entry) {
 }
 
 function updateWebFileVaultSummary() {
-  if (!ui.webFilesSummaryBadge) return;
-  const originals=webFileVaultEntries.filter((entry)=>entry.kind==="original");
-  const derived=webFileVaultEntries.filter((entry)=>entry.kind==="derived");
-  const bytes=originals.reduce((sum,entry)=>sum+numberOrZero(entry.file_size_bytes),0);
-  const linked=new Set(
-    originals.flatMap((entry)=>(entry.linkedActivities||[]).map((activity)=>activityKey(activity)))
-  );
+  if(!ui.webFilesSummaryBadge)return;
 
-  ui.webFilesSummaryBadge.textContent=`${formatNumber(originals.length)} FIT`;
-  ui.webFilesSummaryBadge.className=originals.length?"pill ok":"pill neutral";
-  ui.webFilesOriginalCount.textContent=formatNumber(originals.length);
-  ui.webFilesLocalSize.textContent=formatBytes(bytes);
-  ui.webFilesLinkedCount.textContent=formatNumber(linked.size);
-  ui.webFilesDerivedCount.textContent=formatNumber(derived.length);
+  const counters=cgweb094cCounters();
+
+  ui.webFilesSummaryBadge.textContent=
+    `${formatNumber(counters.total)} entrée(s)`;
+
+  ui.webFilesSummaryBadge.className=
+    counters.total ? "pill ok" : "pill neutral";
+
+  if(ui.webFilesOriginalCount){
+    ui.webFilesOriginalCount.textContent=
+      formatNumber(counters.originals);
+  }
+
+  if(ui.webFilesLocalSize){
+    ui.webFilesLocalSize.textContent=
+      formatBytes(counters.localBytes);
+  }
+
+  /*
+   * webFilesLinkedCount est réutilisé par FIX3 :
+   * son libellé HTML devient "FIT disponibles".
+   */
+  if(ui.webFilesLinkedCount){
+    ui.webFilesLinkedCount.textContent=
+      formatNumber(counters.available);
+  }
+
+  /*
+   * webFilesDerivedCount était historiquement le nombre total de dérivés.
+   * FIX3 lui donne enfin son sens affiché réel : FIT à générer.
+   */
+  if(ui.webFilesDerivedCount){
+    ui.webFilesDerivedCount.textContent=
+      formatNumber(counters.missing);
+  }
+
+  const nonGenerable=
+    document.getElementById(
+      "cgweb094cFitNonGenerableCount"
+    );
+
+  if(nonGenerable){
+    nonGenerable.textContent=
+      formatNumber(counters.nonGenerable);
+  }
+
+  const unknown=
+    document.getElementById(
+      "cgweb094cFitUnknownCount"
+    );
+
+  if(unknown){
+    unknown.textContent=
+      formatNumber(counters.unknown);
+  }
+
+  cgweb094cButtons();
 }
+
+
 
 function triggerBlobDownload(blob,fileName) {
   if (!blob) return;
@@ -14855,35 +15018,62 @@ function renderWebFileVaultList() {
 
 async function renderWebFileVault(force=false) {
   if(!ui.webFilesSection||webFileVaultLoading)return;
+
   cgweb094cWire();
 
   if(webFileVaultEntries.length&&!force){
-    updateWebFileVaultSummary();renderWebFileVaultList();restoreWebDriveState();return;
+    updateWebFileVaultSummary();
+    renderWebFileVaultList();
+    restoreWebDriveState();
+    return;
   }
 
   webFileVaultLoading=true;
-  ui.webFilesStatus.textContent="Lecture du coffre local…";
+  ui.webFilesStatus.textContent=
+    "Lecture du coffre local…";
+
   try{
-    webFileVaultEntries=await buildWebFileVaultEntries();
-    try{await cgweb094cRefresh(false);}catch(error){console.warn("CGWEB094C plan",error);}
+    webFileVaultEntries=
+      await buildWebFileVaultEntries();
+
+    try{
+      await cgweb094cRefresh(false);
+    }catch(error){
+      console.warn(
+        "CGWEB094C plan",
+        error
+      );
+    }
+
+    const counters=
+      cgweb094cCounters();
+
     updateWebFileVaultSummary();
+    renderWebFileVaultList();
+    restoreWebDriveState();
+    cgweb094cWire();
 
-    const states=webFileVaultEntries.filter(x=>x.kind==="derived").map(cgweb094cState);
-    const missing=states.filter(x=>x.status==="ELIGIBLE").length;
-    const available=states.filter(x=>x.status==="HAS_FIT").length;
-    const insufficient=states.filter(x=>["INSUFFICIENT","ACTIVITY_MISSING","ACTIVITY_DELETED","ERROR"].includes(x.status)).length;
-    if(ui.webFilesDerivedCount)ui.webFilesDerivedCount.textContent=formatNumber(missing);
+    const unknownPart=
+      counters.unknown > 0
+        ? ` · ${counters.unknown} à analyser`
+        : "";
 
-    renderWebFileVaultList();restoreWebDriveState();cgweb094cWire();
-    const originals=webFileVaultEntries.filter(x=>x.kind==="original").length;
     ui.webFilesStatus.textContent=
-      `${originals} original(aux) locaux · ${available} FIT disponible(s) · `+
-      `${missing} FIT à générer · ${insufficient} non générable(s).`;
+      `${counters.originals} original(aux) locaux · `+
+      `${counters.available} FIT disponible(s) · `+
+      `${counters.missing} FIT à générer · `+
+      `${counters.nonGenerable} non générable(s)`+
+      `${unknownPart}.`;
   }catch(error){
     console.error(error);
-    ui.webFilesStatus.textContent=`Coffre indisponible : ${error?.message||error}`;
-  }finally{webFileVaultLoading=false;}
+    ui.webFilesStatus.textContent=
+      `Coffre indisponible : ${error?.message||error}`;
+  }finally{
+    webFileVaultLoading=false;
+  }
 }
+
+
 
 
 
