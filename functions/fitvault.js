@@ -5066,6 +5066,696 @@ async function c091TransferAudit(uid) {
 
   /* CGWEB095_GLOBAL_FIT_HELPERS_END */
 
+
+  /* CGWEB096_DIRECTORY_DOWNLOAD_HELPERS_START */
+
+  function c096Text(value) {
+    return String(value ?? "").trim();
+  }
+
+  function c096Basename(value) {
+    const text = c096Text(value)
+      .replace(/^gs:\/\/[^/]+\//i, "")
+      .replace(/^\/+/, "")
+      .replace(/\\/g, "/");
+
+    const parts = text.split("/").filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : "";
+  }
+
+  function c096NormalizeObjectName(value, bucketName="") {
+    let text = c096Text(value);
+
+    if (!text) return "";
+
+    text = text.replace(/\\/g, "/");
+
+    if (/^gs:\/\//i.test(text)) {
+      const prefix = `gs://${bucketName}/`;
+      if (
+        bucketName &&
+        text.toLowerCase().startsWith(prefix.toLowerCase())
+      ) {
+        text = text.slice(prefix.length);
+      } else {
+        text = text.replace(/^gs:\/\/[^/]+\//i, "");
+      }
+    }
+
+    try {
+      if (/^https?:\/\//i.test(text)) {
+        const url = new URL(text);
+        const marker = "/o/";
+        const at = url.pathname.indexOf(marker);
+
+        if (at >= 0) {
+          text = decodeURIComponent(
+            url.pathname.slice(at + marker.length)
+          );
+        }
+      }
+    } catch (_) {}
+
+    return text.replace(/^\/+/, "");
+  }
+
+  function c096CandidateObjectNames(row, bucketName="") {
+    const keys = [
+      "storage_path",
+      "storagePath",
+      "object_path",
+      "objectPath",
+      "object_name",
+      "objectName",
+      "cloud_path",
+      "cloudPath",
+      "gcs_path",
+      "gcsPath",
+      "full_path",
+      "fullPath",
+      "path",
+      "download_path",
+      "downloadPath",
+      "file_path",
+      "filePath",
+      "file_name",
+      "fileName"
+    ];
+
+    const out = [];
+
+    for (const key of keys) {
+      const value = c096NormalizeObjectName(
+        row?.[key],
+        bucketName
+      );
+
+      if (value) out.push(value);
+    }
+
+    return [...new Set(out)];
+  }
+
+  function c096RoleRank(row) {
+    const roles = c090Roles(row);
+
+    if (roles.some(c090IsOriginalRole)) return 300;
+    if (roles.some(c090IsCanonicalRole)) return 200;
+
+    if (
+      roles.includes("EDITED") ||
+      roles.includes("VERSIONED_EDITED")
+    ) {
+      return 100;
+    }
+
+    return 10;
+  }
+
+  function c096RoleLabel(row) {
+    const roles = c090Roles(row);
+
+    if (roles.some(c090IsOriginalRole)) return "ORIGINAL";
+    if (roles.some(c090IsCanonicalRole)) return "CANONICAL";
+
+    if (
+      roles.includes("EDITED") ||
+      roles.includes("VERSIONED_EDITED")
+    ) {
+      return "EDITED";
+    }
+
+    return roles[0] || "UNKNOWN";
+  }
+
+  async function c096StorageIndex() {
+    const {getStorage} =
+      require("firebase-admin/storage");
+
+    const bucket = getStorage().bucket();
+    const [objects] =
+      await bucket.getFiles({autoPaginate:true});
+
+    const exact = new Map();
+    const basename = new Map();
+    const sha = new Map();
+
+    for (const object of objects) {
+      const name = c096NormalizeObjectName(
+        object.name,
+        bucket.name
+      );
+
+      if (!name) continue;
+
+      exact.set(name, object.name);
+
+      const base =
+        c096Basename(name).toLowerCase();
+
+      if (base) {
+        const values = basename.get(base) || [];
+        values.push(object.name);
+        basename.set(base, values);
+      }
+
+      const match =
+        String(name).toLowerCase()
+          .match(/[a-f0-9]{64}/g) || [];
+
+      for (const token of match) {
+        const values = sha.get(token) || [];
+        values.push(object.name);
+        sha.set(token, values);
+      }
+    }
+
+    return {
+      bucket,
+      object_count: objects.length,
+      exact,
+      basename,
+      sha
+    };
+  }
+
+  async function c096LinkedRows(uid) {
+    const byActivity = new Map();
+
+    for await (
+      const snap of files(uid).stream()
+    ) {
+      const row = snap.data() || {};
+
+      if (row.deleted_at_ms != null) continue;
+
+      const activityId =
+        c096Text(row.activity_id);
+
+      if (!activityId) continue;
+
+      const entry = {
+        ...row,
+        __doc_id: snap.id
+      };
+
+      const values =
+        byActivity.get(activityId) || [];
+
+      values.push(entry);
+      byActivity.set(activityId, values);
+    }
+
+    for (const values of byActivity.values()) {
+      values.sort(
+        (a, b) =>
+          c096RoleRank(b) -
+          c096RoleRank(a)
+      );
+    }
+
+    return byActivity;
+  }
+
+  function c096ResolveRowObject(row, index) {
+    const bucketName = index.bucket.name;
+    const candidates =
+      c096CandidateObjectNames(
+        row,
+        bucketName
+      );
+
+    for (const candidate of candidates) {
+      if (index.exact.has(candidate)) {
+        return {
+          status: "RESOLVED_EXACT",
+          object_name:
+            index.exact.get(candidate),
+          method: "EXACT_METADATA"
+        };
+      }
+    }
+
+    for (const candidate of candidates) {
+      const base =
+        c096Basename(candidate)
+          .toLowerCase();
+
+      if (!base) continue;
+
+      const matches =
+        index.basename.get(base) || [];
+
+      if (matches.length === 1) {
+        return {
+          status: "RESOLVED_BASENAME",
+          object_name: matches[0],
+          method: "UNIQUE_BASENAME"
+        };
+      }
+
+      if (matches.length > 1) {
+        return {
+          status: "AMBIGUOUS_BASENAME",
+          object_name: "",
+          method: "AMBIGUOUS_BASENAME",
+          matches: matches.slice(0, 8)
+        };
+      }
+    }
+
+    const hash =
+      c096Text(row?.sha256)
+        .toLowerCase();
+
+    if (/^[a-f0-9]{64}$/.test(hash)) {
+      const matches =
+        index.sha.get(hash) || [];
+
+      if (matches.length === 1) {
+        return {
+          status: "RESOLVED_SHA",
+          object_name: matches[0],
+          method: "UNIQUE_SHA"
+        };
+      }
+
+      if (matches.length > 1) {
+        return {
+          status: "AMBIGUOUS_SHA",
+          object_name: "",
+          method: "AMBIGUOUS_SHA",
+          matches: matches.slice(0, 8)
+        };
+      }
+    }
+
+    return {
+      status: "OBJECT_NOT_FOUND",
+      object_name: "",
+      method: "NONE"
+    };
+  }
+
+  function c096ResolvePreferred(
+    rows,
+    index
+  ) {
+    let firstFailure = null;
+
+    for (const row of rows || []) {
+      const resolved =
+        c096ResolveRowObject(
+          row,
+          index
+        );
+
+      const result = {
+        ...resolved,
+        role: c096RoleLabel(row),
+        file_doc_id:
+          c096Text(row.__doc_id),
+        file_name:
+          c096Text(
+            row.file_name ||
+            row.fileName ||
+            c096Basename(
+              resolved.object_name
+            )
+          ),
+        sha256:
+          c096Text(row.sha256)
+      };
+
+      if (
+        resolved.status.startsWith(
+          "RESOLVED_"
+        )
+      ) {
+        return result;
+      }
+
+      if (!firstFailure) {
+        firstFailure = result;
+      }
+    }
+
+    return firstFailure || {
+      status: "NO_LINKED_FILE",
+      object_name: "",
+      method: "NONE",
+      role: "NONE",
+      file_doc_id: "",
+      file_name: "",
+      sha256: ""
+    };
+  }
+
+  async function c096DirectoryAudit(uid) {
+    const [coverage, byActivity, index] =
+      await Promise.all([
+        c095Coverage(uid),
+        c096LinkedRows(uid),
+        c096StorageIndex()
+      ]);
+
+    let linkedMetadata = 0;
+    let downloadable = 0;
+    let original = 0;
+    let canonical = 0;
+    let edited = 0;
+    let unresolved = 0;
+    let ambiguous = 0;
+    let noMetadata = 0;
+
+    const unresolvedExamples = [];
+    const ambiguousExamples = [];
+    const noMetadataExamples = [];
+
+    const activityQuery =
+      db.collection(
+        `${ROOT}/${uid}/activities`
+      );
+
+    for await (
+      const snap of activityQuery.stream()
+    ) {
+      const activity = snap.data() || {};
+
+      if (activity.deleted_at_ms != null) continue;
+
+      const activityId = String(snap.id);
+      const rows =
+        byActivity.get(activityId) || [];
+
+      if (!rows.length) {
+        noMetadata += 1;
+
+        if (noMetadataExamples.length < 40) {
+          noMetadataExamples.push({
+            activity_id: activityId,
+            title:
+              c095Title(
+                activity,
+                activityId
+              )
+          });
+        }
+
+        continue;
+      }
+
+      linkedMetadata += 1;
+
+      const resolved =
+        c096ResolvePreferred(
+          rows,
+          index
+        );
+
+      if (
+        resolved.status.startsWith(
+          "RESOLVED_"
+        )
+      ) {
+        downloadable += 1;
+
+        if (resolved.role === "ORIGINAL") {
+          original += 1;
+        } else if (
+          resolved.role === "CANONICAL"
+        ) {
+          canonical += 1;
+        } else {
+          edited += 1;
+        }
+
+        continue;
+      }
+
+      if (
+        resolved.status.startsWith(
+          "AMBIGUOUS_"
+        )
+      ) {
+        ambiguous += 1;
+
+        if (ambiguousExamples.length < 40) {
+          ambiguousExamples.push({
+            activity_id: activityId,
+            title:
+              c095Title(
+                activity,
+                activityId
+              ),
+            status: resolved.status,
+            role: resolved.role,
+            file_name: resolved.file_name
+          });
+        }
+
+        continue;
+      }
+
+      unresolved += 1;
+
+      if (unresolvedExamples.length < 40) {
+        unresolvedExamples.push({
+          activity_id: activityId,
+          title:
+            c095Title(
+              activity,
+              activityId
+            ),
+          status: resolved.status,
+          role: resolved.role,
+          file_name: resolved.file_name,
+          sha256: resolved.sha256
+        });
+      }
+    }
+
+    return {
+      summary: {
+        activities_active:
+          Number(
+            coverage?.summary
+              ?.activities_active || 0
+          ),
+        linked_metadata:
+          linkedMetadata,
+        downloadable,
+        downloadable_original:
+          original,
+        downloadable_canonical:
+          canonical,
+        downloadable_edited:
+          edited,
+        unresolved_object:
+          unresolved,
+        ambiguous_object:
+          ambiguous,
+        no_link_metadata:
+          noMetadata,
+        storage_objects:
+          index.object_count,
+        download_ready_pct:
+          coverage?.summary
+            ?.activities_active
+            ? Math.round(
+                (
+                  downloadable /
+                  coverage.summary
+                    .activities_active
+                ) *
+                100000
+              ) / 1000
+            : 100
+      },
+      examples: {
+        unresolved:
+          unresolvedExamples,
+        ambiguous:
+          ambiguousExamples,
+        no_metadata:
+          noMetadataExamples
+      }
+    };
+  }
+
+  async function c096ResolveActivity(
+    uid,
+    activityId
+  ) {
+    const id =
+      c096Text(activityId);
+
+    if (!id) {
+      throw Object.assign(
+        new Error("activity_id absent."),
+        {status:400}
+      );
+    }
+
+    const activitySnap =
+      await db.doc(
+        `${ROOT}/${uid}/activities/${id}`
+      ).get();
+
+    if (!activitySnap.exists) {
+      throw Object.assign(
+        new Error("Activité introuvable."),
+        {status:404}
+      );
+    }
+
+    const activity =
+      activitySnap.data() || {};
+
+    if (activity.deleted_at_ms != null) {
+      throw Object.assign(
+        new Error("Activité supprimée."),
+        {status:404}
+      );
+    }
+
+    const linked =
+      await files(uid)
+        .where(
+          "activity_id",
+          "==",
+          id
+        )
+        .get();
+
+    const rows =
+      linked.docs
+        .map((snap) => ({
+          ...(snap.data() || {}),
+          __doc_id: snap.id
+        }))
+        .filter(
+          (row) =>
+            row.deleted_at_ms == null
+        )
+        .sort(
+          (a, b) =>
+            c096RoleRank(b) -
+            c096RoleRank(a)
+        );
+
+    if (!rows.length) {
+      return {
+        activity_id: id,
+        title:
+          c095Title(
+            activity,
+            id
+          ),
+        status: "NO_LINKED_FILE",
+        downloadable: false
+      };
+    }
+
+    const index =
+      await c096StorageIndex();
+
+    const resolved =
+      c096ResolvePreferred(
+        rows,
+        index
+      );
+
+    if (
+      !resolved.status.startsWith(
+        "RESOLVED_"
+      )
+    ) {
+      return {
+        activity_id: id,
+        title:
+          c095Title(
+            activity,
+            id
+          ),
+        downloadable: false,
+        ...resolved
+      };
+    }
+
+    const file =
+      index.bucket.file(
+        resolved.object_name
+      );
+
+    let url = "";
+
+    try {
+      const dispositionName =
+        c096Basename(
+          resolved.file_name ||
+          resolved.object_name
+        ) ||
+        `activity_${id}.fit`;
+
+      const [signed] =
+        await file.getSignedUrl({
+          version: "v4",
+          action: "read",
+          expires:
+            Date.now() +
+            10 * 60 * 1000,
+          responseDisposition:
+            `attachment; filename="${dispositionName.replace(/"/g, "")}"`
+        });
+
+      url = signed;
+    } catch (error) {
+      return {
+        activity_id: id,
+        title:
+          c095Title(
+            activity,
+            id
+          ),
+        downloadable: false,
+        status: "SIGN_URL_ERROR",
+        role: resolved.role,
+        object_name:
+          resolved.object_name,
+        file_name:
+          resolved.file_name,
+        error:
+          error?.message ||
+          String(error)
+      };
+    }
+
+    return {
+      activity_id: id,
+      title:
+        c095Title(
+          activity,
+          id
+        ),
+      downloadable: true,
+      status: "DOWNLOAD_READY",
+      role: resolved.role,
+      method: resolved.method,
+      object_name:
+        resolved.object_name,
+      file_name:
+        resolved.file_name ||
+        c096Basename(
+          resolved.object_name
+        ),
+      url,
+      expires_in_seconds: 600
+    };
+  }
+
+  /* CGWEB096_DIRECTORY_DOWNLOAD_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -6572,6 +7262,82 @@ if (action === "transfer_audit") {
 
 
         /* CGWEB095_GLOBAL_FIT_ACTIONS_START */
+
+
+        /* CGWEB096_DIRECTORY_DOWNLOAD_ACTIONS_START */
+
+        if (
+          action ===
+          "directory_fit_download_audit"
+        ) {
+          if (
+            req.method !== "GET" &&
+            req.method !== "POST"
+          ) {
+            return res.status(405).json({
+              error: "GET ou POST requis."
+            });
+          }
+
+          const audit =
+            await c096DirectoryAudit(uid);
+
+          return res.json({
+            ok: true,
+            service:
+              "DIRECTORY_FIT_DOWNLOAD_AUDIT001",
+            version: "CGWEB096",
+            read_only: true,
+            ...audit
+          });
+        }
+
+        if (
+          action ===
+          "directory_fit_resolve"
+        ) {
+          if (req.method !== "POST") {
+            return res.status(405).json({
+              error: "POST requis."
+            });
+          }
+
+          let body = req.body;
+
+          if (Buffer.isBuffer(body)) {
+            try {
+              body =
+                JSON.parse(
+                  body.toString("utf8")
+                );
+            } catch {
+              body = {};
+            }
+          }
+
+          body =
+            !body ||
+            typeof body !== "object" ||
+            Array.isArray(body)
+              ? {}
+              : body;
+
+          const result =
+            await c096ResolveActivity(
+              uid,
+              body.activity_id
+            );
+
+          return res.json({
+            ok: true,
+            service:
+              "CLOUD_OBJECT_RESOLVE001",
+            version: "CGWEB096",
+            ...result
+          });
+        }
+
+        /* CGWEB096_DIRECTORY_DOWNLOAD_ACTIONS_END */
 
         if (action === "global_fit_plan") {
           if (

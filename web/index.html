@@ -5862,6 +5862,68 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 @media(max-width:700px){#cgweb095GlobalFitCoverage .section-heading{flex-direction:column}.cgweb095-actions{display:grid;grid-template-columns:1fr}.cgweb095-actions button{width:100%}}
 </style>
 
+
+<style id="cgweb096-directory-audit-css">
+#cgweb096DirectoryFitAudit{
+  display:grid;
+  gap:12px;
+}
+#cgweb096DirectoryFitAudit .section-heading{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-start;
+}
+.cgweb096-summary{
+  display:grid;
+  grid-template-columns:
+    repeat(4,minmax(145px,1fr));
+  gap:8px;
+}
+.cgweb096-summary article{
+  min-width:0;
+  min-height:72px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:2px;
+  padding:10px 12px;
+  border:1px solid rgba(190,255,55,.20);
+  border-radius:14px;
+  background:rgba(255,255,255,.025);
+}
+.cgweb096-summary article span{
+  font-size:.84rem;
+  opacity:.78;
+}
+.cgweb096-summary article strong{
+  font-size:1.25rem;
+}
+.cgweb096-list{
+  display:grid;
+  gap:6px;
+  padding:8px 0 2px;
+}
+.cgweb096-row{
+  display:grid;
+  gap:2px;
+  padding:8px 10px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;
+}
+@media(max-width:950px){
+  .cgweb096-summary{
+    grid-template-columns:
+      repeat(2,minmax(130px,1fr));
+  }
+}
+@media(max-width:700px){
+  #cgweb096DirectoryFitAudit .section-heading{
+    flex-direction:column;
+  }
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -6959,6 +7021,95 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
   </p>
 </section>
 <!-- CGWEB095_GLOBAL_FIT_HTML_END -->
+
+
+
+<!-- CGWEB096_DIRECTORY_AUDIT_HTML_START -->
+<section id="cgweb096DirectoryFitAudit"
+         class="panel cgweb096-directory-audit">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">
+        CGWEB096 · DIRECTORY_FIT_DOWNLOAD_AUDIT001 /
+        CLOUD_OBJECT_RESOLVE001 / DOWNLOAD_BUTTON_REWIRE001
+      </p>
+      <h2>Téléchargement FIT du Répertoire</h2>
+      <p class="muted">
+        Vérifie le lien activité → activity_files → objet physique Cloud.
+        Le téléchargement privilégie ORIGINAL, puis CANONICAL.
+      </p>
+    </div>
+    <span id="cgweb096AuditPill"
+          class="pill neutral">
+      Non audité
+    </span>
+  </div>
+
+  <div class="cgweb096-summary">
+    <article>
+      <span>Activités actives</span>
+      <strong id="cgweb096Active">—</strong>
+    </article>
+    <article>
+      <span>Métadonnées FIT liées</span>
+      <strong id="cgweb096Linked">—</strong>
+    </article>
+    <article>
+      <span>Téléchargeables</span>
+      <strong id="cgweb096Ready">—</strong>
+    </article>
+    <article>
+      <span>Original téléchargeable</span>
+      <strong id="cgweb096Original">—</strong>
+    </article>
+    <article>
+      <span>Canonique téléchargeable</span>
+      <strong id="cgweb096Canonical">—</strong>
+    </article>
+    <article>
+      <span>Objet Cloud introuvable</span>
+      <strong id="cgweb096Unresolved">—</strong>
+    </article>
+    <article>
+      <span>Objet ambigu</span>
+      <strong id="cgweb096Ambiguous">—</strong>
+    </article>
+    <article>
+      <span>Sans métadonnée FIT</span>
+      <strong id="cgweb096NoMetadata">—</strong>
+    </article>
+  </div>
+
+  <div class="cgweb096-actions">
+    <button id="cgweb096RunAudit"
+            class="secondary"
+            type="button">
+      Auditer les téléchargements
+    </button>
+  </div>
+
+  <p id="cgweb096AuditStatus"
+     class="muted">
+    Audit physique Cloud non lancé.
+  </p>
+
+  <details>
+    <summary>Objets Cloud non résolus</summary>
+    <div id="cgweb096UnresolvedList"
+         class="cgweb096-list muted">
+      Audit non lancé.
+    </div>
+  </details>
+
+  <details>
+    <summary>Résolutions ambiguës</summary>
+    <div id="cgweb096AmbiguousList"
+         class="cgweb096-list muted">
+      Audit non lancé.
+    </div>
+  </details>
+</section>
+<!-- CGWEB096_DIRECTORY_AUDIT_HTML_END -->
 
 </section>
 
@@ -8071,7 +8222,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB095-GLOBAL-FIT-COVERAGE001"></script>
+  <script type="module" src="./app.js?v=CGWEB096-DIRECTORY-FIT-DOWNLOAD001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

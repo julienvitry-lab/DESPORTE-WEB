@@ -6027,6 +6027,21 @@ function v081ActivityId(activity) {
 }
 
 function v081SetQuickState(control, state, label = "") {
+
+  /* CGWEB096_DOWNLOAD_BUTTON_REWIRE001 */
+  const __cgweb096ActivityId=
+    cgweb096ExtractActivityId(
+      this,
+      ...Array.from(arguments)
+    );
+
+  if(__cgweb096ActivityId){
+    void cgweb096DirectoryDownload(
+      __cgweb096ActivityId
+    );
+    return;
+  }
+
   if (!control) return;
   control.classList.remove("is-pending", "is-available", "is-unavailable", "is-busy", "is-error");
   control.classList.add(`is-${state}`);
@@ -24834,3 +24849,434 @@ if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded"
 window.SPORT_GLOBAL_FIT_UI=Object.freeze({version:"CGWEB095",analyze:()=>cgweb095Analyze(),run:()=>cgweb095RunBatch()});
 
 /* CGWEB095_GLOBAL_FIT_UI_END */
+
+/* CGWEB096_DIRECTORY_REWIRE_START */
+
+let cgweb096AuditBusy=false;
+
+function cgweb096Node(id){
+  return document.getElementById(id);
+}
+
+function cgweb096Set(id,value){
+  const node=cgweb096Node(id);
+  if(node){
+    node.textContent=
+      String(value ?? "—");
+  }
+}
+
+function cgweb096ExtractActivityId(
+  ...values
+){
+  const seen=new Set();
+
+  function scan(value,depth=0){
+    if(
+      value==null ||
+      depth>3
+    ){
+      return "";
+    }
+
+    if(
+      typeof value==="string" ||
+      typeof value==="number"
+    ){
+      const text=
+        String(value).trim();
+
+      if(
+        /^\d{1,22}$/.test(text) ||
+        /^[A-Za-z0-9_-]{6,80}$/.test(text)
+      ){
+        return text;
+      }
+
+      return "";
+    }
+
+    if(typeof value!=="object"){
+      return "";
+    }
+
+    if(seen.has(value)){
+      return "";
+    }
+
+    seen.add(value);
+
+    if(
+      typeof Element!=="undefined" &&
+      value instanceof Element
+    ){
+      const direct=[
+        value.dataset?.activityId,
+        value.dataset?.activity_id,
+        value.getAttribute?.("data-activity-id"),
+        value.getAttribute?.("data-activity_id")
+      ];
+
+      for(const candidate of direct){
+        const id=scan(candidate,depth+1);
+        if(id)return id;
+      }
+
+      const row=
+        value.closest?.(
+          "[data-activity-id],[data-activity_id]"
+        );
+
+      if(row&&row!==value){
+        const id=scan(row,depth+1);
+        if(id)return id;
+      }
+    }
+
+    for(const key of [
+      "activity_id",
+      "activityId",
+      "id",
+      "strava_activity_id",
+      "stravaActivityId"
+    ]){
+      if(value[key]!=null){
+        const id=
+          scan(
+            value[key],
+            depth+1
+          );
+
+        if(id)return id;
+      }
+    }
+
+    return "";
+  }
+
+  for(const value of values){
+    const id=scan(value,0);
+    if(id)return id;
+  }
+
+  return "";
+}
+
+function cgweb096Message(
+  text,
+  kind="info"
+){
+  if(
+    typeof setMessage==="function"
+  ){
+    setMessage(text,kind);
+    return;
+  }
+
+  console[
+    kind==="error" ? "error" : "log"
+  ](text);
+}
+
+async function cgweb096DirectoryDownload(
+  activityId
+){
+  const id=
+    String(activityId||"").trim();
+
+  if(!id){
+    cgweb096Message(
+      "Identifiant activité introuvable.",
+      "error"
+    );
+    return;
+  }
+
+  const api=
+    window.SPORT_DIRECTORY_FIT;
+
+  if(!api?.resolve){
+    cgweb096Message(
+      "Service de téléchargement CGWEB096 non chargé.",
+      "error"
+    );
+    return;
+  }
+
+  cgweb096Message(
+    `Recherche du FIT associé à l'activité #${id}…`
+  );
+
+  try{
+    const data=
+      await api.resolve(id);
+
+    if(
+      !data?.ok ||
+      !data?.downloadable ||
+      !data?.url
+    ){
+      const detail=
+        data?.status ||
+        data?.error ||
+        "objet Cloud non résolu";
+
+      cgweb096Message(
+        `FIT lié en base, mais téléchargement indisponible : ${detail}.`,
+        "error"
+      );
+      return;
+    }
+
+    const anchor=
+      document.createElement("a");
+
+    anchor.href=data.url;
+    anchor.target="_blank";
+    anchor.rel="noopener";
+    anchor.download=
+      data.file_name ||
+      `activity_${id}.fit`;
+
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    cgweb096Message(
+      `Téléchargement ${data.role||"FIT"} lancé.`
+    );
+  }catch(error){
+    cgweb096Message(
+      `Téléchargement FIT impossible : ${error?.message||error}`,
+      "error"
+    );
+  }
+}
+
+function cgweb096RenderRows(
+  id,
+  rows,
+  emptyText
+){
+  const host=
+    cgweb096Node(id);
+
+  if(!host)return;
+
+  const values=
+    Array.isArray(rows)
+      ? rows
+      : [];
+
+  if(!values.length){
+    host.textContent=emptyText;
+    return;
+  }
+
+  host.replaceChildren();
+
+  for(const row of values){
+    const item=
+      document.createElement("div");
+
+    item.className="cgweb096-row";
+
+    const strong=
+      document.createElement("strong");
+
+    strong.textContent=
+      `${row?.title||"Activité"} · #${row?.activity_id||"?"}`;
+
+    const small=
+      document.createElement("small");
+
+    small.textContent=[
+      row?.status,
+      row?.role,
+      row?.file_name
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    item.append(
+      strong,
+      small
+    );
+
+    host.appendChild(item);
+  }
+}
+
+async function cgweb096RunAudit(){
+  if(cgweb096AuditBusy)return;
+
+  const button=
+    cgweb096Node(
+      "cgweb096RunAudit"
+    );
+
+  const status=
+    cgweb096Node(
+      "cgweb096AuditStatus"
+    );
+
+  cgweb096AuditBusy=true;
+
+  if(button){
+    button.disabled=true;
+    button.textContent=
+      "Audit Cloud en cours…";
+  }
+
+  if(status){
+    status.textContent=
+      "Indexation des objets Cloud et comparaison avec les activités…";
+  }
+
+  try{
+    const api=
+      window.SPORT_DIRECTORY_FIT;
+
+    if(!api?.audit){
+      throw new Error(
+        "Service SPORT_DIRECTORY_FIT non chargé."
+      );
+    }
+
+    const data=
+      await api.audit();
+
+    if(!data?.ok){
+      throw new Error(
+        data?.error ||
+        "Audit invalide."
+      );
+    }
+
+    const s=
+      data.summary || {};
+
+    cgweb096Set(
+      "cgweb096Active",
+      s.activities_active
+    );
+    cgweb096Set(
+      "cgweb096Linked",
+      s.linked_metadata
+    );
+    cgweb096Set(
+      "cgweb096Ready",
+      s.downloadable
+    );
+    cgweb096Set(
+      "cgweb096Original",
+      s.downloadable_original
+    );
+    cgweb096Set(
+      "cgweb096Canonical",
+      s.downloadable_canonical
+    );
+    cgweb096Set(
+      "cgweb096Unresolved",
+      s.unresolved_object
+    );
+    cgweb096Set(
+      "cgweb096Ambiguous",
+      s.ambiguous_object
+    );
+    cgweb096Set(
+      "cgweb096NoMetadata",
+      s.no_link_metadata
+    );
+
+    const pill=
+      cgweb096Node(
+        "cgweb096AuditPill"
+      );
+
+    if(pill){
+      pill.textContent=
+        `${Number(
+          s.download_ready_pct||0
+        ).toFixed(1)} %`;
+
+      pill.className=
+        Number(
+          s.downloadable||0
+        ) ===
+        Number(
+          s.activities_active||0
+        )
+          ? "pill ok"
+          : "pill neutral";
+    }
+
+    cgweb096RenderRows(
+      "cgweb096UnresolvedList",
+      data?.examples?.unresolved,
+      "Aucun objet Cloud non résolu."
+    );
+
+    cgweb096RenderRows(
+      "cgweb096AmbiguousList",
+      data?.examples?.ambiguous,
+      "Aucune résolution ambiguë."
+    );
+
+    if(status){
+      status.textContent=
+        `Audit terminé · ${s.downloadable||0}/${s.activities_active||0} activité(s) téléchargeables · `+
+        `${s.unresolved_object||0} objet(s) introuvable(s) · `+
+        `${s.ambiguous_object||0} ambiguïté(s).`;
+    }
+  }catch(error){
+    if(status){
+      status.textContent=
+        `Audit impossible : ${error?.message||error}`;
+    }
+  }finally{
+    cgweb096AuditBusy=false;
+
+    if(button){
+      button.disabled=false;
+      button.textContent=
+        "Auditer les téléchargements";
+    }
+  }
+}
+
+function cgweb096Wire(){
+  const button=
+    cgweb096Node(
+      "cgweb096RunAudit"
+    );
+
+  if(
+    button &&
+    button.dataset.c096!=="1"
+  ){
+    button.dataset.c096="1";
+
+    button.addEventListener(
+      "click",
+      ()=>void cgweb096RunAudit()
+    );
+  }
+
+  try{
+    window.SPORT_FILES_REORGANIZE
+      ?.organize?.();
+  }catch(_){}
+}
+
+if(document.readyState==="loading"){
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb096Wire,
+    {once:true}
+  );
+}else{
+  queueMicrotask(cgweb096Wire);
+}
+
+/* CGWEB096_DIRECTORY_REWIRE_END */
