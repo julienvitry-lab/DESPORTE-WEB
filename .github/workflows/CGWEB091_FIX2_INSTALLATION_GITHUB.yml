@@ -1,0 +1,53 @@
+CGWEB091 FIX2 · PROVENANCE_IMPORT001
+====================================
+
+CAUSE CONFIRMEE PAR LE LOG GITHUB
+---------------------------------
+FIX1 a bien franchi l'étape qui échouait auparavant :
+  ✓ Appliquer CGWEB091 interface et audit local
+
+Il s'arrête seulement à l'étape suivante :
+  Corriger le compteur provenance originale CGWEB090
+
+Erreur :
+  NameError: name 're' is not defined
+
+Le correctif FIX1 utilisait désormais une expression régulière dans ce second
+bloc Python, mais j'avais omis `import re`.
+
+FIX2 ajoute cet import et conserve le correctif robuste de FIX1.
+
+INSTALLATION — ORDI PRO
+-----------------------
+1. DESPORTE-WEB > Code > .github > workflows
+2. Add file > Upload files
+3. Glisser-déposer :
+   CGWEB091_FIX2_PROVENANCE_IMPORT001_GITHUB_PATCH.yml
+4. Commit changes sur main
+5. Actions
+6. Ouvrir :
+   CGWEB091 FIX2 - FIT reconcile resolve / provenance import fix
+7. Run workflow > main > Run workflow
+
+IMPORTANT
+---------
+- Ne pas faire « Re-run jobs » sur FIX1 : l'import manquant y restera absent.
+- FIX2 repart de main et rejoue l'ensemble du patch.
+- Les runs CGWEB091 et FIX1 ayant échoué avant Commit/Push n'ont pas déployé
+  leurs modifications.
+
+CONTROLE AJOUTE
+---------------
+Le YAML FIX2 a été contrôlé statiquement : tous les blocs Python qui utilisent
+`re.` contiennent désormais `import re`.
+
+ATTENDU
+-------
+Après « Corriger le compteur provenance originale CGWEB090 », le workflow doit
+poursuivre vers :
+- Documentation CGWEB091
+- Validation stricte
+- Commit et push CGWEB091
+- Authentification Google / Firebase
+- Déploiement Functions
+- Déploiement Hosting
