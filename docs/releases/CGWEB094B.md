@@ -44,3 +44,11 @@ Correction :
 Aucun backfill historique automatique n'est réalisé.
 Le correctif garantit les créations/imports futurs et leurs enrichissements
 successifs.
+
+## FIX6 · AUTOEQUIP_SELFCONTAINED002
+
+Correction robuste du chargement Functions :
+- AutoEquip possède son propre `getFirestore()` ;
+- `ROOT` et `REGION` sont internes au module ;
+- la factory ne reçoit plus de dépendances de `index.js` ;
+- un test `require("./index.js")` est exécuté avant déploiement.

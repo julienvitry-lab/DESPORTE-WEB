@@ -101,6 +101,31 @@ requireToken(
   "trigger AutoEquip exporté"
 );
 
+requireToken(
+  auto,
+  'const db = getFirestore();',
+  "Firestore AutoEquip autonome"
+);
+
+requireToken(
+  auto,
+  'const ROOT = "sport_users";',
+  "ROOT AutoEquip autonome"
+);
+
+requireToken(
+  index,
+  "createAutoEquipActivityWriteWatch();",
+  "AutoEquip exporté sans injection de db"
+);
+
+if (index.includes("createAutoEquipActivityWriteWatch({")) {
+  console.error("❌ ancienne injection de dépendances AutoEquip encore présente");
+  process.exit(62);
+}
+
+console.log("✓ aucune dépendance AutoEquip injectée depuis index.js");
+
 console.log(
   "✅ DIRECTORY_SINGLETON002 / AUTOEQUIP_WRITEWATCH001 : contrat valide"
 );

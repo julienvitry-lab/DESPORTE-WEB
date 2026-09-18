@@ -1269,9 +1269,5 @@ const {
 } = require("./autoequip");
 
 exports.autoEquipActivity =
-  createAutoEquipActivityWriteWatch({
-    db,
-    ROOT,
-    REGION
-  });
+  createAutoEquipActivityWriteWatch();
 /* CGWEB094B_AUTOEQUIP_WRITEWATCH001_INDEX_END */

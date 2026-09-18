@@ -4,6 +4,20 @@ const {
   onDocumentWritten
 } = require("firebase-functions/v2/firestore");
 
+const {
+  getApps,
+  initializeApp
+} = require("firebase-admin/app");
+const {
+  getFirestore
+} = require("firebase-admin/firestore");
+
+if (!getApps().length) initializeApp();
+
+const db = getFirestore();
+const ROOT = "sport_users";
+const REGION = "europe-west1";
+
 const VERSION =
   "CGWEB094B-AUTOEQUIP-WRITEWATCH001";
 
@@ -163,22 +177,13 @@ function makeEventId(activityId) {
   );
 }
 
-function createAutoEquipActivityWriteWatch({
-  db,
-  ROOT,
-  REGION
-}) {
-  if (!db || !ROOT) {
-    throw new Error(
-      "AUTOEQUIP_WRITEWATCH001 : dépendances absentes."
-    );
-  }
+function createAutoEquipActivityWriteWatch() {
 
   return onDocumentWritten(
     {
       document:
         `${ROOT}/{uid}/activities/{activityId}`,
-      region: REGION || "europe-west1",
+      region: REGION,
       timeoutSeconds: 60,
       memory: "256MiB"
     },
