@@ -5498,6 +5498,72 @@ body.ux-activities-page main{
 }
 </style>
 
+
+<style id="cgweb093-triage-css">
+#cgweb093Block{
+  margin-top:18px;
+  padding-top:14px;
+  border-top:1px solid rgba(255,255,255,.10);
+}
+#cgweb093Block .cgweb093-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:16px;
+}
+#cgweb093Block .cgweb093-head h4{
+  margin:3px 0 4px;
+}
+#cgweb093Block .cgweb093-details{
+  margin-top:12px;
+  padding-top:8px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+#cgweb093Block .cgweb093-details>summary{
+  cursor:pointer;
+  font-weight:700;
+}
+#cgweb093Block .cgweb093-list{
+  display:grid;
+  gap:8px;
+  margin-top:9px;
+}
+#cgweb093Block .cgweb093-row{
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:11px;
+  padding:9px 11px;
+  background:rgba(255,255,255,.018);
+}
+#cgweb093Block .cgweb093-row-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:flex-start;
+}
+#cgweb093Block .cgweb093-metrics{
+  margin-top:5px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px 12px;
+  font-size:.86rem;
+}
+#cgweb093Block .cgweb093-tech{
+  margin-top:6px;
+  font-size:.84rem;
+  white-space:pre-wrap;
+}
+#cgweb093Block .cgweb093-SAFE_EXACT,
+#cgweb093Block .cgweb093-SAFE_STRONG{
+  border-width:2px;
+}
+@media(max-width:760px){
+  #cgweb093Block .cgweb093-head,
+  #cgweb093Block .cgweb093-row-head{
+    flex-direction:column;
+  }
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5945,6 +6011,53 @@ body.ux-activities-page main{
               <div id="cgweb092DeepList" class="cgweb092-deep-list"></div>
             </div>
             <!-- CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_HTML_END -->
+
+            <!-- CGWEB093_MATCH_TRIAGE001_HTML_START -->
+            <div id="cgweb093Block" class="cgweb093-block">
+              <div class="cgweb093-head">
+                <div>
+                  <div class="eyebrow">CGWEB093 · SAFE_MATCH_PREVIEW001 / ORPHAN_FINGERPRINT_SEARCH001 / DUPLICATE_ACTIVITY_DIAGNOSTIC001</div>
+                  <h4>Triage final des correspondances FIT</h4>
+                  <div class="muted">
+                    Lecture seule : prévisualise les rattachements sûrs, recherche les orphelins par empreinte et diagnostique les activités jumelles.
+                  </div>
+                </div>
+                <button id="cgweb093Analyze" class="secondary" type="button">
+                  Lancer le triage CGWEB093
+                </button>
+              </div>
+
+              <div id="cgweb093Status" class="muted">
+                Aucun rattachement n'est effectué par CGWEB093.
+              </div>
+
+              <div id="cgweb093SafeSummary" class="cgweb091-card-grid"></div>
+
+              <details class="cgweb093-details" open>
+                <summary>Prévisualisation des réparations sûres</summary>
+                <div id="cgweb093SafeList" class="cgweb093-list">
+                  <div class="muted">Analyse non lancée.</div>
+                </div>
+              </details>
+
+              <details class="cgweb093-details" open>
+                <summary>Recherche par empreinte des originaux orphelins</summary>
+                <div id="cgweb093OrphanSummary" class="cgweb091-card-grid"></div>
+                <div id="cgweb093OrphanList" class="cgweb093-list">
+                  <div class="muted">Analyse non lancée.</div>
+                </div>
+              </details>
+
+              <details class="cgweb093-details" open>
+                <summary>Diagnostic des activités jumelles</summary>
+                <div id="cgweb093DuplicateSummary" class="cgweb091-card-grid"></div>
+                <div id="cgweb093DuplicateList" class="cgweb093-list">
+                  <div class="muted">Analyse non lancée.</div>
+                </div>
+              </details>
+            </div>
+            <!-- CGWEB093_MATCH_TRIAGE001_HTML_END -->
+
 
 
   <div class="cgweb091-block">
@@ -7492,6 +7605,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB092-ORIGINAL-MATCH-DEEP-ANALYSIS001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB093-MATCH-TRIAGE001"></script>
 </body>
 </html>

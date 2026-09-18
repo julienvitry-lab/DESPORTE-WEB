@@ -4225,6 +4225,385 @@ window.SPORT_ORIGINAL_MATCH_DEEP_ANALYSIS = Object.freeze({
 
 queueMicrotask(c092Wire);
 
+
+/* CGWEB093_MATCH_TRIAGE001_WEB_START */
+
+function c093ClassLabel(value) {
+  const key = String(value || "");
+  const labels = {
+    SAFE_EXACT: "SAFE exact",
+    SAFE_STRONG: "SAFE fort",
+    DUPLICATE_ACTIVITY_TIE: "ex æquo d'activités",
+    NO_COMPATIBLE_CANDIDATE: "aucun candidat compatible",
+    REVIEW: "revue manuelle",
+    REVIEW_DECODE_FAILED: "décodage à revoir",
+    FINGERPRINT_EXACT: "empreinte exacte",
+    FINGERPRINT_STRONG: "empreinte forte",
+    FINGERPRINT_PLAUSIBLE: "empreinte plausible",
+    WEAK: "empreinte faible"
+  };
+  return labels[key] || key || "—";
+}
+
+function c093ShortActivity(candidate) {
+  if (!candidate) return "—";
+  const activity = candidate.activity || {};
+  return (
+    "#" + candidate.activity_id +
+    " · " + (activity.title || ("Activité #" + candidate.activity_id)) +
+    " · " + c091Date(activity.start_time_ms)
+  );
+}
+
+function c093MetricMini(row) {
+  const fit = row?.fit;
+  const activity = row?.activity;
+  const q = c092QualityLabel(row?.quality);
+  const metric = String(row?.metric || "");
+
+  if (metric === "distance_m") {
+    return "distance " + c092FmtDistance(fit) +
+      " ↔ " + c092FmtDistance(activity) + " (" + q + ")";
+  }
+  if (metric === "duration_s") {
+    return "durée " + c092FmtDuration(fit) +
+      " ↔ " + c092FmtDuration(activity) + " (" + q + ")";
+  }
+  if (metric === "ascent_m") {
+    return "D+ " + c092FmtNumber(fit, 0) +
+      " ↔ " + c092FmtNumber(activity, 0) + " m (" + q + ")";
+  }
+  if (metric === "avg_hr") {
+    return "FC moy " + c092FmtNumber(fit, 0) +
+      " ↔ " + c092FmtNumber(activity, 0) + " (" + q + ")";
+  }
+  if (metric === "max_hr") {
+    return "FC max " + c092FmtNumber(fit, 0) +
+      " ↔ " + c092FmtNumber(activity, 0) + " (" + q + ")";
+  }
+  if (metric === "sport") {
+    return "sport " + c092FmtNumber(fit, 0) +
+      "/" + c092FmtNumber(activity, 0) + " (" + q + ")";
+  }
+  if (metric === "sub_sport") {
+    return "sous-sport " + c092FmtNumber(fit, 0) +
+      "/" + c092FmtNumber(activity, 0) + " (" + q + ")";
+  }
+  return metric + " (" + q + ")";
+}
+
+function c093RenderSafe(data) {
+  const summary = data?.summary || {};
+
+  c091Cards("cgweb093SafeSummary", [
+    ["SAFE exact", summary.safe_exact],
+    ["SAFE forts", summary.safe_strong],
+    ["SAFE total", summary.safe_total],
+    ["Ex æquo activités", summary.duplicate_activity_tie],
+    ["Sans candidat compatible", summary.no_compatible_candidate],
+    ["Revue manuelle", summary.review]
+  ]);
+
+  const host = c091Node("cgweb093SafeList");
+  if (!host) return;
+  host.innerHTML = "";
+
+  for (const row of data?.rows || []) {
+    const card = document.createElement("div");
+    card.className =
+      "cgweb093-row cgweb093-" + String(row.classification || "");
+
+    const head = document.createElement("div");
+    head.className = "cgweb093-row-head";
+
+    const title = document.createElement("strong");
+    title.textContent =
+      (row.file_name || row.sha256) +
+      " · " + c093ClassLabel(row.classification);
+
+    const pill = document.createElement("span");
+    pill.className = "pill neutral";
+    pill.textContent =
+      row.safe_to_repair
+        ? "prévisualisation SAFE"
+        : "aucune écriture";
+
+    head.appendChild(title);
+    head.appendChild(pill);
+    card.appendChild(head);
+
+    const info = document.createElement("div");
+    info.className = "muted";
+    info.textContent =
+      "1er : " + c093ShortActivity(row.first_candidate) +
+      (row.second_candidate
+        ? " · 2e : " + c093ShortActivity(row.second_candidate)
+        : "");
+    card.appendChild(info);
+
+    const reason = document.createElement("div");
+    reason.className = "cgweb093-tech";
+    reason.textContent =
+      (row.reasons || []).join(" · ") ||
+      "Aucun motif détaillé.";
+    card.appendChild(reason);
+
+    host.appendChild(card);
+  }
+}
+
+function c093RenderOrphan(data) {
+  const summary = data?.summary || {};
+
+  c091Cards("cgweb093OrphanSummary", [
+    ["Originaux recherchés", summary.searched_files],
+    ["Empreinte exacte", summary.files_with_exact_fingerprint],
+    ["Empreinte forte", summary.files_with_strong_fingerprint],
+    ["Sans empreinte plausible", summary.files_without_plausible_fingerprint]
+  ]);
+
+  const host = c091Node("cgweb093OrphanList");
+  if (!host) return;
+  host.innerHTML = "";
+
+  const files = Array.isArray(data?.files) ? data.files : [];
+
+  if (!files.length) {
+    host.innerHTML =
+      '<div class="muted">Aucun original classé sans candidat compatible.</div>';
+    return;
+  }
+
+  for (const file of files) {
+    const details = document.createElement("details");
+    details.className = "cgweb093-row";
+    details.open = true;
+
+    const summaryNode = document.createElement("summary");
+    summaryNode.textContent =
+      (file.file_name || file.sha256) +
+      " · recherche globale par empreinte";
+    details.appendChild(summaryNode);
+
+    for (const candidate of file.candidates || []) {
+      const card = document.createElement("div");
+      card.className = "cgweb093-row";
+
+      const head = document.createElement("div");
+      head.className = "cgweb093-row-head";
+
+      const title = document.createElement("strong");
+      title.textContent =
+        c093ClassLabel(candidate.fingerprint_class) +
+        " · #" + candidate.activity_id +
+        " · " + (candidate.activity?.title || "");
+
+      const pill = document.createElement("span");
+      pill.className = "pill neutral";
+      pill.textContent =
+        candidate.strong_count + " fortes · " +
+        candidate.contradiction_count + " contradiction(s)";
+
+      head.appendChild(title);
+      head.appendChild(pill);
+      card.appendChild(head);
+
+      const context = document.createElement("div");
+      context.className = "muted";
+      context.textContent =
+        c091Date(candidate.activity?.start_time_ms) +
+        " · décalage horaire " +
+        c092FmtNumber(candidate.time_delta_s, 0) + " s" +
+        " · original déjà présent : " +
+        (candidate.state?.original ? "oui" : "non") +
+        " · canonique : " +
+        (candidate.state?.canonical ? "oui" : "non");
+      card.appendChild(context);
+
+      const metrics = document.createElement("div");
+      metrics.className = "cgweb093-metrics";
+      for (const row of candidate.comparisons || []) {
+        const span = document.createElement("span");
+        span.textContent = c093MetricMini(row);
+        metrics.appendChild(span);
+      }
+      card.appendChild(metrics);
+
+      details.appendChild(card);
+    }
+
+    host.appendChild(details);
+  }
+}
+
+function c093TechLine(activity) {
+  const ids = activity?.external_ids || {};
+  const idText = Object.entries(ids)
+    .map(([k, v]) => k + "=" + v)
+    .join(", ") || "aucun";
+
+  const files = Array.isArray(activity?.fit_links)
+    ? activity.fit_links
+    : [];
+
+  const fileText =
+    files.map((f) => {
+      const roles =
+        Array.isArray(f.archive_roles)
+          ? f.archive_roles.join("+")
+          : "";
+      return (
+        (f.file_name || f.sha256) +
+        (roles ? " [" + roles + "]" : "")
+      );
+    }).join(" ; ") || "aucun";
+
+  return [
+    "source : " + (activity?.source || "—"),
+    "IDs externes : " + idText,
+    "route : " +
+      (activity?.route?.exists ? "oui" : "non") +
+      " · points : " +
+      c092FmtNumber(activity?.route?.point_count, 0),
+    "état : original=" +
+      (activity?.state?.original ? "oui" : "non") +
+      " (" + c092FmtNumber(activity?.state?.original_count, 0) + ")" +
+      " · canonique=" +
+      (activity?.state?.canonical ? "oui" : "non") +
+      " (" + c092FmtNumber(activity?.state?.canonical_count, 0) + ")",
+    "FIT liés : " + fileText
+  ].join("\n");
+}
+
+function c093RenderDuplicate(data) {
+  const summary = data?.summary || {};
+
+  c091Cards("cgweb093DuplicateSummary", [
+    ["Groupes jumelles", summary.duplicate_groups],
+    ["Activités concernées", summary.activities_in_duplicate_groups]
+  ]);
+
+  const host = c091Node("cgweb093DuplicateList");
+  if (!host) return;
+  host.innerHTML = "";
+
+  const groups = Array.isArray(data?.groups) ? data.groups : [];
+
+  if (!groups.length) {
+    host.innerHTML =
+      '<div class="muted">Aucun ex æquo métrique détecté.</div>';
+    return;
+  }
+
+  for (const group of groups) {
+    const details = document.createElement("details");
+    details.className = "cgweb093-row";
+    details.open = true;
+
+    const summaryNode = document.createElement("summary");
+    summaryNode.textContent =
+      (group.file_name || group.sha256) +
+      " · " + group.duplicate_candidate_count +
+      " activité(s) techniquement jumelle(s)";
+    details.appendChild(summaryNode);
+
+    for (const activity of group.activities || []) {
+      const card = document.createElement("div");
+      card.className = "cgweb093-row";
+
+      const title = document.createElement("strong");
+      title.textContent =
+        "#" + activity.activity_id +
+        " · " + (activity.metrics?.title || "");
+      card.appendChild(title);
+
+      const metrics = document.createElement("div");
+      metrics.className = "muted";
+      metrics.textContent =
+        c091Date(activity.metrics?.start_time_ms) +
+        " · " + c092FmtDistance(activity.metrics?.distance_m) +
+        " · " + c092FmtDuration(activity.metrics?.duration_s) +
+        " · D+ " + c092FmtNumber(activity.metrics?.ascent_m, 0) + " m" +
+        " · FC " + c092FmtNumber(activity.metrics?.avg_hr, 0) +
+        "/" + c092FmtNumber(activity.metrics?.max_hr, 0);
+      card.appendChild(metrics);
+
+      const tech = document.createElement("div");
+      tech.className = "cgweb093-tech";
+      tech.textContent = c093TechLine(activity);
+      card.appendChild(tech);
+
+      details.appendChild(card);
+    }
+
+    host.appendChild(details);
+  }
+}
+
+async function c093Analyze() {
+  const button = c091Node("cgweb093Analyze");
+  const status = c091Node("cgweb093Status");
+
+  if (button) button.disabled = true;
+  if (status) {
+    status.textContent =
+      "Triage CGWEB093 en cours : prévisualisation SAFE, empreintes et doublons…";
+  }
+
+  try {
+    const data = await request("cgweb093_analysis");
+
+    c093RenderSafe(data?.safe_preview || {});
+    c093RenderOrphan(data?.orphan_search || {});
+    c093RenderDuplicate(data?.duplicate_diagnostic || {});
+
+    if (status) {
+      const s = data?.safe_preview?.summary || {};
+      status.textContent =
+        "Triage terminé · lecture seule · " +
+        Number(s.safe_total || 0) +
+        " rattachement(s) prévisualisé(s) SAFE · " +
+        Number(s.duplicate_activity_tie || 0) +
+        " ex æquo · " +
+        Number(s.no_compatible_candidate || 0) +
+        " original(aux) sans candidat temporel compatible.";
+    }
+
+    return data;
+  } catch (error) {
+    if (status) {
+      status.textContent =
+        "Triage CGWEB093 impossible : " +
+        (error?.message || String(error));
+    }
+    throw error;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function c093Wire() {
+  const button = c091Node("cgweb093Analyze");
+  if (!button || button.dataset.c093 === "1") return;
+
+  button.dataset.c093 = "1";
+  button.addEventListener(
+    "click",
+    () => void c093Analyze().catch(console.error)
+  );
+}
+
+window.SPORT_CGWEB093_MATCH_TRIAGE = Object.freeze({
+  version: "CGWEB093",
+  analyze: c093Analyze
+});
+
+queueMicrotask(c093Wire);
+
+/* CGWEB093_MATCH_TRIAGE001_WEB_END */
+
+
+
 /* CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_WEB_END */
 
 

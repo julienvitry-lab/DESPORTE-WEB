@@ -2811,6 +2811,860 @@ async function c091TransferAudit(uid) {
 
   /* CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_HELPERS_END */
 
+
+  /* CGWEB093_MATCH_TRIAGE001_HELPERS_START */
+
+  function c093ComparisonMap(candidate) {
+    const map = new Map();
+    for (const row of candidate?.comparisons || []) {
+      map.set(String(row?.metric || ""), row);
+    }
+    return map;
+  }
+
+  function c093Quality(candidate, metric) {
+    return String(c093ComparisonMap(candidate).get(metric)?.quality || "NA");
+  }
+
+  function c093StrongCore(candidate) {
+    if (!candidate) return false;
+    return [
+      "time_residual_s",
+      "sport",
+      "sub_sport",
+      "distance_m",
+      "duration_s"
+    ].every((metric) => c093Quality(candidate, metric) === "STRONG");
+  }
+
+  function c093Near(a, b, absTol, pctTol = null) {
+    const x = Number(a);
+    const y = Number(b);
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return x === y || (!Number.isFinite(x) && !Number.isFinite(y));
+    }
+
+    if (Math.abs(x - y) <= absTol) return true;
+
+    if (pctTol != null) {
+      const base = Math.max(Math.abs(x), Math.abs(y), 1e-9);
+      return Math.abs(x - y) / base * 100 <= pctTol;
+    }
+
+    return false;
+  }
+
+  function c093SamePerformance(a, b) {
+    const x = a?.activity || {};
+    const y = b?.activity || {};
+
+    return (
+      c093Near(x.start_time_ms, y.start_time_ms, 2000) &&
+      c093Near(x.sport, y.sport, 0) &&
+      c093Near(x.sub_sport, y.sub_sport, 0) &&
+      c093Near(x.distance_m, y.distance_m, 10, 0.3) &&
+      c093Near(x.duration_s, y.duration_s, 2, 0.3) &&
+      c093Near(x.ascent_m, y.ascent_m, 5, 3) &&
+      c093Near(x.avg_hr, y.avg_hr, 2) &&
+      c093Near(x.max_hr, y.max_hr, 3)
+    );
+  }
+
+  function c093SafeClass(file) {
+    if (!file?.decode_ok) {
+      return {
+        class: "REVIEW_DECODE_FAILED",
+        safe: false,
+        reasons: ["FIT original non décodé"]
+      };
+    }
+
+    const ranked = Array.isArray(file?.candidates) ? file.candidates : [];
+
+    if (!ranked.length) {
+      return {
+        class: "NO_COMPATIBLE_CANDIDATE",
+        safe: false,
+        reasons: ["aucun candidat CGWEB092"]
+      };
+    }
+
+    const first = ranked[0];
+    const second = ranked[1] || null;
+
+    if (
+      second &&
+      Number(first.contradiction_count || 0) === 0 &&
+      Number(second.contradiction_count || 0) === 0 &&
+      c093StrongCore(first) &&
+      c093StrongCore(second) &&
+      c093SamePerformance(first, second)
+    ) {
+      return {
+        class: "DUPLICATE_ACTIVITY_TIE",
+        safe: false,
+        reasons: [
+          "au moins deux activités correspondent au même profil sportif",
+          "aucun choix automatique entre ex æquo"
+        ]
+      };
+    }
+
+    const allPoor = ranked.every((candidate) => {
+      const contradictions = Number(candidate.contradiction_count || 0);
+      const distanceBad =
+        c093Quality(candidate, "distance_m") === "CONTRADICTION";
+      const durationBad =
+        c093Quality(candidate, "duration_s") === "CONTRADICTION";
+
+      return contradictions >= 3 || (distanceBad && durationBad);
+    });
+
+    if (allPoor) {
+      return {
+        class: "NO_COMPATIBLE_CANDIDATE",
+        safe: false,
+        reasons: [
+          "tous les candidats temporels sont métriquement incompatibles"
+        ]
+      };
+    }
+
+    const tested = Number(first.tested_count || 0);
+    const strong = Number(first.strong_count || 0);
+    const compatible = Number(first.compatible_count || 0);
+    const contradictions = Number(first.contradiction_count || 0);
+    const coreStrong = c093StrongCore(first);
+    const noWeak = Number(first.weak_count || 0) === 0;
+
+    const competitionClear =
+      !second ||
+      Number(second.contradiction_count || 0) >= 1;
+
+    if (
+      coreStrong &&
+      contradictions === 0 &&
+      tested >= 5 &&
+      strong === tested &&
+      competitionClear
+    ) {
+      return {
+        class: "SAFE_EXACT",
+        safe: true,
+        activity_id: first.activity_id,
+        reasons: [
+          `${strong}/${tested} critères testés concordent fortement`,
+          second
+            ? "le second candidat présente au moins une contradiction"
+            : "aucun concurrent"
+        ]
+      };
+    }
+
+    if (
+      coreStrong &&
+      contradictions === 0 &&
+      tested >= 5 &&
+      strong >= 5 &&
+      strong + compatible === tested &&
+      noWeak &&
+      competitionClear
+    ) {
+      return {
+        class: "SAFE_STRONG",
+        safe: true,
+        activity_id: first.activity_id,
+        reasons: [
+          "heure, sport, sous-sport, distance et durée concordent fortement",
+          `${strong} concordance(s) forte(s), ${compatible} compatible(s), 0 contradiction`
+        ]
+      };
+    }
+
+    return {
+      class: "REVIEW",
+      safe: false,
+      reasons: [
+        "le meilleur candidat ne satisfait pas tous les garde-fous SAFE"
+      ]
+    };
+  }
+
+  function c093SafePreviewFromDeep(deep) {
+    const rows = [];
+    const summary = {
+      unresolved_original_files: 0,
+      safe_exact: 0,
+      safe_strong: 0,
+      duplicate_activity_tie: 0,
+      no_compatible_candidate: 0,
+      review: 0,
+      safe_total: 0
+    };
+
+    for (const file of deep?.files || []) {
+      summary.unresolved_original_files += 1;
+
+      const result = c093SafeClass(file);
+      const first = file?.candidates?.[0] || null;
+      const second = file?.candidates?.[1] || null;
+
+      if (result.class === "SAFE_EXACT") summary.safe_exact += 1;
+      else if (result.class === "SAFE_STRONG") summary.safe_strong += 1;
+      else if (result.class === "DUPLICATE_ACTIVITY_TIE") {
+        summary.duplicate_activity_tie += 1;
+      } else if (result.class === "NO_COMPATIBLE_CANDIDATE") {
+        summary.no_compatible_candidate += 1;
+      } else {
+        summary.review += 1;
+      }
+
+      if (result.safe) summary.safe_total += 1;
+
+      rows.push({
+        sha256: file.sha256,
+        file_name: file.file_name,
+        fit: file.fit,
+        classification: result.class,
+        safe_to_repair: Boolean(result.safe),
+        proposed_activity_id:
+          result.safe ? String(result.activity_id || "") : null,
+        reasons: result.reasons || [],
+        first_candidate: first,
+        second_candidate: second
+      });
+    }
+
+    return {summary, rows};
+  }
+
+  function c093CompactFingerprintScore(fit, activity) {
+    if (!fit || !activity) return null;
+
+    const fitSport = c092FirstFinite(fit.sport);
+    const actSport = c092FirstFinite(activity.sport);
+
+    if (
+      fitSport != null &&
+      actSport != null &&
+      fitSport > 0 &&
+      actSport > 0 &&
+      fitSport !== actSport
+    ) {
+      return null;
+    }
+
+    const fitDistance = c092FirstFinite(fit.distance_m);
+    const actDistance = c092FirstFinite(activity.distance_m);
+    const fitDuration = c092FirstFinite(fit.duration_s);
+    const actDuration = c092FirstFinite(activity.duration_s);
+
+    if (
+      fitDistance == null ||
+      actDistance == null ||
+      fitDuration == null ||
+      actDuration == null
+    ) {
+      return null;
+    }
+
+    const distancePct =
+      Math.abs(fitDistance - actDistance) /
+      Math.max(Math.abs(fitDistance), Math.abs(actDistance), 1) *
+      100;
+
+    const durationPct =
+      Math.abs(fitDuration - actDuration) /
+      Math.max(Math.abs(fitDuration), Math.abs(actDuration), 1) *
+      100;
+
+    if (
+      distancePct > 20 &&
+      Math.abs(fitDistance - actDistance) > 1000
+    ) {
+      return null;
+    }
+
+    if (
+      durationPct > 20 &&
+      Math.abs(fitDuration - actDuration) > 600
+    ) {
+      return null;
+    }
+
+    const fitSub = c092FirstFinite(fit.sub_sport, 0) ?? 0;
+    const actSub = c092FirstFinite(activity.sub_sport, 0) ?? 0;
+    const subPenalty = fitSub === actSub ? 0 : 25;
+
+    return {
+      activity_id: String(activity.activity_id),
+      compact_score:
+        distancePct * 2 +
+        durationPct * 2 +
+        subPenalty
+    };
+  }
+
+  function c093FingerprintEvidence(fit, activity, state = {}) {
+    const comparisons = [
+      c092ExactComparison("sport", fit?.sport, activity?.sport),
+      c092ExactComparison("sub_sport", fit?.sub_sport, activity?.sub_sport),
+      c092NumericComparison(
+        "distance_m",
+        fit?.distance_m,
+        activity?.distance_m,
+        {
+          strongAbs: 10, compatibleAbs: 50, contradictionAbs: 200,
+          strongPct: 1, compatiblePct: 3, contradictionPct: 8, unit: "m"
+        }
+      ),
+      c092NumericComparison(
+        "duration_s",
+        fit?.duration_s,
+        activity?.duration_s,
+        {
+          strongAbs: 2, compatibleAbs: 10, contradictionAbs: 30,
+          strongPct: 1, compatiblePct: 3, contradictionPct: 8, unit: "s"
+        }
+      ),
+      c092NumericComparison(
+        "ascent_m",
+        fit?.ascent_m,
+        activity?.ascent_m,
+        {
+          strongAbs: 5, compatibleAbs: 15, contradictionAbs: 40,
+          strongPct: 5, compatiblePct: 15, contradictionPct: 30, unit: "m"
+        }
+      ),
+      c092NumericComparison(
+        "avg_hr",
+        fit?.avg_hr,
+        activity?.avg_hr,
+        {
+          strongAbs: 2, compatibleAbs: 5, contradictionAbs: 10, unit: "bpm"
+        }
+      ),
+      c092NumericComparison(
+        "max_hr",
+        fit?.max_hr,
+        activity?.max_hr,
+        {
+          strongAbs: 3, compatibleAbs: 7, contradictionAbs: 15, unit: "bpm"
+        }
+      )
+    ];
+
+    const tested = comparisons.filter((x) => x.quality !== "NA");
+    const strong = tested.filter((x) => x.quality === "STRONG").length;
+    const compatible =
+      tested.filter((x) => x.quality === "COMPATIBLE").length;
+    const weak = tested.filter((x) => x.quality === "WEAK").length;
+    const contradictions =
+      tested.filter((x) => x.quality === "CONTRADICTION").length;
+
+    const timeDeltaSeconds =
+      fit?.start_time_ms != null &&
+      activity?.start_time_ms != null
+        ? Math.round(
+            (
+              Number(activity.start_time_ms) -
+              Number(fit.start_time_ms)
+            ) / 1000
+          )
+        : null;
+
+    const map = new Map(
+      comparisons.map((row) => [row.metric, row])
+    );
+
+    const coreOk = ["sport", "distance_m", "duration_s"]
+      .every((metric) => {
+        const q = map.get(metric)?.quality;
+        return q === "STRONG" || q === "COMPATIBLE";
+      });
+
+    let fingerprintClass = "WEAK";
+    if (
+      contradictions === 0 &&
+      coreOk &&
+      strong >= Math.min(5, tested.length)
+    ) {
+      fingerprintClass = "FINGERPRINT_EXACT";
+    } else if (
+      contradictions === 0 &&
+      coreOk &&
+      strong + compatible >= Math.min(5, tested.length)
+    ) {
+      fingerprintClass = "FINGERPRINT_STRONG";
+    } else if (
+      contradictions <= 1 &&
+      coreOk
+    ) {
+      fingerprintClass = "FINGERPRINT_PLAUSIBLE";
+    }
+
+    return {
+      activity_id: activity.activity_id,
+      activity,
+      state: {
+        original: Boolean(state?.original),
+        canonical: Boolean(state?.canonical),
+        original_count: Number(state?.original_count || 0),
+        canonical_count: Number(state?.canonical_count || 0)
+      },
+      time_delta_s: timeDeltaSeconds,
+      comparisons,
+      tested_count: tested.length,
+      strong_count: strong,
+      compatible_count: compatible,
+      weak_count: weak,
+      contradiction_count: contradictions,
+      fingerprint_class: fingerprintClass
+    };
+  }
+
+  function c093FingerprintSort(a, b) {
+    const order = {
+      FINGERPRINT_EXACT: 0,
+      FINGERPRINT_STRONG: 1,
+      FINGERPRINT_PLAUSIBLE: 2,
+      WEAK: 3
+    };
+
+    return (
+      (order[a.fingerprint_class] ?? 9) -
+        (order[b.fingerprint_class] ?? 9) ||
+      Number(a.contradiction_count || 0) -
+        Number(b.contradiction_count || 0) ||
+      Number(b.strong_count || 0) -
+        Number(a.strong_count || 0) ||
+      Number(b.compatible_count || 0) -
+        Number(a.compatible_count || 0) ||
+      Math.abs(Number(a.time_delta_s || 0)) -
+        Math.abs(Number(b.time_delta_s || 0))
+    );
+  }
+
+  async function c093LoadFullActivities(uid, ids) {
+    const map = new Map();
+
+    await Promise.all(
+      [...new Set(ids.map((x) => String(x)))]
+        .map(async (id) => {
+          const snap =
+            await db.doc(
+              `${ROOT}/${uid}/activities/${id}`
+            ).get();
+
+          if (!snap.exists) return;
+
+          const row = snap.data() || {};
+          if (row.deleted_at_ms != null) return;
+
+          map.set(
+            id,
+            {
+              metrics: c092ActivityMetrics(id, row),
+              raw: row
+            }
+          );
+        })
+    );
+
+    return map;
+  }
+
+  async function c093OrphanFingerprintSearch(
+    uid,
+    deep,
+    inventory,
+    safePreview
+  ) {
+    const targetFiles =
+      (safePreview?.rows || [])
+        .filter(
+          (row) =>
+            row.classification ===
+            "NO_COMPATIBLE_CANDIDATE"
+        );
+
+    const results = [];
+
+    for (const target of targetFiles) {
+      const deepFile =
+        (deep?.files || []).find(
+          (row) => row.sha256 === target.sha256
+        );
+
+      if (!deepFile?.fit) continue;
+
+      const compact = [];
+
+      for (const activity of inventory.activities.values()) {
+        const scored =
+          c093CompactFingerprintScore(
+            deepFile.fit,
+            activity
+          );
+
+        if (scored) compact.push(scored);
+      }
+
+      compact.sort(
+        (a, b) =>
+          a.compact_score - b.compact_score
+      );
+
+      const shortlistIds =
+        compact.slice(0, 30)
+          .map((row) => row.activity_id);
+
+      const full =
+        await c093LoadFullActivities(
+          uid,
+          shortlistIds
+        );
+
+      const evidence = [];
+
+      for (const id of shortlistIds) {
+        const loaded = full.get(String(id));
+        if (!loaded) continue;
+
+        const state =
+          inventory.activityState.get(String(id)) || {};
+
+        evidence.push(
+          c093FingerprintEvidence(
+            deepFile.fit,
+            loaded.metrics,
+            state
+          )
+        );
+      }
+
+      evidence.sort(c093FingerprintSort);
+
+      results.push({
+        sha256: target.sha256,
+        file_name: target.file_name,
+        fit: deepFile.fit,
+        candidates: evidence.slice(0, 10)
+      });
+    }
+
+    return {
+      summary: {
+        searched_files: targetFiles.length,
+        files_with_exact_fingerprint:
+          results.filter(
+            (row) =>
+              row.candidates?.[0]?.fingerprint_class ===
+              "FINGERPRINT_EXACT"
+          ).length,
+        files_with_strong_fingerprint:
+          results.filter(
+            (row) =>
+              row.candidates?.[0]?.fingerprint_class ===
+              "FINGERPRINT_STRONG"
+          ).length,
+        files_without_plausible_fingerprint:
+          results.filter((row) => {
+            const c = row.candidates?.[0];
+            return (
+              !c ||
+              ![
+                "FINGERPRINT_EXACT",
+                "FINGERPRINT_STRONG",
+                "FINGERPRINT_PLAUSIBLE"
+              ].includes(c.fingerprint_class)
+            );
+          }).length
+      },
+      files: results
+    };
+  }
+
+  function c093StringValue(row, ...keys) {
+    for (const key of keys) {
+      const value = row?.[key];
+      if (value != null && String(value).trim()) {
+        return String(value).trim();
+      }
+    }
+    return "";
+  }
+
+  async function c093ActivityTechnical(uid, activityId, inventory) {
+    const activityRef =
+      db.doc(
+        `${ROOT}/${uid}/activities/${activityId}`
+      );
+
+    const routeRef =
+      db.doc(
+        `${ROOT}/${uid}/activity_routes/${activityId}`
+      );
+
+    const [activitySnap, routeSnap] =
+      await Promise.all([
+        activityRef.get(),
+        routeRef.get()
+      ]);
+
+    const row =
+      activitySnap.exists
+        ? activitySnap.data() || {}
+        : {};
+
+    const route =
+      routeSnap.exists
+        ? routeSnap.data() || {}
+        : {};
+
+    const linkedFiles = [];
+
+    const q =
+      files(uid)
+        .where("activity_id", "==", String(activityId))
+        .select(
+          "sha256",
+          "file_name",
+          "source",
+          "upload_mode",
+          "archive_roles",
+          "link_status",
+          "fitwriter_version",
+          "fitrecovery_version",
+          "fitversion_version",
+          "fit_editor_version",
+          "version_index",
+          "version_kind",
+          "uploaded_at_ms",
+          "first_uploaded_at_ms",
+          "deleted_at_ms"
+        );
+
+    for await (const snap of q.stream()) {
+      const fileRow = snap.data() || {};
+      if (fileRow.deleted_at_ms != null) continue;
+
+      const roles = c090Roles(fileRow);
+
+      linkedFiles.push({
+        sha256: String(fileRow.sha256 || snap.id),
+        file_name: String(fileRow.file_name || ""),
+        source: String(fileRow.source || ""),
+        upload_mode: String(fileRow.upload_mode || ""),
+        archive_roles: roles,
+        is_original: roles.includes(C090_ROLE_ORIGINAL),
+        is_canonical: roles.some(c090IsCanonicalRole),
+        link_status: String(fileRow.link_status || ""),
+        version_index:
+          c092FirstFinite(fileRow.version_index),
+        version_kind:
+          String(fileRow.version_kind || ""),
+        uploaded_at_ms:
+          c092FirstFinite(
+            fileRow.uploaded_at_ms,
+            fileRow.first_uploaded_at_ms
+          )
+      });
+    }
+
+    const arrays = [
+      route?.lat,
+      route?.latitude,
+      route?.latitudes,
+      route?.lon,
+      route?.longitude,
+      route?.longitudes
+    ].filter(Array.isArray);
+
+    const routePoints =
+      arrays.length
+        ? Math.max(...arrays.map((x) => x.length))
+        : c092FirstFinite(
+            route?.source_point_count,
+            route?.point_count,
+            row?.gps_point_count,
+            row?.record_count
+          );
+
+    const state =
+      inventory.activityState.get(String(activityId)) || {};
+
+    const externalIds = {
+      strava_id: c093StringValue(
+        row,
+        "strava_id",
+        "strava_activity_id"
+      ),
+      external_id: c093StringValue(
+        row,
+        "external_id"
+      ),
+      provider_id: c093StringValue(
+        row,
+        "provider_id",
+        "source_activity_id",
+        "remote_id"
+      )
+    };
+
+    for (const key of Object.keys(externalIds)) {
+      if (!externalIds[key]) delete externalIds[key];
+    }
+
+    return {
+      activity_id: String(activityId),
+      exists: activitySnap.exists,
+      metrics: c092ActivityMetrics(activityId, row),
+      source: c093StringValue(
+        row,
+        "import_source",
+        "source",
+        "origin"
+      ),
+      external_ids: externalIds,
+      created_at_ms: c092FirstFinite(
+        row.created_at_ms,
+        row.createdAtMs,
+        row.imported_at_ms
+      ),
+      updated_at_ms: c092FirstFinite(
+        row.updated_at_ms,
+        row.updatedAtMs,
+        row.modified_at_ms
+      ),
+      deleted_at_ms: c092FirstFinite(row.deleted_at_ms),
+      route: {
+        exists: routeSnap.exists,
+        point_count: routePoints,
+        source: c093StringValue(
+          route,
+          "source",
+          "import_source"
+        )
+      },
+      state: {
+        original: Boolean(state.original),
+        canonical: Boolean(state.canonical),
+        original_count: Number(state.original_count || 0),
+        canonical_count: Number(state.canonical_count || 0)
+      },
+      fit_links: linkedFiles
+    };
+  }
+
+  async function c093DuplicateActivityDiagnostic(
+    uid,
+    deep,
+    inventory,
+    safePreview
+  ) {
+    const ties =
+      (safePreview?.rows || [])
+        .filter(
+          (row) =>
+            row.classification ===
+            "DUPLICATE_ACTIVITY_TIE"
+        );
+
+    const groups = [];
+
+    for (const tie of ties) {
+      const deepFile =
+        (deep?.files || []).find(
+          (row) => row.sha256 === tie.sha256
+        );
+
+      if (!deepFile) continue;
+
+      const ranked =
+        Array.isArray(deepFile.candidates)
+          ? deepFile.candidates
+          : [];
+
+      const first = ranked[0];
+      if (!first) continue;
+
+      const equivalent =
+        ranked.filter(
+          (candidate) =>
+            Number(candidate.contradiction_count || 0) === 0 &&
+            c093StrongCore(candidate) &&
+            c093SamePerformance(first, candidate)
+        );
+
+      const technical = [];
+
+      for (const candidate of equivalent) {
+        technical.push(
+          await c093ActivityTechnical(
+            uid,
+            candidate.activity_id,
+            inventory
+          )
+        );
+      }
+
+      groups.push({
+        sha256: tie.sha256,
+        file_name: tie.file_name,
+        fit: deepFile.fit,
+        duplicate_candidate_count: equivalent.length,
+        activities: technical
+      });
+    }
+
+    return {
+      summary: {
+        duplicate_groups: groups.length,
+        activities_in_duplicate_groups:
+          groups.reduce(
+            (sum, row) =>
+              sum + Number(row.duplicate_candidate_count || 0),
+            0
+          )
+      },
+      groups
+    };
+  }
+
+  async function c093AnalyzeAll(uid) {
+    const deep = await c092DeepAnalysis(uid);
+    const inventory = await c091Inventory(uid);
+
+    const safePreview =
+      c093SafePreviewFromDeep(deep);
+
+    const orphanSearch =
+      await c093OrphanFingerprintSearch(
+        uid,
+        deep,
+        inventory,
+        safePreview
+      );
+
+    const duplicateDiagnostic =
+      await c093DuplicateActivityDiagnostic(
+        uid,
+        deep,
+        inventory,
+        safePreview
+      );
+
+    return {
+      safe_preview: safePreview,
+      orphan_search: orphanSearch,
+      duplicate_diagnostic: duplicateDiagnostic
+    };
+  }
+
+  /* CGWEB093_MATCH_TRIAGE001_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -3919,6 +4773,105 @@ if (action === "transfer_audit") {
           });
         }
         /* CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_ACTION_END */
+
+        /* CGWEB093_MATCH_TRIAGE001_ACTIONS_START */
+
+        if (action === "cgweb093_analysis") {
+          if (req.method !== "GET") {
+            return res.status(405).json({error: "GET requis."});
+          }
+
+          const result = await c093AnalyzeAll(uid);
+
+          return res.json({
+            ok: true,
+            service: "CGWEB093_MATCH_TRIAGE001",
+            version: "CGWEB093",
+            read_only: true,
+            activities_modified: 0,
+            fit_files_modified: 0,
+            ...result
+          });
+        }
+
+        if (action === "safe_match_preview") {
+          if (req.method !== "GET") {
+            return res.status(405).json({error: "GET requis."});
+          }
+
+          const deep = await c092DeepAnalysis(uid);
+          const result = c093SafePreviewFromDeep(deep);
+
+          return res.json({
+            ok: true,
+            service: "SAFE_MATCH_PREVIEW001",
+            version: "CGWEB093",
+            read_only: true,
+            activities_modified: 0,
+            fit_files_modified: 0,
+            ...result
+          });
+        }
+
+        if (action === "orphan_fingerprint_search") {
+          if (req.method !== "GET") {
+            return res.status(405).json({error: "GET requis."});
+          }
+
+          const deep = await c092DeepAnalysis(uid);
+          const inventory = await c091Inventory(uid);
+          const preview = c093SafePreviewFromDeep(deep);
+
+          const result =
+            await c093OrphanFingerprintSearch(
+              uid,
+              deep,
+              inventory,
+              preview
+            );
+
+          return res.json({
+            ok: true,
+            service: "ORPHAN_FINGERPRINT_SEARCH001",
+            version: "CGWEB093",
+            read_only: true,
+            activities_modified: 0,
+            fit_files_modified: 0,
+            ...result
+          });
+        }
+
+        if (action === "duplicate_activity_diagnostic") {
+          if (req.method !== "GET") {
+            return res.status(405).json({error: "GET requis."});
+          }
+
+          const deep = await c092DeepAnalysis(uid);
+          const inventory = await c091Inventory(uid);
+          const preview = c093SafePreviewFromDeep(deep);
+
+          const result =
+            await c093DuplicateActivityDiagnostic(
+              uid,
+              deep,
+              inventory,
+              preview
+            );
+
+          return res.json({
+            ok: true,
+            service: "DUPLICATE_ACTIVITY_DIAGNOSTIC001",
+            version: "CGWEB093",
+            read_only: true,
+            activities_modified: 0,
+            fit_files_modified: 0,
+            ...result
+          });
+        }
+
+        /* CGWEB093_MATCH_TRIAGE001_ACTIONS_END */
+
+
 
 /* CGWEB091_FIT_RECONCILE_RESOLVE001_ACTIONS_END */
 
