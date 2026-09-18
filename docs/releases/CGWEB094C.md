@@ -59,3 +59,21 @@ Correction purement visuelle :
   elle est automatiquement replacée.
 
 Aucun changement de calcul, backend ou génération FIT.
+
+## FIX5 · BATCH_ARMING_GUARD001
+
+La génération en masse est désormais réellement verrouillée tant qu'un
+dry-run explicite n'a pas été exécuté avec succès dans la session courante.
+
+Contrat :
+- le chargement/rafraîchissement silencieux calcule les compteurs mais
+  n'arme jamais le batch ;
+- `Analyser les FIT manquants` arme exactement la révision du plan obtenue ;
+- toute nouvelle analyse silencieuse invalide cet armement ;
+- une génération FIT individuelle invalide un dry-run batch antérieur ;
+- `Générer en masse` possède une double garde : état DOM désactivé +
+  contrôle JavaScript interne ;
+- l'armement est consommé au lancement du batch et ne peut pas être réutilisé ;
+- le bouton désarmé est visuellement grisé et non cliquable.
+
+Aucun changement backend. Aucun FIT généré par l'installation.

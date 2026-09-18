@@ -14363,6 +14363,8 @@ const CGWEB094C_BATCH_SIZE=25;
 const CGWEB094C_PLAN_CHUNK=180;
 let cgweb094cStateByActivity=new Map();
 let cgweb094cBatchArmed=false;
+let cgweb094cPlanRevision=0;
+let cgweb094cArmedRevision=-1;
 let cgweb094cBatchBusy=false;
 let cgweb094cStopRequested=false;
 let cgweb094cDisplayLimit=100;
@@ -14498,59 +14500,143 @@ function cgweb094cBatchStatus(text,pct=null){
     if(b)b.value=n;
   }
 }
+
+/* CGWEB094C_FIX5_BATCH_ARMING_GUARD_START */
+
+function cgweb094cBatchIsArmed() {
+  return (
+    cgweb094cBatchArmed === true &&
+    cgweb094cArmedRevision === cgweb094cPlanRevision
+  );
+}
+
+function cgweb094cDisarmBatch(message=null) {
+  cgweb094cBatchArmed=false;
+  cgweb094cArmedRevision=-1;
+
+  if(message){
+    cgweb094cBatchStatus(message,0);
+  }
+}
+
+/* CGWEB094C_FIX5_BATCH_ARMING_GUARD_END */
+
 function cgweb094cButtons(){
-  const n=[...cgweb094cStateByActivity.values()].filter(x=>x?.status==="ELIGIBLE").length;
+  const n=[...cgweb094cStateByActivity.values()]
+    .filter(x=>x?.status==="ELIGIBLE")
+    .length;
+
   const a=cgweb094cNode("cgweb094cAnalyzeMissing");
   const g=cgweb094cNode("cgweb094cGenerateAll");
   const s=cgweb094cNode("cgweb094cStopBatch");
-  if(a)a.disabled=cgweb094cBatchBusy;
-  if(g){
-    g.disabled=cgweb094cBatchBusy||!cgweb094cBatchArmed||n===0;
-    g.textContent=n?`Générer ${n} FIT manquant${n>1?"s":""}`:"Aucun FIT à générer";
+
+  const armed=cgweb094cBatchIsArmed();
+  const generateDisabled=
+    cgweb094cBatchBusy ||
+    !armed ||
+    n===0;
+
+  if(a){
+    a.disabled=cgweb094cBatchBusy;
+    a.setAttribute(
+      "aria-disabled",
+      String(Boolean(a.disabled))
+    );
   }
-  if(s)s.disabled=!cgweb094cBatchBusy;
+
+  if(g){
+    g.disabled=generateDisabled;
+    g.toggleAttribute(
+      "disabled",
+      generateDisabled
+    );
+    g.setAttribute(
+      "aria-disabled",
+      String(generateDisabled)
+    );
+    g.dataset.batchArmed=armed?"1":"0";
+
+    g.textContent=n
+      ?`Générer ${n} FIT manquant${n>1?"s":""}`
+      :"Aucun FIT à générer";
+
+    if(!armed&&n>0){
+      g.title=
+        "Lancer d’abord « Analyser les FIT manquants ».";
+    }else{
+      g.removeAttribute("title");
+    }
+  }
+
+  if(s){
+    s.disabled=!cgweb094cBatchBusy;
+    s.setAttribute(
+      "aria-disabled",
+      String(Boolean(s.disabled))
+    );
+  }
 }
+
+
 async function cgweb094cRefresh(explicit=false){
+  if(!explicit){
+    cgweb094cDisarmBatch();
+  }
+
   const api=await cgweb094cApi();
   const ids=cgweb094cIds();
   const next=new Map();
 
   for(let i=0;i<ids.length;i+=CGWEB094C_PLAN_CHUNK){
-    const x=await api.plan(ids.slice(i,i+CGWEB094C_PLAN_CHUNK));
+    const x=await api.plan(
+      ids.slice(i,i+CGWEB094C_PLAN_CHUNK)
+    );
 
     if(!x?.ok){
-      throw new Error(x?.error||"Dry-run invalide.");
+      throw new Error(
+        x?.error||"Dry-run invalide."
+      );
     }
 
     for(const row of x.rows||[]){
-      const id=String(row?.activity_id||"").trim();
-      if(id)next.set(id,row);
+      const id=String(
+        row?.activity_id||""
+      ).trim();
+
+      if(id){
+        next.set(id,row);
+      }
     }
   }
 
   cgweb094cStateByActivity=next;
+  cgweb094cPlanRevision+=1;
 
   const counters=cgweb094cCounters();
 
   if(!counters.invariantOk){
     console.warn(
-      "CGWEB094C FIX3 invariant compteurs",
+      "CGWEB094C FIX5 invariant compteurs",
       counters
     );
   }
 
   if(explicit){
     cgweb094cBatchArmed=true;
+    cgweb094cArmedRevision=
+      cgweb094cPlanRevision;
 
-    const suffix =
-      counters.unknown > 0
-        ? ` · ${counters.unknown} à analyser`
-        : "";
+    const suffix=
+      counters.unknown>0
+        ?` · ${counters.unknown} à analyser`
+        :"";
 
     cgweb094cBatchStatus(
-      `Dry-run terminé · ${counters.missing} à générer · `+
+      `Dry-run terminé · `+
+      `${counters.missing} à générer · `+
       `${counters.available} disponibles · `+
-      `${counters.nonGenerable} non générables${suffix}.`,
+      `${counters.nonGenerable} non générables`+
+      `${suffix}.`,
       0
     );
   }
@@ -14559,17 +14645,27 @@ async function cgweb094cRefresh(explicit=false){
 }
 
 
+
+
 async function cgweb094cAnalyze(){
-  cgweb094cBatchArmed=false;
-  cgweb094cBatchStatus("Analyse des FIT manquants…",0);
+  cgweb094cDisarmBatch(
+    "Analyse des FIT manquants…"
+  );
+  cgweb094cButtons();
+
   try{
     await cgweb094cRefresh(true);
     updateWebFileVaultSummary();
     renderWebFileVaultList();
   }catch(error){
-    cgweb094cBatchStatus(`Analyse impossible : ${error?.message||error}`,0);
+    cgweb094cDisarmBatch(
+      `Analyse impossible : ${error?.message||error}`
+    );
+    cgweb094cButtons();
   }
 }
+
+
 function cgweb094cApply(x){
   for(const row of x?.results||[]){
     const id=String(row?.activity_id||"").trim();
@@ -14584,56 +14680,185 @@ function cgweb094cApply(x){
 }
 async function cgweb094cGenerateOne(entry,button){
   const id=cgweb094cId(entry);
-  if(!id||cgweb094cState(entry).status!=="ELIGIBLE")return;
+
+  if(
+    !id ||
+    cgweb094cState(entry).status!=="ELIGIBLE"
+  ){
+    return;
+  }
+
+  if(cgweb094cBatchIsArmed()){
+    cgweb094cDisarmBatch(
+      "État modifié · relancer l’analyse avant une génération en masse."
+    );
+    cgweb094cButtons();
+  }
+
   const api=await cgweb094cApi();
-  if(button){button.disabled=true;button.textContent="Génération…";}
+
+  if(button){
+    button.disabled=true;
+    button.textContent="Génération…";
+  }
+
   try{
     const x=await api.generate([id]);
     cgweb094cApply(x);
-    if(Number(x?.failed||0)>0)throw new Error(x?.results?.[0]?.error||x?.results?.[0]?.status);
-    setMessage(`FIT généré pour l'activité #${id}.`,"success");
-    updateWebFileVaultSummary();renderWebFileVaultList();
-    try{await api.refreshCloud?.();}catch(_){}
+
+    if(Number(x?.failed||0)>0){
+      throw new Error(
+        x?.results?.[0]?.error||
+        x?.results?.[0]?.status
+      );
+    }
+
+    setMessage(
+      `FIT généré pour l'activité #${id}.`,
+      "success"
+    );
+
+    updateWebFileVaultSummary();
+    renderWebFileVaultList();
+
+    try{
+      await api.refreshCloud?.();
+    }catch(_){}
   }catch(error){
-    setMessage(`FIT non généré : ${error?.message||error}`,"error");
+    setMessage(
+      `FIT non généré : ${error?.message||error}`,
+      "error"
+    );
+  }finally{
+    cgweb094cButtons();
   }
 }
+
+
 async function cgweb094cGenerateBatch(){
-  if(cgweb094cBatchBusy||!cgweb094cBatchArmed)return;
+  if(cgweb094cBatchBusy){
+    return;
+  }
+
+  if(!cgweb094cBatchIsArmed()){
+    cgweb094cDisarmBatch(
+      "Dry-run requis avant toute génération en masse."
+    );
+    cgweb094cButtons();
+    return;
+  }
+
+  const armedRevision=
+    cgweb094cArmedRevision;
+
   const ids=[...cgweb094cStateByActivity.values()]
-    .filter(x=>x?.status==="ELIGIBLE").map(x=>String(x.activity_id));
-  if(!ids.length)return;
+    .filter(x=>x?.status==="ELIGIBLE")
+    .map(x=>String(x.activity_id));
+
+  if(!ids.length){
+    cgweb094cDisarmBatch(
+      "Aucun FIT à générer."
+    );
+    cgweb094cButtons();
+    return;
+  }
+
+  if(
+    armedRevision!==cgweb094cPlanRevision
+  ){
+    cgweb094cDisarmBatch(
+      "Le plan a changé · relancer l’analyse."
+    );
+    cgweb094cButtons();
+    return;
+  }
+
   if(!confirm(
     `Générer ${ids.length} FIT canonique(s) ?\n\n`+
-    "Dry-run effectué. 0 activité modifiée. Aucun FIT existant remplacé."
-  ))return;
+    "Dry-run effectué. 0 activité modifiée. "+
+    "Aucun FIT existant remplacé."
+  )){
+    return;
+  }
+
+  cgweb094cBatchArmed=false;
+  cgweb094cArmedRevision=-1;
 
   const api=await cgweb094cApi();
-  cgweb094cBatchBusy=true;cgweb094cStopRequested=false;cgweb094cButtons();
-  let done=0,stored=0,failed=0;
+
+  cgweb094cBatchBusy=true;
+  cgweb094cStopRequested=false;
+  cgweb094cButtons();
+
+  let done=0;
+  let stored=0;
+  let failed=0;
+
   try{
-    while(done<ids.length&&!cgweb094cStopRequested){
-      const chunk=ids.slice(done,done+CGWEB094C_BATCH_SIZE);
-      cgweb094cBatchStatus(`Génération ${done+1}–${done+chunk.length}/${ids.length}…`,100*done/ids.length);
+    while(
+      done<ids.length &&
+      !cgweb094cStopRequested
+    ){
+      const chunk=ids.slice(
+        done,
+        done+CGWEB094C_BATCH_SIZE
+      );
+
+      cgweb094cBatchStatus(
+        `Génération ${done+1}–`+
+        `${done+chunk.length}/${ids.length}…`,
+        100*done/ids.length
+      );
+
       const x=await api.generate(chunk);
       cgweb094cApply(x);
-      stored+=Number(x?.stored||0);failed+=Number(x?.failed||0);done+=chunk.length;
-      updateWebFileVaultSummary();renderWebFileVaultList();
-      cgweb094cBatchStatus(`Lot terminé · ${done}/${ids.length} · ${stored} stockés · ${failed} erreurs.`,100*done/ids.length);
-      if(Number(x?.failed||0)>0)cgweb094cStopRequested=true;
+
+      stored+=Number(x?.stored||0);
+      failed+=Number(x?.failed||0);
+      done+=chunk.length;
+
+      updateWebFileVaultSummary();
+      renderWebFileVaultList();
+
+      cgweb094cBatchStatus(
+        `Lot terminé · ${done}/${ids.length} · `+
+        `${stored} stockés · ${failed} erreurs.`,
+        100*done/ids.length
+      );
+
+      if(Number(x?.failed||0)>0){
+        cgweb094cStopRequested=true;
+      }
     }
+
     await cgweb094cRefresh(false);
-    cgweb094cBatchArmed=false;
+
     cgweb094cBatchStatus(
-      `${cgweb094cStopRequested?"Arrêt propre":"Terminé"} · ${stored} FIT stockés · ${failed} erreurs.`,
-      ids.length?100*done/ids.length:100
+      `${cgweb094cStopRequested
+        ?"Arrêt propre"
+        :"Terminé"} · `+
+      `${stored} FIT stockés · `+
+      `${failed} erreurs.`,
+      ids.length
+        ?100*done/ids.length
+        :100
     );
-    updateWebFileVaultSummary();renderWebFileVaultList();
-    try{await api.refreshCloud?.();}catch(_){}
+
+    updateWebFileVaultSummary();
+    renderWebFileVaultList();
+
+    try{
+      await api.refreshCloud?.();
+    }catch(_){}
   }finally{
-    cgweb094cBatchBusy=false;cgweb094cButtons();
+    cgweb094cBatchBusy=false;
+    cgweb094cBatchArmed=false;
+    cgweb094cArmedRevision=-1;
+    cgweb094cButtons();
   }
 }
+
+
 function cgweb094cStop(){cgweb094cStopRequested=true;cgweb094cBatchStatus("Arrêt demandé · fin du lot en cours.",null);}
 
 /* CGWEB094C_FIX2_BATCH_BAR_START */

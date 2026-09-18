@@ -5821,6 +5821,24 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 }
 </style>
 
+
+<style id="cgweb094c-fix5-batch-arming-css">
+#webFilesSection #cgweb094cGenerateAll:disabled,
+#webFilesSection #cgweb094cGenerateAll[aria-disabled="true"]{
+  opacity:.42!important;
+  filter:grayscale(1)!important;
+  cursor:not-allowed!important;
+  pointer-events:none!important;
+  box-shadow:none!important;
+}
+
+#webFilesSection #cgweb094cGenerateAll:not(:disabled){
+  opacity:1!important;
+  filter:none!important;
+  cursor:pointer!important;
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -7958,7 +7976,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB094C-FIX4-VAULT-COUNTER-LAYOUT001"></script>
+  <script type="module" src="./app.js?v=CGWEB094C-FIX5-BATCH-ARMING-GUARD001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
