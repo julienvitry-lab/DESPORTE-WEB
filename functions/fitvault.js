@@ -2349,6 +2349,468 @@ async function c091TransferAudit(uid) {
 
 /* CGWEB091_FIT_RECONCILE_RESOLVE001_HELPERS_END */
 
+
+  /* CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_HELPERS_START */
+
+  function c092FirstFinite(...values) {
+    for (const value of values) {
+      const n = Number(value);
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
+  }
+
+  function c092DurationSeconds(row) {
+    const seconds = c092FirstFinite(
+      row?.duration_s,
+      row?.elapsed_time_s,
+      row?.timer_time_s,
+      row?.moving_time_s
+    );
+    if (seconds != null && seconds >= 0) return seconds;
+
+    const ms = c092FirstFinite(
+      row?.duration_ms,
+      row?.elapsed_time_ms,
+      row?.timer_time_ms,
+      row?.moving_time_ms
+    );
+    if (ms != null && ms >= 0) return ms / 1000;
+
+    const start = c092FirstFinite(row?.start_time_ms);
+    const end = c092FirstFinite(row?.end_time_ms);
+    if (start != null && end != null && end >= start) {
+      return (end - start) / 1000;
+    }
+    return null;
+  }
+
+  function c092TextList(value) {
+    if (Array.isArray(value)) {
+      return value.map((x) => String(x ?? "").trim()).filter(Boolean).slice(0, 12);
+    }
+    if (value && typeof value === "object") {
+      return Object.keys(value).filter((key) => value[key]).slice(0, 12);
+    }
+    const text = String(value ?? "").trim();
+    return text ? [text] : [];
+  }
+
+  function c092ActivityMetrics(activityId, row = {}) {
+    return {
+      activity_id: String(activityId),
+      title: c091Title(row, `Activité #${activityId}`),
+      start_time_ms: c092FirstFinite(row.start_time_ms),
+      sport: c092FirstFinite(row.sport),
+      sub_sport: c092FirstFinite(row.sub_sport, row.subSport, 0) ?? 0,
+      duration_s: c092DurationSeconds(row),
+      distance_m: c092FirstFinite(row.distance_m, row.distance),
+      ascent_m: c092FirstFinite(
+        row.ascent_m,
+        row.total_ascent_m,
+        row.elevation_gain_m,
+        row.total_elevation_gain
+      ),
+      avg_hr: c092FirstFinite(row.avg_hr, row.avg_heart_rate, row.average_heart_rate),
+      max_hr: c092FirstFinite(row.max_hr, row.max_heart_rate, row.maximum_heart_rate),
+      equipment_name: String(
+        row.equipment_name || row.equipment || row.gear_name || ""
+      ).trim(),
+      markers: c092TextList(
+        row.landmark_codes || row.landmarks || row.markers || row.reperes
+      ),
+      import_source: String(
+        row.import_source || row.source || row.strava_sport_type || ""
+      ).trim()
+    };
+  }
+
+  function c092FitMetrics(decoded) {
+    return {
+      start_time_ms: c092FirstFinite(decoded?.startMs),
+      sport: c092FirstFinite(decoded?.sport),
+      sub_sport: c092FirstFinite(decoded?.subSport, 0) ?? 0,
+      duration_s: c092FirstFinite(decoded?.timerSeconds, decoded?.elapsedSeconds),
+      distance_m: c092FirstFinite(decoded?.totalDistance),
+      ascent_m: c092FirstFinite(decoded?.totalAscent),
+      avg_hr: c092FirstFinite(decoded?.avgHeartRate),
+      max_hr: c092FirstFinite(decoded?.maxHeartRate),
+      record_count: c092FirstFinite(decoded?.recordCount),
+      lap_count: c092FirstFinite(decoded?.lapCount),
+      integrity: Boolean(decoded?.integrity),
+      errors: Array.isArray(decoded?.errors) ? decoded.errors.slice(0, 8) : []
+    };
+  }
+
+  function c092RelativePct(a, b) {
+    const x = Number(a);
+    const y = Number(b);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const base = Math.max(Math.abs(x), Math.abs(y), 1e-9);
+    return Math.abs(x - y) / base * 100;
+  }
+
+  function c092NumericComparison(metric, fitValue, activityValue, cfg = {}) {
+    const fit = c092FirstFinite(fitValue);
+    const activity = c092FirstFinite(activityValue);
+    const unit = String(cfg.unit || "");
+
+    if (fit == null || activity == null) {
+      return {
+        metric, fit, activity, delta: null, abs_delta: null,
+        relative_pct: null, quality: "NA", unit
+      };
+    }
+
+    const delta = activity - fit;
+    const absDelta = Math.abs(delta);
+    const pct = c092RelativePct(fit, activity);
+
+    const within = (absLimit, pctLimit) => {
+      const absOk =
+        absLimit != null && Number.isFinite(Number(absLimit)) &&
+        absDelta <= Number(absLimit);
+      const pctOk =
+        pctLimit != null && pct != null && pct <= Number(pctLimit);
+      return absOk || pctOk;
+    };
+
+    let quality = "WEAK";
+
+    if (within(cfg.strongAbs, cfg.strongPct)) {
+      quality = "STRONG";
+    } else if (within(cfg.compatibleAbs, cfg.compatiblePct)) {
+      quality = "COMPATIBLE";
+    } else {
+      const absContradiction =
+        cfg.contradictionAbs != null &&
+        absDelta > Number(cfg.contradictionAbs);
+      const pctContradiction =
+        cfg.contradictionPct != null &&
+        pct != null &&
+        pct > Number(cfg.contradictionPct);
+
+      if (
+        (cfg.contradictionAbs == null || absContradiction) &&
+        (cfg.contradictionPct == null || pctContradiction)
+      ) {
+        quality = "CONTRADICTION";
+      }
+    }
+
+    return {
+      metric, fit, activity, delta, abs_delta: absDelta,
+      relative_pct: pct, quality, unit
+    };
+  }
+
+  function c092ExactComparison(metric, fitValue, activityValue) {
+    const fit = c092FirstFinite(fitValue);
+    const activity = c092FirstFinite(activityValue);
+
+    if (fit == null || activity == null) {
+      return {
+        metric, fit, activity, delta: null, abs_delta: null,
+        relative_pct: null, quality: "NA", unit: ""
+      };
+    }
+
+    return {
+      metric,
+      fit,
+      activity,
+      delta: activity - fit,
+      abs_delta: Math.abs(activity - fit),
+      relative_pct: null,
+      quality: fit === activity ? "STRONG" : "CONTRADICTION",
+      unit: ""
+    };
+  }
+
+  function c092CandidateEvidence(fit, candidate, activity) {
+    const timeResidualSeconds =
+      Math.abs(Number(candidate?.residual_ms || 0)) / 1000;
+
+    const comparisons = [
+      c092NumericComparison(
+        "time_residual_s",
+        0,
+        timeResidualSeconds,
+        {strongAbs: 2, compatibleAbs: 30, contradictionAbs: 180, unit: "s"}
+      ),
+      c092ExactComparison("sport", fit?.sport, activity?.sport),
+      c092ExactComparison("sub_sport", fit?.sub_sport, activity?.sub_sport),
+      c092NumericComparison(
+        "distance_m",
+        fit?.distance_m,
+        activity?.distance_m,
+        {
+          strongAbs: 10, compatibleAbs: 50, contradictionAbs: 200,
+          strongPct: 1, compatiblePct: 3, contradictionPct: 8, unit: "m"
+        }
+      ),
+      c092NumericComparison(
+        "duration_s",
+        fit?.duration_s,
+        activity?.duration_s,
+        {
+          strongAbs: 2, compatibleAbs: 10, contradictionAbs: 30,
+          strongPct: 1, compatiblePct: 3, contradictionPct: 8, unit: "s"
+        }
+      ),
+      c092NumericComparison(
+        "ascent_m",
+        fit?.ascent_m,
+        activity?.ascent_m,
+        {
+          strongAbs: 5, compatibleAbs: 15, contradictionAbs: 40,
+          strongPct: 5, compatiblePct: 15, contradictionPct: 30, unit: "m"
+        }
+      ),
+      c092NumericComparison(
+        "avg_hr",
+        fit?.avg_hr,
+        activity?.avg_hr,
+        {strongAbs: 2, compatibleAbs: 5, contradictionAbs: 10, unit: "bpm"}
+      ),
+      c092NumericComparison(
+        "max_hr",
+        fit?.max_hr,
+        activity?.max_hr,
+        {strongAbs: 3, compatibleAbs: 7, contradictionAbs: 15, unit: "bpm"}
+      )
+    ];
+
+    const tested = comparisons.filter((x) => x.quality !== "NA");
+    const strong = tested.filter((x) => x.quality === "STRONG").length;
+    const compatible = tested.filter((x) => x.quality === "COMPATIBLE").length;
+    const weak = tested.filter((x) => x.quality === "WEAK").length;
+    const contradictions =
+      tested.filter((x) => x.quality === "CONTRADICTION").length;
+
+    const normalizedError = tested.reduce((sum, row) => {
+      if (row.metric === "sport" || row.metric === "sub_sport") {
+        return sum + (row.quality === "CONTRADICTION" ? 50 : 0);
+      }
+      if (row.relative_pct != null) {
+        return sum + Math.min(100, row.relative_pct);
+      }
+      if (row.abs_delta != null) {
+        return sum + Math.min(100, row.abs_delta);
+      }
+      return sum;
+    }, 0);
+
+    return {
+      ...candidate,
+      activity,
+      comparisons,
+      tested_count: tested.length,
+      strong_count: strong,
+      compatible_count: compatible,
+      weak_count: weak,
+      contradiction_count: contradictions,
+      normalized_error: Math.round(normalizedError * 100) / 100
+    };
+  }
+
+  function c092CompareEvidence(a, b) {
+    return (
+      Number(a.contradiction_count || 0) - Number(b.contradiction_count || 0) ||
+      Number(b.strong_count || 0) - Number(a.strong_count || 0) ||
+      Number(b.compatible_count || 0) - Number(a.compatible_count || 0) ||
+      Number(a.weak_count || 0) - Number(b.weak_count || 0) ||
+      Number(a.normalized_error || 0) - Number(b.normalized_error || 0) ||
+      Math.abs(Number(a.residual_ms || 0)) - Math.abs(Number(b.residual_ms || 0)) ||
+      String(a.activity_id).localeCompare(String(b.activity_id))
+    );
+  }
+
+  function c092Separation(ranked) {
+    if (!ranked.length) return "NO_CANDIDATE";
+    if (ranked.length === 1) return "SINGLE_CANDIDATE";
+
+    const first = ranked[0];
+    const second = ranked[1];
+
+    if (
+      first.contradiction_count === 0 &&
+      second.contradiction_count > 0
+    ) return "CLEAR_METRIC_LEAD";
+
+    if (
+      first.contradiction_count < second.contradiction_count
+    ) return "CLEAR_METRIC_LEAD";
+
+    if (
+      first.strong_count >= second.strong_count + 2 &&
+      first.contradiction_count <= second.contradiction_count
+    ) return "CLEAR_METRIC_LEAD";
+
+    if (
+      first.strong_count > second.strong_count &&
+      first.normalized_error < second.normalized_error
+    ) return "SLIGHT_METRIC_LEAD";
+
+    return "INDETERMINATE";
+  }
+
+  async function c092LoadCandidateActivities(uid, unresolved) {
+    const ids = new Set();
+
+    for (const file of unresolved || []) {
+      for (const candidate of file?.candidates || []) {
+        const id = String(candidate?.activity_id || "").trim();
+        if (id) ids.add(id);
+      }
+    }
+
+    const map = new Map();
+
+    await Promise.all(
+      [...ids].map(async (id) => {
+        const snap = await db.doc(`${ROOT}/${uid}/activities/${id}`).get();
+        if (!snap.exists) return;
+
+        const row = snap.data() || {};
+        if (row.deleted_at_ms != null) return;
+
+        map.set(id, c092ActivityMetrics(id, row));
+      })
+    );
+
+    return map;
+  }
+
+  async function c092DecodeOriginal(uid, unresolvedFile) {
+    const sha256 = String(unresolvedFile?.sha256 || "").trim();
+    if (!sha256) throw new Error("SHA-256 absent.");
+
+    const snap = await fileDoc(uid, sha256).get();
+    if (!snap.exists) throw new Error("Document activity_files absent.");
+
+    const row = snap.data() || {};
+    const path =
+      String(row.object_path || "").trim() ||
+      objectPath(
+        uid,
+        sha256,
+        row.start_time_ms || unresolvedFile?.start_time_ms
+      );
+
+    const object = bucket().file(path);
+    const [exists] = await object.exists();
+    if (!exists) throw new Error("Objet FIT absent du Storage.");
+
+    const [buffer] = await object.download();
+    const decoded = await decodeCanonicalFitSummary(buffer);
+
+    return {
+      bytes: buffer.length,
+      decoded: c092FitMetrics(decoded)
+    };
+  }
+
+  async function c092DeepAnalysis(uid) {
+    const inventory = await c091Inventory(uid);
+    const activityMap =
+      await c092LoadCandidateActivities(uid, inventory.unresolved);
+
+    const filesOut = [];
+    let decodedOk = 0;
+    let decodedFailed = 0;
+    let clearLead = 0;
+    let slightLead = 0;
+    let indeterminate = 0;
+    let singleCandidate = 0;
+
+    for (const file of inventory.unresolved) {
+      let original = null;
+      let decodeError = null;
+
+      try {
+        original = await c092DecodeOriginal(uid, file);
+        decodedOk += 1;
+      } catch (error) {
+        decodedFailed += 1;
+        decodeError = error?.message || String(error);
+      }
+
+      const fit =
+        original?.decoded || {
+          start_time_ms: file.start_time_ms,
+          sport: file.sport,
+          sub_sport: file.sub_sport
+        };
+
+      const ranked = (file.candidates || [])
+        .map((candidate) => {
+          const activity = activityMap.get(String(candidate.activity_id));
+          if (!activity) return null;
+          return c092CandidateEvidence(fit, candidate, activity);
+        })
+        .filter(Boolean)
+        .sort(c092CompareEvidence)
+        .map((row, index) => ({...row, deep_rank: index + 1}));
+
+      const separation =
+        decodeError ? "DECODE_FAILED" : c092Separation(ranked);
+
+      if (separation === "CLEAR_METRIC_LEAD") clearLead += 1;
+      else if (separation === "SLIGHT_METRIC_LEAD") slightLead += 1;
+      else if (separation === "SINGLE_CANDIDATE") singleCandidate += 1;
+      else indeterminate += 1;
+
+      filesOut.push({
+        sha256: file.sha256,
+        file_name: file.file_name,
+        link_status: file.link_status,
+        resolution_class: file.resolution_class,
+        source_start_time_ms: file.start_time_ms,
+        source_sport: file.sport,
+        source_sub_sport: file.sub_sport,
+        decode_ok: !decodeError,
+        decode_error: decodeError,
+        fit,
+        storage_bytes: original?.bytes || null,
+        separation,
+        candidates: ranked
+      });
+    }
+
+    filesOut.sort((a, b) => {
+      const order = {
+        CLEAR_METRIC_LEAD: 0,
+        SLIGHT_METRIC_LEAD: 1,
+        SINGLE_CANDIDATE: 2,
+        INDETERMINATE: 3,
+        DECODE_FAILED: 4,
+        NO_CANDIDATE: 5
+      };
+
+      return (
+        (order[a.separation] ?? 99) -
+          (order[b.separation] ?? 99) ||
+        String(a.file_name).localeCompare(String(b.file_name))
+      );
+    });
+
+    return {
+      summary: {
+        unresolved_original_files: inventory.unresolved.length,
+        decoded_ok: decodedOk,
+        decoded_failed: decodedFailed,
+        clear_metric_lead: clearLead,
+        slight_metric_lead: slightLead,
+        single_candidate: singleCandidate,
+        indeterminate: indeterminate
+      },
+      files: filesOut
+    };
+  }
+
+  /* CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -3436,6 +3898,27 @@ if (action === "transfer_audit") {
     summary: result
   });
 }
+
+
+        /* CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_ACTION_START */
+        if (action === "original_match_deep_analysis") {
+          if (req.method !== "GET") {
+            return res.status(405).json({error: "GET requis."});
+          }
+
+          const result = await c092DeepAnalysis(uid);
+
+          return res.json({
+            ok: true,
+            service: "ORIGINAL_MATCH_DEEP_ANALYSIS001",
+            version: "CGWEB092",
+            read_only: true,
+            activities_modified: 0,
+            fit_files_modified: 0,
+            ...result
+          });
+        }
+        /* CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_ACTION_END */
 
 /* CGWEB091_FIT_RECONCILE_RESOLVE001_ACTIONS_END */
 

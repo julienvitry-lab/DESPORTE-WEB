@@ -3928,6 +3928,307 @@ async function c091AuditFolder() {
   }
 }
 
+
+/* CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_WEB_START */
+
+function c092QualityLabel(value) {
+  const key = String(value || "");
+  if (key === "STRONG") return "fort";
+  if (key === "COMPATIBLE") return "compatible";
+  if (key === "WEAK") return "faible";
+  if (key === "CONTRADICTION") return "contradiction";
+  return "n/d";
+}
+
+function c092SeparationLabel(value) {
+  const key = String(value || "");
+  if (key === "CLEAR_METRIC_LEAD") return "écart métrique net";
+  if (key === "SLIGHT_METRIC_LEAD") return "léger avantage métrique";
+  if (key === "SINGLE_CANDIDATE") return "candidat unique";
+  if (key === "DECODE_FAILED") return "FIT non décodé";
+  if (key === "NO_CANDIDATE") return "aucun candidat";
+  return "indéterminé";
+}
+
+function c092FmtNumber(value, digits = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("fr-FR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  });
+}
+
+function c092FmtDistance(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return c092FmtNumber(n / 1000, 2) + " km";
+}
+
+function c092FmtDuration(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  const total = Math.max(0, Math.round(n));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return (
+    (h ? h + " h " : "") +
+    String(m).padStart(h ? 2 : 1, "0") +
+    " min " +
+    String(s).padStart(2, "0") +
+    " s"
+  );
+}
+
+function c092MetricLabel(row) {
+  const metric = String(row?.metric || "");
+  const fit = row?.fit;
+  const activity = row?.activity;
+  const delta = row?.delta;
+  const q = c092QualityLabel(row?.quality);
+
+  if (metric === "time_residual_s") {
+    return "Heure : résidu " + c092FmtNumber(activity, 0) + " s (" + q + ")";
+  }
+  if (metric === "distance_m") {
+    return "Distance : FIT " + c092FmtDistance(fit) +
+      " / activité " + c092FmtDistance(activity) +
+      " / Δ " + c092FmtNumber(delta, 0) + " m (" + q + ")";
+  }
+  if (metric === "duration_s") {
+    return "Durée : FIT " + c092FmtDuration(fit) +
+      " / activité " + c092FmtDuration(activity) +
+      " / Δ " + c092FmtNumber(delta, 0) + " s (" + q + ")";
+  }
+  if (metric === "ascent_m") {
+    return "D+ : FIT " + c092FmtNumber(fit, 0) +
+      " m / activité " + c092FmtNumber(activity, 0) +
+      " m / Δ " + c092FmtNumber(delta, 0) + " m (" + q + ")";
+  }
+  if (metric === "avg_hr") {
+    return "FC moy. : FIT " + c092FmtNumber(fit, 0) +
+      " / activité " + c092FmtNumber(activity, 0) + " bpm (" + q + ")";
+  }
+  if (metric === "max_hr") {
+    return "FC max : FIT " + c092FmtNumber(fit, 0) +
+      " / activité " + c092FmtNumber(activity, 0) + " bpm (" + q + ")";
+  }
+  if (metric === "sport") {
+    return "Sport : " + c092FmtNumber(fit, 0) +
+      " / " + c092FmtNumber(activity, 0) + " (" + q + ")";
+  }
+  if (metric === "sub_sport") {
+    return "Sous-sport : " + c092FmtNumber(fit, 0) +
+      " / " + c092FmtNumber(activity, 0) + " (" + q + ")";
+  }
+  return metric + " : " + q;
+}
+
+function c092OriginalSummary(fit) {
+  return [
+    "FIT original",
+    c091Date(fit?.start_time_ms),
+    "sport " + c092FmtNumber(fit?.sport, 0) + "/" +
+      c092FmtNumber(fit?.sub_sport, 0),
+    "distance " + c092FmtDistance(fit?.distance_m),
+    "durée " + c092FmtDuration(fit?.duration_s),
+    "D+ " + c092FmtNumber(fit?.ascent_m, 0) + " m",
+    "FC " + c092FmtNumber(fit?.avg_hr, 0) + "/" +
+      c092FmtNumber(fit?.max_hr, 0),
+    "records " + c092FmtNumber(fit?.record_count, 0)
+  ].join(" · ");
+}
+
+function c092RenderDeep(data) {
+  const summary = data?.summary || {};
+  const host = c091Node("cgweb092DeepList");
+  const status = c091Node("cgweb092DeepStatus");
+  const badge = c091Node("cgweb092DeepBadge");
+
+  c091Cards(
+    "cgweb092DeepSummary",
+    [
+      ["Originaux analysés", summary.unresolved_original_files],
+      ["FIT décodés", summary.decoded_ok],
+      ["Décodage échoué", summary.decoded_failed],
+      ["Écart métrique net", summary.clear_metric_lead],
+      ["Léger avantage", summary.slight_metric_lead],
+      ["Candidat unique", summary.single_candidate],
+      ["Indéterminés", summary.indeterminate]
+    ]
+  );
+
+  if (badge) {
+    badge.textContent =
+      Number(summary.decoded_ok || 0) + "/" +
+      Number(summary.unresolved_original_files || 0) + " décodés";
+  }
+
+  if (status) {
+    status.textContent =
+      "Analyse approfondie terminée · lecture seule · " +
+      Number(summary.clear_metric_lead || 0) +
+      " cas avec un écart métrique net · " +
+      Number(summary.indeterminate || 0) +
+      " cas encore indéterminés.";
+  }
+
+  if (!host) return;
+  host.innerHTML = "";
+
+  const files = Array.isArray(data?.files) ? data.files : [];
+  if (!files.length) {
+    host.innerHTML =
+      '<div class="muted">Aucun FIT original non lié à analyser.</div>';
+    return;
+  }
+
+  for (const file of files) {
+    const details = document.createElement("details");
+    details.className = "cgweb092-file";
+
+    if (
+      file.separation === "CLEAR_METRIC_LEAD" ||
+      file.separation === "SLIGHT_METRIC_LEAD"
+    ) {
+      details.open = true;
+    }
+
+    const summaryNode = document.createElement("summary");
+    summaryNode.textContent =
+      (file.file_name || file.sha256) + " · " +
+      c092SeparationLabel(file.separation) + " · " +
+      Number(file.candidates?.length || 0) + " candidat(s)";
+    details.appendChild(summaryNode);
+
+    const original = document.createElement("div");
+    original.className = "cgweb092-original";
+    original.textContent = file.decode_ok
+      ? c092OriginalSummary(file.fit)
+      : "Décodage impossible : " + (file.decode_error || "erreur inconnue");
+    details.appendChild(original);
+
+    const candidatesHost = document.createElement("div");
+    candidatesHost.className = "cgweb092-candidates";
+
+    for (const candidate of file.candidates || []) {
+      const card = document.createElement("div");
+      card.className = "cgweb092-candidate";
+      card.dataset.rank = String(candidate.deep_rank || "");
+
+      const head = document.createElement("div");
+      head.className = "cgweb092-candidate-head";
+
+      const title = document.createElement("strong");
+      title.textContent =
+        "Rang technique " + candidate.deep_rank +
+        " · #" + candidate.activity_id +
+        " · " + (candidate.activity?.title || "");
+
+      const pill = document.createElement("span");
+      pill.className = "pill neutral";
+      pill.textContent =
+        candidate.strong_count + " fortes · " +
+        candidate.contradiction_count + " contradiction(s)";
+
+      head.appendChild(title);
+      head.appendChild(pill);
+      card.appendChild(head);
+
+      const context = document.createElement("div");
+      context.className = "muted";
+      context.textContent =
+        c091Date(candidate.activity?.start_time_ms) +
+        (candidate.activity?.equipment_name
+          ? " · matériel : " + candidate.activity.equipment_name
+          : "") +
+        (candidate.activity?.markers?.length
+          ? " · repères : " + candidate.activity.markers.join(", ")
+          : "") +
+        (candidate.activity?.import_source
+          ? " · source : " + candidate.activity.import_source
+          : "");
+      card.appendChild(context);
+
+      const metrics = document.createElement("div");
+      metrics.className = "cgweb092-metrics";
+
+      for (const row of candidate.comparisons || []) {
+        const span = document.createElement("span");
+        span.className =
+          "cgweb092-quality-" + String(row.quality || "NA");
+        span.textContent = c092MetricLabel(row);
+        metrics.appendChild(span);
+      }
+      card.appendChild(metrics);
+
+      const evidence = document.createElement("div");
+      evidence.className = "cgweb092-evidence";
+      evidence.textContent =
+        "Éléments testés : " + candidate.tested_count +
+        " · forts : " + candidate.strong_count +
+        " · compatibles : " + candidate.compatible_count +
+        " · faibles : " + candidate.weak_count +
+        " · contradictions : " + candidate.contradiction_count +
+        ". Aucun rattachement automatique.";
+      card.appendChild(evidence);
+
+      candidatesHost.appendChild(card);
+    }
+
+    details.appendChild(candidatesHost);
+    host.appendChild(details);
+  }
+}
+
+async function c092DeepAnalyze() {
+  const button = c091Node("cgweb092DeepAnalyze");
+  const status = c091Node("cgweb092DeepStatus");
+
+  if (button) button.disabled = true;
+  if (status) {
+    status.textContent =
+      "Décodage des FIT originaux et comparaison des candidats…";
+  }
+
+  try {
+    const data = await request("original_match_deep_analysis");
+    c092RenderDeep(data);
+    return data;
+  } catch (error) {
+    if (status) {
+      status.textContent =
+        "Analyse approfondie impossible : " +
+        (error?.message || String(error));
+    }
+    throw error;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function c092Wire() {
+  const button = c091Node("cgweb092DeepAnalyze");
+  if (!button || button.dataset.c092 === "1") return;
+  button.dataset.c092 = "1";
+  button.addEventListener(
+    "click",
+    () => void c092DeepAnalyze().catch(console.error)
+  );
+}
+
+window.SPORT_ORIGINAL_MATCH_DEEP_ANALYSIS = Object.freeze({
+  version: "ORIGINAL_MATCH_DEEP_ANALYSIS001",
+  analyze: c092DeepAnalyze
+});
+
+queueMicrotask(c092Wire);
+
+/* CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_WEB_END */
+
+
+
 function c091Wire() {
   const resolve = c091Node("cgweb091Resolve");
   const auto = c091Node("cgweb091AutoRepair");

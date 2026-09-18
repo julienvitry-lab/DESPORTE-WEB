@@ -5458,6 +5458,46 @@ body.ux-activities-page main{
 /* CGWEB091_FIT_RECONCILE_RESOLVE001_CSS_END */
 </style>
 
+
+<style id="cgweb092-deep-css">
+#cgweb092DeepBlock{
+  margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)
+}
+#cgweb092DeepBlock .cgweb092-deep-head{
+  display:flex;justify-content:space-between;align-items:flex-start;gap:12px
+}
+#cgweb092DeepBlock .cgweb092-deep-head>div{display:grid;gap:3px}
+#cgweb092DeepBlock .cgweb092-deep-list{display:grid;gap:10px;margin-top:12px}
+#cgweb092DeepBlock .cgweb092-file{
+  border:1px solid rgba(255,255,255,.10);border-radius:12px;
+  background:rgba(255,255,255,.018);padding:10px 12px
+}
+#cgweb092DeepBlock .cgweb092-file summary{cursor:pointer;font-weight:700}
+#cgweb092DeepBlock .cgweb092-original{
+  margin:8px 0;padding:8px 10px;border-radius:10px;
+  background:rgba(255,255,255,.025);font-size:.9rem
+}
+#cgweb092DeepBlock .cgweb092-candidates{display:grid;gap:7px}
+#cgweb092DeepBlock .cgweb092-candidate{
+  border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 10px
+}
+#cgweb092DeepBlock .cgweb092-candidate[data-rank="1"]{border-width:2px}
+#cgweb092DeepBlock .cgweb092-candidate-head{
+  display:flex;justify-content:space-between;gap:10px;align-items:flex-start
+}
+#cgweb092DeepBlock .cgweb092-metrics{
+  display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px;font-size:.86rem
+}
+#cgweb092DeepBlock .cgweb092-evidence{margin-top:6px;font-size:.82rem;opacity:.82}
+#cgweb092DeepBlock .cgweb092-quality-CONTRADICTION{
+  text-decoration:underline;text-decoration-style:dotted
+}
+@media(max-width:760px){
+  #cgweb092DeepBlock .cgweb092-deep-head,
+  #cgweb092DeepBlock .cgweb092-candidate-head{flex-direction:column}
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5876,6 +5916,9 @@ body.ux-activities-page main{
     <button id="cgweb091CloudAudit" class="secondary" type="button">
       Auditer le coffre
     </button>
+    <button id="cgweb092DeepAnalyze" class="secondary" type="button">
+      Analyse approfondie
+    </button>
   </div>
 
   <div id="cgweb091Status" class="muted">
@@ -5883,6 +5926,26 @@ body.ux-activities-page main{
   </div>
 
   <div id="cgweb091Summary" class="cgweb091-card-grid"></div>
+
+            <!-- CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_HTML_START -->
+            <div id="cgweb092DeepBlock" class="cgweb092-deep-block">
+              <div class="cgweb092-deep-head">
+                <div>
+                  <strong>Analyse approfondie des ambiguïtés</strong>
+                  <span class="muted">
+                    Lecture seule : compare le FIT original réel aux métriques des activités candidates.
+                  </span>
+                </div>
+                <span id="cgweb092DeepBadge" class="pill neutral">Non analysé</span>
+              </div>
+              <div id="cgweb092DeepSummary" class="cgweb091-card-grid"></div>
+              <div id="cgweb092DeepStatus" class="muted">
+                Aucun rattachement n'est effectué par cette analyse.
+              </div>
+              <div id="cgweb092DeepList" class="cgweb092-deep-list"></div>
+            </div>
+            <!-- CGWEB092_ORIGINAL_MATCH_DEEP_ANALYSIS001_HTML_END -->
+
 
   <div class="cgweb091-block">
     <div class="cgweb091-block-head">
@@ -7429,6 +7492,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB091-FIT-RECONCILE-RESOLVE001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB092-ORIGINAL-MATCH-DEEP-ANALYSIS001"></script>
 </body>
 </html>
