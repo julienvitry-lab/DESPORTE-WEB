@@ -1156,6 +1156,55 @@ function web058ApplyGoalWeightSubpage(subpage) {
 }
 
 
+
+/* CGWEB094B_DIRECTORY_SINGLETON002_START */
+function cgweb094bDirectoryGuard(page = null, sub = null) {
+  const activePage =
+    String(page ?? document.body.dataset.uxPage ?? "").trim();
+  const activeSub =
+    String(sub ?? document.body.dataset.uxSubpage ?? "").trim();
+
+  const visible =
+    activePage === "activities" &&
+    activeSub === "directory";
+
+  document.body.dataset.uxPage = activePage;
+  document.body.dataset.uxSubpage = activeSub;
+
+  const ids = [
+    "activityDirectorySection",
+    "activityDirectoryHeaderWeb059",
+    "cgweb083MeasuredActivityHeader"
+  ];
+
+  for (const id of ids) {
+    const node = document.getElementById(id);
+    if (!node) continue;
+
+    node.hidden = !visible;
+    node.setAttribute(
+      "aria-hidden",
+      visible ? "false" : "true"
+    );
+
+    if (visible) {
+      node.style.removeProperty("display");
+      node.style.removeProperty("visibility");
+      node.style.removeProperty("pointer-events");
+    } else {
+      node.style.setProperty("display", "none", "important");
+      node.style.setProperty("visibility", "hidden", "important");
+      node.style.setProperty("pointer-events", "none", "important");
+    }
+  }
+}
+/* CGWEB094B_DIRECTORY_SINGLETON002_END */
+
+queueMicrotask(() => {
+  cgweb094bDirectoryGuard("__boot__", "");
+});
+
+
 function navigateUx(page, subpage = null, options = {}) {
   if (page === "maps") { page = "more"; subpage = "maps"; }
   const config = uxPageConfig();
@@ -1229,6 +1278,16 @@ function navigateUx(page, subpage = null, options = {}) {
   if (page === "analysis" && (sub === "goals" || sub === "weight")) {
     web058ApplyGoalWeightSubpage(sub);
   }
+
+  const __cgweb094bGuardPage = page;
+  const __cgweb094bGuardSub = sub;
+  queueMicrotask(() => {
+    cgweb094bDirectoryGuard(
+      __cgweb094bGuardPage,
+      __cgweb094bGuardSub
+    );
+  });
+
 }
 
 function initUxNavigation() {

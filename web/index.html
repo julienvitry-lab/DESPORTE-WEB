@@ -5633,6 +5633,38 @@ body.ux-activities-page main{
 }
 </style>
 
+
+<style id="cgweb094b-directory-singleton-css">
+body:not([data-ux-page="activities"]) #activityDirectorySection,
+body[data-ux-page="activities"]:not([data-ux-subpage="directory"]) #activityDirectorySection,
+body:not([data-ux-page="activities"]) #activityDirectoryHeaderWeb059,
+body[data-ux-page="activities"]:not([data-ux-subpage="directory"]) #activityDirectoryHeaderWeb059,
+body:not([data-ux-page="activities"]) #cgweb083MeasuredActivityHeader,
+body[data-ux-page="activities"]:not([data-ux-subpage="directory"]) #cgweb083MeasuredActivityHeader{
+  display:none!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+
+body[data-ux-page="activities"][data-ux-subpage="directory"] #activityDirectorySection{
+  display:flex!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+}
+
+body[data-ux-page="activities"][data-ux-subpage="directory"] #activityDirectoryHeaderWeb059{
+  display:grid!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+}
+
+body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredActivityHeader{
+  display:block!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -7720,7 +7752,7 @@ body.ux-activities-page main{
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB089-FILES-REORGANIZE001-DIRECTORY-CLEANUP001"></script>
+  <script type="module" src="./app.js?v=CGWEB094B-FIX3-DIRECTORY-SINGLETON002-AUTOEQUIP-WRITEWATCH001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

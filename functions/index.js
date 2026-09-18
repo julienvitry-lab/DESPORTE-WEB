@@ -1262,3 +1262,16 @@ exports.stravaBridge = onRequest(
 const {createFitVault} = require("./fitvault");
 exports.fitVault = createFitVault();
 /* WEB074_FITCLOUD001_INDEX_END */
+
+/* CGWEB094B_AUTOEQUIP_WRITEWATCH001_INDEX_START */
+const {
+  createAutoEquipActivityWriteWatch
+} = require("./autoequip");
+
+exports.autoEquipActivity =
+  createAutoEquipActivityWriteWatch({
+    db,
+    ROOT,
+    REGION
+  });
+/* CGWEB094B_AUTOEQUIP_WRITEWATCH001_INDEX_END */
