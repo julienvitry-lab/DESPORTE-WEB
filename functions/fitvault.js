@@ -3665,6 +3665,787 @@ async function c091TransferAudit(uid) {
 
   /* CGWEB093_MATCH_TRIAGE001_HELPERS_END */
 
+
+  /* CGWEB094_SAFE_APPLY001_HELPERS_START */
+
+  function c094Json(value) {
+    if (value == null) return null;
+
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      return value;
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .slice(0, 100)
+        .map((x) => c094Json(x));
+    }
+
+    if (typeof value === "object") {
+      const out = {};
+      for (const [key, val] of Object.entries(value).slice(0, 100)) {
+        if (typeof val === "function" || val === undefined) continue;
+        out[key] = c094Json(val);
+      }
+      return out;
+    }
+
+    return String(value);
+  }
+
+  function c094NonEmpty(value) {
+    if (value == null) return false;
+    if (typeof value === "string") return value.trim() !== "";
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === "object") return Object.keys(value).length > 0;
+    return true;
+  }
+
+  function c094Equal(a, b) {
+    return JSON.stringify(c094Json(a)) === JSON.stringify(c094Json(b));
+  }
+
+  function c094PairKey(row) {
+    return (
+      String(row?.sha256 || "").toLowerCase() +
+      "::" +
+      String(row?.activity_id || "")
+    );
+  }
+
+  function c094ExpectedPairs(body) {
+    const raw = Array.isArray(body?.expected_pairs)
+      ? body.expected_pairs
+      : [];
+
+    return raw
+      .map((row) => ({
+        sha256: String(row?.sha256 || "").trim().toLowerCase(),
+        activity_id: String(row?.activity_id || "").trim()
+      }))
+      .filter(
+        (row) =>
+          /^[a-f0-9]{64}$/.test(row.sha256) &&
+          row.activity_id
+      )
+      .sort((a, b) =>
+        c094PairKey(a).localeCompare(c094PairKey(b))
+      );
+  }
+
+  function c094SamePairPlan(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (c094PairKey(a[i]) !== c094PairKey(b[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  async function c094BuildWritePlan(uid) {
+    const deep = await c092DeepAnalysis(uid);
+    const inventory = await c091Inventory(uid);
+    const preview = c093SafePreviewFromDeep(deep);
+
+    const safeRows = [];
+    const rejectedSafeRows = [];
+    const seenTargets = new Set();
+
+    for (const row of preview.rows || []) {
+      if (row.classification !== "SAFE_EXACT") continue;
+
+      const sha256 = String(row.sha256 || "").trim().toLowerCase();
+      const activityId =
+        String(row.proposed_activity_id || "").trim();
+
+      if (!sha256 || !activityId) {
+        rejectedSafeRows.push({
+          sha256,
+          activity_id: activityId || null,
+          reason: "proposition SAFE incomplète"
+        });
+        continue;
+      }
+
+      const state =
+        inventory.activityState.get(activityId) || {};
+
+      if (Number(state.original_count || 0) > 0) {
+        rejectedSafeRows.push({
+          sha256,
+          activity_id: activityId,
+          reason:
+            "l'activité cible dispose déjà d'un original"
+        });
+        continue;
+      }
+
+      if (seenTargets.has(activityId)) {
+        rejectedSafeRows.push({
+          sha256,
+          activity_id: activityId,
+          reason:
+            "activité cible proposée plusieurs fois dans le même plan"
+        });
+        continue;
+      }
+
+      seenTargets.add(activityId);
+
+      safeRows.push({
+        sha256,
+        file_name: row.file_name,
+        activity_id: activityId,
+        classification: row.classification,
+        reasons: row.reasons || [],
+        candidate: row.first_candidate || null
+      });
+    }
+
+    safeRows.sort((a, b) =>
+      c094PairKey(a).localeCompare(c094PairKey(b))
+    );
+
+    const orphanRows =
+      (preview.rows || [])
+        .filter(
+          (row) =>
+            row.classification ===
+            "NO_COMPATIBLE_CANDIDATE"
+        )
+        .map((row) => ({
+          sha256: String(row.sha256 || "").trim().toLowerCase(),
+          file_name: row.file_name,
+          reason:
+            "NO_COMPATIBLE_CANDIDATE",
+          reasons: row.reasons || []
+        }))
+        .sort((a, b) =>
+          String(a.sha256).localeCompare(String(b.sha256))
+        );
+
+    return {
+      deep,
+      inventory,
+      preview,
+      safe_rows: safeRows,
+      rejected_safe_rows: rejectedSafeRows,
+      orphan_rows: orphanRows
+    };
+  }
+
+  async function c094SafeApply(uid, body) {
+    if (
+      String(body?.confirm || "") !==
+      "APPLY_SAFE_EXACT"
+    ) {
+      throw Object.assign(
+        new Error(
+          "Confirmation APPLY_SAFE_EXACT requise."
+        ),
+        {status: 400}
+      );
+    }
+
+    const plan = await c094BuildWritePlan(uid);
+
+    if (plan.rejected_safe_rows.length) {
+      throw Object.assign(
+        new Error(
+          "Plan SAFE refusé : au moins une cible ne respecte plus les garde-fous."
+        ),
+        {
+          status: 409,
+          details: plan.rejected_safe_rows
+        }
+      );
+    }
+
+    const currentPairs =
+      plan.safe_rows
+        .map((row) => ({
+          sha256: row.sha256,
+          activity_id: row.activity_id
+        }))
+        .sort((a, b) =>
+          c094PairKey(a).localeCompare(c094PairKey(b))
+        );
+
+    const expectedPairs = c094ExpectedPairs(body);
+
+    if (!c094SamePairPlan(currentPairs, expectedPairs)) {
+      throw Object.assign(
+        new Error(
+          "Le plan SAFE a changé depuis la prévisualisation. Relance la prévisualisation."
+        ),
+        {
+          status: 409,
+          current_pairs: currentPairs
+        }
+      );
+    }
+
+    if (!currentPairs.length) {
+      return {
+        selected: 0,
+        modified: 0,
+        skipped: 0,
+        pairs: []
+      };
+    }
+
+    const now = Date.now();
+    const batch = db.batch();
+    const applied = [];
+
+    for (const row of plan.safe_rows) {
+      const [fileSnap, activitySnap] =
+        await Promise.all([
+          fileDoc(uid, row.sha256).get(),
+          db.doc(
+            `${ROOT}/${uid}/activities/${row.activity_id}`
+          ).get()
+        ]);
+
+      if (!fileSnap.exists || !activitySnap.exists) {
+        throw Object.assign(
+          new Error(
+            `Préflight interrompu pour ${row.file_name || row.sha256}: document absent.`
+          ),
+          {status: 409}
+        );
+      }
+
+      const file = fileSnap.data() || {};
+      const activity = activitySnap.data() || {};
+
+      if (
+        file.deleted_at_ms != null ||
+        activity.deleted_at_ms != null
+      ) {
+        throw Object.assign(
+          new Error(
+            `Préflight interrompu pour ${row.file_name || row.sha256}: document supprimé.`
+          ),
+          {status: 409}
+        );
+      }
+
+      const roles = c090Roles(file);
+
+      if (!roles.includes(C090_ROLE_ORIGINAL)) {
+        throw Object.assign(
+          new Error(
+            `Préflight interrompu pour ${row.file_name || row.sha256}: rôle ORIGINAL absent.`
+          ),
+          {status: 409}
+        );
+      }
+
+      const currentActivityId =
+        String(file.activity_id || "").trim();
+
+      if (currentActivityId) {
+        throw Object.assign(
+          new Error(
+            `Préflight interrompu : ${row.file_name || row.sha256} est déjà lié à ${currentActivityId}.`
+          ),
+          {status: 409}
+        );
+      }
+
+      const candidate = row.candidate || {};
+      const previousLinkStatus =
+        String(file.link_status || "").trim() || null;
+
+      batch.set(
+        fileDoc(uid, row.sha256),
+        {
+          activity_id: row.activity_id,
+          link_status: "LINKED_REPAIRED",
+          original_match_repair_version:
+            "ORIGINAL_MATCH_REPAIR001",
+          reconcile_resolve_version:
+            "FIT_RECONCILE_RESOLVE001",
+          safe_match_apply_version:
+            "SAFE_MATCH_APPLY001",
+          cgweb094_version: "CGWEB094",
+          match_repair_strategy:
+            String(
+              candidate.strategy ||
+              "CGWEB094_SAFE_EXACT"
+            ),
+          match_repair_delta_ms:
+            c092FirstFinite(candidate.delta_ms),
+          match_repair_residual_ms:
+            c092FirstFinite(candidate.residual_ms),
+          match_repair_requested_by:
+            "CGWEB094_SAFE_MATCH_APPLY001",
+          previous_activity_id: null,
+          previous_link_status: previousLinkStatus,
+          safe_match_class: "SAFE_EXACT",
+          repaired_at_ms: now,
+          safe_match_applied_at_ms: now,
+          updated_at_ms: now
+        },
+        {merge: true}
+      );
+
+      applied.push({
+        sha256: row.sha256,
+        file_name: row.file_name,
+        activity_id: row.activity_id
+      });
+    }
+
+    await batch.commit();
+
+    const after = await c091Inventory(uid);
+
+    return {
+      selected: applied.length,
+      modified: applied.length,
+      activities_modified: 0,
+      file_metadata_modified: applied.length,
+      unresolved_after: after.unresolved.length,
+      pairs: applied
+    };
+  }
+
+  async function c094OrphanHoldState(uid, rows) {
+    const out = [];
+
+    for (const row of rows || []) {
+      const snap = await fileDoc(uid, row.sha256).get();
+      const data = snap.exists ? snap.data() || {} : {};
+
+      out.push({
+        ...row,
+        exists: snap.exists,
+        already_held:
+          Boolean(data.orphan_hold) &&
+          String(data.orphan_hold_version || "") ===
+            "ORPHAN_HOLD001",
+        current_activity_id:
+          String(data.activity_id || "").trim() || null,
+        current_link_status:
+          String(data.link_status || "").trim() || null
+      });
+    }
+
+    return out;
+  }
+
+  async function c094OrphanHoldApply(uid, body) {
+    if (
+      String(body?.confirm || "") !==
+      "HOLD_ORPHANS"
+    ) {
+      throw Object.assign(
+        new Error("Confirmation HOLD_ORPHANS requise."),
+        {status: 400}
+      );
+    }
+
+    const plan = await c094BuildWritePlan(uid);
+    const currentRows =
+      await c094OrphanHoldState(
+        uid,
+        plan.orphan_rows
+      );
+
+    const currentShas =
+      currentRows
+        .map((row) => row.sha256)
+        .sort();
+
+    const expectedShas =
+      (Array.isArray(body?.expected_shas)
+        ? body.expected_shas
+        : [])
+        .map((x) => String(x || "").trim().toLowerCase())
+        .filter((x) => /^[a-f0-9]{64}$/.test(x))
+        .sort();
+
+    if (
+      JSON.stringify(currentShas) !==
+      JSON.stringify(expectedShas)
+    ) {
+      throw Object.assign(
+        new Error(
+          "La liste des orphelins a changé depuis la prévisualisation."
+        ),
+        {status: 409, current_shas: currentShas}
+      );
+    }
+
+    const now = Date.now();
+    const batch = db.batch();
+    let modified = 0;
+    let alreadyHeld = 0;
+
+    for (const row of currentRows) {
+      if (!row.exists) {
+        throw Object.assign(
+          new Error(
+            `FIT orphelin introuvable : ${row.file_name || row.sha256}`
+          ),
+          {status: 409}
+        );
+      }
+
+      if (row.current_activity_id) {
+        throw Object.assign(
+          new Error(
+            `Le FIT ${row.file_name || row.sha256} vient d'être lié. HOLD annulé.`
+          ),
+          {status: 409}
+        );
+      }
+
+      if (row.already_held) {
+        alreadyHeld += 1;
+        continue;
+      }
+
+      batch.set(
+        fileDoc(uid, row.sha256),
+        {
+          orphan_hold: true,
+          orphan_hold_version: "ORPHAN_HOLD001",
+          orphan_hold_reason:
+            "NO_COMPATIBLE_CANDIDATE",
+          orphan_hold_review_required: true,
+          orphan_hold_at_ms: now,
+          cgweb094_version: "CGWEB094",
+          updated_at_ms: now
+        },
+        {merge: true}
+      );
+
+      modified += 1;
+    }
+
+    if (modified > 0) {
+      await batch.commit();
+    }
+
+    return {
+      selected: currentRows.length,
+      modified,
+      already_held: alreadyHeld,
+      activities_modified: 0,
+      fit_files_linked: 0,
+      shas: currentShas
+    };
+  }
+
+  function c094MergeFields(row = {}) {
+    const keys = [
+      "custom_title",
+      "name",
+      "title",
+      "description",
+      "notes",
+      "equipment_id",
+      "equipment_name",
+      "gear_id",
+      "gear_name",
+      "landmark_codes",
+      "landmarks",
+      "markers",
+      "reperes",
+      "charge",
+      "load",
+      "training_load",
+      "relative_effort",
+      "suffer_score",
+      "calories",
+      "avg_power",
+      "max_power",
+      "cadence",
+      "manual",
+      "private",
+      "commute",
+      "trainer",
+      "import_source",
+      "source",
+      "origin",
+      "strava_id",
+      "strava_activity_id",
+      "external_id",
+      "provider_id",
+      "source_activity_id",
+      "remote_id",
+      "start_time_ms",
+      "sport",
+      "sub_sport",
+      "distance_m",
+      "distance",
+      "duration_s",
+      "elapsed_time_s",
+      "moving_time_s",
+      "ascent_m",
+      "total_ascent_m",
+      "elevation_gain_m",
+      "avg_hr",
+      "avg_heart_rate",
+      "max_hr",
+      "max_heart_rate"
+    ];
+
+    const out = {};
+
+    for (const key of keys) {
+      if (row[key] !== undefined) {
+        out[key] = c094Json(row[key]);
+      }
+    }
+
+    return out;
+  }
+
+  function c094TechnicalScore(activity) {
+    let score = 0;
+    const ids = activity?.external_ids || {};
+
+    if (
+      ids.strava_id ||
+      ids.external_id ||
+      ids.provider_id
+    ) {
+      score += 1000;
+    }
+
+    if (activity?.route?.exists) {
+      score += 100;
+      score += Math.min(
+        500,
+        Number(activity.route.point_count || 0) / 10
+      );
+    }
+
+    score +=
+      Math.min(
+        100,
+        Number(activity?.fit_links?.length || 0) * 10
+      );
+
+    if (
+      String(activity?.source || "")
+        .toUpperCase()
+        .includes("STRAVA_WEB")
+    ) {
+      score += 50;
+    }
+
+    return score;
+  }
+
+  async function c094DuplicateMergePreview(uid) {
+    const deep = await c092DeepAnalysis(uid);
+    const inventory = await c091Inventory(uid);
+    const preview = c093SafePreviewFromDeep(deep);
+
+    const diagnostic =
+      await c093DuplicateActivityDiagnostic(
+        uid,
+        deep,
+        inventory,
+        preview
+      );
+
+    const groups = [];
+
+    for (const group of diagnostic.groups || []) {
+      const activities = [];
+
+      for (const technical of group.activities || []) {
+        const snap =
+          await db.doc(
+            `${ROOT}/${uid}/activities/${technical.activity_id}`
+          ).get();
+
+        const raw = snap.exists ? snap.data() || {} : {};
+
+        activities.push({
+          ...technical,
+          merge_fields: c094MergeFields(raw),
+          technical_score:
+            c094TechnicalScore(technical)
+        });
+      }
+
+      activities.sort(
+        (a, b) =>
+          Number(b.technical_score || 0) -
+            Number(a.technical_score || 0) ||
+          String(a.activity_id)
+            .localeCompare(String(b.activity_id))
+      );
+
+      const base = activities[0] || null;
+      const differences = [];
+
+      if (base) {
+        const allKeys = new Set();
+
+        for (const activity of activities) {
+          for (const key of Object.keys(
+            activity.merge_fields || {}
+          )) {
+            allKeys.add(key);
+          }
+        }
+
+        for (const key of [...allKeys].sort()) {
+          const values = activities.map((activity) => ({
+            activity_id: activity.activity_id,
+            value:
+              activity.merge_fields?.[key] ?? null
+          }));
+
+          const same = values.every((row) =>
+            c094Equal(row.value, values[0].value)
+          );
+
+          if (same) continue;
+
+          const baseValue =
+            base.merge_fields?.[key] ?? null;
+
+          const donorRows =
+            values.filter(
+              (row) =>
+                row.activity_id !== base.activity_id &&
+                c094NonEmpty(row.value)
+            );
+
+          const baseEmpty =
+            !c094NonEmpty(baseValue);
+
+          differences.push({
+            field: key,
+            values,
+            base_activity_id: base.activity_id,
+            base_empty: baseEmpty,
+            transferable_to_base:
+              baseEmpty && donorRows.length > 0,
+            conflict:
+              !baseEmpty &&
+              donorRows.some(
+                (row) =>
+                  !c094Equal(row.value, baseValue)
+              )
+          });
+        }
+      }
+
+      groups.push({
+        sha256: group.sha256,
+        file_name: group.file_name,
+        fit: group.fit,
+        activities,
+        suggested_base_activity_id:
+          base?.activity_id || null,
+        suggested_base_reason:
+          base
+            ? "score de complétude technique maximal (IDs externes, route, FIT liés, provenance)"
+            : null,
+        differences,
+        transferable_fields:
+          differences.filter(
+            (row) => row.transferable_to_base
+          ).length,
+        conflict_fields:
+          differences.filter(
+            (row) => row.conflict
+          ).length,
+        read_only: true
+      });
+    }
+
+    return {
+      summary: {
+        duplicate_groups: groups.length,
+        activities_compared:
+          groups.reduce(
+            (sum, group) =>
+              sum + group.activities.length,
+            0
+          ),
+        transferable_fields:
+          groups.reduce(
+            (sum, group) =>
+              sum + group.transferable_fields,
+            0
+          ),
+        conflict_fields:
+          groups.reduce(
+            (sum, group) =>
+              sum + group.conflict_fields,
+            0
+          )
+      },
+      groups
+    };
+  }
+
+  async function c094Preview(uid) {
+    const plan = await c094BuildWritePlan(uid);
+
+    const orphanState =
+      await c094OrphanHoldState(
+        uid,
+        plan.orphan_rows
+      );
+
+    const mergePreview =
+      await c094DuplicateMergePreview(uid);
+
+    return {
+      safe: {
+        count: plan.safe_rows.length,
+        rejected_count:
+          plan.rejected_safe_rows.length,
+        rows: plan.safe_rows,
+        rejected: plan.rejected_safe_rows,
+        expected_pairs:
+          plan.safe_rows.map((row) => ({
+            sha256: row.sha256,
+            activity_id: row.activity_id
+          }))
+      },
+      orphans: {
+        count: orphanState.length,
+        already_held:
+          orphanState.filter(
+            (row) => row.already_held
+          ).length,
+        rows: orphanState,
+        expected_shas:
+          orphanState.map((row) => row.sha256)
+      },
+      duplicate_merge_preview: mergePreview,
+      invariants: {
+        safe_apply_modifies:
+          "activity_files metadata only",
+        orphan_hold_modifies:
+          "activity_files hold metadata only",
+        duplicate_merge_preview:
+          "READ_ONLY",
+        activity_documents_modified_by_preview: 0
+      }
+    };
+  }
+
+  /* CGWEB094_SAFE_APPLY001_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -4870,6 +5651,84 @@ if (action === "transfer_audit") {
         }
 
         /* CGWEB093_MATCH_TRIAGE001_ACTIONS_END */
+
+        /* CGWEB094_SAFE_APPLY001_ACTIONS_START */
+
+        if (action === "cgweb094_preview") {
+          if (req.method !== "GET") {
+            return res.status(405).json({error: "GET requis."});
+          }
+
+          const result = await c094Preview(uid);
+
+          return res.json({
+            ok: true,
+            service: "CGWEB094_PREVIEW",
+            version: "CGWEB094",
+            ...result
+          });
+        }
+
+        if (action === "safe_match_apply") {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+
+          const result =
+            await c094SafeApply(uid, req.body || {});
+
+          return res.json({
+            ok: true,
+            service: "SAFE_MATCH_APPLY001",
+            version: "CGWEB094",
+            ...result
+          });
+        }
+
+        if (action === "orphan_hold_apply") {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+
+          const result =
+            await c094OrphanHoldApply(
+              uid,
+              req.body || {}
+            );
+
+          return res.json({
+            ok: true,
+            service: "ORPHAN_HOLD001",
+            version: "CGWEB094",
+            ...result
+          });
+        }
+
+        if (
+          action ===
+          "duplicate_activity_merge_preview"
+        ) {
+          if (req.method !== "GET") {
+            return res.status(405).json({error: "GET requis."});
+          }
+
+          const result =
+            await c094DuplicateMergePreview(uid);
+
+          return res.json({
+            ok: true,
+            service:
+              "DUPLICATE_ACTIVITY_MERGE_PREVIEW001",
+            version: "CGWEB094",
+            read_only: true,
+            activities_modified: 0,
+            ...result
+          });
+        }
+
+        /* CGWEB094_SAFE_APPLY001_ACTIONS_END */
+
+
 
 
 

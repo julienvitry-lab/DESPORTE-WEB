@@ -4600,6 +4600,497 @@ window.SPORT_CGWEB093_MATCH_TRIAGE = Object.freeze({
 
 queueMicrotask(c093Wire);
 
+
+/* CGWEB094_SAFE_APPLY001_WEB_START */
+
+let c094LastPreview = null;
+
+function c094FmtValue(value) {
+  if (value == null) return "—";
+  if (Array.isArray(value)) {
+    return value.length ? value.join(", ") : "[]";
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch (_) {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function c094RenderSafe(data) {
+  const host = c091Node("cgweb094SafeList");
+  if (!host) return;
+
+  host.innerHTML = "";
+
+  const rows = Array.isArray(data?.rows)
+    ? data.rows
+    : [];
+
+  if (!rows.length) {
+    host.innerHTML =
+      '<div class="muted">Aucun SAFE_EXACT à appliquer.</div>';
+    return;
+  }
+
+  for (const row of rows) {
+    const card = document.createElement("div");
+    card.className = "cgweb094-row";
+
+    const head = document.createElement("div");
+    head.className = "cgweb094-row-head";
+
+    const title = document.createElement("strong");
+    title.textContent =
+      (row.file_name || row.sha256) +
+      " → activité #" + row.activity_id;
+
+    const pill = document.createElement("span");
+    pill.className = "pill neutral";
+    pill.textContent = "SAFE_EXACT";
+
+    head.appendChild(title);
+    head.appendChild(pill);
+    card.appendChild(head);
+
+    const reason = document.createElement("div");
+    reason.className = "muted";
+    reason.textContent =
+      (row.reasons || []).join(" · ");
+    card.appendChild(reason);
+
+    host.appendChild(card);
+  }
+}
+
+function c094RenderOrphans(data) {
+  const host = c091Node("cgweb094OrphanList");
+  if (!host) return;
+
+  host.innerHTML = "";
+
+  const rows = Array.isArray(data?.rows)
+    ? data.rows
+    : [];
+
+  if (!rows.length) {
+    host.innerHTML =
+      '<div class="muted">Aucun orphelin à placer en attente.</div>';
+    return;
+  }
+
+  for (const row of rows) {
+    const card = document.createElement("div");
+    card.className = "cgweb094-row";
+
+    const head = document.createElement("div");
+    head.className = "cgweb094-row-head";
+
+    const title = document.createElement("strong");
+    title.textContent =
+      row.file_name || row.sha256;
+
+    const pill = document.createElement("span");
+    pill.className = "pill neutral";
+    pill.textContent =
+      row.already_held
+        ? "déjà en attente"
+        : "à mettre en attente";
+
+    head.appendChild(title);
+    head.appendChild(pill);
+    card.appendChild(head);
+
+    const reason = document.createElement("div");
+    reason.className = "muted";
+    reason.textContent =
+      "Aucun rattachement. Motif : " +
+      (row.reason || "NO_COMPATIBLE_CANDIDATE");
+    card.appendChild(reason);
+
+    host.appendChild(card);
+  }
+}
+
+function c094RenderMerge(data) {
+  const summary = data?.summary || {};
+
+  c091Cards("cgweb094MergeSummary", [
+    ["Groupes à prévisualiser", summary.duplicate_groups],
+    ["Activités comparées", summary.activities_compared],
+    ["Champs transférables", summary.transferable_fields],
+    ["Champs en conflit", summary.conflict_fields]
+  ]);
+
+  const host = c091Node("cgweb094MergeList");
+  if (!host) return;
+
+  host.innerHTML = "";
+
+  const groups = Array.isArray(data?.groups)
+    ? data.groups
+    : [];
+
+  if (!groups.length) {
+    host.innerHTML =
+      '<div class="muted">Aucun doublon d’activité à prévisualiser.</div>';
+    return;
+  }
+
+  for (const group of groups) {
+    const details = document.createElement("details");
+    details.className = "cgweb094-row";
+    details.open = true;
+
+    const summaryNode = document.createElement("summary");
+    summaryNode.textContent =
+      (group.file_name || group.sha256) +
+      " · base technique proposée #" +
+      (group.suggested_base_activity_id || "—") +
+      " · " +
+      Number(group.transferable_fields || 0) +
+      " champ(s) transférable(s) · " +
+      Number(group.conflict_fields || 0) +
+      " conflit(s)";
+    details.appendChild(summaryNode);
+
+    const why = document.createElement("div");
+    why.className = "muted";
+    why.textContent =
+      group.suggested_base_reason || "";
+    details.appendChild(why);
+
+    for (const activity of group.activities || []) {
+      const card = document.createElement("div");
+      card.className = "cgweb094-row";
+
+      const title = document.createElement("strong");
+      title.textContent =
+        "#" + activity.activity_id +
+        " · score technique " +
+        c092FmtNumber(activity.technical_score, 1) +
+        (String(activity.activity_id) ===
+          String(group.suggested_base_activity_id)
+          ? " · BASE PROPOSÉE"
+          : "");
+
+      card.appendChild(title);
+
+      const context = document.createElement("div");
+      context.className = "muted";
+      context.textContent =
+        "source " + (activity.source || "—") +
+        " · route " +
+        (activity.route?.exists ? "oui" : "non") +
+        " (" +
+        c092FmtNumber(activity.route?.point_count, 0) +
+        " points)" +
+        " · FIT liés " +
+        Number(activity.fit_links?.length || 0);
+      card.appendChild(context);
+
+      details.appendChild(card);
+    }
+
+    const diffHost = document.createElement("div");
+    diffHost.className = "cgweb094-diff";
+
+    for (const diff of group.differences || []) {
+      const line = document.createElement("div");
+
+      if (diff.conflict) {
+        line.className = "cgweb094-conflict";
+      } else if (diff.transferable_to_base) {
+        line.className = "cgweb094-transfer";
+      }
+
+      const values =
+        (diff.values || [])
+          .map(
+            (row) =>
+              "#" + row.activity_id +
+              "=" + c094FmtValue(row.value)
+          )
+          .join(" | ");
+
+      line.textContent =
+        diff.field +
+        (diff.transferable_to_base
+          ? " · TRANSFÉRABLE VERS LA BASE"
+          : diff.conflict
+            ? " · CONFLIT À ARBITRER"
+            : "") +
+        " · " + values;
+
+      diffHost.appendChild(line);
+    }
+
+    details.appendChild(diffHost);
+    host.appendChild(details);
+  }
+}
+
+function c094RenderPreview(data) {
+  c094LastPreview = data;
+
+  const safe = data?.safe || {};
+  const orphans = data?.orphans || {};
+  const merge =
+    data?.duplicate_merge_preview || {};
+
+  c091Cards("cgweb094Summary", [
+    ["SAFE_EXACT applicables", safe.count],
+    ["SAFE rejetés", safe.rejected_count],
+    ["Orphelins", orphans.count],
+    ["Orphelins déjà en attente", orphans.already_held],
+    [
+      "Groupes fusion à prévisualiser",
+      merge?.summary?.duplicate_groups
+    ]
+  ]);
+
+  c094RenderSafe(safe);
+  c094RenderOrphans(orphans);
+  c094RenderMerge(merge);
+
+  const applyButton = c091Node("cgweb094ApplySafe");
+  const holdButton = c091Node("cgweb094HoldOrphans");
+
+  if (applyButton) {
+    applyButton.disabled =
+      Number(safe.count || 0) <= 0 ||
+      Number(safe.rejected_count || 0) > 0;
+    applyButton.textContent =
+      "Appliquer " +
+      Number(safe.count || 0) +
+      " SAFE_EXACT";
+  }
+
+  if (holdButton) {
+    const remaining =
+      Number(orphans.count || 0) -
+      Number(orphans.already_held || 0);
+
+    holdButton.disabled = remaining <= 0;
+    holdButton.textContent =
+      "Mettre " +
+      Math.max(0, remaining) +
+      " orphelin(s) en attente";
+  }
+
+  const status = c091Node("cgweb094Status");
+  if (status) {
+    status.textContent =
+      "Prévisualisation terminée · " +
+      Number(safe.count || 0) +
+      " SAFE_EXACT éligibles · " +
+      Number(orphans.count || 0) +
+      " orphelin(s) · fusion d’activités : prévisualisation uniquement.";
+  }
+}
+
+async function c094Preview() {
+  const button = c091Node("cgweb094Preview");
+  const status = c091Node("cgweb094Status");
+
+  if (button) button.disabled = true;
+  if (status) {
+    status.textContent =
+      "Prévisualisation CGWEB094 en cours…";
+  }
+
+  try {
+    const data = await request("cgweb094_preview");
+    c094RenderPreview(data);
+    return data;
+  } catch (error) {
+    if (status) {
+      status.textContent =
+        "Prévisualisation impossible : " +
+        (error?.message || String(error));
+    }
+    throw error;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function c094ApplySafe() {
+  if (!c094LastPreview) {
+    alert("Relance d’abord la prévisualisation CGWEB094.");
+    return;
+  }
+
+  const safe = c094LastPreview.safe || {};
+  const pairs = Array.isArray(safe.expected_pairs)
+    ? safe.expected_pairs
+    : [];
+
+  if (!pairs.length) {
+    alert("Aucun SAFE_EXACT à appliquer.");
+    return;
+  }
+
+  const ok = confirm(
+    "Appliquer " + pairs.length +
+    " rattachement(s) SAFE_EXACT ?\n\n" +
+    "Écriture limitée à la métadonnée activity_files des FIT originaux.\n" +
+    "Aucun document activité ne sera modifié."
+  );
+
+  if (!ok) return;
+
+  const button = c091Node("cgweb094ApplySafe");
+  const status = c091Node("cgweb094Status");
+
+  if (button) button.disabled = true;
+
+  try {
+    const data = await request(
+      "safe_match_apply",
+      {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          confirm: "APPLY_SAFE_EXACT",
+          expected_pairs: pairs
+        })
+      }
+    );
+
+    if (status) {
+      status.textContent =
+        "SAFE_MATCH_APPLY001 terminé · " +
+        Number(data.modified || 0) +
+        " FIT original(aux) rattaché(s) · " +
+        Number(data.unresolved_after || 0) +
+        " original(aux) restent non liés.";
+    }
+
+    await c091Resolve();
+    await c094Preview();
+  } catch (error) {
+    if (status) {
+      status.textContent =
+        "Application SAFE interrompue : " +
+        (error?.message || String(error));
+    }
+    throw error;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function c094HoldOrphans() {
+  if (!c094LastPreview) {
+    alert("Relance d’abord la prévisualisation CGWEB094.");
+    return;
+  }
+
+  const orphan = c094LastPreview.orphans || {};
+  const shas = Array.isArray(orphan.expected_shas)
+    ? orphan.expected_shas
+    : [];
+
+  if (!shas.length) {
+    alert("Aucun orphelin à mettre en attente.");
+    return;
+  }
+
+  const ok = confirm(
+    "Placer " + shas.length +
+    " FIT orphelin(s) sous ORPHAN_HOLD001 ?\n\n" +
+    "Ils resteront non liés. Aucun document activité ne sera modifié."
+  );
+
+  if (!ok) return;
+
+  const button = c091Node("cgweb094HoldOrphans");
+  const status = c091Node("cgweb094Status");
+
+  if (button) button.disabled = true;
+
+  try {
+    const data = await request(
+      "orphan_hold_apply",
+      {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          confirm: "HOLD_ORPHANS",
+          expected_shas: shas
+        })
+      }
+    );
+
+    if (status) {
+      status.textContent =
+        "ORPHAN_HOLD001 terminé · " +
+        Number(data.modified || 0) +
+        " nouveau(x) HOLD · " +
+        Number(data.already_held || 0) +
+        " déjà en attente.";
+    }
+
+    await c094Preview();
+  } catch (error) {
+    if (status) {
+      status.textContent =
+        "ORPHAN_HOLD001 interrompu : " +
+        (error?.message || String(error));
+    }
+    throw error;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function c094Wire() {
+  const preview = c091Node("cgweb094Preview");
+  const apply = c091Node("cgweb094ApplySafe");
+  const hold = c091Node("cgweb094HoldOrphans");
+
+  if (preview && preview.dataset.c094 !== "1") {
+    preview.dataset.c094 = "1";
+    preview.addEventListener(
+      "click",
+      () => void c094Preview().catch(console.error)
+    );
+  }
+
+  if (apply && apply.dataset.c094 !== "1") {
+    apply.dataset.c094 = "1";
+    apply.addEventListener(
+      "click",
+      () => void c094ApplySafe().catch(console.error)
+    );
+  }
+
+  if (hold && hold.dataset.c094 !== "1") {
+    hold.dataset.c094 = "1";
+    hold.addEventListener(
+      "click",
+      () => void c094HoldOrphans().catch(console.error)
+    );
+  }
+}
+
+window.SPORT_CGWEB094_SAFE_APPLY = Object.freeze({
+  version: "CGWEB094",
+  preview: c094Preview,
+  applySafe: c094ApplySafe,
+  holdOrphans: c094HoldOrphans
+});
+
+queueMicrotask(c094Wire);
+
+/* CGWEB094_SAFE_APPLY001_WEB_END */
+
+
+
 /* CGWEB093_MATCH_TRIAGE001_WEB_END */
 
 

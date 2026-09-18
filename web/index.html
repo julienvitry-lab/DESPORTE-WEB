@@ -5564,6 +5564,75 @@ body.ux-activities-page main{
 }
 </style>
 
+
+<style id="cgweb094-css">
+#cgweb094Block{
+  margin-top:18px;
+  padding-top:14px;
+  border-top:1px solid rgba(255,255,255,.10);
+}
+#cgweb094Block .cgweb094-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:16px;
+}
+#cgweb094Block .cgweb094-head h4{
+  margin:3px 0 4px;
+}
+#cgweb094Block .cgweb094-actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:10px;
+}
+#cgweb094Block .cgweb094-details{
+  margin-top:12px;
+  padding-top:8px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+#cgweb094Block .cgweb094-details>summary{
+  cursor:pointer;
+  font-weight:700;
+}
+#cgweb094Block .cgweb094-list{
+  display:grid;
+  gap:8px;
+  margin-top:9px;
+}
+#cgweb094Block .cgweb094-row{
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:11px;
+  padding:9px 11px;
+  background:rgba(255,255,255,.018);
+}
+#cgweb094Block .cgweb094-row-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:flex-start;
+}
+#cgweb094Block .cgweb094-diff{
+  display:grid;
+  gap:4px;
+  margin-top:7px;
+  font-size:.84rem;
+}
+#cgweb094Block .cgweb094-conflict{
+  text-decoration:underline;
+  text-decoration-style:dotted;
+}
+#cgweb094Block .cgweb094-transfer{
+  font-weight:700;
+}
+@media(max-width:760px){
+  #cgweb094Block .cgweb094-head,
+  #cgweb094Block .cgweb094-row-head{
+    flex-direction:column;
+  }
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -6057,6 +6126,61 @@ body.ux-activities-page main{
               </details>
             </div>
             <!-- CGWEB093_MATCH_TRIAGE001_HTML_END -->
+
+            <!-- CGWEB094_SAFE_APPLY001_HTML_START -->
+            <div id="cgweb094Block" class="cgweb094-block">
+              <div class="cgweb094-head">
+                <div>
+                  <div class="eyebrow">CGWEB094 · SAFE_MATCH_APPLY001 / DUPLICATE_ACTIVITY_MERGE_PREVIEW001 / ORPHAN_HOLD001</div>
+                  <h4>Application contrôlée des correspondances FIT</h4>
+                  <div class="muted">
+                    Les écritures sont séparées : rattachement des SAFE_EXACT d'un côté, mise en attente des orphelins de l'autre. La fusion d'activités reste en prévisualisation.
+                  </div>
+                </div>
+                <button id="cgweb094Preview" class="secondary" type="button">
+                  Prévisualiser CGWEB094
+                </button>
+              </div>
+
+              <div id="cgweb094Status" class="muted">
+                Prévisualisation obligatoire avant toute écriture.
+              </div>
+
+              <div id="cgweb094Summary" class="cgweb091-card-grid"></div>
+
+              <div class="cgweb094-actions">
+                <button id="cgweb094ApplySafe" class="secondary" type="button" disabled>
+                  Appliquer les SAFE_EXACT
+                </button>
+                <button id="cgweb094HoldOrphans" class="secondary" type="button" disabled>
+                  Mettre les orphelins en attente
+                </button>
+              </div>
+
+              <details class="cgweb094-details" open>
+                <summary>Plan SAFE_MATCH_APPLY001</summary>
+                <div id="cgweb094SafeList" class="cgweb094-list">
+                  <div class="muted">Prévisualisation non lancée.</div>
+                </div>
+              </details>
+
+              <details class="cgweb094-details" open>
+                <summary>ORPHAN_HOLD001</summary>
+                <div id="cgweb094OrphanList" class="cgweb094-list">
+                  <div class="muted">Prévisualisation non lancée.</div>
+                </div>
+              </details>
+
+              <details class="cgweb094-details" open>
+                <summary>DUPLICATE_ACTIVITY_MERGE_PREVIEW001</summary>
+                <div id="cgweb094MergeSummary" class="cgweb091-card-grid"></div>
+                <div id="cgweb094MergeList" class="cgweb094-list">
+                  <div class="muted">Prévisualisation non lancée.</div>
+                </div>
+              </details>
+            </div>
+            <!-- CGWEB094_SAFE_APPLY001_HTML_END -->
+
 
 
 
@@ -7605,6 +7729,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB093-MATCH-TRIAGE001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB094-SAFE-APPLY001"></script>
 </body>
 </html>
