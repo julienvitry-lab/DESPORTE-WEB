@@ -5836,6 +5836,120 @@ if (action === "transfer_audit") {
 
         /* CGWEB090_FIT_RECONCILE001_ACTIONS_END */
 
+
+        /* CGWEB094C_MISSING_FIT_BACKEND_START */
+        function c094cBody(req){
+          let body=req.body;
+          if(Buffer.isBuffer(body)){
+            try{body=JSON.parse(body.toString("utf8"));}catch{body={};}
+          }
+          return (!body||typeof body!=="object"||Array.isArray(body))?{}:body;
+        }
+
+        function c094cIds(body,max){
+          const out=[],seen=new Set();
+          for(const raw of (Array.isArray(body?.activity_ids)?body.activity_ids:[])){
+            const id=String(raw??"").trim();
+            if(!id||seen.has(id))continue;
+            seen.add(id);out.push(id);
+            if(out.length>=max)break;
+          }
+          return out;
+        }
+
+        async function c094cPlanOne(uid,id){
+          const linked=await files(uid).where("activity_id","==",id).limit(8).get();
+          const active=linked.docs.map(x=>x.data()||{}).find(x=>x.deleted_at_ms==null);
+          if(active)return {
+            activity_id:id,status:"HAS_FIT",eligible:false,
+            sha256:active.sha256||active.file_id||null,
+            file_name:active.file_name||null
+          };
+
+          const snap=await db.doc(`${ROOT}/${uid}/activities/${id}`).get();
+          if(!snap.exists)return {
+            activity_id:id,status:"ACTIVITY_MISSING",eligible:false,missing:["activity"]
+          };
+          const a=snap.data()||{};
+          if(a.deleted_at_ms!=null)return {
+            activity_id:id,status:"ACTIVITY_DELETED",eligible:false,missing:["active_activity"]
+          };
+
+          const core=v088Core(a);
+          if(!core.ok)return {
+            activity_id:id,status:"INSUFFICIENT",eligible:false,missing:core.missing||[]
+          };
+
+          return {activity_id:id,status:"ELIGIBLE",eligible:true};
+        }
+
+        async function c094cMap(items,worker,concurrency){
+          const out=new Array(items.length);let cursor=0;
+          async function run(){
+            while(true){
+              const i=cursor++;
+              if(i>=items.length)return;
+              try{out[i]=await worker(items[i]);}
+              catch(error){
+                out[i]={
+                  activity_id:String(items[i]||""),status:"ERROR",eligible:false,
+                  error:error?.message||String(error)
+                };
+              }
+            }
+          }
+          await Promise.all(
+            Array.from({length:Math.min(concurrency,Math.max(1,items.length))},()=>run())
+          );
+          return out;
+        }
+
+        if(action==="missing_fit_plan"){
+          if(req.method!=="POST")return res.status(405).json({error:"POST requis."});
+          const ids=c094cIds(c094cBody(req),500);
+          const rows=await c094cMap(ids,id=>c094cPlanOne(uid,id),8);
+          return res.json({
+            ok:true,service:"MISSING_FIT_GENERATE001",version:"CGWEB094C",
+            dry_run:true,activities_created:0,activities_modified:0,rows,
+            summary:{
+              requested:ids.length,
+              eligible:rows.filter(x=>x?.status==="ELIGIBLE").length,
+              has_fit:rows.filter(x=>x?.status==="HAS_FIT").length,
+              insufficient:rows.filter(x=>x?.status==="INSUFFICIENT").length
+            }
+          });
+        }
+
+        if(action==="missing_fit_generate"){
+          if(req.method!=="POST")return res.status(405).json({error:"POST requis."});
+          const ids=c094cIds(c094cBody(req),50);
+          if(!ids.length)return res.status(400).json({error:"Aucun activity_id fourni."});
+
+          const results=await c094cMap(ids,async id=>{
+            const planned=await c094cPlanOne(uid,id);
+            if(planned.status==="HAS_FIT"){
+              return {ok:true,activity_id:id,status:"ALREADY_HAS_FIT",stored:false};
+            }
+            if(planned.status!=="ELIGIBLE"){
+              return {
+                ok:false,activity_id:id,status:planned.status,stored:false,
+                missing:planned.missing||[],error:planned.error||null
+              };
+            }
+            return v088RecoverOne(uid,{activity_id:id});
+          },2);
+
+          const stored=results.filter(x=>x?.status==="STORED").length;
+          const already=results.filter(x=>x?.status==="ALREADY_HAS_FIT").length;
+          const failed=results.filter(x=>x?.ok===false).length;
+          return res.json({
+            ok:failed===0,service:"MISSING_FIT_BATCH001",version:"CGWEB094C",
+            requested:ids.length,stored,already_present:already,failed,
+            activities_created:0,activities_modified:0,results
+          });
+        }
+        /* CGWEB094C_MISSING_FIT_BACKEND_END */
+
         if (action === "upload") {
           if (req.method !== "POST") return res.status(405).json({error: "POST requis."});
 

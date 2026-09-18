@@ -14357,13 +14357,191 @@ function webFileEntrySearchText(entry) {
   return `${entry.file_name||""} ${entry.sha256||""} ${linked}`.toLowerCase();
 }
 
+
+/* CGWEB094C_LOCAL_VAULT_HELPERS_START */
+const CGWEB094C_BATCH_SIZE=25;
+const CGWEB094C_PLAN_CHUNK=180;
+let cgweb094cStateByActivity=new Map();
+let cgweb094cBatchArmed=false;
+let cgweb094cBatchBusy=false;
+let cgweb094cStopRequested=false;
+let cgweb094cDisplayLimit=100;
+
+function cgweb094cNode(id){return document.getElementById(id);}
+function cgweb094cId(entry){
+  return entry?.kind==="derived"?String(activityKey(entry.activity)??"").trim():"";
+}
+function cgweb094cState(entry){
+  const id=cgweb094cId(entry);
+  return entry?.kind==="original"
+    ?{status:"ORIGINAL",eligible:false}
+    :(cgweb094cStateByActivity.get(id)||{activity_id:id,status:"UNKNOWN",eligible:false});
+}
+async function cgweb094cApi(){
+  for(let i=0;i<40;i++){
+    if(window.SPORT_MISSING_FIT)return window.SPORT_MISSING_FIT;
+    await new Promise(r=>setTimeout(r,75));
+  }
+  throw new Error("Service SPORT_MISSING_FIT non chargé.");
+}
+function cgweb094cIds(){
+  return [...new Set(webFileVaultEntries.filter(x=>x.kind==="derived").map(cgweb094cId).filter(Boolean))];
+}
+function cgweb094cStatusText(s){
+  return s?.status==="HAS_FIT"?"FIT disponible":
+    s?.status==="ELIGIBLE"?"FIT à générer":
+    s?.status==="INSUFFICIENT"?"Données insuffisantes":
+    s?.status==="ACTIVITY_MISSING"?"Activité introuvable":
+    s?.status==="ACTIVITY_DELETED"?"Activité supprimée":
+    s?.status==="ERROR"?"Erreur":"Vérification…";
+}
+function cgweb094cStatusClass(s){
+  return s?.status==="HAS_FIT"?"ok":s?.status==="ELIGIBLE"?"pending":"neutral";
+}
+function cgweb094cBatchStatus(text,pct=null){
+  const s=cgweb094cNode("cgweb094cBatchStatus");
+  const p=cgweb094cNode("cgweb094cBatchPercent");
+  const b=cgweb094cNode("cgweb094cBatchProgress");
+  if(s)s.textContent=text;
+  if(pct!=null){
+    const n=Math.max(0,Math.min(100,Number(pct)||0));
+    if(p)p.textContent=`${Math.round(n)} %`;
+    if(b)b.value=n;
+  }
+}
+function cgweb094cButtons(){
+  const n=[...cgweb094cStateByActivity.values()].filter(x=>x?.status==="ELIGIBLE").length;
+  const a=cgweb094cNode("cgweb094cAnalyzeMissing");
+  const g=cgweb094cNode("cgweb094cGenerateAll");
+  const s=cgweb094cNode("cgweb094cStopBatch");
+  if(a)a.disabled=cgweb094cBatchBusy;
+  if(g){
+    g.disabled=cgweb094cBatchBusy||!cgweb094cBatchArmed||n===0;
+    g.textContent=n?`Générer ${n} FIT manquant${n>1?"s":""}`:"Aucun FIT à générer";
+  }
+  if(s)s.disabled=!cgweb094cBatchBusy;
+}
+async function cgweb094cRefresh(explicit=false){
+  const api=await cgweb094cApi();
+  const ids=cgweb094cIds();
+  const next=new Map();
+  for(let i=0;i<ids.length;i+=CGWEB094C_PLAN_CHUNK){
+    const x=await api.plan(ids.slice(i,i+CGWEB094C_PLAN_CHUNK));
+    if(!x?.ok)throw new Error(x?.error||"Dry-run invalide.");
+    for(const row of x.rows||[]){
+      const id=String(row?.activity_id||"").trim();
+      if(id)next.set(id,row);
+    }
+  }
+  cgweb094cStateByActivity=next;
+  if(explicit){
+    cgweb094cBatchArmed=true;
+    const e=[...next.values()].filter(x=>x?.status==="ELIGIBLE").length;
+    const h=[...next.values()].filter(x=>x?.status==="HAS_FIT").length;
+    const i=[...next.values()].filter(x=>x?.status==="INSUFFICIENT").length;
+    cgweb094cBatchStatus(`Dry-run terminé · ${e} à générer · ${h} disponibles · ${i} insuffisants.`,0);
+  }
+  cgweb094cButtons();
+}
+async function cgweb094cAnalyze(){
+  cgweb094cBatchArmed=false;
+  cgweb094cBatchStatus("Analyse des FIT manquants…",0);
+  try{
+    await cgweb094cRefresh(true);
+    updateWebFileVaultSummary();
+    renderWebFileVaultList();
+  }catch(error){
+    cgweb094cBatchStatus(`Analyse impossible : ${error?.message||error}`,0);
+  }
+}
+function cgweb094cApply(x){
+  for(const row of x?.results||[]){
+    const id=String(row?.activity_id||"").trim();
+    if(!id)continue;
+    cgweb094cStateByActivity.set(id,
+      (row?.status==="STORED"||row?.status==="ALREADY_HAS_FIT")
+        ?{activity_id:id,status:"HAS_FIT",eligible:false}
+        :{activity_id:id,status:row?.status||"ERROR",eligible:false,
+          missing:row?.missing||[],error:row?.error||null}
+    );
+  }
+}
+async function cgweb094cGenerateOne(entry,button){
+  const id=cgweb094cId(entry);
+  if(!id||cgweb094cState(entry).status!=="ELIGIBLE")return;
+  const api=await cgweb094cApi();
+  if(button){button.disabled=true;button.textContent="Génération…";}
+  try{
+    const x=await api.generate([id]);
+    cgweb094cApply(x);
+    if(Number(x?.failed||0)>0)throw new Error(x?.results?.[0]?.error||x?.results?.[0]?.status);
+    setMessage(`FIT généré pour l'activité #${id}.`,"success");
+    updateWebFileVaultSummary();renderWebFileVaultList();
+    try{await api.refreshCloud?.();}catch(_){}
+  }catch(error){
+    setMessage(`FIT non généré : ${error?.message||error}`,"error");
+  }
+}
+async function cgweb094cGenerateBatch(){
+  if(cgweb094cBatchBusy||!cgweb094cBatchArmed)return;
+  const ids=[...cgweb094cStateByActivity.values()]
+    .filter(x=>x?.status==="ELIGIBLE").map(x=>String(x.activity_id));
+  if(!ids.length)return;
+  if(!confirm(
+    `Générer ${ids.length} FIT canonique(s) ?\n\n`+
+    "Dry-run effectué. 0 activité modifiée. Aucun FIT existant remplacé."
+  ))return;
+
+  const api=await cgweb094cApi();
+  cgweb094cBatchBusy=true;cgweb094cStopRequested=false;cgweb094cButtons();
+  let done=0,stored=0,failed=0;
+  try{
+    while(done<ids.length&&!cgweb094cStopRequested){
+      const chunk=ids.slice(done,done+CGWEB094C_BATCH_SIZE);
+      cgweb094cBatchStatus(`Génération ${done+1}–${done+chunk.length}/${ids.length}…`,100*done/ids.length);
+      const x=await api.generate(chunk);
+      cgweb094cApply(x);
+      stored+=Number(x?.stored||0);failed+=Number(x?.failed||0);done+=chunk.length;
+      updateWebFileVaultSummary();renderWebFileVaultList();
+      cgweb094cBatchStatus(`Lot terminé · ${done}/${ids.length} · ${stored} stockés · ${failed} erreurs.`,100*done/ids.length);
+      if(Number(x?.failed||0)>0)cgweb094cStopRequested=true;
+    }
+    await cgweb094cRefresh(false);
+    cgweb094cBatchArmed=false;
+    cgweb094cBatchStatus(
+      `${cgweb094cStopRequested?"Arrêt propre":"Terminé"} · ${stored} FIT stockés · ${failed} erreurs.`,
+      ids.length?100*done/ids.length:100
+    );
+    updateWebFileVaultSummary();renderWebFileVaultList();
+    try{await api.refreshCloud?.();}catch(_){}
+  }finally{
+    cgweb094cBatchBusy=false;cgweb094cButtons();
+  }
+}
+function cgweb094cStop(){cgweb094cStopRequested=true;cgweb094cBatchStatus("Arrêt demandé · fin du lot en cours.",null);}
+function cgweb094cWire(){
+  const a=cgweb094cNode("cgweb094cAnalyzeMissing");
+  const g=cgweb094cNode("cgweb094cGenerateAll");
+  const s=cgweb094cNode("cgweb094cStopBatch");
+  if(a&&a.dataset.c094c!=="1"){a.dataset.c094c="1";a.addEventListener("click",()=>void cgweb094cAnalyze());}
+  if(g&&g.dataset.c094c!=="1"){g.dataset.c094c="1";g.addEventListener("click",()=>void cgweb094cGenerateBatch());}
+  if(s&&s.dataset.c094c!=="1"){s.dataset.c094c="1";s.addEventListener("click",cgweb094cStop);}
+  cgweb094cButtons();
+}
+/* CGWEB094C_LOCAL_VAULT_HELPERS_END */
+
 function webFileEntryMatchesFilter(entry) {
-  const filter=ui.webFilesFilter?.value || "all";
-  if (filter==="originals" && entry.kind!=="original") return false;
-  if (filter==="derived" && entry.kind!=="derived") return false;
-  if (filter==="unlinked" && (entry.linkedActivities?.length || 0)>0) return false;
+  const filter=ui.webFilesFilter?.value||"all";
+  const state=cgweb094cState(entry);
+  if(filter==="originals"&&entry.kind!=="original")return false;
+  if(filter==="derived"&&entry.kind!=="derived")return false;
+  if(filter==="unlinked"&&(entry.kind!=="original"||(entry.linkedActivities?.length||0)>0))return false;
+  if(filter==="missing"&&!(entry.kind==="derived"&&state.status==="ELIGIBLE"))return false;
+  if(filter==="available"&&!(entry.kind==="derived"&&state.status==="HAS_FIT"))return false;
+  if(filter==="insufficient"&&!(entry.kind==="derived"&&
+    ["INSUFFICIENT","ACTIVITY_MISSING","ACTIVITY_DELETED","ERROR"].includes(state.status)))return false;
   const search=String(ui.webFilesSearch?.value||"").trim().toLowerCase();
-  return !search || webFileEntrySearchText(entry).includes(search);
+  return !search||webFileEntrySearchText(entry).includes(search);
 }
 
 function updateWebFileVaultSummary() {
@@ -14500,79 +14678,96 @@ function webFileOriginalCard(entry) {
 }
 
 function webFileDerivedCard(entry) {
-  const activity=entry.activity;
-  const parent=entry.parent;
+  const activity=entry.activity,parent=entry.parent,state=cgweb094cState(entry);
   const card=document.createElement("article");
-  card.className="web-file-card derived";
+  card.className="web-file-card derived "+
+    (state.status==="ELIGIBLE"?"cgweb094c-missing":
+     state.status==="HAS_FIT"?"cgweb094c-available":"cgweb094c-insufficient");
+  const missing=Array.isArray(state?.missing)&&state.missing.length
+    ?` · manque ${state.missing.join(", ")}`:"";
   card.innerHTML=`
     <div class="web-file-card-head">
       <div>
         <span class="pill pending">Dérivé</span>
         <strong>${escapeHtml(entry.file_name)}</strong>
-        <small>${escapeHtml(formatDateLong(activity.start_time_ms))} · ${escapeHtml(formatDistance(activity.distance_m))}</small>
+        <small>${escapeHtml(formatDateLong(activity.start_time_ms))} ·
+        ${escapeHtml(formatDistance(activity.distance_m))}</small>
       </div>
-      <span class="pill neutral">FIT non généré</span>
+      <span class="pill ${cgweb094cStatusClass(state)}">${escapeHtml(cgweb094cStatusText(state))}</span>
     </div>
     <div class="web-file-link-summary">
-      <span>Activité dérivée #${escapeHtml(String(activityKey(activity)))}</span>
-      <span>${parent?`Source #${escapeHtml(String(activityKey(parent)))}${parent.source_sha256?" · original localisable par SHA":""}`:"Source non chargée"}</span>
+      <span>Activité #${escapeHtml(String(activityKey(activity)))}</span>
+      <span>${parent?`Source #${escapeHtml(String(activityKey(parent)))}`:"Source non chargée"}${missing?escapeHtml(missing):""}</span>
     </div>
     <div class="web-file-actions">
-      <button class="secondary web-file-open" type="button">Ouvrir activité</button>
-      ${parent?'<button class="secondary web-file-open-source" type="button">Ouvrir source</button>':""}
+      ${state.status==="ELIGIBLE"
+        ?'<button class="primary compact cgweb094c-generate-one" type="button">Générer le FIT</button>':""}
+      <button class="secondary compact web-file-open" type="button">Ouvrir</button>
+      ${parent?'<button class="secondary compact web-file-open-source" type="button">Source</button>':""}
     </div>`;
+  card.querySelector(".cgweb094c-generate-one")?.addEventListener(
+    "click",(e)=>void cgweb094cGenerateOne(entry,e.currentTarget)
+  );
   card.querySelector(".web-file-open")?.addEventListener("click",()=>showActivity(activity));
-  card.querySelector(".web-file-open-source")?.addEventListener("click",()=>{ if (parent) showActivity(parent); });
+  card.querySelector(".web-file-open-source")?.addEventListener("click",()=>{if(parent)showActivity(parent);});
   return card;
 }
 
 function renderWebFileVaultList() {
-  if (!ui.webFilesList) return;
+  if(!ui.webFilesList)return;
   ui.webFilesList.innerHTML="";
-  const rows=webFileVaultEntries
-    .filter(webFileEntryMatchesFilter)
+  const rows=webFileVaultEntries.filter(webFileEntryMatchesFilter)
     .sort((a,b)=>webFileEntryDate(b)-webFileEntryDate(a));
-
-  if (!rows.length) {
-    ui.webFilesList.innerHTML='<div class="web-files-empty">Aucun fichier correspondant.</div>';
+  if(!rows.length){
+    ui.webFilesList.innerHTML='<div class="web-files-empty">Aucune entrée correspondante.</div>';
     return;
   }
-
-  rows.forEach((entry)=>{
-    ui.webFilesList.appendChild(entry.kind==="original"
-      ? webFileOriginalCard(entry)
-      : webFileDerivedCard(entry));
-  });
+  const visible=rows.slice(0,cgweb094cDisplayLimit);
+  for(const entry of visible){
+    ui.webFilesList.appendChild(entry.kind==="original"?webFileOriginalCard(entry):webFileDerivedCard(entry));
+  }
+  if(visible.length<rows.length){
+    const wrap=document.createElement("div");wrap.className="cgweb094c-more";
+    const btn=document.createElement("button");btn.type="button";btn.className="secondary";
+    btn.textContent=`Afficher ${Math.min(100,rows.length-visible.length)} de plus (${visible.length}/${rows.length})`;
+    btn.addEventListener("click",()=>{cgweb094cDisplayLimit+=100;renderWebFileVaultList();});
+    wrap.appendChild(btn);ui.webFilesList.appendChild(wrap);
+  }
 }
 
 async function renderWebFileVault(force=false) {
-  if (!ui.webFilesSection || webFileVaultLoading) return;
-  if (webFileVaultEntries.length && !force) {
-    updateWebFileVaultSummary();
-    renderWebFileVaultList();
-    restoreWebDriveState();
-    return;
+  if(!ui.webFilesSection||webFileVaultLoading)return;
+  cgweb094cWire();
+
+  if(webFileVaultEntries.length&&!force){
+    updateWebFileVaultSummary();renderWebFileVaultList();restoreWebDriveState();return;
   }
 
   webFileVaultLoading=true;
   ui.webFilesStatus.textContent="Lecture du coffre local…";
-  try {
+  try{
     webFileVaultEntries=await buildWebFileVaultEntries();
+    try{await cgweb094cRefresh(false);}catch(error){console.warn("CGWEB094C plan",error);}
     updateWebFileVaultSummary();
-    renderWebFileVaultList();
-    restoreWebDriveState();
 
-    const originals=webFileVaultEntries.filter((entry)=>entry.kind==="original").length;
-    const derived=webFileVaultEntries.filter((entry)=>entry.kind==="derived").length;
+    const states=webFileVaultEntries.filter(x=>x.kind==="derived").map(cgweb094cState);
+    const missing=states.filter(x=>x.status==="ELIGIBLE").length;
+    const available=states.filter(x=>x.status==="HAS_FIT").length;
+    const insufficient=states.filter(x=>["INSUFFICIENT","ACTIVITY_MISSING","ACTIVITY_DELETED","ERROR"].includes(x.status)).length;
+    if(ui.webFilesDerivedCount)ui.webFilesDerivedCount.textContent=formatNumber(missing);
+
+    renderWebFileVaultList();restoreWebDriveState();cgweb094cWire();
+    const originals=webFileVaultEntries.filter(x=>x.kind==="original").length;
     ui.webFilesStatus.textContent=
-      `${originals} original(aux) FIT dans ce navigateur · ${derived} activité(s) dérivée(s) sans nouveau FIT binaire.`;
-  } catch (error) {
+      `${originals} original(aux) locaux · ${available} FIT disponible(s) · `+
+      `${missing} FIT à générer · ${insufficient} non générable(s).`;
+  }catch(error){
     console.error(error);
     ui.webFilesStatus.textContent=`Coffre indisponible : ${error?.message||error}`;
-  } finally {
-    webFileVaultLoading=false;
-  }
+  }finally{webFileVaultLoading=false;}
 }
+
+
 
 // -----------------------------------------------------------------------------
 // WEB044 · WEBSPLIT003 — découpe automatique prioritaire + secours manuel + reconstruction

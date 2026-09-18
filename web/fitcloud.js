@@ -5165,6 +5165,32 @@ queueMicrotask(c091Wire);
 /* CGWEB091_FIT_RECONCILE_RESOLVE001_WEB_END */
 
 
+
+/* CGWEB094C_MISSING_FIT_CLIENT_START */
+async function c094cMissingFitPlan(activityIds=[]){
+  const ids=[...new Set((Array.isArray(activityIds)?activityIds:[])
+    .map(x=>String(x??"").trim()).filter(Boolean))].slice(0,500);
+  return request("missing_fit_plan",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({activity_ids:ids})
+  });
+}
+async function c094cMissingFitGenerate(activityIds=[]){
+  const ids=[...new Set((Array.isArray(activityIds)?activityIds:[])
+    .map(x=>String(x??"").trim()).filter(Boolean))].slice(0,50);
+  return request("missing_fit_generate",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({activity_ids:ids})
+  });
+}
+window.SPORT_MISSING_FIT=Object.freeze({
+  version:"CGWEB094C-MISSING_FIT_GENERATE001-MISSING_FIT_BATCH001",
+  plan:c094cMissingFitPlan,
+  generate:c094cMissingFitGenerate,
+  refreshCloud:async()=>{try{await renderCloud();}catch(error){console.warn(error);}}
+});
+/* CGWEB094C_MISSING_FIT_CLIENT_END */
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
