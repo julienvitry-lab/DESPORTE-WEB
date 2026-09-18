@@ -5839,6 +5839,29 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 }
 </style>
 
+
+<style id="cgweb095-global-fit-css">
+#cgweb095GlobalFitCoverage{display:grid;gap:14px}
+#cgweb095GlobalFitCoverage .section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+#cgweb095GlobalFitCoverage .section-heading>div{min-width:0}
+#cgweb095GlobalFitCoverage h2{margin:0}
+#cgweb095GlobalFitCoverage .eyebrow{margin:0 0 4px}
+.cgweb095-summary{display:grid;grid-template-columns:repeat(4,minmax(145px,1fr));gap:8px}
+.cgweb095-summary article{min-width:0;min-height:74px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:10px 12px;border:1px solid rgba(190,255,55,.20);border-radius:14px;background:rgba(255,255,255,.025)}
+.cgweb095-summary article span{font-size:.84rem;opacity:.78}
+.cgweb095-summary article strong{font-size:1.28rem}
+.cgweb095-actions{display:flex;flex-wrap:wrap;gap:8px}
+.cgweb095-progress-line{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#cgweb095Progress{width:100%;height:8px}
+.cgweb095-list{display:grid;gap:6px;padding:8px 0 2px}
+.cgweb095-row{display:grid;gap:2px;padding:8px 10px;border:1px solid rgba(255,255,255,.08);border-radius:10px}
+.cgweb095-row strong{overflow-wrap:anywhere}
+.cgweb095-row small{opacity:.72}
+.cgweb095-safety{margin:0}
+@media(max-width:950px){.cgweb095-summary{grid-template-columns:repeat(2,minmax(130px,1fr))}}
+@media(max-width:700px){#cgweb095GlobalFitCoverage .section-heading{flex-direction:column}.cgweb095-actions{display:grid;grid-template-columns:1fr}.cgweb095-actions button{width:100%}}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -6865,7 +6888,79 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
             </div>
             <p class="map-help">Accès limité aux fichiers créés par SPORT via le scope Google <code>drive.file</code>. Le FIT local reste conservé ; Drive constitue une seconde copie.</p>
           </section>
-        </section>
+
+
+<!-- CGWEB095_GLOBAL_FIT_HTML_START -->
+<section id="cgweb095GlobalFitCoverage"
+         class="panel cgweb095-global-fit">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">
+        CGWEB095 · GLOBAL_FIT_COVERAGE001 /
+        ORIGINAL_FIRST_BACKFILL001 /
+        MISSING_FIT_GLOBAL_BATCH001
+      </p>
+      <h2>Couverture FIT globale</h2>
+      <p class="muted">
+        Toutes les activités sont contrôlées.
+        Priorité aux FIT originaux déjà fournis ;
+        un FIT canonique n'est généré qu'en l'absence
+        de tout FIT lié à l'activité.
+      </p>
+    </div>
+    <span id="cgweb095CoveragePill"
+          class="pill neutral">
+      Non analysé
+    </span>
+  </div>
+
+  <div class="cgweb095-summary">
+    <article><span>Activités actives</span><strong id="cgweb095Active">—</strong></article>
+    <article><span>Avec FIT</span><strong id="cgweb095WithFit">—</strong></article>
+    <article><span>Avec original</span><strong id="cgweb095WithOriginal">—</strong></article>
+    <article><span>Canonique seul</span><strong id="cgweb095CanonicalOnly">—</strong></article>
+    <article><span>Sans FIT</span><strong id="cgweb095WithoutFit">—</strong></article>
+    <article><span>Générables</span><strong id="cgweb095Eligible">—</strong></article>
+    <article><span>Non générables</span><strong id="cgweb095Insufficient">—</strong></article>
+    <article><span>Originaux SAFE à rattacher</span><strong id="cgweb095SafeOriginals">—</strong></article>
+  </div>
+
+  <div class="cgweb095-actions">
+    <button id="cgweb095Analyze" type="button" class="secondary">Analyser la couverture globale</button>
+    <button id="cgweb095ApplyOriginals" type="button" class="secondary" disabled>Rattacher les originaux sûrs</button>
+    <button id="cgweb095RunBatch" type="button" class="primary" disabled>Compléter en masse tous les FIT manquants</button>
+    <button id="cgweb095Stop" type="button" class="secondary" disabled>Arrêter après le lot en cours</button>
+  </div>
+
+  <div class="cgweb095-progress-line">
+    <span id="cgweb095Status" class="muted">Analyse globale requise avant toute écriture.</span>
+    <strong id="cgweb095Percent">0 %</strong>
+  </div>
+  <progress id="cgweb095Progress" max="100" value="0"></progress>
+
+  <details id="cgweb095NoFitDetails">
+    <summary>Activités encore sans FIT</summary>
+    <div id="cgweb095NoFitList" class="cgweb095-list muted">Analyse non lancée.</div>
+  </details>
+
+  <details id="cgweb095InsufficientDetails">
+    <summary>Activités non générables automatiquement</summary>
+    <div id="cgweb095InsufficientList" class="cgweb095-list muted">Analyse non lancée.</div>
+  </details>
+
+  <details id="cgweb095CanonicalDetails">
+    <summary>Activités avec FIT canonique mais sans original lié</summary>
+    <div id="cgweb095CanonicalList" class="cgweb095-list muted">Analyse non lancée.</div>
+  </details>
+
+  <p class="muted cgweb095-safety">
+    Sécurité : aucune activité n'est créée, supprimée ou modifiée.
+    Aucun FIT existant n'est remplacé.
+  </p>
+</section>
+<!-- CGWEB095_GLOBAL_FIT_HTML_END -->
+
+</section>
 
         <section id="webManualSection" class="panel web-manual-panel hidden">
           <div class="panel-title-row">
@@ -7976,7 +8071,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB094C-FIX6-VAULT-AUTOREFRESH001"></script>
+  <script type="module" src="./app.js?v=CGWEB095-GLOBAL-FIT-COVERAGE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

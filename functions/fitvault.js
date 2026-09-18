@@ -4446,6 +4446,626 @@ async function c091TransferAudit(uid) {
 
   /* CGWEB094_SAFE_APPLY001_HELPERS_END */
 
+
+  /* CGWEB095_GLOBAL_FIT_HELPERS_START */
+
+  function c095Strings(values) {
+    return [...new Set(
+      (Array.isArray(values) ? values : [])
+        .map((x) => String(x ?? "").trim())
+        .filter(Boolean)
+    )];
+  }
+
+  function c095Hash(value) {
+    return require("crypto")
+      .createHash("sha256")
+      .update(String(value ?? ""), "utf8")
+      .digest("hex");
+  }
+
+  function c095Title(row, id) {
+    return String(
+      row?.custom_title ||
+      row?.name ||
+      row?.title ||
+      `Activité #${id}`
+    ).trim();
+  }
+
+  function c095TimeMs(row) {
+    const values = [
+      row?.start_time_ms,
+      row?.startTimeMs,
+      row?.start_date_ms,
+      row?.startDateMs,
+      row?.start_time,
+      row?.start_date
+    ];
+
+    for (const raw of values) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+
+    return null;
+  }
+
+  async function c095Coverage(uid) {
+    const states = new Map();
+
+    const activityQuery =
+      db.collection(`${ROOT}/${uid}/activities`);
+
+    for await (const snap of activityQuery.stream()) {
+      const row = snap.data() || {};
+
+      if (row.deleted_at_ms != null) continue;
+
+      const activityId = String(snap.id);
+      const core = v088Core(row);
+
+      states.set(activityId, {
+        activity_id: activityId,
+        title: c095Title(row, activityId),
+        start_time_ms: c095TimeMs(row),
+        source: String(row.source || row.import_source || ""),
+        any_fit: false,
+        original: false,
+        canonical: false,
+        edited: false,
+        fit_count: 0,
+        original_count: 0,
+        canonical_count: 0,
+        core_ok: Boolean(core?.ok),
+        core_missing: Array.isArray(core?.missing)
+          ? core.missing.map((x) => String(x))
+          : []
+      });
+    }
+
+    const fitQuery =
+      files(uid).select(
+        "activity_id",
+        "sha256",
+        "file_id",
+        "file_name",
+        "source",
+        "upload_mode",
+        "archive_roles",
+        "fitwriter_version",
+        "fitrecovery_version",
+        "fitbackfill_version",
+        "recovery_is_canonical",
+        "fitversion_version",
+        "fit_editor_version",
+        "version_index",
+        "version_kind",
+        "deleted_at_ms"
+      );
+
+    let fitFilesActive = 0;
+    let linkedFitFiles = 0;
+    let unlinkedFitFiles = 0;
+    let danglingFitFiles = 0;
+
+    for await (const snap of fitQuery.stream()) {
+      const row = snap.data() || {};
+
+      if (row.deleted_at_ms != null) continue;
+
+      fitFilesActive += 1;
+
+      const activityId =
+        String(row.activity_id || "").trim();
+
+      if (!activityId) {
+        unlinkedFitFiles += 1;
+        continue;
+      }
+
+      const state = states.get(activityId);
+
+      if (!state) {
+        danglingFitFiles += 1;
+        continue;
+      }
+
+      linkedFitFiles += 1;
+      state.any_fit = true;
+      state.fit_count += 1;
+
+      const roles = c090Roles(row);
+      const hasOriginal =
+        roles.some(c090IsOriginalRole);
+      const hasCanonical =
+        roles.some(c090IsCanonicalRole);
+
+      if (hasOriginal) {
+        state.original = true;
+        state.original_count += 1;
+      }
+
+      if (hasCanonical) {
+        state.canonical = true;
+        state.canonical_count += 1;
+      }
+
+      if (
+        roles.includes("EDITED") ||
+        roles.includes("VERSIONED_EDITED")
+      ) {
+        state.edited = true;
+      }
+    }
+
+    let withAny = 0;
+    let withOriginal = 0;
+    let canonicalOnly = 0;
+    let originalOnly = 0;
+    let withBoth = 0;
+    let withoutFit = 0;
+    let withoutFitEligible = 0;
+    let withoutFitInsufficient = 0;
+
+    const eligibleIds = [];
+    const insufficientIds = [];
+    const noFitExamples = [];
+    const insufficientExamples = [];
+    const canonicalOnlyExamples = [];
+
+    for (const state of states.values()) {
+      if (state.any_fit) {
+        withAny += 1;
+
+        if (state.original) {
+          withOriginal += 1;
+        }
+
+        if (state.original && state.canonical) {
+          withBoth += 1;
+        } else if (state.original) {
+          originalOnly += 1;
+        } else if (state.canonical) {
+          canonicalOnly += 1;
+
+          if (canonicalOnlyExamples.length < 40) {
+            canonicalOnlyExamples.push({
+              activity_id: state.activity_id,
+              title: state.title,
+              start_time_ms: state.start_time_ms,
+              fit_count: state.fit_count,
+              canonical_count: state.canonical_count
+            });
+          }
+        }
+
+        continue;
+      }
+
+      withoutFit += 1;
+
+      const example = {
+        activity_id: state.activity_id,
+        title: state.title,
+        start_time_ms: state.start_time_ms,
+        source: state.source,
+        missing: state.core_missing
+      };
+
+      if (state.core_ok) {
+        withoutFitEligible += 1;
+        eligibleIds.push(state.activity_id);
+
+        if (noFitExamples.length < 80) {
+          noFitExamples.push(example);
+        }
+      } else {
+        withoutFitInsufficient += 1;
+        insufficientIds.push(state.activity_id);
+
+        if (insufficientExamples.length < 80) {
+          insufficientExamples.push(example);
+        }
+      }
+    }
+
+    eligibleIds.sort((a, b) =>
+      String(a).localeCompare(String(b))
+    );
+
+    insufficientIds.sort((a, b) =>
+      String(a).localeCompare(String(b))
+    );
+
+    return {
+      summary: {
+        activities_active: states.size,
+        activities_with_any_fit: withAny,
+        activities_without_fit: withoutFit,
+        activities_with_original: withOriginal,
+        activities_canonical_only: canonicalOnly,
+        activities_original_only: originalOnly,
+        activities_with_both: withBoth,
+        activities_without_fit_eligible:
+          withoutFitEligible,
+        activities_without_fit_insufficient:
+          withoutFitInsufficient,
+        fit_files_active: fitFilesActive,
+        linked_fit_files: linkedFitFiles,
+        unlinked_fit_files: unlinkedFitFiles,
+        dangling_fit_files: danglingFitFiles,
+        coverage_pct: states.size
+          ? Math.round(
+              (withAny / states.size) * 100000
+            ) / 1000
+          : 100
+      },
+      eligible_ids: eligibleIds,
+      insufficient_ids: insufficientIds,
+      examples: {
+        no_fit_eligible: noFitExamples,
+        no_fit_insufficient: insufficientExamples,
+        canonical_only: canonicalOnlyExamples
+      }
+    };
+  }
+
+  function c095SafePairs(writePlan) {
+    return (writePlan?.safe_rows || [])
+      .map((row) => ({
+        sha256:
+          String(row?.sha256 || "")
+            .trim()
+            .toLowerCase(),
+        activity_id:
+          String(row?.activity_id || "").trim()
+      }))
+      .filter(
+        (row) =>
+          /^[a-f0-9]{64}$/.test(row.sha256) &&
+          row.activity_id
+      )
+      .sort((a, b) =>
+        `${a.sha256}|${a.activity_id}`
+          .localeCompare(
+            `${b.sha256}|${b.activity_id}`
+          )
+      );
+  }
+
+  function c095PlanToken(coverage, writePlan) {
+    const payload = {
+      active:
+        Number(
+          coverage?.summary?.activities_active || 0
+        ),
+      with_fit:
+        Number(
+          coverage?.summary
+            ?.activities_with_any_fit || 0
+        ),
+      eligible:
+        c095Strings(
+          coverage?.eligible_ids || []
+        ).sort(),
+      insufficient:
+        c095Strings(
+          coverage?.insufficient_ids || []
+        ).sort(),
+      safe_pairs:
+        c095SafePairs(writePlan),
+      rejected_safe:
+        (writePlan?.rejected_safe_rows || [])
+          .map((row) => ({
+            sha256:
+              String(row?.sha256 || "")
+                .trim()
+                .toLowerCase(),
+            activity_id:
+              String(row?.activity_id || "")
+                .trim(),
+            reason:
+              String(row?.reason || "")
+          }))
+          .sort((a, b) =>
+            JSON.stringify(a)
+              .localeCompare(JSON.stringify(b))
+          )
+    };
+
+    return c095Hash(JSON.stringify(payload));
+  }
+
+  async function c095BuildPlan(uid) {
+    const [coverage, writePlan] =
+      await Promise.all([
+        c095Coverage(uid),
+        c094BuildWritePlan(uid)
+      ]);
+
+    const safePairs = c095SafePairs(writePlan);
+    const rejected =
+      writePlan?.rejected_safe_rows || [];
+
+    return {
+      coverage,
+      write_plan: writePlan,
+      safe_pairs: safePairs,
+      safe_original_count: safePairs.length,
+      rejected_safe_count: rejected.length,
+      rejected_safe_rows: rejected.slice(0, 40),
+      orphan_original_count:
+        Number(
+          writePlan?.orphan_rows?.length || 0
+        ),
+      plan_token:
+        c095PlanToken(coverage, writePlan)
+    };
+  }
+
+  function c095PublicPlan(plan) {
+    return {
+      plan_token: plan.plan_token,
+      safe_original_count:
+        plan.safe_original_count,
+      rejected_safe_count:
+        plan.rejected_safe_count,
+      orphan_original_count:
+        plan.orphan_original_count,
+      rejected_safe_rows:
+        plan.rejected_safe_rows,
+      coverage: {
+        summary: plan.coverage.summary,
+        examples: plan.coverage.examples
+      },
+      invariants: {
+        original_first: true,
+        activities_created: 0,
+        activities_modified: 0,
+        existing_fit_replaced: 0,
+        original_link_writes:
+          "activity_files metadata only",
+        generated_fit_writes:
+          "new canonical FIT only for active activities without any linked FIT"
+      }
+    };
+  }
+
+  function c095VerifyToken(body, plan) {
+    const supplied =
+      String(body?.plan_token || "").trim();
+
+    if (!supplied) {
+      throw Object.assign(
+        new Error(
+          "plan_token absent : relancer l’analyse globale."
+        ),
+        {status: 400}
+      );
+    }
+
+    if (supplied !== plan.plan_token) {
+      throw Object.assign(
+        new Error(
+          "Le plan global a changé. Relancer l’analyse avant toute écriture."
+        ),
+        {
+          status: 409,
+          expected_plan_token:
+            plan.plan_token
+        }
+      );
+    }
+  }
+
+  async function c095ApplySafeOriginals(
+    uid,
+    plan
+  ) {
+    if (!plan.safe_original_count) {
+      return {
+        attempted: 0,
+        applied: 0,
+        blocked: false,
+        rejected_safe_count:
+          plan.rejected_safe_count
+      };
+    }
+
+    if (plan.rejected_safe_count > 0) {
+      return {
+        attempted:
+          plan.safe_original_count,
+        applied: 0,
+        blocked: true,
+        rejected_safe_count:
+          plan.rejected_safe_count,
+        reason:
+          "Le plan SAFE contient des cibles rejetées ; aucun rattachement original automatique n'est effectué."
+      };
+    }
+
+    const result =
+      await c094SafeApply(
+        uid,
+        {
+          confirm:
+            "APPLY_SAFE_EXACT",
+          expected_pairs:
+            plan.safe_pairs
+        }
+      );
+
+    return {
+      attempted:
+        plan.safe_original_count,
+      applied:
+        Number(result?.modified || 0),
+      blocked: false,
+      rejected_safe_count: 0,
+      result
+    };
+  }
+
+  async function c095Map(
+    items,
+    worker,
+    concurrency = 2
+  ) {
+    const out = new Array(items.length);
+    let cursor = 0;
+
+    async function run() {
+      while (true) {
+        const i = cursor++;
+        if (i >= items.length) return;
+
+        try {
+          out[i] = await worker(items[i]);
+        } catch (error) {
+          out[i] = {
+            ok: false,
+            activity_id:
+              String(items[i] || ""),
+            status: "ERROR",
+            error:
+              error?.message || String(error)
+          };
+        }
+      }
+    }
+
+    await Promise.all(
+      Array.from(
+        {
+          length:
+            Math.min(
+              Math.max(1, concurrency),
+              Math.max(1, items.length)
+            )
+        },
+        () => run()
+      )
+    );
+
+    return out;
+  }
+
+  async function c095GenerateChunk(
+    uid,
+    ids
+  ) {
+    const unique =
+      c095Strings(ids).slice(0, 50);
+
+    const results =
+      await c095Map(
+        unique,
+        async (activityId) => {
+          const linked =
+            await files(uid)
+              .where(
+                "activity_id",
+                "==",
+                activityId
+              )
+              .limit(4)
+              .get();
+
+          const active =
+            linked.docs.some(
+              (doc) =>
+                (doc.data() || {})
+                  .deleted_at_ms == null
+            );
+
+          if (active) {
+            return {
+              ok: true,
+              activity_id: activityId,
+              status:
+                "ALREADY_HAS_FIT",
+              stored: false
+            };
+          }
+
+          const snap =
+            await db.doc(
+              `${ROOT}/${uid}/activities/${activityId}`
+            ).get();
+
+          if (!snap.exists) {
+            return {
+              ok: false,
+              activity_id: activityId,
+              status:
+                "ACTIVITY_MISSING",
+              stored: false
+            };
+          }
+
+          const row = snap.data() || {};
+
+          if (row.deleted_at_ms != null) {
+            return {
+              ok: false,
+              activity_id: activityId,
+              status:
+                "ACTIVITY_DELETED",
+              stored: false
+            };
+          }
+
+          const core = v088Core(row);
+
+          if (!core?.ok) {
+            return {
+              ok: false,
+              activity_id: activityId,
+              status:
+                "INSUFFICIENT",
+              stored: false,
+              missing:
+                core?.missing || []
+            };
+          }
+
+          return v088RecoverOne(
+            uid,
+            {
+              activity_id:
+                activityId
+            }
+          );
+        },
+        2
+      );
+
+    return {
+      requested: unique.length,
+      stored:
+        results.filter(
+          (row) =>
+            row?.status === "STORED"
+        ).length,
+      already_present:
+        results.filter(
+          (row) =>
+            row?.status ===
+            "ALREADY_HAS_FIT"
+        ).length,
+      failed:
+        results.filter(
+          (row) =>
+            row?.ok === false
+        ).length,
+      results
+    };
+  }
+
+  /* CGWEB095_GLOBAL_FIT_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -5949,6 +6569,209 @@ if (action === "transfer_audit") {
           });
         }
         /* CGWEB094C_MISSING_FIT_BACKEND_END */
+
+
+        /* CGWEB095_GLOBAL_FIT_ACTIONS_START */
+
+        if (action === "global_fit_plan") {
+          if (
+            req.method !== "GET" &&
+            req.method !== "POST"
+          ) {
+            return res.status(405).json({
+              error: "GET ou POST requis."
+            });
+          }
+
+          const plan =
+            await c095BuildPlan(uid);
+
+          return res.json({
+            ok: true,
+            service:
+              "GLOBAL_FIT_COVERAGE001",
+            version: "CGWEB095",
+            dry_run: true,
+            ...c095PublicPlan(plan)
+          });
+        }
+
+        if (
+          action ===
+          "original_first_backfill"
+        ) {
+          if (req.method !== "POST") {
+            return res.status(405).json({
+              error: "POST requis."
+            });
+          }
+
+          let body = req.body;
+
+          if (Buffer.isBuffer(body)) {
+            try {
+              body =
+                JSON.parse(
+                  body.toString("utf8")
+                );
+            } catch {
+              body = {};
+            }
+          }
+
+          body =
+            !body ||
+            typeof body !== "object" ||
+            Array.isArray(body)
+              ? {}
+              : body;
+
+          if (
+            String(body.confirm || "") !==
+            "APPLY_ORIGINAL_FIRST"
+          ) {
+            return res.status(400).json({
+              error:
+                "Confirmation APPLY_ORIGINAL_FIRST requise."
+            });
+          }
+
+          const before =
+            await c095BuildPlan(uid);
+
+          c095VerifyToken(body, before);
+
+          const originalResult =
+            await c095ApplySafeOriginals(
+              uid,
+              before
+            );
+
+          const after =
+            await c095BuildPlan(uid);
+
+          return res.json({
+            ok: true,
+            service:
+              "ORIGINAL_FIRST_BACKFILL001",
+            version: "CGWEB095",
+            activities_created: 0,
+            activities_modified: 0,
+            existing_fit_replaced: 0,
+            originals:
+              originalResult,
+            next:
+              c095PublicPlan(after)
+          });
+        }
+
+        if (
+          action ===
+          "missing_fit_global_batch"
+        ) {
+          if (req.method !== "POST") {
+            return res.status(405).json({
+              error: "POST requis."
+            });
+          }
+
+          let body = req.body;
+
+          if (Buffer.isBuffer(body)) {
+            try {
+              body =
+                JSON.parse(
+                  body.toString("utf8")
+                );
+            } catch {
+              body = {};
+            }
+          }
+
+          body =
+            !body ||
+            typeof body !== "object" ||
+            Array.isArray(body)
+              ? {}
+              : body;
+
+          if (
+            String(body.confirm || "") !==
+            "APPLY_GLOBAL_FIT_BATCH"
+          ) {
+            return res.status(400).json({
+              error:
+                "Confirmation APPLY_GLOBAL_FIT_BATCH requise."
+            });
+          }
+
+          const before =
+            await c095BuildPlan(uid);
+
+          c095VerifyToken(body, before);
+
+          const originalResult =
+            await c095ApplySafeOriginals(
+              uid,
+              before
+            );
+
+          const afterOriginals =
+            await c095Coverage(uid);
+
+          const limit =
+            Math.max(
+              1,
+              Math.min(
+                50,
+                Number(body.limit || 25)
+              )
+            );
+
+          const ids =
+            afterOriginals.eligible_ids
+              .slice(0, limit);
+
+          const generated =
+            await c095GenerateChunk(
+              uid,
+              ids
+            );
+
+          const after =
+            await c095BuildPlan(uid);
+
+          const remaining =
+            Number(
+              after.coverage.summary
+                .activities_without_fit_eligible ||
+              0
+            );
+
+          return res.json({
+            ok:
+              Number(generated.failed || 0) ===
+              0,
+            service:
+              "MISSING_FIT_GLOBAL_BATCH001",
+            version: "CGWEB095",
+            activities_created: 0,
+            activities_modified: 0,
+            existing_fit_replaced: 0,
+            originals:
+              originalResult,
+            generation:
+              generated,
+            remaining_eligible:
+              remaining,
+            done:
+              remaining === 0,
+            next:
+              c095PublicPlan(after)
+          });
+        }
+
+        /* CGWEB095_GLOBAL_FIT_ACTIONS_END */
 
         if (action === "upload") {
           if (req.method !== "POST") return res.status(405).json({error: "POST requis."});

@@ -24724,3 +24724,113 @@ if (document.readyState === "loading") {
 }
 
 /* CGWEB089_FILES_REORGANIZE001_END */
+
+/* CGWEB095_GLOBAL_FIT_UI_START */
+
+const CGWEB095_BATCH_SIZE=25;
+let cgweb095Plan=null;
+let cgweb095Busy=false;
+let cgweb095StopRequested=false;
+
+function cgweb095Node(id){return document.getElementById(id)}
+function cgweb095Num(value){const n=Number(value);return Number.isFinite(n)?n:0}
+function cgweb095FormatPct(value){const n=cgweb095Num(value);return `${n.toFixed(Math.abs(n-Math.round(n))<0.001?0:1)} %`}
+function cgweb095Date(ms){const n=Number(ms);if(!Number.isFinite(n)||n<=0)return "";try{return new Date(n).toLocaleString("fr-FR")}catch(_){return ""}}
+function cgweb095Api(){if(window.SPORT_GLOBAL_FIT)return window.SPORT_GLOBAL_FIT;throw new Error("Service SPORT_GLOBAL_FIT non chargé.")}
+
+function cgweb095Status(text,percent=null){
+  const status=cgweb095Node("cgweb095Status");
+  const progress=cgweb095Node("cgweb095Progress");
+  const pct=cgweb095Node("cgweb095Percent");
+  if(status)status.textContent=String(text||"");
+  if(percent!=null){const value=Math.max(0,Math.min(100,Number(percent)||0));if(progress)progress.value=value;if(pct)pct.textContent=`${Math.round(value)} %`}
+}
+
+function cgweb095Summary(){return cgweb095Plan?.coverage?.summary||{}}
+function cgweb095Set(id,value){const node=cgweb095Node(id);if(node)node.textContent=String(value??"—")}
+
+function cgweb095RenderList(id,rows,emptyText){
+  const host=cgweb095Node(id);if(!host)return;
+  const values=Array.isArray(rows)?rows:[];
+  if(!values.length){host.textContent=emptyText;return}
+  host.replaceChildren();
+  for(const row of values){
+    const item=document.createElement("div");item.className="cgweb095-row";
+    const title=document.createElement("strong");title.textContent=`${row?.title||"Activité"} · #${row?.activity_id||"?"}`;
+    const meta=document.createElement("small");const pieces=[];const date=cgweb095Date(row?.start_time_ms);if(date)pieces.push(date);if(row?.source)pieces.push(`source ${row.source}`);if(Array.isArray(row?.missing)&&row.missing.length)pieces.push(`manque : ${row.missing.join(", ")}`);if(row?.fit_count!=null)pieces.push(`${row.fit_count} FIT lié(s)`);meta.textContent=pieces.join(" · ");item.append(title,meta);host.appendChild(item)
+  }
+}
+
+function cgweb095RenderPlan(){
+  const s=cgweb095Summary();
+  cgweb095Set("cgweb095Active",s.activities_active??"—");
+  cgweb095Set("cgweb095WithFit",s.activities_with_any_fit??"—");
+  cgweb095Set("cgweb095WithOriginal",s.activities_with_original??"—");
+  cgweb095Set("cgweb095CanonicalOnly",s.activities_canonical_only??"—");
+  cgweb095Set("cgweb095WithoutFit",s.activities_without_fit??"—");
+  cgweb095Set("cgweb095Eligible",s.activities_without_fit_eligible??"—");
+  cgweb095Set("cgweb095Insufficient",s.activities_without_fit_insufficient??"—");
+  cgweb095Set("cgweb095SafeOriginals",cgweb095Plan?.safe_original_count??"—");
+  const pill=cgweb095Node("cgweb095CoveragePill");if(pill){if(cgweb095Plan){pill.textContent=cgweb095FormatPct(s.coverage_pct);pill.className=s.activities_without_fit===0?"pill ok":"pill neutral"}else{pill.textContent="Non analysé";pill.className="pill neutral"}}
+  cgweb095RenderList("cgweb095NoFitList",cgweb095Plan?.coverage?.examples?.no_fit_eligible,"Aucune activité générable sans FIT.");
+  cgweb095RenderList("cgweb095InsufficientList",cgweb095Plan?.coverage?.examples?.no_fit_insufficient,"Aucune activité insuffisante.");
+  cgweb095RenderList("cgweb095CanonicalList",cgweb095Plan?.coverage?.examples?.canonical_only,"Aucune activité uniquement canonique.");
+  cgweb095Buttons()
+}
+
+function cgweb095Buttons(){
+  const analyze=cgweb095Node("cgweb095Analyze");const originals=cgweb095Node("cgweb095ApplyOriginals");const batch=cgweb095Node("cgweb095RunBatch");const stop=cgweb095Node("cgweb095Stop");
+  const s=cgweb095Summary();const planned=Boolean(cgweb095Plan?.plan_token);const safeCount=cgweb095Num(cgweb095Plan?.safe_original_count);const rejected=cgweb095Num(cgweb095Plan?.rejected_safe_count);const eligible=cgweb095Num(s.activities_without_fit_eligible);
+  if(analyze)analyze.disabled=cgweb095Busy;
+  if(originals){originals.disabled=cgweb095Busy||!planned||safeCount===0||rejected>0;originals.textContent=safeCount?`Rattacher ${safeCount} original${safeCount>1?"ux":" sûr"}`:"Aucun original SAFE à rattacher"}
+  if(batch){batch.disabled=cgweb095Busy||!planned||(eligible===0&&safeCount===0);batch.textContent=eligible>0?`Compléter en masse ${eligible} activité${eligible>1?"s":""} sans FIT`:safeCount>0?`Rattacher ${safeCount} original${safeCount>1?"ux":""}`:"Couverture complète"}
+  if(stop)stop.disabled=!cgweb095Busy
+}
+
+async function cgweb095Analyze(){
+  if(cgweb095Busy)return;cgweb095Busy=true;cgweb095Plan=null;cgweb095Buttons();cgweb095Status("Analyse globale : activités + coffre FIT + originaux non liés…",0);
+  try{const data=await cgweb095Api().plan();if(!data?.ok)throw new Error(data?.error||"Analyse globale invalide.");cgweb095Plan=data;cgweb095RenderPlan();const s=cgweb095Summary();cgweb095Status(`Analyse terminée · ${s.activities_with_any_fit||0}/${s.activities_active||0} activités avec FIT · ${s.activities_without_fit||0} sans FIT · ${s.activities_without_fit_eligible||0} générables · ${data.safe_original_count||0} original(aux) SAFE à rattacher.`,0)}catch(error){cgweb095Status(`Analyse impossible : ${error?.message||error}`,0)}finally{cgweb095Busy=false;cgweb095Buttons()}
+}
+
+async function cgweb095ApplyOriginals(){
+  if(cgweb095Busy||!cgweb095Plan?.plan_token)return;const count=cgweb095Num(cgweb095Plan.safe_original_count);if(!count)return;
+  if(!confirm(`Rattacher ${count} FIT original${count>1?"aux":""} SAFE ?\n\nÉcriture limitée aux métadonnées activity_files. Aucune activité n'est modifiée.`))return;
+  cgweb095Busy=true;cgweb095Buttons();cgweb095Status(`Rattachement de ${count} original${count>1?"aux":""} SAFE…`,0);
+  try{const data=await cgweb095Api().applyOriginals(cgweb095Plan.plan_token);if(!data?.ok)throw new Error(data?.error||"Rattachement original impossible.");cgweb095Plan=data.next;cgweb095RenderPlan();cgweb095Status(`Originaux : ${data?.originals?.applied||0} rattachement(s) effectué(s). Couverture ${cgweb095FormatPct(cgweb095Summary().coverage_pct)}.`,0)}catch(error){cgweb095Status(`Rattachement interrompu : ${error?.message||error}`,0)}finally{cgweb095Busy=false;cgweb095Buttons()}
+}
+
+async function cgweb095RunBatch(){
+  if(cgweb095Busy||!cgweb095Plan?.plan_token)return;
+  const start=cgweb095Summary();const eligible=cgweb095Num(start.activities_without_fit_eligible);const safe=cgweb095Num(cgweb095Plan.safe_original_count);
+  if(eligible===0&&safe===0){cgweb095Status("Couverture déjà complète pour toutes les activités générables.",100);return}
+  if(!confirm("Lancer la complétion FIT GLOBALE ?\n\n"+`Originaux SAFE à rattacher d'abord : ${safe}\n`+`Activités sans FIT générables ensuite : ${eligible}\n\n`+"Aucun FIT existant ne sera remplacé. Aucune activité ne sera modifiée."))return;
+  cgweb095Busy=true;cgweb095StopRequested=false;const initialMissing=Math.max(1,cgweb095Num(start.activities_without_fit));let stored=0;let originalLinks=0;let failed=0;let stepCount=0;cgweb095Buttons();
+  try{
+    while(!cgweb095StopRequested&&cgweb095Plan?.plan_token){
+      const current=cgweb095Summary();const currentEligible=cgweb095Num(current.activities_without_fit_eligible);const currentSafe=cgweb095Num(cgweb095Plan.safe_original_count);if(currentEligible===0&&currentSafe===0)break;
+      stepCount+=1;const beforeMissing=cgweb095Num(current.activities_without_fit);const covered=Math.max(0,initialMissing-beforeMissing);const pct=100*covered/initialMissing;cgweb095Status(`Lot ${stepCount} · originaux d'abord · génération canonique ensuite…`,pct);
+      const data=await cgweb095Api().step(cgweb095Plan.plan_token,CGWEB095_BATCH_SIZE);if(!data)throw new Error("Réponse batch absente.");originalLinks+=cgweb095Num(data?.originals?.applied);stored+=cgweb095Num(data?.generation?.stored);failed+=cgweb095Num(data?.generation?.failed);if(!data.next)throw new Error("Plan suivant absent.");cgweb095Plan=data.next;cgweb095RenderPlan();
+      const after=cgweb095Summary();const afterMissing=cgweb095Num(after.activities_without_fit);const afterCovered=Math.max(0,initialMissing-afterMissing);const afterPct=Math.min(100,100*afterCovered/initialMissing);cgweb095Status(`Lot ${stepCount} terminé · ${originalLinks} original(aux) rattaché(s) · ${stored} FIT canonique(s) créé(s) · ${failed} erreur(s) · ${afterMissing} activité(s) encore sans FIT.`,afterPct);
+      if(cgweb095Num(data?.generation?.failed)>0)cgweb095StopRequested=true;if(data.done)break
+    }
+    const finalData=await cgweb095Api().plan();if(finalData?.ok){cgweb095Plan=finalData;cgweb095RenderPlan()}
+    const end=cgweb095Summary();const complete=cgweb095Num(end.activities_without_fit)===0;const eligibleLeft=cgweb095Num(end.activities_without_fit_eligible);const insufficientLeft=cgweb095Num(end.activities_without_fit_insufficient);cgweb095Status(`${cgweb095StopRequested?"Arrêt propre":"Traitement terminé"} · ${originalLinks} original(aux) rattaché(s) · ${stored} FIT canonique(s) créé(s) · ${failed} erreur(s) · ${eligibleLeft} générable(s) restant(s) · ${insufficientLeft} non générable(s).`,complete?100:Math.max(0,Math.min(100,cgweb095Num(end.coverage_pct))))
+  }catch(error){cgweb095Status(`Traitement interrompu : ${error?.message||error}`,Number(cgweb095Node("cgweb095Progress")?.value||0))}finally{cgweb095Busy=false;cgweb095StopRequested=false;cgweb095Buttons()}
+}
+
+function cgweb095Stop(){if(!cgweb095Busy)return;cgweb095StopRequested=true;cgweb095Status("Arrêt demandé · le lot en cours se termine proprement…",Number(cgweb095Node("cgweb095Progress")?.value||0))}
+
+function cgweb095Wire(){
+  const analyze=cgweb095Node("cgweb095Analyze");const originals=cgweb095Node("cgweb095ApplyOriginals");const batch=cgweb095Node("cgweb095RunBatch");const stop=cgweb095Node("cgweb095Stop");
+  if(analyze&&analyze.dataset.c095!=="1"){analyze.dataset.c095="1";analyze.addEventListener("click",()=>void cgweb095Analyze())}
+  if(originals&&originals.dataset.c095!=="1"){originals.dataset.c095="1";originals.addEventListener("click",()=>void cgweb095ApplyOriginals())}
+  if(batch&&batch.dataset.c095!=="1"){batch.dataset.c095="1";batch.addEventListener("click",()=>void cgweb095RunBatch())}
+  if(stop&&stop.dataset.c095!=="1"){stop.dataset.c095="1";stop.addEventListener("click",cgweb095Stop)}
+  cgweb095Buttons()
+}
+
+function cgweb095Init(){cgweb095Wire();try{window.SPORT_FILES_REORGANIZE?.organize?.()}catch(error){console.warn("CGWEB095 organise Files",error)}cgweb095Wire()}
+if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",cgweb095Init,{once:true})}else{queueMicrotask(cgweb095Init)}
+window.SPORT_GLOBAL_FIT_UI=Object.freeze({version:"CGWEB095",analyze:()=>cgweb095Analyze(),run:()=>cgweb095RunBatch()});
+
+/* CGWEB095_GLOBAL_FIT_UI_END */

@@ -5191,6 +5191,79 @@ window.SPORT_MISSING_FIT=Object.freeze({
 });
 /* CGWEB094C_MISSING_FIT_CLIENT_END */
 
+
+/* CGWEB095_GLOBAL_FIT_CLIENT_START */
+
+async function c095GlobalPlan(){
+  return request(
+    "global_fit_plan",
+    {method:"GET"}
+  );
+}
+
+async function c095OriginalFirst(planToken){
+  return request(
+    "original_first_backfill",
+    {
+      method:"POST",
+      headers:{
+        "Content-Type":
+          "application/json"
+      },
+      body:JSON.stringify({
+        confirm:
+          "APPLY_ORIGINAL_FIRST",
+        plan_token:
+          String(planToken||"")
+      })
+    }
+  );
+}
+
+async function c095GlobalBatchStep(
+  planToken,
+  limit=25
+){
+  return request(
+    "missing_fit_global_batch",
+    {
+      method:"POST",
+      headers:{
+        "Content-Type":
+          "application/json"
+      },
+      body:JSON.stringify({
+        confirm:
+          "APPLY_GLOBAL_FIT_BATCH",
+        plan_token:
+          String(planToken||""),
+        limit:
+          Math.max(
+            1,
+            Math.min(
+              50,
+              Number(limit||25)
+            )
+          )
+      })
+    }
+  );
+}
+
+window.SPORT_GLOBAL_FIT=
+  Object.freeze({
+    version:
+      "CGWEB095-GLOBAL_FIT_COVERAGE001-ORIGINAL_FIRST_BACKFILL001-MISSING_FIT_GLOBAL_BATCH001",
+    plan:
+      c095GlobalPlan,
+    applyOriginals:
+      c095OriginalFirst,
+    step:
+      c095GlobalBatchStep
+  });
+
+/* CGWEB095_GLOBAL_FIT_CLIENT_END */
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
