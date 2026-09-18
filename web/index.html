@@ -5781,6 +5781,46 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 }
 </style>
 
+
+<style id="cgweb094c-fix4-counter-layout-css">
+#webFilesSection .web-files-overview{
+  display:grid!important;
+  grid-template-columns:repeat(5,minmax(120px,1fr))!important;
+  gap:8px!important;
+  align-items:stretch!important;
+}
+
+#webFilesSection .web-files-overview > article{
+  min-width:0!important;
+  height:100%!important;
+  box-sizing:border-box!important;
+}
+
+#webFilesSection .web-files-overview .cgweb094c-fix3-nongenerable{
+  display:flex!important;
+  flex-direction:column!important;
+  justify-content:center!important;
+}
+
+@media(max-width:1050px){
+  #webFilesSection .web-files-overview{
+    grid-template-columns:repeat(3,minmax(120px,1fr))!important;
+  }
+}
+
+@media(max-width:700px){
+  #webFilesSection .web-files-overview{
+    grid-template-columns:repeat(2,minmax(120px,1fr))!important;
+  }
+}
+
+@media(max-width:430px){
+  #webFilesSection .web-files-overview{
+    grid-template-columns:1fr 1fr!important;
+  }
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -6142,13 +6182,14 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
               <span>FIT à générer</span>
               <strong id="webFilesDerivedCount">0</strong>
             </article>
-          </div>
 
-
-            <article class="cgweb094c-fix3-nongenerable">
+            <!-- CGWEB094C_FIX4_COUNTER_LAYOUT_START -->
+<article class="cgweb094c-fix3-nongenerable">
               <span>Non générables</span>
               <strong id="cgweb094cFitNonGenerableCount">0</strong>
             </article>
+            <!-- CGWEB094C_FIX4_COUNTER_LAYOUT_END -->
+</div>
 <div class="web-files-controls">
             <label>
               <span>Afficher</span>
@@ -7917,7 +7958,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB094C-FIX3-VAULT-COUNTER-RECONCILE001"></script>
+  <script type="module" src="./app.js?v=CGWEB094C-FIX4-VAULT-COUNTER-LAYOUT001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

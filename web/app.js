@@ -14726,9 +14726,38 @@ function cgweb094cClarifyLocalCounters() {
 /* CGWEB094C_FIX2_BATCH_BAR_END */
 
 
+
+/* CGWEB094C_FIX4_COUNTER_LAYOUT_START */
+
+function cgweb094cEnsureCounterLayout() {
+  const section = document.getElementById("webFilesSection");
+  if (!section) return;
+
+  const overview = section.querySelector(".web-files-overview");
+  const count = document.getElementById(
+    "cgweb094cFitNonGenerableCount"
+  );
+
+  const card = count?.closest("article");
+
+  if (!overview || !card) return;
+
+  if (card.parentElement !== overview) {
+    overview.appendChild(card);
+  }
+
+  card.classList.add(
+    "cgweb094c-fix3-nongenerable"
+  );
+}
+
+/* CGWEB094C_FIX4_COUNTER_LAYOUT_END */
+
+
 function cgweb094cWire() {
   cgweb094cEnsureBatchBar();
   cgweb094cClarifyLocalCounters();
+  cgweb094cEnsureCounterLayout();
 
   const a=cgweb094cNode("cgweb094cAnalyzeMissing");
   const g=cgweb094cNode("cgweb094cGenerateAll");
@@ -14760,6 +14789,8 @@ function cgweb094cWire() {
 
   cgweb094cButtons();
 }
+
+
 
 
 /* CGWEB094C_LOCAL_VAULT_HELPERS_END */

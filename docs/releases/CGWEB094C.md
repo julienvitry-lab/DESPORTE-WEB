@@ -45,3 +45,17 @@ valeurs, ce qui supprime la divergence observée (`70` affiché alors que le
 dry-run annonçait `1` FIT réellement éligible).
 
 Aucun changement backend. Aucun FIT généré par l'installation.
+
+## FIX4 · VAULT_COUNTER_LAYOUT001
+
+Correction purement visuelle :
+
+- la carte `Non générables` est déplacée à l'intérieur du même
+  `.web-files-overview` que les quatre autres compteurs ;
+- desktop : 5 cartes sur une ligne ;
+- tablette : 3 colonnes ;
+- téléphone : 2 colonnes ;
+- garde runtime : si un futur patch déplace cette carte hors du grid,
+  elle est automatiquement replacée.
+
+Aucun changement de calcul, backend ou génération FIT.
