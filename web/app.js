@@ -14519,15 +14519,133 @@ async function cgweb094cGenerateBatch(){
   }
 }
 function cgweb094cStop(){cgweb094cStopRequested=true;cgweb094cBatchStatus("Arrêt demandé · fin du lot en cours.",null);}
-function cgweb094cWire(){
+
+/* CGWEB094C_FIX2_BATCH_BAR_START */
+
+function cgweb094cEnsureBatchBar() {
+  const status = document.getElementById("webFilesStatus");
+  if (!status || !status.parentNode) return null;
+
+  let section = document.getElementById("cgweb094cVaultControls");
+
+  if (!section) {
+    section = document.createElement("section");
+    section.id = "cgweb094cVaultControls";
+    section.className = "cgweb094c-vault-controls";
+    section.setAttribute(
+      "aria-label",
+      "Génération des FIT manquants"
+    );
+
+    section.innerHTML = `
+      <div class="cgweb094c-vault-actions">
+        <button id="cgweb094cAnalyzeMissing"
+                class="secondary"
+                type="button">
+          Analyser les FIT manquants
+        </button>
+
+        <button id="cgweb094cGenerateAll"
+                class="primary"
+                type="button"
+                disabled>
+          Générer en masse
+        </button>
+
+        <button id="cgweb094cStopBatch"
+                class="secondary"
+                type="button"
+                disabled>
+          Arrêter après le lot en cours
+        </button>
+      </div>
+
+      <div class="cgweb094c-batch-line">
+        <span id="cgweb094cBatchStatus" class="muted">
+          Dry-run requis avant toute génération en masse.
+        </span>
+        <span id="cgweb094cBatchPercent">0 %</span>
+      </div>
+
+      <progress id="cgweb094cBatchProgress"
+                max="100"
+                value="0"></progress>
+    `;
+  }
+
+  if (
+    section.parentNode !== status.parentNode ||
+    section.nextElementSibling !== status
+  ) {
+    status.parentNode.insertBefore(section, status);
+  }
+
+  section.hidden = false;
+  section.removeAttribute("aria-hidden");
+  section.style.removeProperty("display");
+  section.style.removeProperty("visibility");
+  section.style.removeProperty("opacity");
+
+  return section;
+}
+
+function cgweb094cClarifyLocalCounters() {
+  const section = document.getElementById("webFilesSection");
+  if (!section) return;
+
+  const replacements = new Map([
+    ["Originaux archivés", "Originaux locaux"],
+    ["Taille locale", "Stockage local"],
+    ["Activités liées", "Liens locaux"]
+  ]);
+
+  for (const node of section.querySelectorAll("span")) {
+    const current = String(node.textContent || "").trim();
+    if (replacements.has(current)) {
+      node.textContent = replacements.get(current);
+    }
+  }
+}
+
+/* CGWEB094C_FIX2_BATCH_BAR_END */
+
+
+function cgweb094cWire() {
+  cgweb094cEnsureBatchBar();
+  cgweb094cClarifyLocalCounters();
+
   const a=cgweb094cNode("cgweb094cAnalyzeMissing");
   const g=cgweb094cNode("cgweb094cGenerateAll");
   const s=cgweb094cNode("cgweb094cStopBatch");
-  if(a&&a.dataset.c094c!=="1"){a.dataset.c094c="1";a.addEventListener("click",()=>void cgweb094cAnalyze());}
-  if(g&&g.dataset.c094c!=="1"){g.dataset.c094c="1";g.addEventListener("click",()=>void cgweb094cGenerateBatch());}
-  if(s&&s.dataset.c094c!=="1"){s.dataset.c094c="1";s.addEventListener("click",cgweb094cStop);}
+
+  if(a&&a.dataset.c094c!=="1"){
+    a.dataset.c094c="1";
+    a.addEventListener(
+      "click",
+      ()=>void cgweb094cAnalyze()
+    );
+  }
+
+  if(g&&g.dataset.c094c!=="1"){
+    g.dataset.c094c="1";
+    g.addEventListener(
+      "click",
+      ()=>void cgweb094cGenerateBatch()
+    );
+  }
+
+  if(s&&s.dataset.c094c!=="1"){
+    s.dataset.c094c="1";
+    s.addEventListener(
+      "click",
+      cgweb094cStop
+    );
+  }
+
   cgweb094cButtons();
 }
+
+
 /* CGWEB094C_LOCAL_VAULT_HELPERS_END */
 
 function webFileEntryMatchesFilter(entry) {

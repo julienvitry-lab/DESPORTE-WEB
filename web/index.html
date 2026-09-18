@@ -5694,6 +5694,70 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 #webFilesSection .cgweb094c-more{display:flex;justify-content:center;padding:8px}
 </style>
 
+
+<style id="cgweb094c-fix2-batch-bar-css">
+#webFilesSection #cgweb094cVaultControls{
+  display:grid!important;
+  visibility:visible!important;
+  opacity:1!important;
+  position:relative!important;
+  gap:9px!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+  margin:10px 0 12px!important;
+  padding:10px 12px!important;
+  border:1px solid rgba(190,255,55,.25)!important;
+  border-radius:14px!important;
+  background:rgba(255,255,255,.025)!important;
+}
+
+#webFilesSection #cgweb094cVaultControls .cgweb094c-vault-actions{
+  display:flex!important;
+  visibility:visible!important;
+  flex-wrap:wrap!important;
+  gap:8px!important;
+  align-items:center!important;
+}
+
+#webFilesSection #cgweb094cVaultControls button{
+  display:inline-flex!important;
+  visibility:visible!important;
+  min-height:36px!important;
+  align-items:center!important;
+  justify-content:center!important;
+}
+
+#webFilesSection #cgweb094cVaultControls .cgweb094c-batch-line{
+  display:flex!important;
+  visibility:visible!important;
+  justify-content:space-between!important;
+  align-items:center!important;
+  gap:12px!important;
+}
+
+#webFilesSection #cgweb094cBatchProgress{
+  display:block!important;
+  visibility:visible!important;
+  width:100%!important;
+  height:8px!important;
+}
+
+@media(max-width:700px){
+  #webFilesSection #cgweb094cVaultControls .cgweb094c-vault-actions{
+    display:grid!important;
+    grid-template-columns:1fr!important;
+  }
+
+  #webFilesSection #cgweb094cVaultControls button{
+    width:100%!important;
+  }
+
+  #webFilesSection #cgweb094cVaultControls .cgweb094c-batch-line{
+    align-items:flex-start!important;
+  }
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -6040,15 +6104,15 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
           <div class="web-files-overview">
             <article>
-              <span>Originaux archivés</span>
+              <span>Originaux locaux</span>
               <strong id="webFilesOriginalCount">0</strong>
             </article>
             <article>
-              <span>Taille locale</span>
+              <span>Stockage local</span>
               <strong id="webFilesLocalSize">0 o</strong>
             </article>
             <article>
-              <span>Activités liées</span>
+              <span>Liens locaux</span>
               <strong id="webFilesLinkedCount">0</strong>
             </article>
             <article>
@@ -6077,31 +6141,47 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
           </div>
 
 
-          <!-- CGWEB094C_LOCAL_VAULT_CONTROLS_START -->
-          <section id="cgweb094cVaultControls" class="cgweb094c-vault-controls">
-            <div class="cgweb094c-vault-actions">
-              <button id="cgweb094cAnalyzeMissing" class="secondary" type="button">
-                Analyser les FIT manquants
-              </button>
-              <button id="cgweb094cGenerateAll" class="primary" type="button" disabled>
-                Générer les FIT manquants
-              </button>
-              <button id="cgweb094cStopBatch" class="secondary" type="button" disabled>
-                Arrêter après le lot en cours
-              </button>
-            </div>
-            <div class="cgweb094c-batch-line">
-              <span id="cgweb094cBatchStatus" class="muted">
-                Dry-run requis avant toute génération en masse.
-              </span>
-              <span id="cgweb094cBatchPercent">0 %</span>
-            </div>
-            <progress id="cgweb094cBatchProgress" max="100" value="0"></progress>
-          </section>
-          <!-- CGWEB094C_LOCAL_VAULT_CONTROLS_END -->
 
+<!-- CGWEB094C_FIX2_BATCH_BAR_START -->
+<section id="cgweb094cVaultControls"
+         class="cgweb094c-vault-controls"
+         aria-label="Génération des FIT manquants">
+  <div class="cgweb094c-vault-actions">
+    <button id="cgweb094cAnalyzeMissing"
+            class="secondary"
+            type="button">
+      Analyser les FIT manquants
+    </button>
 
-          <div id="webFilesStatus" class="muted">Chargement du coffre…</div>
+    <button id="cgweb094cGenerateAll"
+            class="primary"
+            type="button"
+            disabled>
+      Générer en masse
+    </button>
+
+    <button id="cgweb094cStopBatch"
+            class="secondary"
+            type="button"
+            disabled>
+      Arrêter après le lot en cours
+    </button>
+  </div>
+
+  <div class="cgweb094c-batch-line">
+    <span id="cgweb094cBatchStatus" class="muted">
+      Dry-run requis avant toute génération en masse.
+    </span>
+    <span id="cgweb094cBatchPercent">0 %</span>
+  </div>
+
+  <progress id="cgweb094cBatchProgress"
+            max="100"
+            value="0"></progress>
+</section>
+<!-- CGWEB094C_FIX2_BATCH_BAR_END -->
+
+<div id="webFilesStatus" class="muted">Chargement du coffre…</div>
           <div id="webFilesList" class="web-files-list"></div>
 
 
@@ -7809,7 +7889,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./app.js?v=CGWEB094C-LOCAL-VAULT-MISSING-FIT"></script>
+  <script type="module" src="./app.js?v=CGWEB094C-FIX2-BATCH-BAR-RESTORE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
