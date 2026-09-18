@@ -1,0 +1,165 @@
+name: CGWEB091 FIX3 - Deploy with Firebase token
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cgweb091-fix3-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verifier que CGWEB091 est bien sur main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f functions/fitvault.js
+          test -f web/fitcloud.js
+          test -f web/index.html
+          test -f docs/releases/CGWEB091.md
+
+          node --check functions/fitvault.js
+          node --check web/fitcloud.js
+
+          grep -Fq 'CGWEB091_FIT_RECONCILE_RESOLVE001_HELPERS_START' functions/fitvault.js
+          grep -Fq 'action === "reconcile_resolve"' functions/fitvault.js
+          grep -Fq 'action === "original_match_repair"' functions/fitvault.js
+          grep -Fq 'action === "transfer_audit"' functions/fitvault.js
+
+          grep -Fq 'CGWEB091_TRANSFER_AUDIT001_QUEUE_DEDUP_START' web/fitcloud.js
+          grep -Fq 'window.SPORT_FIT_RECONCILE_RESOLVE' web/fitcloud.js
+          grep -Fq 'id="cgweb091ResolveSection"' web/index.html
+
+          grep -Fq '!c090Roles(previous).includes(C090_ROLE_ORIGINAL)' functions/fitvault.js
+
+          echo "======================================================"
+          echo "CGWEB091 PRESENT SUR MAIN"
+          echo "Resolution FIT          : OK"
+          echo "Original match repair   : OK"
+          echo "Transfer audit          : OK"
+          echo "Dedup queue SHA         : OK"
+          echo "Correction provenance   : OK"
+          echo "======================================================"
+
+      - name: Verifier le secret Firebase existant
+        shell: bash
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${FIREBASE_TOKEN:-}" ]; then
+            echo "::error::Secret GitHub FIREBASE_TOKEN absent."
+            echo "::error::Le depot possede deja des workflows prevus pour ce secret."
+            exit 20
+          fi
+
+          echo "Secret FIREBASE_TOKEN disponible."
+
+      - name: Preparer les configurations Firebase
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > firebase.cgweb091.fix3.functions.json <<'JSON'
+          {
+            "functions": [
+              {
+                "source": "functions",
+                "codebase": "strava"
+              }
+            ]
+          }
+          JSON
+
+          cat > firebase.cgweb091.fix3.hosting.json <<'JSON'
+          {
+            "hosting": {
+              "site": "sport-505813",
+              "public": "web",
+              "ignore": [
+                "firebase.json",
+                "**/.*",
+                "**/node_modules/**"
+              ],
+              "headers": [
+                {
+                  "source": "**",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "no-cache, no-store, must-revalidate"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          JSON
+
+      - name: Deployer Functions CGWEB091
+        shell: bash
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --project sport-505813 \
+            --config firebase.cgweb091.fix3.functions.json \
+            --only functions:strava \
+            --non-interactive
+
+      - name: Deployer Hosting CGWEB091
+        shell: bash
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --project sport-505813 \
+            --config firebase.cgweb091.fix3.hosting.json \
+            --only hosting \
+            --non-interactive
+
+      - name: Controle live
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          STAMP="$(date +%s)"
+
+          curl -fsSL "https://sport-505813.web.app/?cgweb091fix3=$STAMP" \
+            > /tmp/cgweb091-live.html
+
+          curl -fsSL "https://sport-505813.web.app/fitcloud.js?cgweb091fix3=$STAMP" \
+            > /tmp/cgweb091-live-fitcloud.js
+
+          grep -Fq 'id="cgweb091ResolveSection"' /tmp/cgweb091-live.html
+          grep -Fq 'window.SPORT_FIT_RECONCILE_RESOLVE' /tmp/cgweb091-live-fitcloud.js
+          grep -Fq 'CGWEB091_TRANSFER_AUDIT001_QUEUE_DEDUP_START' /tmp/cgweb091-live-fitcloud.js
+
+          echo
+          echo "======================================================"
+          echo "CGWEB091 FIX3 DEPLOYE ET CONTROLE LIVE"
+          echo "https://sport-505813.web.app"
+          echo "======================================================"
