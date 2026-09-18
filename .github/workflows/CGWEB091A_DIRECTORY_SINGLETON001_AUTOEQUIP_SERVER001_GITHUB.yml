@@ -1,0 +1,642 @@
+name: CGWEB091A - Directory singleton + AutoEquip server
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cgweb091a-fix
+  cancel-in-progress: false
+
+jobs:
+  patch-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verifier la base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f web/app.js
+          test -f web/index.html
+          test -f functions/index.js
+          test -f functions/package.json
+          node --check web/app.js
+          node --check functions/index.js
+          grep -Fq 'function navigateUx(' web/app.js
+          grep -Fq 'id="activityDirectorySection"' web/index.html
+          grep -Fq 'WEBEQUIPMAP005' web/app.js
+          grep -Fq 'KINOMAP' web/app.js
+          grep -Fq 'equipment_mappings' web/app.js
+          grep -Fq 'onDocumentCreated' functions/index.js
+          echo "Base reconnue."
+
+      - name: Corriger le Repertoire unique
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          app_path = Path("web/app.js")
+          html_path = Path("web/index.html")
+          app = app_path.read_text(encoding="utf-8")
+          html = html_path.read_text(encoding="utf-8")
+
+          START = "/* CGWEB091A_DIRECTORY_SINGLETON001_START */"
+          END = "/* CGWEB091A_DIRECTORY_SINGLETON001_END */"
+
+          def strip_marked(src, start, end):
+              while True:
+                  a = src.find(start)
+                  if a < 0:
+                      return src
+                  b = src.find(end, a + len(start))
+                  if b < 0:
+                      raise SystemExit("Bloc CGWEB091A partiel : " + start)
+                  src = src[:a] + src[b + len(end):]
+
+          app = strip_marked(app, START, END)
+
+          nav_needle = '  uxCurrentPage = page;\n  uxCurrentSubpage = sub;'
+          nav_replacement = r'''  uxCurrentPage = page;
+          uxCurrentSubpage = sub;
+
+          /* CGWEB091A_DIRECTORY_SINGLETON001_START */
+          document.body.dataset.uxPage = page;
+          document.body.dataset.uxSubpage = sub;
+          document.body.classList.toggle(
+            "ux-activities-page",
+            page === "activities" && sub === "directory"
+          );
+          /* CGWEB091A_DIRECTORY_SINGLETON001_END */'''
+
+          if nav_needle in app:
+              app = app.replace(nav_needle, nav_replacement, 1)
+          elif "document.body.dataset.uxPage = page;" not in app:
+              raise SystemExit("Point navigateUx introuvable")
+
+          html = re.sub(
+              r'<style id=["\']cgweb091a-directory-singleton-css["\']>[\s\S]*?</style>\s*',
+              '',
+              html
+          )
+
+          css = r'''
+          <style id="cgweb091a-directory-singleton-css">
+          /* CGWEB091A · DIRECTORY_SINGLETON001
+             CGWEB083 FIX7 force historiquement display:flex!important sur
+             #activityDirectorySection. Cette règle pouvait battre .hidden. */
+
+          #activityDirectorySection.hidden{
+            display:none!important;
+          }
+
+          body:not([data-ux-page="activities"]) #activityDirectorySection,
+          body[data-ux-page="activities"]:not([data-ux-subpage="directory"]) #activityDirectorySection{
+            display:none!important;
+            visibility:hidden!important;
+          }
+
+          body[data-ux-page="activities"][data-ux-subpage="directory"]
+          #activityDirectorySection:not(.hidden){
+            display:flex!important;
+            visibility:visible!important;
+          }
+
+          body:not([data-ux-page="activities"]) #activityDirectoryHeaderWeb059,
+          body[data-ux-page="activities"]:not([data-ux-subpage="directory"]) #activityDirectoryHeaderWeb059{
+            display:none!important;
+            visibility:hidden!important;
+          }
+
+          body[data-ux-page="activities"][data-ux-subpage="directory"]
+          #activityDirectoryHeaderWeb059{
+            display:grid!important;
+            visibility:visible!important;
+          }
+          </style>
+          '''
+
+          if "</head>" not in html:
+              raise SystemExit("</head> introuvable")
+          html = html.replace("</head>", css + "\n</head>", 1)
+
+          html = re.sub(
+              r'src=["\']\./app\.js(?:\?v=[^"\']*)?["\']',
+              'src="./app.js?v=CGWEB091A-DIRECTORY-SINGLETON001-AUTOEQUIP-SERVER001"',
+              html,
+              count=1
+          )
+
+          app_path.write_text(app, encoding="utf-8")
+          html_path.write_text(html, encoding="utf-8")
+          print("Repertoire verrouille sur Activites > Repertoire.")
+          PY
+
+      - name: Installer AutoEquip cote serveur
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > functions/autoequip.js <<'JS'
+          "use strict";
+
+          const VERSION = "CGWEB091A-AUTOEQUIP-SERVER001";
+
+          function text(value) {
+            return String(value ?? "").trim();
+          }
+
+          function metadata(activity) {
+            return [
+              activity?.import_source,
+              activity?.import_profile,
+              activity?.strava_type,
+              activity?.strava_sport_type,
+              activity?.strava_device_name,
+              activity?.device_name,
+              activity?.manufacturer,
+              activity?.product,
+              activity?.file_name,
+              activity?.source_file_name,
+              activity?.custom_title,
+              activity?.name,
+              activity?.title
+            ]
+              .map(text)
+              .filter(Boolean)
+              .join(" ")
+              .toUpperCase();
+          }
+
+          function profileKey(activity) {
+            if (!activity || activity.deleted_at_ms != null) return "";
+
+            const sport = Number(activity.sport) || 0;
+            const subSport = Number(activity.sub_sport) || 0;
+            const meta = metadata(activity);
+
+            if (sport === 1) {
+              if (
+                subSport === 21 ||
+                /KINOMAP|VIRTUALRUN|VIRTUAL RUN/.test(meta)
+              ) return "KINOMAP";
+
+              if (
+                [3, 6].includes(subSport) ||
+                /TRAILRUN|TRAIL RUN|\bTRAIL\b/.test(meta)
+              ) return "TRAIL";
+
+              return "RUN";
+            }
+
+            if (sport === 2) {
+              if (
+                [5, 6, 58].includes(subSport) ||
+                /HOME.?TRAINER|\bTRAINER\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE/.test(meta)
+              ) return "TRAINER";
+
+              if (
+                [7, 8, 47].includes(subSport) ||
+                /MOUNTAINBIKERIDE|MOUNTAIN BIKE|\bVTT\b|\bMTB\b/.test(meta)
+              ) return "MTB";
+
+              return "BIKE";
+            }
+
+            return "";
+          }
+
+          function chooseRule(rows, key) {
+            const wanted = text(key).toUpperCase();
+            if (!wanted) return null;
+
+            const enabled = (rows || []).filter((row) =>
+              row &&
+              row.enabled !== false &&
+              text(row.equipment_name)
+            );
+
+            return (
+              enabled.find((row) =>
+                text(row.profile_key).toUpperCase() === wanted &&
+                text(row.mapping_version) === "WEBEQUIPMAP005"
+              ) ||
+              enabled.find((row) =>
+                text(row.profile_key).toUpperCase() === wanted
+              ) ||
+              null
+            );
+          }
+
+          function makeEventId(activityId) {
+            const rnd = Math.random().toString(36).slice(2, 10);
+            return `CGWEB091A_${activityId}_${Date.now()}_${rnd}`;
+          }
+
+          function createAutoEquipActivityTrigger({
+            db,
+            ROOT,
+            REGION,
+            onDocumentCreated
+          }) {
+            if (!db || !ROOT || !onDocumentCreated) {
+              throw new Error("AUTOEQUIP_SERVER001 : dependances absentes.");
+            }
+
+            return onDocumentCreated(
+              {
+                document: `${ROOT}/{uid}/activities/{activityId}`,
+                region: REGION || "europe-west1",
+                timeoutSeconds: 60,
+                memory: "256MiB"
+              },
+              async (event) => {
+                const snap = event.data;
+                if (!snap?.exists) return;
+
+                const uid = text(event.params?.uid);
+                const activityId = text(event.params?.activityId);
+                const initial = snap.data() || {};
+
+                if (!uid || !activityId) return;
+                if (initial.deleted_at_ms != null) return;
+                if (Number(initial.equipment_manual) === 1) return;
+                if (text(initial.equipment_name)) return;
+
+                const key = profileKey(initial);
+                if (!key) return;
+
+                const mappingsSnap = await db
+                  .collection(`${ROOT}/${uid}/equipment_mappings`)
+                  .get();
+
+                const mappings = [];
+                mappingsSnap.forEach((docSnap) => {
+                  mappings.push({
+                    __docId: docSnap.id,
+                    ...(docSnap.data() || {})
+                  });
+                });
+
+                const rule = chooseRule(mappings, key);
+                const equipmentName = text(rule?.equipment_name);
+                if (!rule || !equipmentName) return;
+
+                const activityRef =
+                  db.doc(`${ROOT}/${uid}/activities/${activityId}`);
+
+                await db.runTransaction(async (tx) => {
+                  const freshSnap = await tx.get(activityRef);
+                  if (!freshSnap.exists) return;
+
+                  const fresh = freshSnap.data() || {};
+
+                  if (fresh.deleted_at_ms != null) return;
+                  if (Number(fresh.equipment_manual) === 1) return;
+                  if (text(fresh.equipment_name)) return;
+
+                  const now = Date.now();
+                  const mappingId =
+                    text(rule.__docId || rule.profile_key) || null;
+
+                  const patch = {
+                    equipment_name: equipmentName,
+                    equipment_manual: 0,
+                    equipment_mapping_id: mappingId,
+                    equipment_assignment_source:
+                      "CGWEB091A_AUTOEQUIP_SERVER",
+                    equipment_assignment_version: VERSION,
+                    equipment_assignment_profile: key,
+                    equipment_assignment_at_ms: now,
+                    __updatedAtMs: now
+                  };
+
+                  tx.set(activityRef, patch, {merge: true});
+
+                  const eventId = makeEventId(activityId);
+                  tx.set(
+                    db.doc(`${ROOT}/${uid}/changes/${eventId}`),
+                    {
+                      eventId,
+                      deviceId: "CGWEB091A_SERVER",
+                      firebaseSeq: now,
+                      sourceChangeSeq: 0,
+                      table: "activities",
+                      rowKey: activityId,
+                      operation: "UPSERT",
+                      changedAtMs: now,
+                      androidVersion: 0,
+                      webVersion: "CGWEB091A",
+                      row: {
+                        id:
+                          Number(fresh.id ?? activityId) ||
+                          fresh.id ||
+                          activityId,
+                        ...patch
+                      }
+                    }
+                  );
+
+                  tx.set(
+                    db.doc(`${ROOT}/${uid}/meta/state`),
+                    {
+                      updatedAtMs: now,
+                      sourceDeviceId: "CGWEB091A_SERVER",
+                      webVersion: "CGWEB091A"
+                    },
+                    {merge: true}
+                  );
+                });
+
+                console.info(
+                  VERSION,
+                  activityId,
+                  "profil=" + key,
+                  "->",
+                  equipmentName
+                );
+              }
+            );
+          }
+
+          module.exports = {
+            createAutoEquipActivityTrigger,
+            profileKey,
+            chooseRule,
+            VERSION
+          };
+          JS
+
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path("functions/index.js")
+          s = p.read_text(encoding="utf-8")
+
+          START = "/* CGWEB091A_AUTOEQUIP_SERVER001_INDEX_START */"
+          END = "/* CGWEB091A_AUTOEQUIP_SERVER001_INDEX_END */"
+
+          def strip_marked(src, start, end):
+              while True:
+                  a = src.find(start)
+                  if a < 0:
+                      return src
+                  b = src.find(end, a + len(start))
+                  if b < 0:
+                      raise SystemExit("Bloc index CGWEB091A partiel")
+                  src = src[:a] + src[b + len(end):]
+
+          s = strip_marked(s, START, END)
+
+          block = r'''
+          /* CGWEB091A_AUTOEQUIP_SERVER001_INDEX_START */
+          const {
+            createAutoEquipActivityTrigger
+          } = require("./autoequip");
+
+          exports.autoEquipActivity =
+            createAutoEquipActivityTrigger({
+              db,
+              ROOT,
+              REGION,
+              onDocumentCreated
+            });
+          /* CGWEB091A_AUTOEQUIP_SERVER001_INDEX_END */
+          '''
+
+          s = s.rstrip() + "\n\n" + block.strip() + "\n"
+          p.write_text(s, encoding="utf-8")
+          print("Trigger autoEquipActivity exporte.")
+          PY
+
+          node --check functions/autoequip.js
+          node --check functions/index.js
+
+      - name: Tests fonctionnels
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const {
+            profileKey,
+            chooseRule
+          } = require("./functions/autoequip.js");
+
+          function assert(cond, msg) {
+            if (!cond) {
+              console.error("ECHEC : " + msg);
+              process.exit(40);
+            }
+            console.log("OK : " + msg);
+          }
+
+          assert(
+            profileKey({
+              sport:1,
+              sub_sport:0,
+              import_source:"KINOMAP_STRAVA_WEB",
+              strava_sport_type:"VirtualRun"
+            }) === "KINOMAP",
+            "Kinomap Strava/VirtualRun -> KINOMAP"
+          );
+
+          assert(
+            profileKey({sport:1, sub_sport:21}) === "KINOMAP",
+            "FIT sub_sport 21 -> KINOMAP"
+          );
+
+          assert(
+            profileKey({sport:1, sub_sport:3}) === "TRAIL",
+            "Trail -> TRAIL"
+          );
+
+          assert(
+            profileKey({sport:2, sub_sport:0}) === "BIKE",
+            "Velo -> BIKE"
+          );
+
+          assert(
+            profileKey({sport:2, sub_sport:8}) === "MTB",
+            "VTT -> MTB"
+          );
+
+          assert(
+            profileKey({sport:2, sub_sport:58}) === "TRAINER",
+            "Home trainer -> TRAINER"
+          );
+
+          const rule = chooseRule(
+            [
+              {
+                __docId:"PROFILE_WEB058_KINOMAP",
+                profile_key:"KINOMAP",
+                mapping_version:"WEBEQUIPMAP005",
+                equipment_name:"SALOMON Ultra Glide 2 (blanc)",
+                enabled:true
+              }
+            ],
+            "KINOMAP"
+          );
+
+          assert(
+            rule?.equipment_name === "SALOMON Ultra Glide 2 (blanc)",
+            "regle KINOMAP configuree resolue"
+          );
+          NODE
+
+          node --check web/app.js
+          npx --yes acorn@8.15.0 --ecma2022 --module web/app.js >/dev/null
+          git diff --check
+
+          grep -Fq 'CGWEB091A_DIRECTORY_SINGLETON001_START' web/app.js
+          grep -Fq 'cgweb091a-directory-singleton-css' web/index.html
+          grep -Fq 'createAutoEquipActivityTrigger' functions/autoequip.js
+          grep -Fq 'exports.autoEquipActivity' functions/index.js
+          grep -Fq 'CGWEB091A_AUTOEQUIP_SERVER' functions/autoequip.js
+          grep -Fq 'KINOMAP_STRAVA_WEB' functions/autoequip.js
+          echo "CGWEB091A valide."
+
+      - name: Documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/releases
+
+          cat > docs/releases/CGWEB091A.md <<'DOC'
+          # CGWEB091A · DIRECTORY_SINGLETON001 / AUTOEQUIP_SERVER001
+
+          ## DIRECTORY_SINGLETON001
+
+          CGWEB083 FIX7 force historiquement `display:flex!important` sur
+          `#activityDirectorySection`. Cette règle peut battre `.hidden`.
+
+          Désormais :
+          - `navigateUx` publie la page et la sous-page actives sur `<body>` ;
+          - le Répertoire n'est visible que dans `Activités > Répertoire` ;
+          - le header externe suit la même règle ;
+          - `Activités > Corbeille` ne reçoit pas le Répertoire.
+
+          ## AUTOEQUIP_SERVER001
+
+          CGWEB086/FIX1 couvre les créations passant par le point central Web.
+          CGWEB091A ajoute un filet serveur sur toute création
+          `sport_users/{uid}/activities/{activityId}`.
+
+          Le trigger :
+          - ne traite que les nouvelles activités ;
+          - ne balaie jamais l'historique ;
+          - respecte `equipment_manual=1` ;
+          - respecte tout `equipment_name` déjà fourni ;
+          - lit les profils `equipment_mappings` ;
+          - reconnaît BIKE, MTB, TRAINER, RUN, TRAIL et KINOMAP ;
+          - reconnaît `KINOMAP_STRAVA_WEB`, `VirtualRun` et `sub_sport=21` ;
+          - écrit l'affectation dans l'activité ;
+          - publie un événement `/changes` pour téléphone/tablette.
+          DOC
+
+      - name: Commit et push
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            web/app.js \
+            web/index.html \
+            functions/index.js \
+            functions/autoequip.js \
+            docs/releases/CGWEB091A.md
+
+          if git diff --cached --quiet; then
+            echo "CGWEB091A deja applique."
+          else
+            git commit -m "CGWEB091A verrouille le repertoire et AutoEquip serveur"
+            git push origin HEAD:main
+          fi
+
+          git log -1 --oneline
+
+      - name: Authentification Google Firebase
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPORT_505813 }}
+
+      - name: Deployer Functions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > firebase.cgweb091a.functions.json <<'JSON'
+          {
+            "functions": [
+              {
+                "source": "functions",
+                "codebase": "strava"
+              }
+            ]
+          }
+          JSON
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --project sport-505813 \
+            --config firebase.cgweb091a.functions.json \
+            --only functions:strava \
+            --non-interactive
+
+      - name: Deployer Hosting
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > firebase.cgweb091a.hosting.json <<'JSON'
+          {
+            "hosting": {
+              "site": "sport-505813",
+              "public": "web",
+              "ignore": [
+                "firebase.json",
+                "**/.*",
+                "**/node_modules/**"
+              ],
+              "headers": [
+                {
+                  "source": "**",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "no-cache, no-store, must-revalidate"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          JSON
+
+          npx --yes firebase-tools@15.28.2 deploy \
+            --project sport-505813 \
+            --config firebase.cgweb091a.hosting.json \
+            --only hosting \
+            --non-interactive
+
+          echo "CGWEB091A deploye."
