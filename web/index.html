@@ -5401,6 +5401,63 @@ body.ux-activities-page main{
 /* CGWEB090_HISTORICAL_FIT_TRANSFER001_CSS_END */
 </style>
 
+
+<style id="cgweb091-resolve-css">
+/* CGWEB091_FIT_RECONCILE_RESOLVE001_CSS_START */
+#cgweb091ResolveSection{margin:0}
+#cgweb091ResolveSection .cgweb091-actions,
+#cgweb091ResolveSection .cgweb091-audit-controls{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0
+}
+#cgweb091ResolveSection .cgweb091-card-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:8px;margin:12px 0
+}
+#cgweb091ResolveSection .cgweb091-card{
+  border:1px solid rgba(190,255,55,.18);
+  border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.025)
+}
+#cgweb091ResolveSection .cgweb091-card span{display:block;font-size:.82rem;opacity:.78}
+#cgweb091ResolveSection .cgweb091-card strong{display:block;font-size:1.22rem}
+#cgweb091ResolveSection .cgweb091-block{
+  margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)
+}
+#cgweb091ResolveSection .cgweb091-block-head>div{display:grid;gap:3px}
+#cgweb091ResolveSection .cgweb091-list{display:grid;gap:8px;margin-top:10px}
+#cgweb091ResolveSection .cgweb091-item{
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.018)
+}
+#cgweb091ResolveSection .cgweb091-item-head{
+  display:flex;justify-content:space-between;gap:12px;align-items:flex-start
+}
+#cgweb091ResolveSection .cgweb091-item-main{display:grid;gap:3px;min-width:0}
+#cgweb091ResolveSection .cgweb091-item-controls{
+  display:grid;grid-template-columns:minmax(260px,1fr) auto;
+  gap:8px;margin-top:9px
+}
+#cgweb091ResolveSection .cgweb091-item select{width:100%;min-width:0}
+#cgweb091ResolveSection .cgweb091-details{
+  margin-top:12px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07)
+}
+#cgweb091ResolveSection .cgweb091-pre{
+  max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
+  font-size:.82rem
+}
+#cgweb091ResolveSection .cgweb091-picker{cursor:pointer;text-align:center}
+#cgweb091ResolveSection .cgweb091-progress-wrap{display:grid;gap:6px;margin:10px 0}
+#cgweb091ResolveSection .cgweb091-progress-head{
+  display:flex;justify-content:space-between;gap:10px;align-items:center
+}
+#cgweb091ResolveSection progress{width:100%}
+@media(max-width:760px){
+  #cgweb091ResolveSection .cgweb091-item-controls{grid-template-columns:1fr}
+  #cgweb091ResolveSection .cgweb091-item-head{flex-direction:column}
+}
+/* CGWEB091_FIT_RECONCILE_RESOLVE001_CSS_END */
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -5792,6 +5849,125 @@ body.ux-activities-page main{
 <!-- CGWEB087_FITAUDIT001_HTML_START -->
 
 <!-- CGWEB090_HISTORICAL_FIT_TRANSFER001_HTML_START -->
+
+<!-- CGWEB091_FIT_RECONCILE_RESOLVE001_HTML_START -->
+<section id="cgweb091ResolveSection" class="panel cgweb091-resolve">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">
+        CGWEB091 · FIT_RECONCILE_RESOLVE001 / ORIGINAL_MATCH_REPAIR001 / TRANSFER_AUDIT001
+      </p>
+      <h2>Résolution FIT historiques</h2>
+      <p class="muted">
+        Traite les originaux non liés, explique les activités encore uniquement canoniques
+        et audite la comptabilité SHA-256 du transfert.
+      </p>
+    </div>
+    <span id="cgweb091Badge" class="pill neutral">Non analysé</span>
+  </div>
+
+  <div class="cgweb091-actions">
+    <button id="cgweb091Resolve" type="button">
+      Analyser les correspondances
+    </button>
+    <button id="cgweb091AutoRepair" class="secondary" type="button" disabled>
+      Réparer les candidats uniques
+    </button>
+    <button id="cgweb091CloudAudit" class="secondary" type="button">
+      Auditer le coffre
+    </button>
+  </div>
+
+  <div id="cgweb091Status" class="muted">
+    Aucune modification d'activité n'est effectuée par cette analyse.
+  </div>
+
+  <div id="cgweb091Summary" class="cgweb091-card-grid"></div>
+
+  <div class="cgweb091-block">
+    <div class="cgweb091-block-head">
+      <div>
+        <strong>FIT originaux non liés</strong>
+        <span class="muted">
+          Le rattachement modifie uniquement la métadonnée du fichier FIT.
+        </span>
+      </div>
+    </div>
+    <div id="cgweb091UnresolvedList" class="cgweb091-list">
+      <div class="muted">Analyse non lancée.</div>
+    </div>
+  </div>
+
+  <details class="cgweb091-details">
+    <summary>Activités encore uniquement canoniques</summary>
+    <div id="cgweb091CanonicalOnlyList" class="cgweb091-list">
+      <div class="muted">Analyse non lancée.</div>
+    </div>
+  </details>
+
+  <div class="cgweb091-block">
+    <div class="cgweb091-block-head">
+      <div>
+        <strong>Audit comptable du coffre</strong>
+        <span class="muted">
+          Vérifie les identités entre SHA originaux, liens et sessions de transfert.
+        </span>
+      </div>
+    </div>
+    <div id="cgweb091CloudAuditSummary" class="cgweb091-card-grid"></div>
+    <pre id="cgweb091CloudAuditLog" class="cgweb091-pre"></pre>
+  </div>
+
+  <div class="cgweb091-block">
+    <div class="cgweb091-block-head">
+      <div>
+        <strong>Audit du dossier source</strong>
+        <span class="muted">
+          Resélectionne l'archive complète : aucun envoi, uniquement SHA-256 local + préflight Cloud.
+        </span>
+      </div>
+    </div>
+
+    <div class="cgweb091-audit-controls">
+      <label class="secondary cgweb091-picker">
+        Sélectionner le dossier FIT
+        <input
+          id="cgweb091AuditFolder"
+          type="file"
+          accept=".fit,application/vnd.ant.fit"
+          multiple
+          webkitdirectory
+          directory
+          hidden
+        >
+      </label>
+      <button id="cgweb091AuditFolderRun" type="button" disabled>
+        Auditer ce dossier
+      </button>
+    </div>
+
+    <div id="cgweb091AuditFolderSelection" class="muted">
+      Aucun dossier sélectionné.
+    </div>
+
+    <div class="cgweb091-progress-wrap">
+      <div class="cgweb091-progress-head">
+        <strong id="cgweb091AuditProgressText">En attente</strong>
+        <span id="cgweb091AuditPercent">0 %</span>
+      </div>
+      <progress id="cgweb091AuditProgress" max="1" value="0"></progress>
+    </div>
+
+    <div id="cgweb091AuditFolderSummary" class="cgweb091-card-grid"></div>
+
+    <details id="cgweb091DuplicateDetails" class="cgweb091-details">
+      <summary>Doublons SHA internes au dossier</summary>
+      <pre id="cgweb091DuplicateList" class="cgweb091-pre">Non analysé.</pre>
+    </details>
+  </div>
+</section>
+<!-- CGWEB091_FIT_RECONCILE_RESOLVE001_HTML_END -->
+
 <section id="cgweb090HistoricalTransfer" class="panel cgweb090-historical-transfer">
   <div class="section-heading">
     <div>
@@ -7253,6 +7429,6 @@ body.ux-activities-page main{
         <div id="detailTechnicalSummary"></div>
         <div id="detailRawGrid"></div>
       </div>
-  <script type="module" src="./fitcloud.js?v=CGWEB090-HISTORICAL-FIT-TRANSFER001-FIT-RECONCILE001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB091-FIT-RECONCILE-RESOLVE001"></script>
 </body>
 </html>

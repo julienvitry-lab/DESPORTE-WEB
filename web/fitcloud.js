@@ -2792,23 +2792,37 @@ async function c090PrepareArchive() {
       await c090PreflightBatch(batch);
     }
 
-    const missing = c090Prepared.filter(
+    /* CGWEB091_TRANSFER_AUDIT001_PREPARE_DEDUP_START */
+    const c091UniquePreparedMap = new Map();
+
+    for (const item of c090Prepared) {
+      const hash = String(item?.sha256 || "");
+      if (!hash || c091UniquePreparedMap.has(hash)) continue;
+      c091UniquePreparedMap.set(hash, item);
+    }
+
+    const c091UniquePrepared = [...c091UniquePreparedMap.values()];
+    const c091InternalDuplicates =
+      c090Prepared.length - c091UniquePrepared.length;
+    /* CGWEB091_TRANSFER_AUDIT001_PREPARE_DEDUP_END */
+
+    const missing = c091UniquePrepared.filter(
       (item) =>
         item.preflight?.status === "MISSING" ||
         item.preflight?.status === "DELETED_METADATA"
     ).length;
 
-    const observation = c090Prepared.filter(
+    const observation = c091UniquePrepared.filter(
       (item) =>
         item.preflight?.status === "EXISTS_NEEDS_ORIGINAL_OBSERVATION"
     ).length;
 
-    const already = c090Prepared.filter(
+    const already = c091UniquePrepared.filter(
       (item) =>
         item.preflight?.status === "ALREADY_ARCHIVED_ORIGINAL"
     ).length;
 
-    const decodeErrors = c090Prepared.filter(
+    const decodeErrors = c091UniquePrepared.filter(
       (item) => item.decodeError
     ).length;
 
@@ -2818,6 +2832,8 @@ async function c090PrepareArchive() {
       "cgweb090TransferSummary",
       [
         ["Sélectionnés", c090Prepared.length],
+        ["SHA uniques", c091UniquePrepared.length],
+        ["Doublons internes", c091InternalDuplicates],
         ["Nouveaux à stocker", missing],
         ["Doublons canoniques à marquer original", observation],
         ["Originaux déjà archivés", already],
@@ -2879,9 +2895,19 @@ async function c090UploadPrepared(item) {
 async function c090TransferArchive() {
   if (c090Busy || !c090Prepared.length) return;
 
-  const queue = c090Prepared.filter(
+  /* CGWEB091_TRANSFER_AUDIT001_QUEUE_DEDUP_START */
+  const rawQueue = c090Prepared.filter(
     (item) => item.preflight?.needs_upload === true
   );
+
+  const c091SeenQueueHashes = new Set();
+  const queue = rawQueue.filter((item) => {
+    const hash = String(item?.sha256 || "");
+    if (!hash || c091SeenQueueHashes.has(hash)) return false;
+    c091SeenQueueHashes.add(hash);
+    return true;
+  });
+  /* CGWEB091_TRANSFER_AUDIT001_QUEUE_DEDUP_END */
 
   if (!queue.length) {
     await c090RunReconcile();
@@ -3208,6 +3234,764 @@ window.SPORT_HISTORICAL_FIT_TRANSFER = Object.freeze({
 queueMicrotask(c090Wire);
 
 /* CGWEB090_HISTORICAL_FIT_TRANSFER001_WEB_END */
+
+
+
+/* CGWEB091_FIT_RECONCILE_RESOLVE001_WEB_START */
+
+let c091LastResolve = null;
+let c091AuditFiles = [];
+let c091AuditBusy = false;
+
+function c091Node(id) {
+  return document.getElementById(id);
+}
+
+function c091Escape(value) {
+  return bridge().escapeHtml(String(value ?? ""));
+}
+
+function c091Cards(hostId, rows) {
+  const host = c091Node(hostId);
+  if (!host) return;
+
+  host.innerHTML = rows.map(([label, value]) =>
+    '<div class="cgweb091-card">' +
+      '<span>' + c091Escape(label) + '</span>' +
+      '<strong>' + c091Escape(value ?? 0) + '</strong>' +
+    '</div>'
+  ).join("");
+}
+
+function c091Date(ms) {
+  const n = Number(ms || 0);
+  if (!Number.isFinite(n) || n <= 0) return "date inconnue";
+  return new Date(n).toLocaleString("fr-FR");
+}
+
+function c091Delta(ms) {
+  const n = Number(ms || 0);
+  const sign = n > 0 ? "+" : "";
+  const seconds = Math.round(n / 1000);
+
+  if (Math.abs(seconds) < 60) {
+    return sign + seconds + " s";
+  }
+
+  const minutes = Math.round(seconds / 60);
+
+  if (Math.abs(minutes) < 60) {
+    return (minutes > 0 ? "+" : "") + minutes + " min";
+  }
+
+  const hours = Math.round((minutes / 60) * 10) / 10;
+  return (hours > 0 ? "+" : "") + hours + " h";
+}
+
+function c091StrategyLabel(value) {
+  const key = String(value || "");
+
+  if (key === "STRICT_3MIN") return "±3 min";
+  if (key === "NEAR_15MIN") return "±15 min";
+  if (key.startsWith("TZ_SHIFT_")) {
+    return "décalage fuseau " + key.replace("TZ_SHIFT_", "");
+  }
+  if (key === "WIDE_6H") return "fenêtre manuelle ±6 h";
+  return key || "candidat";
+}
+
+function c091RenderResolve(data) {
+  c091LastResolve = data;
+
+  const summary = data?.summary || {};
+  const badge = c091Node("cgweb091Badge");
+  const status = c091Node("cgweb091Status");
+  const auto = c091Node("cgweb091AutoRepair");
+
+  c091Cards(
+    "cgweb091Summary",
+    [
+      ["Originaux non liés", summary.unresolved_original_files],
+      ["Candidat unique ±3 min", summary.unique_strict_candidates],
+      ["Ambigus ±3 min", summary.ambiguous_strict],
+      ["Candidats élargis", summary.manual_extended],
+      ["Sans candidat", summary.no_candidate],
+      ["Activités canonique uniquement", summary.canonical_only_activities],
+      ["Canonique-only avec candidat", summary.canonical_only_with_candidate]
+    ]
+  );
+
+  if (badge) {
+    badge.textContent =
+      Number(summary.unresolved_original_files || 0) +
+      " non lié(s)";
+  }
+
+  if (status) {
+    status.textContent =
+      "Analyse terminée · " +
+      Number(summary.unresolved_original_files || 0) +
+      " FIT original(aux) non lié(s) · " +
+      Number(summary.canonical_only_activities || 0) +
+      " activité(s) uniquement canoniques.";
+  }
+
+  if (auto) {
+    auto.disabled =
+      Number(summary.unique_strict_candidates || 0) <= 0;
+  }
+
+  c091RenderUnresolved(data?.unresolved || []);
+  c091RenderCanonicalOnly(data?.canonical_only || []);
+}
+
+function c091RenderUnresolved(rows) {
+  const host = c091Node("cgweb091UnresolvedList");
+  if (!host) return;
+
+  host.innerHTML = "";
+
+  if (!rows.length) {
+    host.innerHTML =
+      '<div class="muted">Aucun FIT original non lié 🎯</div>';
+    return;
+  }
+
+  for (const row of rows) {
+    const card = document.createElement("article");
+    card.className = "cgweb091-item";
+
+    const candidates =
+      Array.isArray(row.candidates)
+        ? row.candidates
+        : [];
+
+    const options = candidates.map((candidate) => {
+      const label =
+        c091StrategyLabel(candidate.strategy) +
+        " · " +
+        c091Date(candidate.start_time_ms) +
+        " · Δ " +
+        c091Delta(candidate.delta_ms) +
+        " · #" +
+        candidate.activity_id +
+        " · " +
+        (candidate.title || "");
+
+      return (
+        '<option value="' +
+        c091Escape(candidate.activity_id) +
+        '">' +
+        c091Escape(label) +
+        '</option>'
+      );
+    }).join("");
+
+    card.innerHTML =
+      '<div class="cgweb091-item-head">' +
+        '<div class="cgweb091-item-main">' +
+          '<strong>' +
+            c091Escape(row.file_name || row.sha256) +
+          '</strong>' +
+          '<small>' +
+            c091Escape(c091Date(row.start_time_ms)) +
+            ' · sport ' +
+            c091Escape(row.sport ?? "-") +
+            '/' +
+            c091Escape(row.sub_sport ?? "-") +
+            ' · ' +
+            c091Escape(row.link_status || "UNLINKED") +
+          '</small>' +
+          '<small class="muted">' +
+            c091Escape(row.resolution_class || "") +
+            ' · SHA ' +
+            c091Escape(String(row.sha256 || "").slice(0, 16)) +
+            '…' +
+          '</small>' +
+        '</div>' +
+        '<span class="pill neutral">' +
+          c091Escape(candidates.length) +
+          ' candidat(s)' +
+        '</span>' +
+      '</div>' +
+      '<div class="cgweb091-item-controls">' +
+        '<select class="cgweb091-candidate" ' +
+          (candidates.length ? "" : "disabled") +
+        '>' +
+          (candidates.length
+            ? options
+            : '<option>Aucun candidat proposé</option>') +
+        '</select>' +
+        '<button class="secondary cgweb091-link" type="button" ' +
+          (candidates.length ? "" : "disabled") +
+        '>Lier cet original</button>' +
+      '</div>';
+
+    const select = card.querySelector(".cgweb091-candidate");
+    const button = card.querySelector(".cgweb091-link");
+
+    button?.addEventListener("click", () => {
+      const activityId = select?.value || "";
+      if (!activityId) return;
+
+      const candidate =
+        candidates.find(
+          (item) =>
+            String(item.activity_id) === String(activityId)
+        );
+
+      const ok = window.confirm(
+        "Rattacher ce FIT original à l'activité #" +
+        activityId +
+        " ?\n\n" +
+        "Méthode : " +
+        c091StrategyLabel(candidate?.strategy) +
+        "\nÉcart horaire : " +
+        c091Delta(candidate?.delta_ms) +
+        "\n\nAucune activité ne sera modifiée."
+      );
+
+      if (!ok) return;
+
+      void c091RepairOne(
+        row.sha256,
+        activityId
+      );
+    });
+
+    host.appendChild(card);
+  }
+}
+
+function c091RenderCanonicalOnly(rows) {
+  const host = c091Node("cgweb091CanonicalOnlyList");
+  if (!host) return;
+
+  host.innerHTML = "";
+
+  if (!rows.length) {
+    host.innerHTML =
+      '<div class="muted">Aucune activité uniquement canonique.</div>';
+    return;
+  }
+
+  for (const row of rows) {
+    const card = document.createElement("article");
+    card.className = "cgweb091-item";
+
+    const candidates =
+      Array.isArray(row.candidate_originals)
+        ? row.candidate_originals
+        : [];
+
+    card.innerHTML =
+      '<div class="cgweb091-item-head">' +
+        '<div class="cgweb091-item-main">' +
+          '<strong>#' +
+            c091Escape(row.activity_id) +
+            ' · ' +
+            c091Escape(row.title || "") +
+          '</strong>' +
+          '<small>' +
+            c091Escape(c091Date(row.start_time_ms)) +
+            ' · sport ' +
+            c091Escape(row.sport ?? "-") +
+            '/' +
+            c091Escape(row.sub_sport ?? "-") +
+          '</small>' +
+        '</div>' +
+        '<span class="pill neutral">' +
+          c091Escape(row.candidate_original_count || 0) +
+          ' original(aux) candidat(s)' +
+        '</span>' +
+      '</div>' +
+      (candidates.length
+        ? '<small class="muted">' +
+          c091Escape(
+            candidates
+              .map(
+                (item) =>
+                  item.file_name +
+                  " · " +
+                  c091StrategyLabel(item.strategy) +
+                  " · Δ " +
+                  c091Delta(item.delta_ms)
+              )
+              .join(" | ")
+          ) +
+          '</small>'
+        : '');
+
+    host.appendChild(card);
+  }
+}
+
+async function c091Resolve() {
+  const status = c091Node("cgweb091Status");
+  const button = c091Node("cgweb091Resolve");
+
+  if (button) button.disabled = true;
+  if (status) status.textContent = "Analyse des correspondances…";
+
+  try {
+    const data = await request("reconcile_resolve");
+    c091RenderResolve(data);
+    return data;
+  } catch (error) {
+    if (status) {
+      status.textContent =
+        "Analyse impossible : " +
+        (error?.message || String(error));
+    }
+    throw error;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function c091RepairOne(sha256, activityId) {
+  const data = await request(
+    "original_match_repair",
+    {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        sha256,
+        activity_id:activityId
+      })
+    }
+  );
+
+  const status = c091Node("cgweb091Status");
+
+  if (status) {
+    status.textContent =
+      "Rattachement enregistré · #" +
+      data.activity_id +
+      " · " +
+      c091StrategyLabel(data.strategy) +
+      " · 0 activité modifiée.";
+  }
+
+  await c091Resolve();
+  await c091CloudAudit();
+
+  return data;
+}
+
+async function c091AutoRepair() {
+  const count =
+    Number(
+      c091LastResolve?.summary
+        ?.unique_strict_candidates || 0
+    );
+
+  if (!count) return;
+
+  const ok = window.confirm(
+    "Réparer automatiquement " +
+    count +
+    " correspondance(s) ayant exactement un candidat à ±3 minutes ?\n\n" +
+    "Aucune activité ne sera modifiée."
+  );
+
+  if (!ok) return;
+
+  const button = c091Node("cgweb091AutoRepair");
+  if (button) button.disabled = true;
+
+  try {
+    const data = await request(
+      "original_match_repair_auto",
+      {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:"{}"
+      }
+    );
+
+    const status = c091Node("cgweb091Status");
+    if (status) {
+      status.textContent =
+        "Réparation automatique terminée · " +
+        Number(data?.repaired || 0) +
+        " lié(s) · " +
+        Number(data?.failed || 0) +
+        " échec(s).";
+    }
+
+    await c091Resolve();
+    await c091CloudAudit();
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function c091SessionLine(row) {
+  return (
+    c091Date(row.start_ms) +
+    " → " +
+    c091Date(row.end_ms) +
+    " · " +
+    Number(row.unique_docs || 0) +
+    " document(s) originaux uniques"
+  );
+}
+
+async function c091CloudAudit() {
+  const button = c091Node("cgweb091CloudAudit");
+  const log = c091Node("cgweb091CloudAuditLog");
+
+  if (button) button.disabled = true;
+
+  try {
+    const data = await request("transfer_audit");
+    const s = data?.summary || {};
+
+    c091Cards(
+      "cgweb091CloudAuditSummary",
+      [
+        ["FIT actifs", s.fit_files_active],
+        ["SHA originaux uniques", s.original_unique_sha],
+        ["SHA canoniques uniques", s.canonical_unique_sha],
+        ["SHA original + canonique", s.dual_role_sha],
+        ["Originaux liés", s.original_linked_files],
+        ["Originaux non liés", s.original_unlinked_files],
+        ["Liens pendants", s.original_dangling_files],
+        ["Activités avec original", s.activities_with_original],
+        ["Activités multi-originaux", s.activities_with_multiple_originals],
+        ["Originaux supplémentaires sur activité déjà couverte", s.extra_linked_original_files]
+      ]
+    );
+
+    if (log) {
+      const sessions =
+        Array.isArray(s.recent_original_sessions)
+          ? s.recent_original_sessions
+          : [];
+
+      const lines = [
+        "TRANSFER_AUDIT001",
+        "=================",
+        "Identité SHA original = liés + non liés + pendants : " +
+          (s.original_accounting_ok ? "OK" : "ECHEC"),
+        "Documents originaux avec plusieurs noms connus : " +
+          Number(s.original_docs_multiple_names || 0),
+        "Rôles inconnus : " +
+          Number(s.unknown_role_files || 0),
+        "Max originaux pour une activité : " +
+          Number(s.max_originals_for_one_activity || 0),
+        "",
+        "Sessions récentes estimées depuis uploaded_at_ms :",
+        ...(sessions.length
+          ? sessions.map(c091SessionLine)
+          : ["Aucune session détectée."])
+      ];
+
+      log.textContent = lines.join("\n");
+    }
+
+    return data;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function c091Sha256(file) {
+  const buffer = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function c091AuditSetProgress(done, total, text) {
+  const p = c091Node("cgweb091AuditProgress");
+  const label = c091Node("cgweb091AuditProgressText");
+  const pct = c091Node("cgweb091AuditPercent");
+
+  const safeTotal = Math.max(1, Number(total || 1));
+  const safeDone = Math.max(
+    0,
+    Math.min(safeTotal, Number(done || 0))
+  );
+  const percent =
+    Math.round((safeDone / safeTotal) * 100);
+
+  if (p) {
+    p.max = safeTotal;
+    p.value = safeDone;
+  }
+  if (label) label.textContent = text || "";
+  if (pct) pct.textContent = percent + " %";
+}
+
+function c091AuditFolderChanged(files) {
+  c091AuditFiles = [...(files || [])]
+    .filter((file) =>
+      String(file?.name || "")
+        .toLowerCase()
+        .endsWith(".fit")
+    );
+
+  const selection =
+    c091Node("cgweb091AuditFolderSelection");
+  const run =
+    c091Node("cgweb091AuditFolderRun");
+
+  const bytes =
+    c091AuditFiles.reduce(
+      (sum, file) =>
+        sum + Number(file.size || 0),
+      0
+    );
+
+  if (selection) {
+    selection.textContent =
+      c091AuditFiles.length
+        ? (
+            c091AuditFiles.length +
+            " FIT · " +
+            bridge().formatBytes(bytes) +
+            " · audit sans transfert"
+          )
+        : "Aucun dossier sélectionné.";
+  }
+
+  if (run) {
+    run.disabled =
+      !c091AuditFiles.length ||
+      c091AuditBusy;
+  }
+
+  c091AuditSetProgress(0, 1, "En attente");
+  c091Cards("cgweb091AuditFolderSummary", []);
+
+  const dup = c091Node("cgweb091DuplicateList");
+  if (dup) dup.textContent = "Non analysé.";
+}
+
+async function c091AuditFolder() {
+  if (
+    c091AuditBusy ||
+    !c091AuditFiles.length
+  ) {
+    return;
+  }
+
+  c091AuditBusy = true;
+
+  const run =
+    c091Node("cgweb091AuditFolderRun");
+  if (run) run.disabled = true;
+
+  const byHash = new Map();
+
+  try {
+    for (
+      let i = 0;
+      i < c091AuditFiles.length;
+      i += 1
+    ) {
+      const file = c091AuditFiles[i];
+
+      c091AuditSetProgress(
+        i,
+        c091AuditFiles.length,
+        "SHA-256 " +
+          (i + 1) +
+          "/" +
+          c091AuditFiles.length +
+          " · " +
+          file.name
+      );
+
+      const hash =
+        await c091Sha256(file);
+
+      if (!byHash.has(hash)) {
+        byHash.set(hash, []);
+      }
+
+      byHash.get(hash).push(
+        file.webkitRelativePath ||
+        file.name
+      );
+
+      if ((i + 1) % 20 === 0) {
+        await new Promise(
+          (resolve) =>
+            setTimeout(resolve, 0)
+        );
+      }
+    }
+
+    const hashes = [...byHash.keys()];
+    let alreadyOriginal = 0;
+    let existsNeedsOriginal = 0;
+    let missing = 0;
+
+    for (
+      let start = 0;
+      start < hashes.length;
+      start += 100
+    ) {
+      const batch =
+        hashes.slice(start, start + 100);
+
+      c091AuditSetProgress(
+        start,
+        hashes.length,
+        "Préflight Cloud " +
+          (start + 1) +
+          "–" +
+          Math.min(start + batch.length, hashes.length)
+      );
+
+      const x = await request(
+        "historical_preflight",
+        {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({hashes:batch})
+        }
+      );
+
+      for (const row of x?.items || []) {
+        if (
+          row.status ===
+          "ALREADY_ARCHIVED_ORIGINAL"
+        ) {
+          alreadyOriginal += 1;
+        } else if (
+          row.status ===
+          "EXISTS_NEEDS_ORIGINAL_OBSERVATION"
+        ) {
+          existsNeedsOriginal += 1;
+        } else {
+          missing += 1;
+        }
+      }
+    }
+
+    const duplicateGroups =
+      [...byHash.entries()]
+        .filter(([, names]) => names.length > 1);
+
+    const duplicateOccurrences =
+      c091AuditFiles.length -
+      hashes.length;
+
+    c091Cards(
+      "cgweb091AuditFolderSummary",
+      [
+        ["Fichiers sélectionnés", c091AuditFiles.length],
+        ["SHA uniques", hashes.length],
+        ["Occurrences dupliquées", duplicateOccurrences],
+        ["Groupes SHA dupliqués", duplicateGroups.length],
+        ["SHA déjà originaux Cloud", alreadyOriginal],
+        ["SHA Cloud à marquer original", existsNeedsOriginal],
+        ["SHA absents du Cloud", missing]
+      ]
+    );
+
+    const list =
+      c091Node("cgweb091DuplicateList");
+
+    if (list) {
+      list.textContent =
+        duplicateGroups.length
+          ? duplicateGroups
+              .slice(0, 100)
+              .map(
+                ([hash, names]) =>
+                  hash +
+                  "\n  " +
+                  names.join("\n  ")
+              )
+              .join("\n\n")
+          : "Aucun doublon SHA interne au dossier.";
+    }
+
+    c091AuditSetProgress(
+      hashes.length,
+      hashes.length,
+      "Audit terminé"
+    );
+  } finally {
+    c091AuditBusy = false;
+    if (run) {
+      run.disabled =
+        !c091AuditFiles.length;
+    }
+  }
+}
+
+function c091Wire() {
+  const resolve = c091Node("cgweb091Resolve");
+  const auto = c091Node("cgweb091AutoRepair");
+  const cloud = c091Node("cgweb091CloudAudit");
+  const folder = c091Node("cgweb091AuditFolder");
+  const audit = c091Node("cgweb091AuditFolderRun");
+
+  if (resolve && resolve.dataset.c091 !== "1") {
+    resolve.dataset.c091 = "1";
+    resolve.addEventListener(
+      "click",
+      () => void c091Resolve().catch(console.error)
+    );
+  }
+
+  if (auto && auto.dataset.c091 !== "1") {
+    auto.dataset.c091 = "1";
+    auto.addEventListener(
+      "click",
+      () => void c091AutoRepair().catch(console.error)
+    );
+  }
+
+  if (cloud && cloud.dataset.c091 !== "1") {
+    cloud.dataset.c091 = "1";
+    cloud.addEventListener(
+      "click",
+      () => void c091CloudAudit().catch(console.error)
+    );
+  }
+
+  if (folder && folder.dataset.c091 !== "1") {
+    folder.dataset.c091 = "1";
+    folder.addEventListener(
+      "change",
+      (event) =>
+        c091AuditFolderChanged(
+          event.currentTarget.files
+        )
+    );
+  }
+
+  if (audit && audit.dataset.c091 !== "1") {
+    audit.dataset.c091 = "1";
+    audit.addEventListener(
+      "click",
+      () => void c091AuditFolder().catch(console.error)
+    );
+  }
+}
+
+window.SPORT_FIT_RECONCILE_RESOLVE =
+  Object.freeze({
+    version:"FIT_RECONCILE_RESOLVE001",
+    matchRepairVersion:"ORIGINAL_MATCH_REPAIR001",
+    transferAuditVersion:"TRANSFER_AUDIT001",
+    resolve:c091Resolve,
+    cloudAudit:c091CloudAudit,
+    auditFolder:c091AuditFolder
+  });
+
+queueMicrotask(c091Wire);
+
+/* CGWEB091_FIT_RECONCILE_RESOLVE001_WEB_END */
 
 
 function init() {

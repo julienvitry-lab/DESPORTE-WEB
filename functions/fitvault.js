@@ -1662,6 +1662,693 @@ function createFitVault() {
 
   /* CGWEB090_FIT_RECONCILE001_HELPERS_END */
 
+
+/* CGWEB091_FIT_RECONCILE_RESOLVE001_HELPERS_START */
+
+const C091_STRICT_WINDOW_MS = 3 * 60 * 1000;
+const C091_NEAR_WINDOW_MS = 15 * 60 * 1000;
+const C091_WIDE_WINDOW_MS = 6 * 60 * 60 * 1000;
+const C091_TZ_OFFSETS = [
+  60 * 60 * 1000,
+  -60 * 60 * 1000,
+  2 * 60 * 60 * 1000,
+  -2 * 60 * 60 * 1000
+];
+
+function c091Finite(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function c091Title(row, fallback = "") {
+  return String(
+    row?.custom_title ||
+    row?.name ||
+    row?.title ||
+    fallback ||
+    ""
+  ).trim();
+}
+
+function c091ActivityCompact(docSnap) {
+  const row = docSnap.data() || {};
+  return {
+    activity_id: String(docSnap.id),
+    start_time_ms: c091Finite(row.start_time_ms),
+    sport: c091Finite(row.sport),
+    sub_sport: c091Finite(row.sub_sport) ?? 0,
+    duration_s:
+      c091Finite(row.duration_s) ??
+      c091Finite(row.elapsed_time_s) ??
+      c091Finite(row.moving_time_s),
+    distance_m:
+      c091Finite(row.distance_m) ??
+      c091Finite(row.distance),
+    title: c091Title(row, `Activité #${docSnap.id}`)
+  };
+}
+
+async function c091LoadActivities(uid) {
+  const map = new Map();
+
+  const query =
+    db.collection(`${ROOT}/${uid}/activities`)
+      .select(
+        "start_time_ms",
+        "sport",
+        "sub_sport",
+        "duration_s",
+        "elapsed_time_s",
+        "moving_time_s",
+        "distance_m",
+        "distance",
+        "custom_title",
+        "name",
+        "title",
+        "deleted_at_ms"
+      );
+
+  for await (const snap of query.stream()) {
+    const row = snap.data() || {};
+    if (row.deleted_at_ms != null) continue;
+    const compact = c091ActivityCompact(snap);
+    map.set(compact.activity_id, compact);
+  }
+
+  return map;
+}
+
+function c091Candidate(file, activity) {
+  const fileStart = c091Finite(file?.start_time_ms);
+  const activityStart = c091Finite(activity?.start_time_ms);
+
+  if (fileStart == null || activityStart == null) {
+    return null;
+  }
+
+  const fileSport = c091Finite(file?.sport);
+  const activitySport = c091Finite(activity?.sport);
+
+  if (
+    fileSport != null &&
+    fileSport > 0 &&
+    activitySport != null &&
+    activitySport > 0 &&
+    fileSport !== activitySport
+  ) {
+    return null;
+  }
+
+  const delta = activityStart - fileStart;
+  const abs = Math.abs(delta);
+  let strategy = null;
+  let residual = abs;
+  let priority = 99;
+
+  if (abs <= C091_STRICT_WINDOW_MS) {
+    strategy = "STRICT_3MIN";
+    priority = 0;
+  } else if (abs <= C091_NEAR_WINDOW_MS) {
+    strategy = "NEAR_15MIN";
+    priority = 1;
+  } else {
+    for (const offset of C091_TZ_OFFSETS) {
+      const r = Math.abs(delta - offset);
+      if (r <= C091_STRICT_WINDOW_MS) {
+        strategy =
+          "TZ_SHIFT_" +
+          (offset > 0 ? "+" : "") +
+          String(offset / 3600000) +
+          "H";
+        residual = r;
+        priority = 2;
+        break;
+      }
+    }
+  }
+
+  if (!strategy && abs <= C091_WIDE_WINDOW_MS) {
+    strategy = "WIDE_6H";
+    residual = abs;
+    priority = 3;
+  }
+
+  if (!strategy) return null;
+
+  const fileSub = c091Finite(file?.sub_sport);
+  const activitySub = c091Finite(activity?.sub_sport);
+  const subPenalty =
+    fileSub != null &&
+    activitySub != null &&
+    fileSub !== activitySub
+      ? 1
+      : 0;
+
+  return {
+    activity_id: activity.activity_id,
+    title: activity.title,
+    start_time_ms: activity.start_time_ms,
+    sport: activity.sport,
+    sub_sport: activity.sub_sport,
+    delta_ms: delta,
+    residual_ms: residual,
+    strategy,
+    score:
+      priority * 1e12 +
+      residual * 100 +
+      subPenalty
+  };
+}
+
+function c091RankCandidates(file, activities) {
+  const out = [];
+
+  for (const activity of activities.values()) {
+    const candidate = c091Candidate(file, activity);
+    if (candidate) out.push(candidate);
+  }
+
+  out.sort((a, b) =>
+    a.score - b.score ||
+    Math.abs(a.delta_ms) - Math.abs(b.delta_ms) ||
+    String(a.activity_id).localeCompare(String(b.activity_id))
+  );
+
+  return out.slice(0, 12);
+}
+
+async function c091Inventory(uid) {
+  const activities = await c091LoadActivities(uid);
+
+  const activityState = new Map(
+    [...activities.keys()].map((id) => [
+      id,
+      {
+        original: false,
+        canonical: false,
+        original_count: 0,
+        canonical_count: 0
+      }
+    ])
+  );
+
+  const unresolved = [];
+  const originalFiles = [];
+  const fitQuery =
+    files(uid).select(
+      "activity_id",
+      "sha256",
+      "file_name",
+      "source",
+      "upload_mode",
+      "archive_roles",
+      "observed_sources",
+      "observed_modes",
+      "historical_original_names",
+      "start_time_ms",
+      "sport",
+      "sub_sport",
+      "link_status",
+      "fitwriter_version",
+      "fitrecovery_version",
+      "fitbackfill_version",
+      "recovery_is_canonical",
+      "fitversion_version",
+      "fit_editor_version",
+      "version_index",
+      "version_kind",
+      "first_uploaded_at_ms",
+      "uploaded_at_ms",
+      "last_seen_at_ms",
+      "deleted_at_ms"
+    );
+
+  for await (const snap of fitQuery.stream()) {
+    const row = snap.data() || {};
+    if (row.deleted_at_ms != null) continue;
+
+    const roles = c090Roles(row);
+    const isOriginal = roles.includes(C090_ROLE_ORIGINAL);
+    const isCanonical = roles.some(c090IsCanonicalRole);
+    const activityId = String(row.activity_id || "").trim();
+
+    if (activityId && activityState.has(activityId)) {
+      const state = activityState.get(activityId);
+
+      if (isOriginal) {
+        state.original = true;
+        state.original_count += 1;
+      }
+
+      if (isCanonical) {
+        state.canonical = true;
+        state.canonical_count += 1;
+      }
+    }
+
+    if (!isOriginal) continue;
+
+    const file = {
+      sha256: String(row.sha256 || snap.id),
+      file_name: String(row.file_name || ""),
+      start_time_ms: c091Finite(row.start_time_ms),
+      sport: c091Finite(row.sport),
+      sub_sport: c091Finite(row.sub_sport) ?? 0,
+      activity_id: activityId || null,
+      link_status: String(row.link_status || "UNLINKED"),
+      archive_roles: roles,
+      historical_original_names:
+        Array.isArray(row.historical_original_names)
+          ? row.historical_original_names
+          : [],
+      uploaded_at_ms: c091Finite(row.uploaded_at_ms)
+    };
+
+    originalFiles.push(file);
+
+    if (!activityId || !activities.has(activityId)) {
+      const candidates = c091RankCandidates(file, activities);
+      const strict =
+        candidates.filter(
+          (candidate) =>
+            candidate.strategy === "STRICT_3MIN"
+        );
+
+      unresolved.push({
+        ...file,
+        candidates,
+        strict_candidate_count: strict.length,
+        auto_repairable: strict.length === 1,
+        resolution_class:
+          strict.length === 1
+            ? "UNIQUE_STRICT"
+            : strict.length > 1
+              ? "AMBIGUOUS_STRICT"
+              : candidates.length
+                ? "MANUAL_EXTENDED"
+                : (
+                    file.start_time_ms == null
+                      ? "NO_TIME"
+                      : "NO_CANDIDATE"
+                  )
+      });
+    }
+  }
+
+  const reverse = new Map();
+
+  for (const file of unresolved) {
+    for (const candidate of file.candidates) {
+      if (!reverse.has(candidate.activity_id)) {
+        reverse.set(candidate.activity_id, []);
+      }
+
+      reverse.get(candidate.activity_id).push({
+        sha256: file.sha256,
+        file_name: file.file_name,
+        strategy: candidate.strategy,
+        delta_ms: candidate.delta_ms
+      });
+    }
+  }
+
+  const canonicalOnly = [];
+
+  for (const [activityId, state] of activityState.entries()) {
+    if (!state.canonical || state.original) continue;
+
+    const activity = activities.get(activityId);
+    const candidateOriginals =
+      (reverse.get(activityId) || [])
+        .sort((a, b) =>
+          Math.abs(a.delta_ms) - Math.abs(b.delta_ms)
+        )
+        .slice(0, 8);
+
+    canonicalOnly.push({
+      ...activity,
+      candidate_originals: candidateOriginals,
+      candidate_original_count:
+        (reverse.get(activityId) || []).length
+    });
+  }
+
+  canonicalOnly.sort((a, b) =>
+    (b.candidate_original_count || 0) -
+      (a.candidate_original_count || 0) ||
+    Number(b.start_time_ms || 0) -
+      Number(a.start_time_ms || 0)
+  );
+
+  return {
+    activities,
+    activityState,
+    originalFiles,
+    unresolved,
+    canonicalOnly
+  };
+}
+
+async function c091RepairOne(
+  uid,
+  sha256Value,
+  activityIdValue,
+  requestedBy = "MANUAL"
+) {
+  const sha256 = String(sha256Value || "")
+    .trim()
+    .toLowerCase();
+
+  const activityId = String(activityIdValue || "").trim();
+
+  if (!/^[a-f0-9]{64}$/.test(sha256)) {
+    throw Object.assign(
+      new Error("SHA-256 invalide."),
+      {status: 400}
+    );
+  }
+
+  if (!activityId) {
+    throw Object.assign(
+      new Error("Identifiant activité absent."),
+      {status: 400}
+    );
+  }
+
+  const [fileSnap, activitySnap] =
+    await Promise.all([
+      fileDoc(uid, sha256).get(),
+      db.doc(
+        `${ROOT}/${uid}/activities/${activityId}`
+      ).get()
+    ]);
+
+  if (!fileSnap.exists) {
+    throw Object.assign(
+      new Error("FIT inconnu."),
+      {status: 404}
+    );
+  }
+
+  if (!activitySnap.exists) {
+    throw Object.assign(
+      new Error("Activité inconnue."),
+      {status: 404}
+    );
+  }
+
+  const file = fileSnap.data() || {};
+  const activity = activitySnap.data() || {};
+
+  if (file.deleted_at_ms != null) {
+    throw Object.assign(
+      new Error("FIT supprimé."),
+      {status: 409}
+    );
+  }
+
+  if (activity.deleted_at_ms != null) {
+    throw Object.assign(
+      new Error("Activité supprimée."),
+      {status: 409}
+    );
+  }
+
+  const roles = c090Roles(file);
+
+  if (!roles.includes(C090_ROLE_ORIGINAL)) {
+    throw Object.assign(
+      new Error(
+        "Ce FIT n'est pas classé comme original historique."
+      ),
+      {status: 409}
+    );
+  }
+
+  const activityCompact = {
+    activity_id: activityId,
+    start_time_ms: c091Finite(activity.start_time_ms),
+    sport: c091Finite(activity.sport),
+    sub_sport: c091Finite(activity.sub_sport) ?? 0,
+    title: c091Title(activity, `Activité #${activityId}`)
+  };
+
+  const candidate = c091Candidate(
+    {
+      start_time_ms: c091Finite(file.start_time_ms),
+      sport: c091Finite(file.sport),
+      sub_sport: c091Finite(file.sub_sport) ?? 0
+    },
+    activityCompact
+  );
+
+  if (!candidate) {
+    throw Object.assign(
+      new Error(
+        "Correspondance refusée : date/sport hors des fenêtres de sécurité."
+      ),
+      {status: 409}
+    );
+  }
+
+  const previousActivityId =
+    String(file.activity_id || "").trim() || null;
+
+  const previousLinkStatus =
+    String(file.link_status || "").trim() || null;
+
+  const now = Date.now();
+
+  await fileDoc(uid, sha256).set(
+    {
+      activity_id: activityId,
+      link_status: "LINKED_REPAIRED",
+      original_match_repair_version:
+        "ORIGINAL_MATCH_REPAIR001",
+      reconcile_resolve_version:
+        "FIT_RECONCILE_RESOLVE001",
+      match_repair_strategy: candidate.strategy,
+      match_repair_delta_ms: candidate.delta_ms,
+      match_repair_residual_ms: candidate.residual_ms,
+      match_repair_requested_by: requestedBy,
+      previous_activity_id: previousActivityId,
+      previous_link_status: previousLinkStatus,
+      repaired_at_ms: now,
+      updated_at_ms: now
+    },
+    {merge: true}
+  );
+
+  return {
+    sha256,
+    activity_id: activityId,
+    strategy: candidate.strategy,
+    delta_ms: candidate.delta_ms,
+    activities_modified: 0,
+    file_metadata_modified: true
+  };
+}
+
+async function c091TransferAudit(uid) {
+  const activities = await c091LoadActivities(uid);
+  const activityIds = new Set(activities.keys());
+
+  let fitFilesActive = 0;
+  let originalUniqueSha = 0;
+  let canonicalUniqueSha = 0;
+  let dualRoleSha = 0;
+  let originalLinkedFiles = 0;
+  let originalUnlinkedFiles = 0;
+  let originalDanglingFiles = 0;
+  let unknownRoleFiles = 0;
+  let originalDocsMultipleNames = 0;
+
+  const activitiesWithOriginal = new Set();
+  const originalPerActivity = new Map();
+  const uploadMoments = [];
+  const inconsistencies = [];
+
+  const query =
+    files(uid).select(
+      "activity_id",
+      "sha256",
+      "file_name",
+      "source",
+      "upload_mode",
+      "archive_roles",
+      "historical_original_names",
+      "has_original_archive",
+      "has_canonical_archive",
+      "fitwriter_version",
+      "fitrecovery_version",
+      "fitbackfill_version",
+      "recovery_is_canonical",
+      "fitversion_version",
+      "fit_editor_version",
+      "version_index",
+      "version_kind",
+      "uploaded_at_ms",
+      "deleted_at_ms"
+    );
+
+  for await (const snap of query.stream()) {
+    const row = snap.data() || {};
+    if (row.deleted_at_ms != null) continue;
+
+    fitFilesActive += 1;
+
+    const roles = c090Roles(row);
+    const isOriginal =
+      roles.includes(C090_ROLE_ORIGINAL);
+    const isCanonical =
+      roles.some(c090IsCanonicalRole);
+
+    if (roles.includes(C090_ROLE_UNKNOWN)) {
+      unknownRoleFiles += 1;
+    }
+
+    if (isOriginal) originalUniqueSha += 1;
+    if (isCanonical) canonicalUniqueSha += 1;
+    if (isOriginal && isCanonical) dualRoleSha += 1;
+
+    if (!isOriginal) continue;
+
+    const names =
+      Array.isArray(row.historical_original_names)
+        ? c090Strings(row.historical_original_names)
+        : [];
+
+    if (names.length > 1) {
+      originalDocsMultipleNames += 1;
+    }
+
+    if (row.has_original_archive !== true) {
+      if (inconsistencies.length < 100) {
+        inconsistencies.push({
+          sha256: String(row.sha256 || snap.id),
+          kind: "ORIGINAL_ROLE_WITHOUT_FLAG",
+          file_name: String(row.file_name || "")
+        });
+      }
+    }
+
+    const uploadedAt =
+      c091Finite(row.uploaded_at_ms);
+
+    if (uploadedAt != null) {
+      uploadMoments.push({
+        t: uploadedAt,
+        sha256: String(row.sha256 || snap.id)
+      });
+    }
+
+    const activityId =
+      String(row.activity_id || "").trim();
+
+    if (!activityId) {
+      originalUnlinkedFiles += 1;
+      continue;
+    }
+
+    if (!activityIds.has(activityId)) {
+      originalDanglingFiles += 1;
+      continue;
+    }
+
+    originalLinkedFiles += 1;
+    activitiesWithOriginal.add(activityId);
+
+    originalPerActivity.set(
+      activityId,
+      Number(
+        originalPerActivity.get(activityId) || 0
+      ) + 1
+    );
+  }
+
+  const multiOriginalActivities =
+    [...originalPerActivity.entries()]
+      .filter(([, count]) => count > 1)
+      .sort((a, b) => b[1] - a[1]);
+
+  const extraLinkedOriginalFiles =
+    Math.max(
+      0,
+      originalLinkedFiles -
+        activitiesWithOriginal.size
+    );
+
+  uploadMoments.sort((a, b) => a.t - b.t);
+
+  const sessions = [];
+  const SESSION_GAP_MS = 10 * 60 * 1000;
+
+  for (const item of uploadMoments) {
+    const last = sessions[sessions.length - 1];
+
+    if (
+      !last ||
+      item.t - last.end_ms > SESSION_GAP_MS
+    ) {
+      sessions.push({
+        start_ms: item.t,
+        end_ms: item.t,
+        unique_docs: 1
+      });
+    } else {
+      last.end_ms = item.t;
+      last.unique_docs += 1;
+    }
+  }
+
+  return {
+    fit_files_active: fitFilesActive,
+    original_unique_sha: originalUniqueSha,
+    canonical_unique_sha: canonicalUniqueSha,
+    dual_role_sha: dualRoleSha,
+
+    original_linked_files: originalLinkedFiles,
+    original_unlinked_files: originalUnlinkedFiles,
+    original_dangling_files: originalDanglingFiles,
+    original_accounting_ok:
+      originalUniqueSha ===
+      originalLinkedFiles +
+        originalUnlinkedFiles +
+        originalDanglingFiles,
+
+    activities_with_original:
+      activitiesWithOriginal.size,
+    activities_with_multiple_originals:
+      multiOriginalActivities.length,
+    extra_linked_original_files:
+      extraLinkedOriginalFiles,
+    max_originals_for_one_activity:
+      multiOriginalActivities.length
+        ? multiOriginalActivities[0][1]
+        : 1,
+
+    original_docs_multiple_names:
+      originalDocsMultipleNames,
+    unknown_role_files: unknownRoleFiles,
+    metadata_inconsistencies:
+      inconsistencies,
+
+    recent_original_sessions:
+      sessions.slice(-10).reverse(),
+
+    multi_original_examples:
+      multiOriginalActivities
+        .slice(0, 100)
+        .map(([activity_id, count]) => ({
+          activity_id,
+          count
+        }))
+  };
+}
+
+/* CGWEB091_FIT_RECONCILE_RESOLVE001_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -2559,6 +3246,199 @@ function createFitVault() {
         /* CGWEB088_FIX3_FITBACKFILL_ERROR_DIAGNOSTIC001_ACTION_END */
 
 
+
+/* CGWEB091_FIT_RECONCILE_RESOLVE001_ACTIONS_START */
+
+if (action === "reconcile_resolve") {
+  if (req.method !== "GET") {
+    return res.status(405).json({error: "GET requis."});
+  }
+
+  const inv = await c091Inventory(uid);
+
+  const uniqueStrict =
+    inv.unresolved.filter(
+      (row) => row.auto_repairable
+    ).length;
+
+  const ambiguousStrict =
+    inv.unresolved.filter(
+      (row) =>
+        row.resolution_class ===
+        "AMBIGUOUS_STRICT"
+    ).length;
+
+  const manualExtended =
+    inv.unresolved.filter(
+      (row) =>
+        row.resolution_class ===
+        "MANUAL_EXTENDED"
+    ).length;
+
+  const noCandidate =
+    inv.unresolved.filter(
+      (row) =>
+        row.resolution_class ===
+          "NO_CANDIDATE" ||
+        row.resolution_class ===
+          "NO_TIME"
+    ).length;
+
+  return res.json({
+    ok: true,
+    service: "FIT_RECONCILE_RESOLVE001",
+    version: "CGWEB091",
+    read_only: true,
+    activities_modified: 0,
+    fit_files_modified: 0,
+    summary: {
+      unresolved_original_files:
+        inv.unresolved.length,
+      unique_strict_candidates:
+        uniqueStrict,
+      ambiguous_strict:
+        ambiguousStrict,
+      manual_extended:
+        manualExtended,
+      no_candidate:
+        noCandidate,
+      canonical_only_activities:
+        inv.canonicalOnly.length,
+      canonical_only_with_candidate:
+        inv.canonicalOnly.filter(
+          (row) =>
+            Number(
+              row.candidate_original_count || 0
+            ) > 0
+        ).length
+    },
+    unresolved: inv.unresolved,
+    canonical_only:
+      inv.canonicalOnly.slice(0, 500)
+  });
+}
+
+if (action === "original_match_repair") {
+  if (req.method !== "POST") {
+    return res.status(405).json({error: "POST requis."});
+  }
+
+  let body = req.body;
+
+  if (Buffer.isBuffer(body)) {
+    try {
+      body = JSON.parse(
+        body.toString("utf8")
+      );
+    } catch {
+      body = {};
+    }
+  }
+
+  if (
+    !body ||
+    typeof body !== "object" ||
+    Array.isArray(body)
+  ) {
+    body = {};
+  }
+
+  const result =
+    await c091RepairOne(
+      uid,
+      body.sha256,
+      body.activity_id,
+      "MANUAL_UI"
+    );
+
+  return res.json({
+    ok: true,
+    service: "ORIGINAL_MATCH_REPAIR001",
+    version: "CGWEB091",
+    ...result
+  });
+}
+
+if (action === "original_match_repair_auto") {
+  if (req.method !== "POST") {
+    return res.status(405).json({error: "POST requis."});
+  }
+
+  const inv = await c091Inventory(uid);
+  const repairable =
+    inv.unresolved.filter(
+      (row) => row.auto_repairable
+    );
+
+  const results = [];
+
+  for (const row of repairable) {
+    const strict =
+      row.candidates.filter(
+        (candidate) =>
+          candidate.strategy ===
+          "STRICT_3MIN"
+      );
+
+    if (strict.length !== 1) continue;
+
+    try {
+      results.push({
+        ok: true,
+        ...await c091RepairOne(
+          uid,
+          row.sha256,
+          strict[0].activity_id,
+          "AUTO_UNIQUE_STRICT"
+        )
+      });
+    } catch (error) {
+      results.push({
+        ok: false,
+        sha256: row.sha256,
+        error:
+          error?.message ||
+          String(error)
+      });
+    }
+  }
+
+  return res.json({
+    ok: true,
+    service: "ORIGINAL_MATCH_REPAIR001",
+    version: "CGWEB091",
+    mode: "AUTO_UNIQUE_STRICT",
+    selected: repairable.length,
+    repaired:
+      results.filter((x) => x.ok).length,
+    failed:
+      results.filter((x) => !x.ok).length,
+    results,
+    activities_modified: 0
+  });
+}
+
+if (action === "transfer_audit") {
+  if (req.method !== "GET") {
+    return res.status(405).json({error: "GET requis."});
+  }
+
+  const result =
+    await c091TransferAudit(uid);
+
+  return res.json({
+    ok: true,
+    service: "TRANSFER_AUDIT001",
+    version: "CGWEB091",
+    read_only: true,
+    activities_modified: 0,
+    fit_files_modified: 0,
+    summary: result
+  });
+}
+
+/* CGWEB091_FIT_RECONCILE_RESOLVE001_ACTIONS_END */
+
         /* CGWEB090_FIT_RECONCILE001_ACTIONS_START */
 
         if (action === "historical_preflight") {
@@ -2767,8 +3647,7 @@ function createFitVault() {
             deduplicated: Boolean(existing.exists || exists),
             original_observation_added:
               incomingRole === C090_ROLE_ORIGINAL &&
-              !(Array.isArray(previous.archive_roles) &&
-                previous.archive_roles.includes(C090_ROLE_ORIGINAL)),
+              !c090Roles(previous).includes(C090_ROLE_ORIGINAL),
             archive_roles: archiveRoles,
             file: metadata,
             activities_created: 0,
