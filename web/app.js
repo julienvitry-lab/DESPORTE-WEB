@@ -14979,6 +14979,190 @@ function cgweb094cEnsureCounterLayout() {
 /* CGWEB094C_FIX4_COUNTER_LAYOUT_END */
 
 
+
+/* CGWEB094C_FIX6_VAULT_AUTOREFRESH_START */
+
+let cgweb094cVaultAutoRefreshBusy=false;
+let cgweb094cVaultWasVisible=false;
+let cgweb094cVaultAutoRefreshTimer=null;
+let cgweb094cVaultLastRefreshAt=0;
+
+function cgweb094cVaultIsVisible() {
+  const section=document.getElementById("webFilesSection");
+  if(!section)return false;
+
+  if(section.hidden)return false;
+  if(section.getAttribute("aria-hidden")==="true")return false;
+
+  let node=section;
+  while(node&&node!==document.body){
+    if(node.hidden)return false;
+
+    const style=window.getComputedStyle(node);
+    if(
+      style.display==="none" ||
+      style.visibility==="hidden"
+    ){
+      return false;
+    }
+
+    node=node.parentElement;
+  }
+
+  return true;
+}
+
+async function cgweb094cAutoRefreshVault(reason="entry") {
+  if(cgweb094cVaultAutoRefreshBusy)return;
+  if(!cgweb094cVaultIsVisible())return;
+
+  /*
+   * GARDE FIX5 :
+   * une actualisation automatique ne doit JAMAIS armer le batch.
+   */
+  cgweb094cDisarmBatch(
+    "Actualisation automatique du coffre…"
+  );
+  cgweb094cButtons();
+
+  cgweb094cVaultAutoRefreshBusy=true;
+
+  try{
+    await renderWebFileVault(true);
+    cgweb094cVaultLastRefreshAt=Date.now();
+
+    /*
+     * renderWebFileVault(true) appelle cgweb094cRefresh(false),
+     * donc le plan reste non armé.
+     */
+    cgweb094cDisarmBatch(
+      "Dry-run requis avant toute génération en masse."
+    );
+    cgweb094cButtons();
+
+    console.info(
+      "CGWEB094C FIX6 VAULT_AUTOREFRESH001",
+      reason
+    );
+  }catch(error){
+    console.warn(
+      "CGWEB094C FIX6 auto-refresh",
+      error
+    );
+
+    cgweb094cDisarmBatch(
+      `Actualisation automatique impossible : ${error?.message||error}`
+    );
+    cgweb094cButtons();
+  }finally{
+    cgweb094cVaultAutoRefreshBusy=false;
+  }
+}
+
+function cgweb094cScheduleVaultAutoRefresh(
+  reason="entry",
+  delay=80
+){
+  clearTimeout(
+    cgweb094cVaultAutoRefreshTimer
+  );
+
+  cgweb094cVaultAutoRefreshTimer=setTimeout(
+    ()=>{
+      if(!cgweb094cVaultIsVisible())return;
+
+      const now=Date.now();
+
+      /*
+       * Anti-boucle DOM : une rafale de mutations ne doit pas
+       * relancer sans fin le même refresh.
+       */
+      if(
+        reason==="mutation" &&
+        now-cgweb094cVaultLastRefreshAt<1500
+      ){
+        return;
+      }
+
+      void cgweb094cAutoRefreshVault(reason);
+    },
+    delay
+  );
+}
+
+function cgweb094cWatchVaultVisibility() {
+  if(window.__CGWEB094C_VAULT_AUTOREFRESH001__)return;
+  window.__CGWEB094C_VAULT_AUTOREFRESH001__=true;
+
+  const check=(reason)=>{
+    const visible=cgweb094cVaultIsVisible();
+
+    if(visible&&!cgweb094cVaultWasVisible){
+      cgweb094cVaultWasVisible=true;
+      cgweb094cScheduleVaultAutoRefresh(
+        reason,
+        60
+      );
+      return;
+    }
+
+    if(!visible){
+      cgweb094cVaultWasVisible=false;
+    }
+  };
+
+  const observer=new MutationObserver(
+    ()=>check("mutation")
+  );
+
+  observer.observe(
+    document.body,
+    {
+      subtree:true,
+      childList:true,
+      attributes:true,
+      attributeFilter:[
+        "class",
+        "hidden",
+        "style",
+        "aria-hidden",
+        "data-ux-page",
+        "data-ux-subpage"
+      ]
+    }
+  );
+
+  window.addEventListener(
+    "pageshow",
+    ()=>check("pageshow")
+  );
+
+  document.addEventListener(
+    "visibilitychange",
+    ()=>{
+      if(document.visibilityState==="visible"){
+        check("visibilitychange");
+      }
+    }
+  );
+
+  /*
+   * Premier contrôle après montage du DOM.
+   */
+  queueMicrotask(
+    ()=>check("boot")
+  );
+
+  setTimeout(
+    ()=>check("boot-delayed"),
+    250
+  );
+}
+
+cgweb094cWatchVaultVisibility();
+
+/* CGWEB094C_FIX6_VAULT_AUTOREFRESH_END */
+
 function cgweb094cWire() {
   cgweb094cEnsureBatchBar();
   cgweb094cClarifyLocalCounters();

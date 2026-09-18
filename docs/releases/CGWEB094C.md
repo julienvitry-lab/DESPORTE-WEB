@@ -77,3 +77,21 @@ Contrat :
 - le bouton désarmé est visuellement grisé et non cliquable.
 
 Aucun changement backend. Aucun FIT généré par l'installation.
+
+## FIX6 · VAULT_AUTOREFRESH001
+
+Le Coffre local s'actualise désormais automatiquement à l'entrée dans le
+sous-sous-onglet, y compris après un rechargement complet de la page.
+
+Contrat :
+- détection par visibilité réelle de `webFilesSection` ;
+- refresh automatique au premier affichage et à chaque retour dans le Coffre ;
+- anti-boucle sur les mutations DOM ;
+- `renderWebFileVault(true)` est utilisé pour reconstruire immédiatement
+  la liste et les compteurs ;
+- toute actualisation automatique désarme explicitement le batch ;
+- `Analyser les FIT manquants` reste obligatoire avant toute génération
+  en masse ;
+- le bouton Actualiser manuel reste disponible.
+
+Aucun changement backend. Aucun FIT généré par l'installation.
