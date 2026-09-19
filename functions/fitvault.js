@@ -6142,22 +6142,59 @@ async function c091TransferAudit(uid) {
   }
 
   function c099Sport(activity) {
-    return (
+    const explicit =
       c099First(
         activity,
         [
-          "sport_type",
-          "sportType",
-          "sub_sport",
-          "subSport",
-          "type",
-          "activity_type",
-          "activityType",
-          "sport"
+          "sport_label",
+          "sportLabel",
+          "sport_name",
+          "sportName",
+          "activity_type_name",
+          "activityTypeName"
         ]
-      ) ||
-      "INCONNU"
-    );
+      );
+
+    if (explicit) return explicit;
+
+    const raw =
+      activity?.sport ??
+      activity?.sport_type ??
+      activity?.sportType ??
+      activity?.activity_type ??
+      activity?.activityType ??
+      activity?.type ??
+      "";
+
+    const numeric =
+      Number(raw);
+
+    if (
+      raw !== "" &&
+      Number.isFinite(numeric) &&
+      String(raw).trim() !== ""
+    ) {
+      const fitSportNames = {
+        0:"Sport",
+        1:"Course",
+        2:"Vélo",
+        3:"Transition",
+        4:"Fitness",
+        5:"Natation",
+        11:"Marche",
+        17:"Randonnée"
+      };
+
+      return (
+        fitSportNames[numeric] ||
+        ("Sport " + numeric)
+      );
+    }
+
+    const text =
+      c099Scalar(raw);
+
+    return text || "INCONNU";
   }
 
   function c099Equipment(activity) {
@@ -6320,18 +6357,34 @@ async function c091TransferAudit(uid) {
     activityId,
     activity
   ) {
-    const startIso =
-      c097ActivityStartIso(
-        activity
+    const startMs =
+      c099Number(
+        activity,
+        [
+          "start_time_ms",
+          "startTimeMs",
+          "start_timestamp_ms",
+          "startTimestampMs",
+          "timestamp_ms",
+          "timestampMs"
+        ],
+        NaN
       );
+
+    const startIso =
+      Number.isFinite(startMs) &&
+      startMs > 0
+        ? new Date(startMs).toISOString()
+        : c097ActivityStartIso(activity);
 
     const distance =
       c099Number(
         activity,
         [
-          "distance",
           "distance_m",
+          "distance",
           "distanceMeters",
+          "total_distance_m",
           "total_distance"
         ],
         0
@@ -6341,6 +6394,9 @@ async function c091TransferAudit(uid) {
       c099Number(
         activity,
         [
+          "ascent_m",
+          "total_ascent_m",
+          "elevation_gain_m",
           "total_elevation_gain",
           "totalElevationGain",
           "elevation_gain",
@@ -6352,28 +6408,71 @@ async function c091TransferAudit(uid) {
         0
       );
 
-    const duration =
+    let duration =
       c099Number(
         activity,
         [
-          "moving_time",
-          "movingTime",
-          "elapsed_time",
-          "elapsedTime",
-          "duration",
           "duration_s",
-          "durationSeconds"
+          "elapsed_time_s",
+          "moving_time_s",
+          "timer_time_s",
+          "durationSeconds",
+          "elapsedTimeSeconds",
+          "movingTimeSeconds"
         ],
-        0
+        NaN
       );
+
+    if (!Number.isFinite(duration)) {
+      const durationMs =
+        c099Number(
+          activity,
+          [
+            "elapsed_time_ms",
+            "timer_time_ms",
+            "moving_time_ms",
+            "duration_ms",
+            "elapsedTimeMs",
+            "timerTimeMs",
+            "movingTimeMs",
+            "durationMs"
+          ],
+          NaN
+        );
+
+      if (Number.isFinite(durationMs)) {
+        duration =
+          durationMs / 1000;
+      }
+    }
+
+    if (!Number.isFinite(duration)) {
+      duration =
+        c099Number(
+          activity,
+          [
+            "moving_time",
+            "movingTime",
+            "elapsed_time",
+            "elapsedTime",
+            "duration"
+          ],
+          0
+        );
+    }
 
     const load =
       c099Number(
         activity,
         [
+          "charge",
+          "load",
           "training_load",
           "trainingLoad",
-          "load",
+          "relative_effort",
+          "relativeEffort",
+          "suffer_score",
+          "sufferScore",
           "activity_load",
           "activityLoad"
         ],
@@ -6401,8 +6500,26 @@ async function c091TransferAudit(uid) {
 
     const markers =
       String(
-        c099Markers(activity) || ""
-      ).trim();
+        c099First(
+          activity,
+          [
+            "landmark_codes",
+            "landmarkCodes",
+            "markers",
+            "marker",
+            "reperes",
+            "repères",
+            "repere",
+            "repère",
+            "landmarks",
+            "landmark",
+            "route_markers",
+            "routeMarkers"
+          ]
+        ) || ""
+      )
+        .replace(/\s+/g," ")
+        .trim();
 
     const source =
       String(
@@ -6430,11 +6547,15 @@ async function c091TransferAudit(uid) {
       activity_id:
         String(activityId),
       title,
+      start_time_ms:
+        Number.isFinite(startMs)
+          ? startMs
+          : null,
       start_iso:
         startIso,
       year:
         startIso
-          ? startIso.slice(0, 4)
+          ? startIso.slice(0,4)
           : "",
       sport,
       distance_m:
@@ -6703,7 +6824,7 @@ async function c091TransferAudit(uid) {
     if (sort === "oldest") {
       rows =
         [...rows].sort(
-          (a, b) =>
+          (a,b) =>
             String(a.start_iso)
               .localeCompare(
                 String(b.start_iso)
@@ -6715,7 +6836,7 @@ async function c091TransferAudit(uid) {
       Math.max(
         20,
         Math.min(
-          250,
+          100,
           Number(input?.limit) || 100
         )
       );
@@ -6750,9 +6871,19 @@ async function c091TransferAudit(uid) {
         data.meta,
       rows:
         page.map(row => {
-          const copy = {...row};
+          const copy={...row};
           delete copy.haystack;
-          return copy;
+
+          const raw =
+            data.rawById.get(
+              row.activity_id
+            ) || {};
+
+          return {
+            ...copy,
+            raw_activity:
+              c099Safe(raw)
+          };
         })
     };
   }

@@ -26467,23 +26467,72 @@ function cgweb099Esc(value){
   return String(value ?? "");
 }
 
-function cgweb099Date(iso){
-  const value=String(iso||"");
+function cgweb099Date(value){
+  const raw=
+    String(value ?? "").trim();
 
-  if(!value)return "—";
+  if(!raw)return "—";
 
-  const p=value.slice(0,10).split("-");
+  const numeric=
+    Number(raw);
 
-  if(p.length!==3)return value.slice(0,10);
+  const date=
+    Number.isFinite(numeric) &&
+    raw !== ""
+      ? new Date(numeric)
+      : new Date(raw);
 
-  return p[2]+"/"+p[1]+"/"+p[0];
+  if(
+    Number.isNaN(
+      date.getTime()
+    )
+  ){
+    return raw.slice(0,10) || "—";
+  }
+
+  return date.toLocaleDateString(
+    "fr-FR",
+    {
+      day:"2-digit",
+      month:"2-digit",
+      year:"numeric"
+    }
+  );
 }
 
-function cgweb099Time(iso){
-  const value=String(iso||"");
-  return value.length>=16
-    ? value.slice(11,16)
-    : "—";
+function cgweb099Time(value){
+  const raw=
+    String(value ?? "").trim();
+
+  if(!raw)return "—";
+
+  const numeric=
+    Number(raw);
+
+  const date=
+    Number.isFinite(numeric) &&
+    raw !== ""
+      ? new Date(numeric)
+      : new Date(raw);
+
+  if(
+    Number.isNaN(
+      date.getTime()
+    )
+  ){
+    return raw.length>=16
+      ? raw.slice(11,16)
+      : "—";
+  }
+
+  return date.toLocaleTimeString(
+    "fr-FR",
+    {
+      hour:"2-digit",
+      minute:"2-digit",
+      hour12:false
+    }
+  );
 }
 
 function cgweb099Duration(seconds){
@@ -26722,24 +26771,33 @@ function cgweb099BuildShell(){
 
   if(!section)return null;
 
-  section.dataset.cgweb099Global="1";
+  section.dataset.cgweb099Global="2";
 
   let host=
     cgweb099Node(
       "cgweb099GlobalDirectory"
     );
 
-  if(host)return host;
+  if(!host){
+    host=
+      document.createElement("div");
 
-  host=
-    document.createElement("div");
+    host.id=
+      "cgweb099GlobalDirectory";
 
-  host.id=
-    "cgweb099GlobalDirectory";
+    section.prepend(host);
+  }
+
+  /*
+   * FIX2 : le host global ne contient PLUS de table d'activités.
+   * Les lignes restent exclusivement celles du renderer historique.
+   */
+  host.dataset.cgweb099Fix2=
+    "SINGLE_DIRECTORY_RENDER001";
 
   host.innerHTML=
     '<details open>'+
-      '<summary>Tri des activités · global</summary>'+
+      '<summary>Tri des activités</summary>'+
       '<div class="cgweb099-filter-grid">'+
         '<label>Année<select id="cgweb099Year"><option value="ALL">Toutes</option></select></label>'+
         '<label>Sport<select id="cgweb099Sport"><option value="all">Tous</option></select></label>'+
@@ -26755,12 +26813,6 @@ function cgweb099BuildShell(){
         '<button id="cgweb099Refresh" type="button">Actualiser la base</button>'+
       '</div>'+
     '</details>'+
-    '<div class="cgweb099-table">'+
-      '<div class="cgweb099-head">'+
-        '<span></span><span>Date</span><span>Heure</span><span>Distance</span><span>D+</span><span>Temps</span><span>Matériel</span><span>Repères</span><span>Charge</span><span></span>'+
-      '</div>'+
-      '<div id="cgweb099Rows"></div>'+
-    '</div>'+
     '<div class="cgweb099-pages">'+
       '<div class="group">'+
         '<button id="cgweb099Prev" type="button">← Précédent</button>'+
@@ -26768,7 +26820,7 @@ function cgweb099BuildShell(){
       '</div>'+
       '<div class="group">'+
         '<span id="cgweb099PageLabel"></span>'+
-        '<label>Par page <select id="cgweb099Limit"><option>50</option><option selected>100</option><option>200</option></select></label>'+
+        '<label>Par page <select id="cgweb099Limit"><option>50</option><option selected>100</option></select></label>'+
       '</div>'+
     '</div>'+
     '<details>'+
@@ -26779,11 +26831,6 @@ function cgweb099BuildShell(){
         '<div id="cgweb099DuplicateRows"></div>'+
       '</div>'+
     '</details>';
-
-  /*
-   * Place le nouveau répertoire avant l'ancien contenu.
-   */
-  section.prepend(host);
 
   return host;
 }
@@ -26797,7 +26844,9 @@ function cgweb099HideLegacy(){
   if(!section)return;
 
   /*
-   * Ancien "Tri des activités".
+   * FIX2 :
+   * on masque UNIQUEMENT l'ancien panneau de filtres local.
+   * Le conteneur historique des lignes doit rester visible.
    */
   for(
     const details
@@ -26829,16 +26878,17 @@ function cgweb099HideLegacy(){
   }
 
   /*
-   * Anciens boutons de pagination locale.
+   * Masque les anciens contrôles de chargement/pagination locale,
+   * mais jamais leurs lignes parentes si elles contiennent une activité.
    */
   for(
-    const button
+    const control
     of section.querySelectorAll(
-      "button"
+      "button,a"
     )
   ){
     if(
-      button.closest(
+      control.closest(
         "#cgweb099GlobalDirectory"
       )
     ){
@@ -26847,83 +26897,36 @@ function cgweb099HideLegacy(){
 
     const text=
       String(
-        button.textContent || ""
+        control.textContent || ""
       ).trim();
 
     if(
-      /charger tout|afficher .*de plus/i
-        .test(text)
+      /charger tout|afficher .*de plus/i.test(text)
     ){
-      button.classList.add(
+      control.classList.add(
         "cgweb099-legacy-hidden"
       );
     }
   }
 
   /*
-   * Détecte le conteneur des lignes historiques
-   * à partir des boutons FIT existants.
+   * Annule explicitement l'ancienne heuristique CGWEB099 qui pouvait
+   * avoir masqué le vrai conteneur de lignes.
    */
-  try{
-    const controls=[
-      ...section.querySelectorAll(
-        "button,a,[role='button']"
-      )
-    ].filter(control=>{
-      try{
-        return (
-          typeof cgweb096IsExactDownloadControl===
-            "function" &&
-          cgweb096IsExactDownloadControl(
-            control
-          )
-        );
-      }catch(_){
-        return false;
-      }
-    });
-
-    const parents=
-      new Map();
-
-    for(const control of controls){
-      const row=
-        control.closest(
-          "[data-activity-id],[data-activity_id],[data-activity]"
-        );
-
-      const parent=
-        row?.parentElement;
-
-      if(
-        parent &&
-        parent!==section &&
-        !parent.closest(
-          "#cgweb099GlobalDirectory"
-        )
-      ){
-        parents.set(
-          parent,
-          (parents.get(parent)||0)+1
-        );
-      }
+  for(
+    const node
+    of section.querySelectorAll(
+      ".cgweb099-legacy-hidden"
+    )
+  ){
+    if(
+      node.matches("details,button,a")
+    ){
+      continue;
     }
 
-    const best=
-      [...parents.entries()]
-        .sort(
-          (a,b)=>b[1]-a[1]
-        )[0]?.[0];
-
-    if(best){
-      best.classList.add(
-        "cgweb099-legacy-hidden"
-      );
-    }
-  }catch(error){
-    console.warn(
-      "CGWEB099 legacy detection",
-      error
+    node.classList.remove(
+      "cgweb099-legacy-hidden"
     );
   }
 }
@@ -27005,181 +27008,249 @@ function cgweb099Filters(
 }
 
 function cgweb099RenderRows(rows){
-  const host=
-    cgweb099Node(
-      "cgweb099Rows"
+  const list=
+    Array.isArray(rows)
+      ? rows
+      : [];
+
+  /*
+   * GLOBAL_ROW_SCHEMA_PARITY001
+   *
+   * La requête globale choisit la page, mais le rendu est confié
+   * exclusivement au moteur historique.
+   */
+  const pageActivities=
+    list.map(row=>{
+      const raw=
+        (
+          row?.raw_activity &&
+          typeof row.raw_activity==="object" &&
+          !Array.isArray(row.raw_activity)
+        )
+          ? {...row.raw_activity}
+          : {};
+
+      const id=
+        String(
+          row?.activity_id ||
+          raw.activity_id ||
+          raw.id ||
+          raw.__docId ||
+          ""
+        );
+
+      if(id){
+        raw.id=
+          raw.id ?? id;
+        raw.activity_id=id;
+        raw.__docId=id;
+      }
+
+      /*
+       * Fallback uniquement si un vieux document ne possède pas
+       * l'un des champs attendus par le renderer historique.
+       */
+      if(
+        raw.start_time_ms == null &&
+        Number.isFinite(
+          Number(row?.start_time_ms)
+        )
+      ){
+        raw.start_time_ms=
+          Number(row.start_time_ms);
+      }
+
+      if(
+        raw.distance_m == null &&
+        Number.isFinite(
+          Number(row?.distance_m)
+        )
+      ){
+        raw.distance_m=
+          Number(row.distance_m);
+      }
+
+      if(
+        raw.ascent_m == null &&
+        Number.isFinite(
+          Number(row?.elevation_m)
+        )
+      ){
+        raw.ascent_m=
+          Number(row.elevation_m);
+      }
+
+      if(
+        raw.duration_s == null &&
+        raw.elapsed_time_s == null &&
+        raw.elapsed_time_ms == null &&
+        Number.isFinite(
+          Number(row?.duration_s)
+        )
+      ){
+        raw.duration_s=
+          Number(row.duration_s);
+      }
+
+      if(
+        raw.charge == null &&
+        raw.load == null &&
+        raw.training_load == null &&
+        Number.isFinite(
+          Number(row?.load)
+        )
+      ){
+        raw.charge=
+          Number(row.load);
+      }
+
+      return raw;
+    });
+
+  if(
+    typeof activities==="undefined" ||
+    !Array.isArray(activities)
+  ){
+    throw new Error(
+      "CGWEB099 FIX2 : tableau historique activities introuvable."
     );
-
-  if(!host)return;
-
-  host.replaceChildren();
-
-  if(!rows?.length){
-    const empty=
-      document.createElement("div");
-
-    empty.className="muted";
-    empty.style.padding="18px 10px";
-    empty.textContent=
-      "Aucune activité correspondant aux filtres.";
-
-    host.appendChild(empty);
-    return;
   }
 
-  for(const row of rows){
-    const item=
-      document.createElement("div");
+  /*
+   * Conserve la référence du tableau historique : plusieurs handlers
+   * de clic/detail y sont déjà reliés.
+   */
+  activities.splice(
+    0,
+    activities.length,
+    ...pageActivities
+  );
 
-    item.className="cgweb099-row";
-    item.dataset.activityId=
-      String(row.activity_id||"");
-
-    const sport=
-      document.createElement("span");
-    sport.className=
-      "cgweb099-sport";
-    sport.textContent=
-      cgweb099SportIcon(
-        row.sport
-      );
-
-    const date=
-      document.createElement("strong");
-    date.className=
-      "cgweb099-date";
-    date.textContent=
-      cgweb099Date(
-        row.start_iso
-      );
-
-    const time=
-      document.createElement("strong");
-    time.textContent=
-      cgweb099Time(
-        row.start_iso
-      );
-
-    const distance=
-      document.createElement("strong");
-    distance.textContent=
-      cgweb099Distance(
-        row.distance_m
-      );
-
-    const elevation=
-      document.createElement("strong");
-    elevation.textContent=
-      Math.round(
-        Number(row.elevation_m)||0
-      )+" m";
-
-    const duration=
-      document.createElement("strong");
-    duration.textContent=
-      cgweb099Duration(
-        row.duration_s
-      );
-
-    const equipment=
-      document.createElement("strong");
-    equipment.className=
-      "cgweb099-main";
-    equipment.textContent=
-      row.equipment || "—";
-    equipment.title=
-      [
-        row.title,
-        row.sport,
-        row.source
-      ]
-        .filter(Boolean)
-        .join(" · ");
-
-    const markers=
-      document.createElement("strong");
-    markers.textContent=
-      row.markers || "—";
-
-    const load=
-      document.createElement("strong");
-    load.textContent=
-      Number.isFinite(
-        Number(row.load)
-      )
-        ? String(
-            Math.round(
-              Number(row.load)
-            )
-          )
-        : "—";
-
-    const download=
-      document.createElement("button");
-
-    download.type="button";
-    download.className=
-      "cgweb099-download";
-    download.textContent="⇩";
-    download.title=
-      "Télécharger le FIT";
-    download.setAttribute(
-      "aria-label",
-      "Télécharger le FIT"
-    );
-    download.dataset.activityId=
-      String(row.activity_id||"");
-
-    const meta=
-      document.createElement("span");
-    meta.className=
-      "cgweb099-meta";
-    meta.textContent=
-      [
-        cgweb099Time(row.start_iso),
-        cgweb099Distance(row.distance_m),
-        row.equipment
-      ]
-        .filter(Boolean)
-        .join(" · ");
-
-    item.append(
-      sport,
-      date,
-      time,
-      distance,
-      elevation,
-      duration,
-      equipment,
-      markers,
-      load,
-      download,
-      meta
+  /*
+   * Neutralise l'ancien panneau de filtres masqué pour éviter
+   * qu'il ne refiltre la page déjà choisie côté serveur.
+   */
+  const section=
+    document.getElementById(
+      "activityDirectorySection"
     );
 
-    download.addEventListener(
-      "click",
-      event=>{
-        event.preventDefault();
-        event.stopPropagation();
-
-        void cgweb099Download(
-          row.activity_id
-        );
+  if(section){
+    for(
+      const details
+      of section.querySelectorAll("details")
+    ){
+      if(
+        details.closest(
+          "#cgweb099GlobalDirectory"
+        )
+      ){
+        continue;
       }
-    );
 
-    item.addEventListener(
-      "click",
-      ()=>{
-        void cgweb099OpenActivity(
-          row.activity_id
+      const summaryText=
+        String(
+          details.querySelector("summary")
+            ?.textContent || ""
         );
-      }
-    );
 
-    host.appendChild(item);
+      if(
+        !/tri des activités/i.test(
+          summaryText
+        )
+      ){
+        continue;
+      }
+
+      for(
+        const input
+        of details.querySelectorAll(
+          "input"
+        )
+      ){
+        input.value="";
+      }
+
+      for(
+        const select
+        of details.querySelectorAll(
+          "select"
+        )
+      ){
+        const labelText=
+          String(
+            select.closest("label")
+              ?.textContent || ""
+          ).toLowerCase();
+
+        if(
+          /ordre|tri/.test(labelText)
+        ){
+          const wanted=
+            cgweb099Node(
+              "cgweb099Sort"
+            )?.value === "oldest"
+              ? /ancienne/i
+              : /récente|recente/i;
+
+          const option=
+            [...select.options]
+              .find(
+                item =>
+                  wanted.test(
+                    String(
+                      item.textContent || ""
+                    )
+                  )
+              );
+
+          if(option){
+            select.value=
+              option.value;
+          }
+
+          continue;
+        }
+
+        const all=
+          [...select.options]
+            .find(
+              item =>
+                /^(tous|toutes|all)$/i.test(
+                  String(
+                    item.textContent || ""
+                  ).trim()
+                )
+            );
+
+        if(all){
+          select.value=
+            all.value;
+        }else if(
+          select.options.length
+        ){
+          select.selectedIndex=0;
+        }
+      }
+    }
   }
+
+  if(
+    typeof applyFiltersAndRender!=="function"
+  ){
+    throw new Error(
+      "CGWEB099 FIX2 : renderer historique introuvable."
+    );
+  }
+
+  /*
+   * ROW_CLICK_RESTORE001 :
+   * applyFiltersAndRender reconstruit les lignes avec les handlers
+   * historiques de clic/détail et les icônes déjà validées.
+   */
+  applyFiltersAndRender();
+
+  cgweb099HideLegacy();
 }
 
 async function cgweb099OpenActivity(
