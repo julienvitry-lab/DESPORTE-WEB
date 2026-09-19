@@ -8314,102 +8314,504 @@ function activityCaloriesPresentation(activity) {
 }
 
 
+
+/* CGWEB101_FIX1_METRIC_ROUTE_READY_START */
+
+async function cgweb101EnsureMetricRoute(activity){
+  if(
+    activeRoute?.points?.length>=2
+  ){
+    return activeRoute;
+  }
+
+  if(
+    !currentUser ||
+    !activity
+  ){
+    return null;
+  }
+
+  const keys=[
+    ...new Set(
+      [
+        activity?.id,
+        activity?.__docId,
+        activityKey(activity)
+      ]
+        .filter(
+          value =>
+            value!==null &&
+            value!==undefined &&
+            String(value).trim()!==""
+        )
+        .map(String)
+    )
+  ];
+
+  for(const key of keys){
+    try{
+      const snapshot=
+        await getDoc(
+          doc(
+            db,
+            ROOT,
+            currentUser.uid,
+            "activity_routes",
+            key
+          )
+        );
+
+      if(
+        !snapshot.exists()
+      ){
+        continue;
+      }
+
+      const route=
+        normalizeRoute(
+          snapshot.data()
+        );
+
+      if(
+        route?.points?.length>=2
+      ){
+        activeRoute=route;
+        return route;
+      }
+    }catch(error){
+      console.warn(
+        "CGWEB101 METRIC_ROUTE_READY001",
+        key,
+        error
+      );
+    }
+  }
+
+  return null;
+}
+
+function cgweb101MetricPointNumber(value){
+  const n=Number(value);
+  return Number.isFinite(n)
+    ? n
+    : null;
+}
+
+/* CGWEB101_FIX1_METRIC_ROUTE_READY_END */
+
 function metricSeriesFromRoute(route, activity) {
-  const raw = route?.raw || {};
-  const routePoints = route?.points || [];
-  const aliases = {
-    time: [raw.time_ms, raw.timestamp_ms, raw.timestamps_ms, raw.record_time_ms],
-    hr: [raw.hr_bpm, raw.heart_rate_bpm, raw.heart_rate, raw.hr],
-    speed: [raw.speed_mps, raw.enhanced_speed_mps, raw.speed]
-  };
+    const raw =
+      route?.raw || {};
 
-  const firstArray = (values) => values.find((value) => Array.isArray(value) && value.length) || [];
-  const time = firstArray(aliases.time);
-  const hr = firstArray(aliases.hr);
-  const speed = firstArray(aliases.speed);
+    const routePoints =
+      Array.isArray(route?.points)
+        ? route.points
+        : [];
 
-  const length = Math.max(time.length, hr.length, speed.length, routePoints.length);
-  if (!length) return { pace: [], hr: [] };
+    const aliases = {
+      time: [
+        raw.time_ms,
+        raw.timestamp_ms,
+        raw.timestamps_ms,
+        raw.record_time_ms
+      ],
+      hr: [
+        raw.hr_bpm,
+        raw.heart_rate_bpm,
+        raw.heart_rate,
+        raw.hr
+      ],
+      speed: [
+        raw.speed_mps,
+        raw.enhanced_speed_mps,
+        raw.speed
+      ]
+    };
 
-  const paceSeries = [];
-  const hrSeries = [];
+    const firstArray =
+      values =>
+        values.find(
+          value =>
+            Array.isArray(value) &&
+            value.length
+        ) || [];
 
-  for (let i = 0; i < length; i++) {
-    const distanceM = numberOrZero(routePoints[i]?.distanceMeters);
-    const x = distanceM > 0 ? distanceM / 1000 : i;
+    const time =
+      firstArray(
+        aliases.time
+      );
 
-    const heart = Number(hr[i]);
-    if (Number.isFinite(heart) && heart > 20 && heart < 260) {
-      hrSeries.push({ x, y: heart });
+    const hr =
+      firstArray(
+        aliases.hr
+      );
+
+    const speed =
+      firstArray(
+        aliases.speed
+      );
+
+    const length =
+      Math.max(
+        time.length,
+        hr.length,
+        speed.length,
+        routePoints.length
+      );
+
+    if(!length){
+      return {
+        pace:[],
+        hr:[]
+      };
     }
 
-    let speedMps = Number(speed[i]);
-    if ((!Number.isFinite(speedMps) || speedMps <= 0) && i > 0 && time.length > i && routePoints.length > i) {
-      const dt = Number(time[i]) - Number(time[i - 1]);
-      const dd = numberOrZero(routePoints[i]?.distanceMeters) - numberOrZero(routePoints[i - 1]?.distanceMeters);
-      if (Number.isFinite(dt) && dt > 0 && dd >= 0) {
-        speedMps = dd / (dt / 1000);
+    const paceSeries=[];
+    const hrSeries=[];
+
+    for(
+      let i=0;
+      i<length;
+      i++
+    ){
+      const point=
+        routePoints[i] || null;
+
+      const distanceM=
+        cgweb101MetricPointNumber(
+          point?.distanceMeters
+        );
+
+      const x=
+        Number.isFinite(distanceM) &&
+        distanceM>=0
+          ? distanceM/1000
+          : i;
+
+      const rawHeart=
+        cgweb101MetricPointNumber(
+          hr[i]
+        );
+
+      const pointHeart=
+        cgweb101MetricPointNumber(
+          point?.heartRateBpm
+        );
+
+      const heart=
+        Number.isFinite(rawHeart)
+          ? rawHeart
+          : pointHeart;
+
+      if(
+        Number.isFinite(heart) &&
+        heart>20 &&
+        heart<260
+      ){
+        hrSeries.push({
+          x,
+          y:heart
+        });
+      }
+
+      const rawSpeed=
+        cgweb101MetricPointNumber(
+          speed[i]
+        );
+
+      const pointSpeed=
+        cgweb101MetricPointNumber(
+          point?.speedMps
+        );
+
+      let speedMps=
+        Number.isFinite(rawSpeed) &&
+        rawSpeed>0
+          ? rawSpeed
+          : pointSpeed;
+
+      if(
+        (!Number.isFinite(speedMps) ||
+         speedMps<=0) &&
+        i>0
+      ){
+        const previous=
+          routePoints[i-1] || null;
+
+        const rawCurrentTime=
+          cgweb101MetricPointNumber(
+            time[i]
+          );
+
+        const rawPreviousTime=
+          cgweb101MetricPointNumber(
+            time[i-1]
+          );
+
+        const currentTime=
+          Number.isFinite(
+            rawCurrentTime
+          )
+            ? rawCurrentTime
+            : cgweb101MetricPointNumber(
+                point?.timeMs
+              );
+
+        const previousTime=
+          Number.isFinite(
+            rawPreviousTime
+          )
+            ? rawPreviousTime
+            : cgweb101MetricPointNumber(
+                previous?.timeMs
+              );
+
+        const previousDistance=
+          cgweb101MetricPointNumber(
+            previous?.distanceMeters
+          );
+
+        const currentDistance=
+          cgweb101MetricPointNumber(
+            point?.distanceMeters
+          );
+
+        const dt=
+          Number.isFinite(currentTime) &&
+          Number.isFinite(previousTime)
+            ? currentTime-previousTime
+            : null;
+
+        const dd=
+          Number.isFinite(currentDistance) &&
+          Number.isFinite(previousDistance)
+            ? currentDistance-
+              previousDistance
+            : null;
+
+        if(
+          Number.isFinite(dt) &&
+          dt>0 &&
+          Number.isFinite(dd) &&
+          dd>=0
+        ){
+          speedMps=
+            dd/(dt/1000);
+        }
+      }
+
+      if(
+        Number.isFinite(speedMps) &&
+        speedMps>0.2 &&
+        speedMps<30
+      ){
+        const paceMinKm=
+          1000/speedMps/60;
+
+        if(
+          Number.isFinite(
+            paceMinKm
+          ) &&
+          paceMinKm>1 &&
+          paceMinKm<60
+        ){
+          paceSeries.push({
+            x,
+            y:paceMinKm
+          });
+        }
       }
     }
-    if (Number.isFinite(speedMps) && speedMps > 0.2 && speedMps < 30) {
-      const paceMinKm = 1000 / speedMps / 60;
-      if (Number.isFinite(paceMinKm) && paceMinKm > 1 && paceMinKm < 60) {
-        paceSeries.push({ x, y: paceMinKm });
-      }
+
+    return {
+      pace:paceSeries,
+      hr:hrSeries
+    };
+  }
+
+async function renderMetricChart(activity, kind) {
+    if(
+      !ui.metricChartPanel ||
+      !ui.metricChartSvg
+    ){
+      return;
     }
+
+    ui.metricChartPanel
+      .classList
+      .remove("hidden");
+
+    ui.metricChartSvg.innerHTML="";
+
+    ui.metricChartTitle.textContent=
+      kind==="hr"
+        ? "Fréquence cardiaque"
+        : "Allure";
+
+    ui.metricChartMeta.textContent=
+      kind==="hr"
+        ? `${formatHeartRate(activity.avg_hr)} moy. · ${formatHeartRate(activity.max_hr)} max`
+        : primarySpeedMetric(activity);
+
+    ui.metricChartStatus.textContent=
+      "Chargement de la série détaillée…";
+
+    const requestedKey=
+      String(
+        activityKey(activity) || ""
+      );
+
+    const route=
+      await cgweb101EnsureMetricRoute(
+        activity
+      );
+
+    const currentKey=
+      String(
+        currentDetailId || ""
+      );
+
+    if(
+      requestedKey &&
+      currentKey &&
+      requestedKey!==currentKey
+    ){
+      return;
+    }
+
+    const series=
+      metricSeriesFromRoute(
+        route,
+        activity
+      );
+
+    const rows=
+      kind==="hr"
+        ? series.hr
+        : series.pace;
+
+    if(
+      rows.length<2
+    ){
+      ui.metricChartStatus.textContent=
+        kind==="hr"
+          ? "Courbe FC détaillée indisponible pour cette activité."
+          : "Courbe d’allure détaillée indisponible pour cette activité.";
+
+      ui.metricChartSvg.innerHTML="";
+      return;
+    }
+
+    ui.metricChartStatus.textContent=
+      `${formatNumber(rows.length)} points détaillés`;
+
+    const width=1000;
+    const height=240;
+    const px=35;
+    const py=26;
+
+    const xs=
+      rows.map(
+        row => row.x
+      );
+
+    const ys=
+      rows.map(
+        row => row.y
+      );
+
+    const minX=
+      Math.min(...xs);
+
+    const maxX=
+      Math.max(...xs);
+
+    let minY=
+      Math.min(...ys);
+
+    let maxY=
+      Math.max(...ys);
+
+    if(
+      maxY-minY<1
+    ){
+      minY-=0.5;
+      maxY+=0.5;
+    }
+
+    const xMap=
+      value =>
+        px+
+        (
+          (value-minX)/
+          Math.max(
+            0.0001,
+            maxX-minX
+          )
+        )*
+        (
+          width-px*2
+        );
+
+    const yMap=
+      value =>
+        py+
+        (
+          (maxY-value)/
+          Math.max(
+            0.0001,
+            maxY-minY
+          )
+        )*
+        (
+          height-py*2
+        );
+
+    const points=
+      rows
+        .map(
+          row =>
+            `${xMap(row.x).toFixed(1)},${yMap(row.y).toFixed(1)}`
+        )
+        .join(" ");
+
+    const grid=
+      [0,.25,.5,.75,1]
+        .map(
+          ratio => {
+            const y=
+              py+
+              ratio*
+              (
+                height-py*2
+              );
+
+            const value=
+              maxY-
+              ratio*
+              (
+                maxY-minY
+              );
+
+            const label=
+              kind==="hr"
+                ? `${Math.round(value)}`
+                : `${Math.floor(value)}:${String(Math.round((value%1)*60)).padStart(2,"0")}`;
+
+            return (
+              `<line x1="${px}" y1="${y}" x2="${width-px}" y2="${y}" class="metric-chart-grid"></line>`+
+              `<text x="4" y="${y+4}" class="metric-chart-label">${label}</text>`
+            );
+          }
+        )
+        .join("");
+
+    ui.metricChartSvg.innerHTML=
+      `${grid}`+
+      `<polyline points="${points}" class="metric-chart-line cgweb101-metric-line" fill="none" stroke="#a7ff2a" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></polyline>`+
+      `<text x="${px}" y="${height-4}" class="metric-chart-label">${minX.toLocaleString("fr-FR",{maximumFractionDigits:1})} km</text>`+
+      `<text x="${width-px-70}" y="${height-4}" class="metric-chart-label">${maxX.toLocaleString("fr-FR",{maximumFractionDigits:1})} km</text>`;
   }
-
-  return { pace: paceSeries, hr: hrSeries };
-}
-
-function renderMetricChart(activity, kind) {
-  if (!ui.metricChartPanel || !ui.metricChartSvg) return;
-  ui.metricChartPanel.classList.remove("hidden");
-  ui.metricChartSvg.innerHTML = "";
-
-  const route = activeRoute;
-  const series = metricSeriesFromRoute(route, activity);
-  const rows = kind === "hr" ? series.hr : series.pace;
-
-  ui.metricChartTitle.textContent = kind === "hr" ? "Fréquence cardiaque" : "Allure";
-  ui.metricChartMeta.textContent = kind === "hr"
-    ? `${formatHeartRate(activity.avg_hr)} moy. · ${formatHeartRate(activity.max_hr)} max`
-    : primarySpeedMetric(activity);
-
-  if (rows.length < 2) {
-    ui.metricChartStatus.textContent =
-      "Série point-par-point non disponible dans activity_routes. Le Web n’invente pas de courbe à partir des seules moyennes : il faudra publier timestamps/FC/vitesse depuis Android pour obtenir ce graphique.";
-    return;
-  }
-
-  ui.metricChartStatus.textContent = `${formatNumber(rows.length)} points détaillés`;
-  const width = 1000, height = 240, px = 35, py = 26;
-  const xs = rows.map((row) => row.x);
-  const ys = rows.map((row) => row.y);
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  let minY = Math.min(...ys), maxY = Math.max(...ys);
-  if (maxY - minY < 1) { minY -= 0.5; maxY += 0.5; }
-
-  const xMap = (value) => px + ((value - minX) / Math.max(0.0001, maxX - minX)) * (width - px * 2);
-  const yMap = (value) => py + ((maxY - value) / Math.max(0.0001, maxY - minY)) * (height - py * 2);
-  const points = rows.map((row) => `${xMap(row.x).toFixed(1)},${yMap(row.y).toFixed(1)}`).join(" ");
-
-  const grid = [0, .25, .5, .75, 1].map((ratio) => {
-    const y = py + ratio * (height - py * 2);
-    const value = maxY - ratio * (maxY - minY);
-    const label = kind === "hr"
-      ? `${Math.round(value)}`
-      : `${Math.floor(value)}:${String(Math.round((value % 1) * 60)).padStart(2,"0")}`;
-    return `<line x1="${px}" y1="${y}" x2="${width-px}" y2="${y}" class="metric-chart-grid"></line>
-            <text x="4" y="${y+4}" class="metric-chart-label">${label}</text>`;
-  }).join("");
-
-  ui.metricChartSvg.innerHTML = `
-    ${grid}
-    <polyline points="${points}" class="metric-chart-line"></polyline>
-    <text x="${px}" y="${height-4}" class="metric-chart-label">${minX.toLocaleString("fr-FR",{maximumFractionDigits:1})} km</text>
-    <text x="${width-px-70}" y="${height-4}" class="metric-chart-label">${maxX.toLocaleString("fr-FR",{maximumFractionDigits:1})} km</text>`;
-}
 
 function closeMetricChart() {
   if (!ui.metricChartPanel) return;
