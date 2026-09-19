@@ -6843,7 +6843,128 @@ async function c091TransferAudit(uid) {
     });
   }
 
-  async function c099GlobalDirectoryQuery(
+
+/* CGWEB102_FIT_PROVENANCE_FILTER_START */
+
+function c102NormalizeFitFilter(value){
+  const normalized=
+    String(value || "ALL")
+      .trim()
+      .toUpperCase();
+
+  if(
+    [
+      "ALL",
+      "ORIGINAL",
+      "CANONICAL",
+      "ABSENT",
+      "RESTORE"
+    ].includes(normalized)
+  ){
+    return normalized;
+  }
+
+  return "ALL";
+}
+
+async function c102FilterByFitProvenance(
+  uid,
+  rows,
+  requestedFilter
+){
+  const filter=
+    c102NormalizeFitFilter(
+      requestedFilter
+    );
+
+  if(
+    filter==="ALL" ||
+    !Array.isArray(rows) ||
+    !rows.length
+  ){
+    return rows;
+  }
+
+  const [
+    byActivity,
+    index
+  ]=
+    await Promise.all([
+      c096LinkedRows(uid),
+      c096StorageIndex()
+    ]);
+
+  const kept=[];
+
+  for(const row of rows){
+    const activityId=
+      String(
+        row?.activity_id || ""
+      ).trim();
+
+    if(!activityId){
+      continue;
+    }
+
+    const linked=
+      byActivity.get(
+        activityId
+      ) || [];
+
+    const resolved=
+      c096ResolvePreferred(
+        linked,
+        index
+      );
+
+    const downloadable=
+      Boolean(
+        resolved?.status?.startsWith(
+          "RESOLVED_"
+        )
+      );
+
+    const role=
+      downloadable
+        ? String(
+            resolved?.role || "NONE"
+          ).toUpperCase()
+        : "ABSENT";
+
+    row.fit_role=role;
+    row.fit_downloadable=
+      downloadable;
+    row.fit_resolution_status=
+      resolved?.status ||
+      "NO_LINKED_FILE";
+    row.fit_resolution_method=
+      resolved?.method || "NONE";
+
+    const keep=
+      filter==="ORIGINAL"
+        ? role==="ORIGINAL"
+        : filter==="CANONICAL"
+          ? role==="CANONICAL"
+          : filter==="ABSENT"
+            ? role==="ABSENT"
+            : filter==="RESTORE"
+              ? (
+                  role==="CANONICAL" ||
+                  role==="ABSENT"
+                )
+              : true;
+
+    if(keep){
+      kept.push(row);
+    }
+  }
+
+  return kept;
+}
+
+/* CGWEB102_FIT_PROVENANCE_FILTER_END */
+
+async function c099GlobalDirectoryQuery(
     uid,
     input
   ) {
@@ -6853,10 +6974,21 @@ async function c091TransferAudit(uid) {
         Boolean(input?.force_refresh)
       );
 
+    /*
+     * 1. Filtres économiques d'abord.
+     * 2. Résolution physique FIT uniquement si demandée.
+     */
     let rows =
       c099QueryFilters(
         data.rows,
         input
+      );
+
+    rows=
+      await c102FilterByFitProvenance(
+        uid,
+        rows,
+        input?.fit_provenance
       );
 
     const sort =
@@ -6908,7 +7040,11 @@ async function c091TransferAudit(uid) {
           page.length,
         has_more:
           offset + page.length <
-          rows.length
+          rows.length,
+        fit_provenance:
+          c102NormalizeFitFilter(
+            input?.fit_provenance
+          )
       },
       metadata:
         data.meta,

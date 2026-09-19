@@ -28012,6 +28012,42 @@ function cgweb099QueueFitTruthLayout(){
 
 /* CGWEB099_FIX6_DOWNLOAD_TRUTH_END */
 
+
+/* CGWEB102_DIRECTORY_FIT_FILTER_UI_START */
+
+function cgweb102InstallStyles(){
+  const id=
+    "cgweb102FitProvenanceStyles";
+
+  let style=
+    document.getElementById(id);
+
+  if(style){
+    return style;
+  }
+
+  style=
+    document.createElement("style");
+
+  style.id=id;
+
+  style.textContent=
+    [
+      "@media(min-width:1100px){",
+      "  #cgweb099GlobalDirectory .cgweb099-filter-grid{grid-template-columns:130px 180px 115px 140px 135px 155px minmax(180px,1fr) 145px!important;gap:8px!important;}",
+      "  #cgweb099GlobalDirectory .cgweb099-filter-grid>label{min-width:0!important;max-width:none!important;width:auto!important;}",
+      "}"
+    ].join("\n");
+
+  document.head.appendChild(
+    style
+  );
+
+  return style;
+}
+
+/* CGWEB102_DIRECTORY_FIT_FILTER_UI_END */
+
 function cgweb099BuildShell(){
   const section=
     document.getElementById(
@@ -28024,6 +28060,7 @@ function cgweb099BuildShell(){
   cgweb099InstallFix4Styles();
   cgweb099InstallFix5Styles();
   cgweb099InstallFix6Styles();
+  cgweb102InstallStyles();
 
   section.dataset.cgweb099Global="4";
 
@@ -28059,7 +28096,7 @@ function cgweb099BuildShell(){
         '<label>Année<select id="cgweb099Year"><option value="ALL">Toutes</option></select></label>'+
         '<label>Date<input id="cgweb099Date" type="date"></label>'+
         '<label>Sport<select id="cgweb099Sport"><option value="all">Tous</option></select></label>'+
-        '<label>Matériel<select id="cgweb099Equipment"><option value="all">Tous</option></select></label>'+
+        '<label>Matériel<select id="cgweb099Equipment"><option value="all">Tous</option></select></label><label>FIT<select id="cgweb102FitProvenance"><option value="ALL">Tous</option><option value="ORIGINAL">Original</option><option value="CANONICAL">Canonique</option><option value="ABSENT">Sans FIT</option><option value="RESTORE">À restaurer</option></select></label>'+
         '<label>Repère<input id="cgweb099Marker" placeholder="B, Q, R…"></label>'+
         '<label>Recherche<input id="cgweb099Search" placeholder="Nom, date, source…"></label>'+
         '<label>Ordre<select id="cgweb099Sort"><option value="newest">Plus récentes</option><option value="oldest">Plus anciennes</option></select></label>'+
@@ -28262,6 +28299,9 @@ function cgweb099Filters(
     equipment:
       cgweb099Node("cgweb099Equipment")
         ?.value || "all",
+    fit_provenance:
+      cgweb099Node("cgweb102FitProvenance")
+        ?.value || "ALL",
     marker:
       cgweb099Node("cgweb099Marker")
         ?.value || "",
@@ -29125,6 +29165,7 @@ function cgweb099Wire(){
     "cgweb099Year",
     "cgweb099Sport",
     "cgweb099Equipment",
+    "cgweb102FitProvenance",
     "cgweb099Date",
     "cgweb099Sort"
   ]){
@@ -29205,6 +29246,7 @@ function cgweb099Wire(){
             ["cgweb099Year","ALL"],
             ["cgweb099Sport","all"],
             ["cgweb099Equipment","all"],
+            ["cgweb102FitProvenance","ALL"],
             ["cgweb099Date",""],
             ["cgweb099Marker",""],
             ["cgweb099Search",""],
