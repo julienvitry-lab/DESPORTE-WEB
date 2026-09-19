@@ -25610,3 +25610,323 @@ if(document.readyState==="loading"){
 }
 
 /* CGWEB096_FIX5_DOWNLOAD_HANDLER_EXACT001_END */
+
+/* CGWEB096_FIX9_DOWNLOAD_ICON_STATE_SYNC001_START */
+
+function cgweb096Fix9VisualReady(control){
+  if(!control)return false;
+
+  if(
+    typeof cgweb096IsExactDownloadControl!=="function" ||
+    typeof cgweb096ExactActivityId!=="function"
+  ){
+    return false;
+  }
+
+  if(
+    !cgweb096IsExactDownloadControl(
+      control
+    )
+  ){
+    return false;
+  }
+
+  const activityId=
+    cgweb096ExactActivityId(
+      control
+    );
+
+  if(!activityId){
+    return false;
+  }
+
+  /*
+   * CGWEB096 a validé 6339/6339 objets Cloud résolvables.
+   * Le vieux booléen "FIT Cloud" ne doit donc plus piloter
+   * la couleur ni l'état disabled du bouton.
+   */
+  if(control.disabled){
+    control.disabled=false;
+  }
+
+  if(
+    control.hasAttribute(
+      "disabled"
+    )
+  ){
+    control.removeAttribute(
+      "disabled"
+    );
+  }
+
+  if(
+    control.getAttribute(
+      "aria-disabled"
+    )!=="false"
+  ){
+    control.setAttribute(
+      "aria-disabled",
+      "false"
+    );
+  }
+
+  if(
+    control.dataset
+      .cgweb096FitDownloadReady!=="1"
+  ){
+    control.dataset
+      .cgweb096FitDownloadReady="1";
+  }
+
+  if(
+    control.dataset
+      .cgweb096ActivityId!==activityId
+  ){
+    control.dataset
+      .cgweb096ActivityId=
+        activityId;
+  }
+
+  const staleTitle=
+    String(
+      control.getAttribute("title")||""
+    );
+
+  if(
+    !staleTitle ||
+    /aucun fit cloud|indisponible|non disponible/i
+      .test(staleTitle)
+  ){
+    control.setAttribute(
+      "title",
+      "Télécharger le FIT"
+    );
+  }
+
+  const aria=
+    String(
+      control.getAttribute(
+        "aria-label"
+      )||""
+    );
+
+  if(
+    !aria ||
+    /aucun fit cloud|indisponible|non disponible/i
+      .test(aria)
+  ){
+    control.setAttribute(
+      "aria-label",
+      "Télécharger le FIT"
+    );
+  }
+
+  for(const cls of [
+    "disabled",
+    "is-disabled",
+    "unavailable",
+    "is-unavailable",
+    "fit-missing",
+    "fit-unavailable"
+  ]){
+    if(
+      control.classList?.contains(
+        cls
+      )
+    ){
+      control.classList.remove(cls);
+    }
+  }
+
+  return true;
+}
+
+function cgweb096Fix9Scan(root=document){
+  const directory=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if(!directory)return 0;
+
+  const scope=
+    root instanceof Element &&
+    directory.contains(root)
+      ? root
+      : directory;
+
+  const controls=[
+    ...(scope.matches?.(
+      "button,a,[role='button']"
+    )
+      ? [scope]
+      : []),
+    ...scope.querySelectorAll(
+      "button,a,[role='button']"
+    )
+  ];
+
+  let synced=0;
+
+  for(const control of controls){
+    if(
+      cgweb096Fix9VisualReady(
+        control
+      )
+    ){
+      synced+=1;
+    }
+  }
+
+  return synced;
+}
+
+let cgweb096Fix9Observer=null;
+let cgweb096Fix9Busy=false;
+
+function cgweb096Fix9Schedule(root=null){
+  if(cgweb096Fix9Busy)return;
+
+  cgweb096Fix9Busy=true;
+
+  queueMicrotask(()=>{
+    try{
+      if(
+        typeof cgweb096InstallExactDownloadHandler===
+        "function"
+      ){
+        cgweb096InstallExactDownloadHandler();
+      }
+
+      cgweb096Fix9Scan(
+        root instanceof Element
+          ? root
+          : document
+      );
+    }finally{
+      cgweb096Fix9Busy=false;
+    }
+  });
+}
+
+function cgweb096Fix9InstallVisualSync(){
+  const directory=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if(!directory){
+    return 0;
+  }
+
+  if(
+    typeof cgweb096InstallExactDownloadHandler===
+    "function"
+  ){
+    cgweb096InstallExactDownloadHandler();
+  }
+
+  const initial=
+    cgweb096Fix9Scan(
+      directory
+    );
+
+  if(!cgweb096Fix9Observer){
+    cgweb096Fix9Observer=
+      new MutationObserver(
+        (mutations)=>{
+          let mustRescan=false;
+
+          for(const mutation of mutations){
+            if(
+              mutation.type==="childList" &&
+              mutation.addedNodes.length
+            ){
+              mustRescan=true;
+              break;
+            }
+
+            if(
+              mutation.type==="attributes"
+            ){
+              const target=
+                mutation.target;
+
+              if(
+                target instanceof Element &&
+                (
+                  target.matches?.(
+                    "button,a,[role='button']"
+                  ) ||
+                  target.closest?.(
+                    "button,a,[role='button']"
+                  )
+                )
+              ){
+                mustRescan=true;
+                break;
+              }
+            }
+          }
+
+          if(mustRescan){
+            cgweb096Fix9Schedule(
+              directory
+            );
+          }
+        }
+      );
+
+    cgweb096Fix9Observer.observe(
+      directory,
+      {
+        childList:true,
+        subtree:true,
+        attributes:true,
+        attributeFilter:[
+          "class",
+          "style",
+          "disabled",
+          "aria-disabled",
+          "title",
+          "aria-label"
+        ]
+      }
+    );
+  }
+
+  return initial;
+}
+
+function cgweb096Fix9Boot(){
+  cgweb096Fix9InstallVisualSync();
+
+  setTimeout(
+    cgweb096Fix9InstallVisualSync,
+    150
+  );
+
+  setTimeout(
+    cgweb096Fix9InstallVisualSync,
+    600
+  );
+
+  setTimeout(
+    cgweb096Fix9InstallVisualSync,
+    1600
+  );
+}
+
+if(document.readyState==="loading"){
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb096Fix9Boot,
+    {once:true}
+  );
+}else{
+  queueMicrotask(
+    cgweb096Fix9Boot
+  );
+}
+
+/* CGWEB096_FIX9_DOWNLOAD_ICON_STATE_SYNC001_END */

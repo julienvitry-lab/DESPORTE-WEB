@@ -5924,6 +5924,33 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 }
 </style>
 
+<style id="cgweb096-fix9-download-state-css">
+#activityDirectorySection
+[data-cgweb096-fit-download-ready="1"]{
+  opacity:1 !important;
+  visibility:visible !important;
+  pointer-events:auto !important;
+  cursor:pointer !important;
+  filter:none !important;
+  color:var(--accent,#a8ff21) !important;
+  border-color:currentColor !important;
+}
+
+#activityDirectorySection
+[data-cgweb096-fit-download-ready="1"] svg,
+#activityDirectorySection
+[data-cgweb096-fit-download-ready="1"] svg *,
+#activityDirectorySection
+[data-cgweb096-fit-download-ready="1"] img{
+  opacity:1 !important;
+  filter:none !important;
+}
+
+#activityDirectorySection
+[data-cgweb096-fit-download-ready="1"][aria-disabled="false"]{
+  cursor:pointer !important;
+}
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -8223,7 +8250,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB096-FIX8-FITCLOUD-LOAD-GUARD001"></script>
-<script type="module" src="./app.js?v=CGWEB096-FIX8-DOWNLOAD-HANDLER-EXACT001"></script>
+<script type="module" src="./app.js?v=CGWEB096-FIX9-DOWNLOAD-ICON-STATE-SYNC001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
