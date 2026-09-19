@@ -29326,3 +29326,494 @@ if(document.readyState==="loading"){
 }
 
 /* CGWEB099_GLOBAL_DIRECTORY_APP_END */
+
+
+/* CGWEB103_FIT_RECOVERY_APP_START */
+
+function cgweb103Node(id){
+  return document.getElementById(id);
+}
+
+function cgweb103Escape(value){
+  return String(value ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function cgweb103Date(value){
+  const text=
+    String(value || "").trim();
+
+  if(!text){
+    return "—";
+  }
+
+  const date=
+    new Date(text);
+
+  if(
+    Number.isNaN(
+      date.getTime()
+    )
+  ){
+    return text.slice(0,10) || "—";
+  }
+
+  return date.toLocaleDateString(
+    "fr-FR"
+  );
+}
+
+function cgweb103HintLabel(value){
+  const labels={
+    PARENT_ORIGINAL_AVAILABLE:
+      "Parent ORIGINAL disponible",
+    PARENT_CANONICAL_ONLY:
+      "Parent CANONICAL uniquement",
+    PARENT_FIT_ABSENT:
+      "FIT parent absent",
+    PARENT_DOCUMENT_MISSING:
+      "Document parent introuvable",
+    ARCHIVE_ORIGINAL_NEEDED:
+      "Original à rechercher dans les archives",
+    FIT_ARCHIVE_NEEDED:
+      "FIT à rechercher dans les archives",
+    NO_RECOVERY_NEEDED:
+      "Aucune restauration nécessaire"
+  };
+
+  return labels[value] || value || "—";
+}
+
+function cgweb103RoleClass(role){
+  const normalized=
+    String(role || "")
+      .toUpperCase();
+
+  if(normalized==="ORIGINAL"){
+    return "ok";
+  }
+
+  if(normalized==="CANONICAL"){
+    return "neutral";
+  }
+
+  return "warn";
+}
+
+function cgweb103SetSummary(summary){
+  const values={
+    cgweb103RecoveryCount:
+      summary?.recovery_candidates,
+    cgweb103CanonicalCount:
+      summary?.canonical,
+    cgweb103AbsentCount:
+      summary?.absent,
+    cgweb103SplitCount:
+      summary?.split_children,
+    cgweb103SplitRecoveryCount:
+      summary?.split_recovery_candidates,
+    cgweb103ParentOriginalCount:
+      summary?.parent_original_available,
+    cgweb103ParentMissingCount:
+      summary?.parent_document_missing,
+    cgweb103LineageMismatchCount:
+      summary?.lineage_mismatch
+  };
+
+  for(
+    const [id,value]
+    of Object.entries(values)
+  ){
+    const node=
+      cgweb103Node(id);
+
+    if(node){
+      node.textContent=
+        Number.isFinite(
+          Number(value)
+        )
+          ? Number(value)
+              .toLocaleString("fr-FR")
+          : "—";
+    }
+  }
+}
+
+function cgweb103RenderRecovery(rows){
+  const host=
+    cgweb103Node(
+      "cgweb103RecoveryList"
+    );
+
+  const badge=
+    cgweb103Node(
+      "cgweb103RecoveryBadge"
+    );
+
+  if(!host){
+    return;
+  }
+
+  const list=
+    Array.isArray(rows)
+      ? rows
+      : [];
+
+  if(badge){
+    badge.textContent=
+      list.length.toLocaleString(
+        "fr-FR"
+      );
+  }
+
+  if(!list.length){
+    host.innerHTML=
+      '<p class="muted">Aucune activité à restaurer.</p>';
+    return;
+  }
+
+  host.innerHTML=
+    list
+      .slice(0,500)
+      .map(row => {
+        const split=
+          row.is_split_child
+            ? (
+                "WEBSPLIT"+
+                (
+                  row.split_part!=null
+                    ? " · partie "+
+                      cgweb103Escape(
+                        row.split_part
+                      )
+                    : ""
+                )
+              )
+            : "Activité normale";
+
+        const parent=
+          row.is_split_child
+            ? (
+                " · parent "+
+                cgweb103Escape(
+                  row.split_parent_activity_id ||
+                  "?"
+                )+
+                " · FIT parent "+
+                cgweb103Escape(
+                  row.parent_fit_role ||
+                  "ABSENT"
+                )
+              )
+            : "";
+
+        return (
+          '<div class="cgweb103-row">'+
+            '<span>'+
+              cgweb103Escape(
+                cgweb103Date(
+                  row.start_iso
+                )
+              )+
+            '</span>'+
+            '<strong title="'+
+              cgweb103Escape(
+                row.activity_id
+              )+
+            '">'+
+              cgweb103Escape(
+                row.title ||
+                row.activity_id
+              )+
+            '</strong>'+
+            '<span class="pill '+
+              cgweb103RoleClass(
+                row.fit_role
+              )+
+              ' cgweb103-role">'+
+              cgweb103Escape(
+                row.fit_role
+              )+
+            '</span>'+
+            '<span class="cgweb103-hint">'+
+              cgweb103Escape(split)+
+              parent+
+              ' · '+
+              cgweb103Escape(
+                cgweb103HintLabel(
+                  row.recovery_hint
+                )
+              )+
+            '</span>'+
+          '</div>'
+        );
+      })
+      .join("");
+}
+
+function cgweb103RenderLineage(rows){
+  const host=
+    cgweb103Node(
+      "cgweb103LineageList"
+    );
+
+  const badge=
+    cgweb103Node(
+      "cgweb103LineageBadge"
+    );
+
+  if(!host){
+    return;
+  }
+
+  const list=
+    Array.isArray(rows)
+      ? rows
+      : [];
+
+  if(badge){
+    badge.textContent=
+      list.length.toLocaleString(
+        "fr-FR"
+      );
+  }
+
+  if(!list.length){
+    host.innerHTML=
+      '<p class="muted">Aucune activité WEBSPLIT détectée.</p>';
+    return;
+  }
+
+  host.innerHTML=
+    list
+      .slice(0,500)
+      .map(row => {
+        const status=
+          String(
+            row.lineage_status || "?"
+          );
+
+        const parentText=
+          row.split_parent_activity_id
+            ? (
+                "parent "+
+                row.split_parent_activity_id+
+                (
+                  row.parent_deleted
+                    ? " (corbeille)"
+                    : ""
+                )
+              )
+            : "parent non identifié";
+
+        return (
+          '<div class="cgweb103-row">'+
+            '<span>'+
+              cgweb103Escape(
+                cgweb103Date(
+                  row.start_iso
+                )
+              )+
+            '</span>'+
+            '<strong title="'+
+              cgweb103Escape(
+                row.activity_id
+              )+
+            '">'+
+              cgweb103Escape(
+                row.title ||
+                row.activity_id
+              )+
+            '</strong>'+
+            '<span class="pill '+
+              (
+                status==="OK"
+                  ? "ok"
+                  : "warn"
+              )+
+              ' cgweb103-role">'+
+              cgweb103Escape(
+                status
+              )+
+            '</span>'+
+            '<span class="cgweb103-hint">'+
+              cgweb103Escape(
+                parentText
+              )+
+              ' · FIT enfant '+
+              cgweb103Escape(
+                row.fit_role
+              )+
+              ' · FIT parent '+
+              cgweb103Escape(
+                row.parent_fit_role
+              )+
+              (
+                row.split_reason
+                  ? (
+                      " · "+
+                      cgweb103Escape(
+                        row.split_reason
+                      )
+                    )
+                  : ""
+              )+
+            '</span>'+
+          '</div>'
+        );
+      })
+      .join("");
+}
+
+async function cgweb103RunAudit(){
+  const button=
+    cgweb103Node(
+      "cgweb103AuditButton"
+    );
+
+  const status=
+    cgweb103Node(
+      "cgweb103AuditStatus"
+    );
+
+  const pill=
+    cgweb103Node(
+      "cgweb103AuditPill"
+    );
+
+  if(
+    !window.SPORT_FIT_RECOVERY
+      ?.audit
+  ){
+    if(status){
+      status.textContent=
+        "Service CGWEB103 non chargé.";
+    }
+    return;
+  }
+
+  if(button){
+    button.disabled=true;
+  }
+
+  if(pill){
+    pill.textContent=
+      "Audit…";
+  }
+
+  if(status){
+    status.textContent=
+      "Lecture des activités, FIT et filiations WEBSPLIT…";
+  }
+
+  try{
+    const result=
+      await window
+        .SPORT_FIT_RECOVERY
+        .audit();
+
+    cgweb103SetSummary(
+      result?.summary || {}
+    );
+
+    cgweb103RenderRecovery(
+      result?.recovery_candidates || []
+    );
+
+    cgweb103RenderLineage(
+      result?.split_lineage || []
+    );
+
+    if(pill){
+      pill.textContent=
+        "Lecture seule";
+      pill.className=
+        "pill ok";
+    }
+
+    if(status){
+      const summary=
+        result?.summary || {};
+
+      status.textContent=
+        "Audit terminé · "+
+        Number(
+          summary.recovery_candidates || 0
+        ).toLocaleString("fr-FR")+
+        " activité(s) à restaurer · "+
+        Number(
+          summary.split_children || 0
+        ).toLocaleString("fr-FR")+
+        " activité(s) WEBSPLIT · aucune modification.";
+    }
+  }catch(error){
+    console.error(
+      "CGWEB103 audit",
+      error
+    );
+
+    if(pill){
+      pill.textContent=
+        "Erreur";
+      pill.className=
+        "pill warn";
+    }
+
+    if(status){
+      status.textContent=
+        "Audit impossible : "+
+        (
+          error?.message ||
+          String(error)
+        );
+    }
+  }finally{
+    if(button){
+      button.disabled=false;
+    }
+  }
+}
+
+function cgweb103Init(){
+  const button=
+    cgweb103Node(
+      "cgweb103AuditButton"
+    );
+
+  if(
+    !button ||
+    button.dataset.cgweb103Bound==="1"
+  ){
+    return;
+  }
+
+  button.dataset.cgweb103Bound="1";
+
+  button.addEventListener(
+    "click",
+    ()=>{
+      void cgweb103RunAudit();
+    }
+  );
+}
+
+if(
+  document.readyState===
+  "loading"
+){
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb103Init,
+    {once:true}
+  );
+}else{
+  queueMicrotask(
+    cgweb103Init
+  );
+}
+
+/* CGWEB103_FIT_RECOVERY_APP_END */

@@ -7590,6 +7590,177 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
     </div>
   </details>
 </section>
+
+<!-- CGWEB103_FIT_RECOVERY_UI_START -->
+<section id="cgweb103FitRecoveryAudit"
+         class="panel cgweb103-recovery-audit">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">
+        CGWEB103 · FIT_RECOVERY_AUDIT001 /
+        SPLIT_LINEAGE_AUDIT001
+      </p>
+      <h2>Audit récupération FIT</h2>
+      <p class="muted">
+        Analyse en lecture seule les FIT canoniques / absents
+        et reconstitue la filiation des activités WEBSPLIT.
+      </p>
+    </div>
+    <span id="cgweb103AuditPill"
+          class="pill neutral">
+      Non audité
+    </span>
+  </div>
+
+  <div class="cgweb103-summary">
+    <article>
+      <span>À restaurer</span>
+      <strong id="cgweb103RecoveryCount">—</strong>
+    </article>
+    <article>
+      <span>Canoniques</span>
+      <strong id="cgweb103CanonicalCount">—</strong>
+    </article>
+    <article>
+      <span>Sans FIT</span>
+      <strong id="cgweb103AbsentCount">—</strong>
+    </article>
+    <article>
+      <span>Enfants WEBSPLIT</span>
+      <strong id="cgweb103SplitCount">—</strong>
+    </article>
+    <article>
+      <span>Découpés à restaurer</span>
+      <strong id="cgweb103SplitRecoveryCount">—</strong>
+    </article>
+    <article>
+      <span>Parent ORIGINAL disponible</span>
+      <strong id="cgweb103ParentOriginalCount">—</strong>
+    </article>
+    <article>
+      <span>Parent manquant</span>
+      <strong id="cgweb103ParentMissingCount">—</strong>
+    </article>
+    <article>
+      <span>Anomalies lignée</span>
+      <strong id="cgweb103LineageMismatchCount">—</strong>
+    </article>
+  </div>
+
+  <div class="row-actions">
+    <button id="cgweb103AuditButton"
+            type="button">
+      Auditer la récupération FIT
+    </button>
+  </div>
+
+  <p id="cgweb103AuditStatus"
+     class="muted">
+    Audit non lancé. Aucune donnée ne sera modifiée.
+  </p>
+
+  <details class="cgweb103-details">
+    <summary>
+      Activités à restaurer
+      <span id="cgweb103RecoveryBadge"
+            class="pill neutral">—</span>
+    </summary>
+    <div id="cgweb103RecoveryList"
+         class="cgweb103-list"></div>
+  </details>
+
+  <details class="cgweb103-details">
+    <summary>
+      Lignées WEBSPLIT
+      <span id="cgweb103LineageBadge"
+            class="pill neutral">—</span>
+    </summary>
+    <div id="cgweb103LineageList"
+         class="cgweb103-list"></div>
+  </details>
+</section>
+
+<style id="cgweb103-fit-recovery-css">
+.cgweb103-recovery-audit{
+  margin-top:16px;
+}
+.cgweb103-summary{
+  display:grid;
+  grid-template-columns:
+    repeat(4,minmax(0,1fr));
+  gap:8px;
+  margin:12px 0;
+}
+.cgweb103-summary article{
+  border:1px solid
+    color-mix(in srgb,var(--accent,#a7ff2a) 28%,transparent);
+  border-radius:12px;
+  padding:10px 12px;
+  min-width:0;
+}
+.cgweb103-summary article span{
+  display:block;
+  font-size:.82rem;
+  opacity:.72;
+}
+.cgweb103-summary article strong{
+  display:block;
+  margin-top:3px;
+  font-size:1.18rem;
+}
+.cgweb103-details{
+  margin-top:10px;
+  border-top:1px solid rgba(255,255,255,.08);
+  padding-top:8px;
+}
+.cgweb103-details summary{
+  cursor:pointer;
+  font-weight:700;
+}
+.cgweb103-list{
+  display:grid;
+  gap:6px;
+  margin-top:8px;
+}
+.cgweb103-row{
+  display:grid;
+  grid-template-columns:
+    115px minmax(180px,1fr) 105px
+    minmax(220px,1.2fr);
+  gap:8px;
+  align-items:center;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;
+  padding:8px 10px;
+}
+.cgweb103-row > span,
+.cgweb103-row > strong{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.cgweb103-role{
+  font-size:.78rem;
+}
+.cgweb103-hint{
+  opacity:.82;
+  font-size:.84rem;
+}
+@media(max-width:900px){
+  .cgweb103-summary{
+    grid-template-columns:
+      repeat(2,minmax(0,1fr));
+  }
+  .cgweb103-row{
+    grid-template-columns:
+      100px minmax(0,1fr);
+  }
+}
+</style>
+<!-- CGWEB103_FIT_RECOVERY_UI_END -->
+
+
 <!-- CGWEB097_CANONICAL_AUDIT_UI_END -->
 
 
@@ -8706,8 +8877,8 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./fitcloud.js?v=CGWEB102-FIT-PROVENANCE-FILTER001"></script>
-<script type="module" src="./app.js?v=CGWEB102-FIT-PROVENANCE-FILTER001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB103-FIT-RECOVERY-AUDIT001"></script>
+<script type="module" src="./app.js?v=CGWEB103-FIT-RECOVERY-AUDIT001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

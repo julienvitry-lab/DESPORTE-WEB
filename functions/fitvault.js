@@ -6964,6 +6964,582 @@ async function c102FilterByFitProvenance(
 
 /* CGWEB102_FIT_PROVENANCE_FILTER_END */
 
+
+  /* CGWEB103_FIT_RECOVERY_HELPERS_START */
+
+  function c103FitState(
+    activityId,
+    byActivity,
+    storageIndex
+  ){
+    const id=
+      String(activityId || "").trim();
+
+    if(!id){
+      return {
+        role:"ABSENT",
+        downloadable:false,
+        status:"NO_ACTIVITY_ID",
+        method:"NONE",
+        file_name:""
+      };
+    }
+
+    const linked=
+      byActivity.get(id) || [];
+
+    const resolved=
+      c096ResolvePreferred(
+        linked,
+        storageIndex
+      );
+
+    const downloadable=
+      Boolean(
+        resolved?.status?.startsWith(
+          "RESOLVED_"
+        )
+      );
+
+    return {
+      role:
+        downloadable
+          ? String(
+              resolved?.role || "NONE"
+            ).toUpperCase()
+          : "ABSENT",
+      downloadable,
+      status:
+        resolved?.status ||
+        "NO_LINKED_FILE",
+      method:
+        resolved?.method || "NONE",
+      file_name:
+        resolved?.file_name || ""
+    };
+  }
+
+  function c103StringArray(value){
+    if(!Array.isArray(value)){
+      return [];
+    }
+
+    return value
+      .map(item =>
+        String(item || "").trim()
+      )
+      .filter(Boolean);
+  }
+
+  function c103Number(value){
+    const n=Number(value);
+    return Number.isFinite(n)
+      ? n
+      : null;
+  }
+
+  function c103RecoveryHint(
+    role,
+    isSplitChild,
+    parentExists,
+    parentRole
+  ){
+    if(
+      role!=="CANONICAL" &&
+      role!=="ABSENT"
+    ){
+      return "NO_RECOVERY_NEEDED";
+    }
+
+    if(!isSplitChild){
+      return role==="CANONICAL"
+        ? "ARCHIVE_ORIGINAL_NEEDED"
+        : "FIT_ARCHIVE_NEEDED";
+    }
+
+    if(!parentExists){
+      return "PARENT_DOCUMENT_MISSING";
+    }
+
+    if(parentRole==="ORIGINAL"){
+      return "PARENT_ORIGINAL_AVAILABLE";
+    }
+
+    if(parentRole==="CANONICAL"){
+      return "PARENT_CANONICAL_ONLY";
+    }
+
+    return "PARENT_FIT_ABSENT";
+  }
+
+  function c103LineageStatus(
+    childId,
+    parentId,
+    parent,
+    routeParentId
+  ){
+    const hasSplitEvidence=
+      Boolean(parentId) ||
+      Boolean(routeParentId);
+
+    if(!hasSplitEvidence){
+      return "PARENT_ID_MISSING";
+    }
+
+    if(!parent){
+      return "PARENT_DOCUMENT_MISSING";
+    }
+
+    const children=
+      c103StringArray(
+        parent.split_children_ids
+      );
+
+    if(
+      children.length &&
+      !children.includes(
+        String(childId)
+      )
+    ){
+      return "PARENT_CHILD_LINK_MISMATCH";
+    }
+
+    return "OK";
+  }
+
+  async function c103FitRecoveryAudit(uid){
+    const [
+      byActivity,
+      storageIndex
+    ]=
+      await Promise.all([
+        c096LinkedRows(uid),
+        c096StorageIndex()
+      ]);
+
+    const activities=
+      new Map();
+
+    for await(
+      const snap of db
+        .collection(
+          ROOT+"/"+uid+"/activities"
+        )
+        .stream()
+    ){
+      activities.set(
+        String(snap.id),
+        {
+          id:String(snap.id),
+          ...(snap.data() || {})
+        }
+      );
+    }
+
+    const routeParents=
+      new Map();
+
+    for await(
+      const snap of db
+        .collection(
+          ROOT+"/"+uid+"/activity_routes"
+        )
+        .stream()
+    ){
+      const row=snap.data() || {};
+
+      const parentId=
+        String(
+          row.split_parent_activity_id || ""
+        ).trim();
+
+      if(parentId){
+        routeParents.set(
+          String(snap.id),
+          parentId
+        );
+      }
+    }
+
+    const fitCache=
+      new Map();
+
+    const fitState=
+      activityId => {
+        const id=
+          String(activityId || "");
+
+        if(!fitCache.has(id)){
+          fitCache.set(
+            id,
+            c103FitState(
+              id,
+              byActivity,
+              storageIndex
+            )
+          );
+        }
+
+        return fitCache.get(id);
+      };
+
+    const active=[];
+
+    for(const [id,row] of activities){
+      if(row.deleted_at_ms!=null){
+        continue;
+      }
+
+      active.push(
+        {
+          id,
+          row
+        }
+      );
+    }
+
+    const recovery=[];
+    const lineage=[];
+
+    let originalCount=0;
+    let canonicalCount=0;
+    let absentCount=0;
+    let splitChildren=0;
+    let splitRecovery=0;
+    let parentOriginalAvailable=0;
+    let parentCanonicalOnly=0;
+    let parentFitAbsent=0;
+    let parentMissing=0;
+    let lineageMismatch=0;
+    let deletedParents=0;
+
+    for(const item of active){
+      const id=item.id;
+      const row=item.row;
+      const state=fitState(id);
+
+      if(state.role==="ORIGINAL"){
+        originalCount++;
+      }else if(state.role==="CANONICAL"){
+        canonicalCount++;
+      }else{
+        absentCount++;
+      }
+
+      const activityParentId=
+        String(
+          row.split_parent_activity_id || ""
+        ).trim();
+
+      const routeParentId=
+        String(
+          routeParents.get(id) || ""
+        ).trim();
+
+      const parentId=
+        activityParentId ||
+        routeParentId;
+
+      const isSplitChild=
+        Boolean(parentId) ||
+        row.import_source==="WEB_SPLIT" ||
+        c103Number(row.split_part)!=null;
+
+      let parent=null;
+      let parentState=null;
+      let lineageStatus=
+        "NOT_SPLIT";
+
+      if(isSplitChild){
+        splitChildren++;
+
+        parent=
+          parentId
+            ? activities.get(parentId) || null
+            : null;
+
+        parentState=
+          parentId
+            ? fitState(parentId)
+            : {
+                role:"ABSENT",
+                downloadable:false,
+                status:"NO_PARENT_ID",
+                method:"NONE",
+                file_name:""
+              };
+
+        lineageStatus=
+          c103LineageStatus(
+            id,
+            parentId,
+            parent,
+            routeParentId
+          );
+
+        if(
+          parent &&
+          parent.deleted_at_ms!=null
+        ){
+          deletedParents++;
+        }
+
+        if(
+          lineageStatus===
+          "PARENT_DOCUMENT_MISSING"
+        ){
+          parentMissing++;
+        }
+
+        if(
+          lineageStatus===
+          "PARENT_CHILD_LINK_MISMATCH"
+        ){
+          lineageMismatch++;
+        }
+
+        const splitRow={
+          activity_id:id,
+          title:
+            String(
+              row.custom_title ||
+              row.title ||
+              row.name ||
+              "Activité"
+            ),
+          start_iso:
+            String(
+              row.start_iso ||
+              row.start_time_iso ||
+              ""
+            ),
+          fit_role:
+            state.role,
+          fit_status:
+            state.status,
+          split_parent_activity_id:
+            parentId,
+          split_parent_from:
+            activityParentId
+              ? "ACTIVITY"
+              : routeParentId
+                ? "ROUTE"
+                : "NONE",
+          split_part:
+            c103Number(
+              row.split_part
+            ),
+          split_total:
+            c103Number(
+              row.split_total
+            ),
+          split_reason:
+            String(
+              row.split_reason || ""
+            ),
+          split_gap_ms:
+            c103Number(
+              row.split_gap_ms
+            ),
+          import_source:
+            String(
+              row.import_source || ""
+            ),
+          import_profile:
+            String(
+              row.import_profile || ""
+            ),
+          lineage_status:
+            lineageStatus,
+          parent_exists:
+            Boolean(parent),
+          parent_deleted:
+            Boolean(
+              parent &&
+              parent.deleted_at_ms!=null
+            ),
+          parent_split_status:
+            String(
+              parent?.split_status || ""
+            ),
+          parent_split_profile:
+            String(
+              parent?.split_profile || ""
+            ),
+          parent_children_ids:
+            c103StringArray(
+              parent?.split_children_ids
+            ),
+          parent_fit_role:
+            parentState?.role || "ABSENT",
+          parent_fit_status:
+            parentState?.status ||
+            "NO_PARENT_STATE"
+        };
+
+        lineage.push(splitRow);
+      }
+
+      if(
+        state.role==="CANONICAL" ||
+        state.role==="ABSENT"
+      ){
+        const hint=
+          c103RecoveryHint(
+            state.role,
+            isSplitChild,
+            Boolean(parent),
+            parentState?.role ||
+              "ABSENT"
+          );
+
+        if(isSplitChild){
+          splitRecovery++;
+
+          if(
+            hint===
+            "PARENT_ORIGINAL_AVAILABLE"
+          ){
+            parentOriginalAvailable++;
+          }else if(
+            hint===
+            "PARENT_CANONICAL_ONLY"
+          ){
+            parentCanonicalOnly++;
+          }else if(
+            hint===
+            "PARENT_FIT_ABSENT"
+          ){
+            parentFitAbsent++;
+          }
+        }
+
+        recovery.push({
+          activity_id:id,
+          title:
+            String(
+              row.custom_title ||
+              row.title ||
+              row.name ||
+              "Activité"
+            ),
+          start_iso:
+            String(
+              row.start_iso ||
+              row.start_time_iso ||
+              ""
+            ),
+          sport:
+            row.sport ?? null,
+          distance_m:
+            c103Number(
+              row.distance_m ??
+              row.distance
+            ),
+          fit_role:
+            state.role,
+          fit_status:
+            state.status,
+          fit_method:
+            state.method,
+          fit_file_name:
+            state.file_name,
+          is_split_child:
+            isSplitChild,
+          split_parent_activity_id:
+            parentId,
+          split_part:
+            c103Number(
+              row.split_part
+            ),
+          split_total:
+            c103Number(
+              row.split_total
+            ),
+          split_reason:
+            String(
+              row.split_reason || ""
+            ),
+          split_gap_ms:
+            c103Number(
+              row.split_gap_ms
+            ),
+          lineage_status:
+            lineageStatus,
+          parent_exists:
+            Boolean(parent),
+          parent_deleted:
+            Boolean(
+              parent &&
+              parent.deleted_at_ms!=null
+            ),
+          parent_fit_role:
+            parentState?.role ||
+              (isSplitChild
+                ? "ABSENT"
+                : ""),
+          parent_fit_status:
+            parentState?.status || "",
+          recovery_hint:
+            hint
+        });
+      }
+    }
+
+    recovery.sort(
+      (a,b) =>
+        String(b.start_iso)
+          .localeCompare(
+            String(a.start_iso)
+          )
+    );
+
+    lineage.sort(
+      (a,b) =>
+        String(b.start_iso)
+          .localeCompare(
+            String(a.start_iso)
+          )
+    );
+
+    return {
+      summary:{
+        active_activities:
+          active.length,
+        original:
+          originalCount,
+        canonical:
+          canonicalCount,
+        absent:
+          absentCount,
+        recovery_candidates:
+          recovery.length,
+        split_children:
+          splitChildren,
+        split_recovery_candidates:
+          splitRecovery,
+        parent_original_available:
+          parentOriginalAvailable,
+        parent_canonical_only:
+          parentCanonicalOnly,
+        parent_fit_absent:
+          parentFitAbsent,
+        parent_document_missing:
+          parentMissing,
+        lineage_mismatch:
+          lineageMismatch,
+        deleted_parents:
+          deletedParents
+      },
+      recovery_candidates:
+        recovery,
+      split_lineage:
+        lineage
+    };
+  }
+
+  /* CGWEB103_FIT_RECOVERY_HELPERS_END */
+
 async function c099GlobalDirectoryQuery(
     uid,
     input
@@ -9086,7 +9662,44 @@ if (action === "transfer_audit") {
           });
         }
 
-        /* CGWEB099_GLOBAL_DIRECTORY_ACTIONS_END */
+
+        /* CGWEB103_FIT_RECOVERY_ACTIONS_START */
+
+        if (
+          action ===
+          "fit_recovery_audit"
+        ) {
+          if (
+            req.method !== "GET" &&
+            req.method !== "POST"
+          ) {
+            return res.status(405).json({
+              error:
+                "GET ou POST requis."
+            });
+          }
+
+          const result =
+            await c103FitRecoveryAudit(
+              uid
+            );
+
+          return res.json({
+            ok:true,
+            service:
+              "FIT_RECOVERY_AUDIT001",
+            lineage_service:
+              "SPLIT_LINEAGE_AUDIT001",
+            version:
+              "CGWEB103",
+            read_only:true,
+            ...result
+          });
+        }
+
+        /* CGWEB103_FIT_RECOVERY_ACTIONS_END */
+
+/* CGWEB099_GLOBAL_DIRECTORY_ACTIONS_END */
 
         /* CGWEB097_FIT_ORIGIN_ACTIONS_START */
 
