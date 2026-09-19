@@ -6027,32 +6027,102 @@ function v081ActivityId(activity) {
 }
 
 function v081SetQuickState(control, state, label = "") {
+    if (!control) return;
 
+    control.classList.remove(
+      "is-pending",
+      "is-available",
+      "is-unavailable",
+      "is-busy",
+      "is-error"
+    );
 
-  if (!control) return;
-  control.classList.remove("is-pending", "is-available", "is-unavailable", "is-busy", "is-error");
-  control.classList.add(`is-${state}`);
-  control.dataset.fitState = state;
-  const disabled = state === "unavailable" || state === "error";
-  control.setAttribute("aria-disabled", disabled ? "true" : "false");
+    control.classList.add(
+      `is-${state}`
+    );
 
-  if (state === "available") {
-    control.title = label ? `Télécharger ${label}` : "Télécharger le FIT associé";
-    control.setAttribute("aria-label", control.title);
-  } else if (state === "busy") {
-    control.title = "Téléchargement du FIT…";
-    control.setAttribute("aria-label", control.title);
-  } else if (state === "unavailable") {
-    control.title = "Aucun FIT Cloud associé à cette activité";
-    control.setAttribute("aria-label", control.title);
-  } else if (state === "error") {
-    control.title = "FIT indisponible pour le moment";
-    control.setAttribute("aria-label", control.title);
-  } else {
-    control.title = "Recherche du FIT associé…";
-    control.setAttribute("aria-label", control.title);
+    control.dataset.fitState =
+      state;
+
+    const disabled =
+      state === "unavailable" ||
+      state === "error";
+
+    control.setAttribute(
+      "aria-disabled",
+      disabled
+        ? "true"
+        : "false"
+    );
+
+    if (state === "available") {
+      control.title =
+        label
+          ? `Télécharger ${label}`
+          : "Télécharger le FIT associé";
+
+      control.setAttribute(
+        "aria-label",
+        control.title
+      );
+    } else if (state === "busy") {
+      control.title =
+        "Téléchargement du FIT…";
+
+      control.setAttribute(
+        "aria-label",
+        control.title
+      );
+    } else if (state === "unavailable") {
+      control.title =
+        "Aucun FIT Cloud associé à cette activité";
+
+      control.setAttribute(
+        "aria-label",
+        control.title
+      );
+    } else if (state === "error") {
+      control.title =
+        "FIT indisponible pour le moment";
+
+      control.setAttribute(
+        "aria-label",
+        control.title
+      );
+    } else {
+      control.title =
+        "Recherche du FIT associé…";
+
+      control.setAttribute(
+        "aria-label",
+        control.title
+      );
+    }
+
+    /*
+     * FIX6 :
+     * V081 conserve l'état opérationnel du téléchargement,
+     * mais la VISIBILITÉ appartient exclusivement à
+     * CGWEB097 DOWNLOAD_STATE_TRUTH001.
+     */
+    if (
+      typeof
+        cgweb099ApplyFitTruthVisibility===
+        "function"
+    ) {
+      cgweb099ApplyFitTruthVisibility(
+        control
+      );
+    }
+
+    if (
+      typeof
+        cgweb099QueueFitTruthLayout===
+        "function"
+    ) {
+      cgweb099QueueFitTruthLayout();
+    }
   }
-}
 
 async function v081DownloadFromControl(control) {
   const activityId = String(control?.dataset?.activityId || "").trim();
@@ -26187,54 +26257,91 @@ function cgweb097DownloadControls(){
 }
 
 function cgweb097ApplyState(
-  control,
-  state
-){
-  if(
-    !control ||
-    !state
+    control,
+    state
   ){
-    return;
+    if(
+      !control ||
+      !state
+    ){
+      return;
+    }
+
+    const role=
+      state.downloadable
+        ? String(
+            state.role || "UNKNOWN"
+          ).toUpperCase()
+        : "ABSENT";
+
+    control.dataset
+      .cgweb097FitOrigin=
+        role;
+
+    const downloadable=
+      role==="ORIGINAL" ||
+      role==="CANONICAL";
+
+    control.disabled=
+      !downloadable;
+
+    control.setAttribute(
+      "aria-disabled",
+      downloadable
+        ? "false"
+        : "true"
+    );
+
+    if(role==="ORIGINAL"){
+      control.setAttribute(
+        "title",
+        "Télécharger le FIT original"
+      );
+
+      control.setAttribute(
+        "aria-label",
+        "Télécharger le FIT original"
+      );
+    }else if(role==="CANONICAL"){
+      control.setAttribute(
+        "title",
+        "Télécharger le FIT canonique reconstruit"
+      );
+
+      control.setAttribute(
+        "aria-label",
+        "Télécharger le FIT canonique reconstruit"
+      );
+    }else{
+      control.setAttribute(
+        "title",
+        "Aucun FIT Cloud associé à cette activité"
+      );
+
+      control.setAttribute(
+        "aria-label",
+        "Aucun FIT Cloud associé à cette activité"
+      );
+    }
+
+    if(
+      typeof
+        cgweb099ApplyFitTruthVisibility===
+        "function"
+    ){
+      cgweb099ApplyFitTruthVisibility(
+        control
+      );
+    }
+
+    if(
+      typeof
+        cgweb099QueueFitTruthLayout===
+        "function"
+    ){
+      cgweb099QueueFitTruthLayout();
+    }
   }
-
-  const role=
-    state.downloadable
-      ? String(
-          state.role || "UNKNOWN"
-        ).toUpperCase()
-      : "ABSENT";
-
-  control.dataset
-    .cgweb097FitOrigin=
-      role;
-
-  control.disabled=
-    role==="ABSENT";
-
-  control.setAttribute(
-    "aria-disabled",
-    role==="ABSENT"
-      ? "true"
-      : "false"
-  );
-
-  if(role==="ORIGINAL"){
-    control.setAttribute(
-      "title",
-      "Télécharger le FIT original"
-    );
-  }else if(role==="CANONICAL"){
-    control.setAttribute(
-      "title",
-      "Télécharger le FIT canonique reconstruit"
-    );
-  }else{
-    control.setAttribute(
-      "title",
-      "FIT non résolvable"
-    );
-  }
-}
 
 async function cgweb097RefreshStates(){
   if(cgweb097StateBusy){
@@ -27311,107 +27418,197 @@ function cgweb099DownloadAvailability(control){
 }
 
 function cgweb099FixDirectoryDownloadLayout(){
-  const section=
-    document.getElementById(
-      "activityDirectorySection"
-    );
-
-  if(!section)return;
-
-  const rows=[
-    ...section.querySelectorAll(
-      "[data-activity-id],.activity-row,.activity-card"
-    )
-  ];
-
-  for(const row of rows){
-    if(
-      row.closest(
-        "#cgweb099GlobalDirectory"
-      )
-    ){
-      continue;
-    }
-
-    row.classList.add(
-      "cgweb099-fix5-row"
-    );
-
-    const controls=[
-      ...row.querySelectorAll(
-        "button,a"
-      )
-    ]
-      .filter(
-        cgweb099IsDownloadControl
+    const section=
+      document.getElementById(
+        "activityDirectorySection"
       );
 
-    if(!controls.length){
-      continue;
+    if(!section){
+      return;
     }
 
-    for(const control of controls){
-      let cell=control;
+    cgweb099InstallFix6Styles();
 
-      while(
-        cell.parentElement &&
-        cell.parentElement!==row
-      ){
-        cell=cell.parentElement;
-      }
+    const rows=[
+      ...section.querySelectorAll(
+        ".activity-card,[data-activity-id],.activity-row"
+      )
+    ];
 
+    for(const row of rows){
       if(
-        cell.parentElement!==row
-      ){
-        cell=control;
-      }
-
-      if(
-        !cgweb099DownloadAvailability(
-          control
+        row.closest(
+          "#cgweb099GlobalDirectory"
         )
       ){
-        control.classList.add(
-          "cgweb099-fix5-download-hidden"
-        );
-
-        if(
-          cell!==control
-        ){
-          cell.classList.add(
-            "cgweb099-fix5-download-hidden"
-          );
-        }
-
         continue;
       }
 
-      control.classList.remove(
-        "cgweb099-fix5-download-hidden"
+      /*
+       * FIX6 : annule l'expérience flex de FIX4/FIX5.
+       * Le renderer historique redevient maître du layout.
+       */
+      row.classList.remove(
+        "cgweb099-fix4-one-line",
+        "cgweb099-fix5-row"
       );
 
-      control.classList.add(
-        "cgweb099-fix5-download"
-      );
-
-      cell.classList.remove(
-        "cgweb099-fix5-download-hidden"
-      );
-
-      cell.classList.add(
-        "cgweb099-fix5-download-cell"
-      );
-
-      if(
-        row.lastElementChild!==cell
+      for(
+        const node
+        of row.querySelectorAll(
+          ".cgweb099-fix4-download,"+
+          ".cgweb099-fix4-download-cell,"+
+          ".cgweb099-fix5-download,"+
+          ".cgweb099-fix5-download-cell,"+
+          ".cgweb099-fix5-download-hidden"
+        )
       ){
-        row.appendChild(cell);
+        node.classList.remove(
+          "cgweb099-fix4-download",
+          "cgweb099-fix4-download-cell",
+          "cgweb099-fix5-download",
+          "cgweb099-fix5-download-cell",
+          "cgweb099-fix5-download-hidden"
+        );
+      }
+
+      /*
+       * Le vrai contrôle historique est un SPAN.web081-fit-quick.
+       * On ne recherche plus uniquement button/a.
+       */
+      const controls=[
+        ...row.querySelectorAll(
+          ".web081-fit-quick"
+        )
+      ];
+
+      for(const control of controls){
+        cgweb099ApplyFitTruthVisibility(
+          control
+        );
       }
     }
   }
-}
 
 /* CGWEB099_FIX5_UI_HELPERS_END */
+
+
+/* CGWEB099_FIX6_DOWNLOAD_TRUTH_START */
+
+function cgweb099InstallFix6Styles(){
+  const id=
+    "cgweb099Fix6DownloadTruthStyles";
+
+  let style=
+    document.getElementById(id);
+
+  if(style){
+    return style;
+  }
+
+  style=
+    document.createElement("style");
+
+  style.id=id;
+
+  style.textContent=
+    [
+      "#activityList .activity-card{position:relative!important;padding-right:40px!important;}",
+      "#activityList .web081-fit-quick.cgweb099-fit-truth-hidden{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}",
+      "#activityList .web081-fit-quick.cgweb099-fit-truth-visible{position:absolute!important;right:7px!important;left:auto!important;top:50%!important;bottom:auto!important;transform:translateY(-50%)!important;display:inline-flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;margin:0!important;width:27px!important;min-width:27px!important;max-width:27px!important;height:27px!important;z-index:40!important;}",
+      "#activityList .activity-card.cgweb099-fix5-row{flex-wrap:initial!important;}",
+      "#activityList .activity-card>.web081-fit-quick{float:none!important;}"
+    ].join("\n");
+
+  document.head.appendChild(style);
+
+  return style;
+}
+
+function cgweb099FitTruthRole(control){
+  return String(
+    control?.dataset
+      ?.cgweb097FitOrigin || ""
+  )
+    .trim()
+    .toUpperCase();
+}
+
+function cgweb099FitTruthVisible(control){
+  const role=
+    cgweb099FitTruthRole(control);
+
+  return (
+    role==="ORIGINAL" ||
+    role==="CANONICAL"
+  );
+}
+
+function cgweb099ApplyFitTruthVisibility(control){
+  if(!control){
+    return false;
+  }
+
+  const visible=
+    cgweb099FitTruthVisible(
+      control
+    );
+
+  control.classList.toggle(
+    "cgweb099-fit-truth-visible",
+    visible
+  );
+
+  control.classList.toggle(
+    "cgweb099-fit-truth-hidden",
+    !visible
+  );
+
+  control.setAttribute(
+    "aria-hidden",
+    visible
+      ? "false"
+      : "true"
+  );
+
+  control.tabIndex=
+    visible
+      ? 0
+      : -1;
+
+  return visible;
+}
+
+function cgweb099QueueFitTruthLayout(){
+  if(
+    window
+      .cgweb099Fix6LayoutQueued
+  ){
+    return;
+  }
+
+  window
+    .cgweb099Fix6LayoutQueued=
+      true;
+
+  queueMicrotask(
+    ()=>{
+      window
+        .cgweb099Fix6LayoutQueued=
+          false;
+
+      if(
+        typeof
+          cgweb099FixDirectoryDownloadLayout===
+          "function"
+      ){
+        cgweb099FixDirectoryDownloadLayout();
+      }
+    }
+  );
+}
+
+/* CGWEB099_FIX6_DOWNLOAD_TRUTH_END */
 
 function cgweb099BuildShell(){
   const section=
@@ -27424,6 +27621,7 @@ function cgweb099BuildShell(){
   cgweb099InstallFix3Styles();
   cgweb099InstallFix4Styles();
   cgweb099InstallFix5Styles();
+  cgweb099InstallFix6Styles();
 
   section.dataset.cgweb099Global="4";
 
