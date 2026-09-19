@@ -1,4 +1,4 @@
-# CGWEB099 · GLOBAL_DIRECTORY_QUERY001 / ACTIVITY_DUPLICATE_AUDIT001 / FIT_DOWNLOAD_EXECUTE001
+# CGWEB099 FIX1 · DIRECTORY_TEXT_NORMALIZE001 / AUTH_READY_RETRY001
 
 ## GLOBAL_DIRECTORY_QUERY001
 
@@ -68,3 +68,41 @@ Le handler exact CGWEB096 est recâblé vers `cgweb099Download`.
 - aucun FIT remplacé ;
 - aucune activité modifiée ;
 - l'audit doublons et les requêtes Répertoire sont en lecture seule.
+
+## CGWEB099 FIX1 · DIRECTORY_TEXT_NORMALIZE001
+
+Certaines activités historiques contiennent des champs textuels avec des types
+hétérogènes. Le premier CGWEB099 pouvait donc laisser passer un `Number` dans
+`sport` ou `equipment`, puis appeler `localeCompare()` sur cette valeur.
+
+Symptôme :
+
+`a.localeCompare is not a function`
+
+FIX1 impose désormais une normalisation `String(...).trim()` pour les champs
+textuels du Répertoire et sécurise le tri des listes Sport / Matériel.
+
+Les valeurs numériques métier continuent d'être lues exclusivement par
+`c099Number()`.
+
+Aucune donnée Firestore n'est réécrite.
+
+## CGWEB099 FIX1 · AUTH_READY_RETRY001
+
+Au chargement initial, le composant Répertoire peut s'initialiser avant la fin
+de la restauration de la session SPORT.
+
+Symptôme intermittent :
+
+`Connexion SPORT requise.`
+
+FIX1 traite cette réponse comme un état transitoire pendant le démarrage :
+
+- 6 tentatives maximum ;
+- délais progressifs 350 / 700 / 1200 / 2000 / 3000 / 4500 ms ;
+- aucune erreur rouge immédiate pendant la restauration normale ;
+- remise à zéro du compteur dès la première requête réussie ;
+- une vraie absence de connexion reste affichée après épuisement des tentatives.
+
+Le même mécanisme couvre le cas où `SPORT_DIRECTORY_GLOBAL` n'est pas encore
+chargé quand le Répertoire est monté.

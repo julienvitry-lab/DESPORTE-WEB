@@ -6049,6 +6049,9 @@ async function c091TransferAudit(uid) {
   /* CGWEB097_FIT_ORIGIN_HELPERS_END */
 
 
+
+
+
   /* CGWEB099_GLOBAL_DIRECTORY_HELPERS_START */
 
   const c099DirectoryCache =
@@ -6091,6 +6094,15 @@ async function c091TransferAudit(uid) {
     return "";
   }
 
+  /*
+   * CGWEB099 FIX1 · DIRECTORY_TEXT_NORMALIZE001
+   *
+   * Tous les champs utilisés comme libellés / filtres / options
+   * sont normalisés en String. Les champs numériques disposent
+   * déjà de c099Number() et ne doivent jamais transiter ici comme
+   * Number brut, sinon Array.sort(...localeCompare) peut planter
+   * sur les anciennes activités hétérogènes.
+   */
   function c099First(
     object,
     keys
@@ -6101,17 +6113,12 @@ async function c091TransferAudit(uid) {
 
       if (value == null) continue;
 
-      if (
-        typeof value === "number" &&
-        Number.isFinite(value)
-      ) {
-        return value;
-      }
-
       const text =
         c099Scalar(value);
 
-      if (text) return text;
+      if (text) {
+        return String(text).trim();
+      }
     }
 
     return "";
@@ -6374,25 +6381,38 @@ async function c091TransferAudit(uid) {
       );
 
     const title =
-      c095Title(
-        activity,
-        activityId
-      );
+      String(
+        c095Title(
+          activity,
+          activityId
+        ) || ""
+      ).trim();
 
     const sport =
-      c099Sport(activity);
+      String(
+        c099Sport(activity) || ""
+      ).trim() ||
+      "INCONNU";
 
     const equipment =
-      c099Equipment(activity);
+      String(
+        c099Equipment(activity) || ""
+      ).trim();
 
     const markers =
-      c099Markers(activity);
+      String(
+        c099Markers(activity) || ""
+      ).trim();
 
     const source =
-      c099Source(activity);
+      String(
+        c099Source(activity) || ""
+      ).trim();
 
     const externalId =
-      c099ExternalId(activity);
+      String(
+        c099ExternalId(activity) || ""
+      ).trim();
 
     const haystack = [
       title,
@@ -6508,23 +6528,51 @@ async function c091TransferAudit(uid) {
     const sports =
       [...new Set(
         rows
-          .map(row => row.sport)
+          .map(
+            row =>
+              String(
+                row.sport || ""
+              ).trim()
+          )
           .filter(Boolean)
       )]
         .sort(
           (a, b) =>
-            a.localeCompare(b)
+            String(a).localeCompare(
+              String(b),
+              "fr",
+              {
+                sensitivity:
+                  "base",
+                numeric:
+                  true
+              }
+            )
         );
 
     const equipment =
       [...new Set(
         rows
-          .map(row => row.equipment)
+          .map(
+            row =>
+              String(
+                row.equipment || ""
+              ).trim()
+          )
           .filter(Boolean)
       )]
         .sort(
           (a, b) =>
-            a.localeCompare(b)
+            String(a).localeCompare(
+              String(b),
+              "fr",
+              {
+                sensitivity:
+                  "base",
+                numeric:
+                  true
+              }
+            )
         );
 
     const data = {
@@ -8591,6 +8639,9 @@ if (action === "transfer_audit") {
         }
 
         /* CGWEB096_DIRECTORY_DOWNLOAD_ACTIONS_END */
+
+
+
 
 
 

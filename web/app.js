@@ -26453,7 +26453,10 @@ const cgweb099State={
   meta:null,
   busy:false,
   duplicateBusy:false,
-  searchTimer:null
+  searchTimer:null,
+  authRetryTimer:null,
+  authRetryCount:0,
+  authRetryMax:6
 };
 
 function cgweb099Node(id){
@@ -27257,6 +27260,139 @@ async function cgweb099OpenActivity(
   }
 }
 
+
+/*
+ * CGWEB099 FIX1 · AUTH_READY_RETRY001
+ *
+ * Le Répertoire peut être monté quelques centaines de ms avant que
+ * l'auth SPORT ait fini de restaurer la session. Dans ce cas on ne
+ * transforme plus cette course de démarrage en erreur utilisateur :
+ * on patiente et on rejoue la requête automatiquement.
+ */
+function cgweb099AuthErrorText(error){
+  return String(
+    error?.message ||
+    error?.error ||
+    error ||
+    ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function cgweb099IsAuthPending(error){
+  const text=
+    cgweb099AuthErrorText(
+      error
+    );
+
+  return (
+    text.includes(
+      "connexion sport requise"
+    ) ||
+    text.includes(
+      "sport connection required"
+    ) ||
+    text.includes(
+      "auth/user-not-found"
+    )
+  );
+}
+
+function cgweb099ClearAuthRetry(){
+  if(cgweb099State.authRetryTimer){
+    clearTimeout(
+      cgweb099State.authRetryTimer
+    );
+    cgweb099State.authRetryTimer=null;
+  }
+}
+
+function cgweb099ResetAuthRetry(){
+  cgweb099ClearAuthRetry();
+  cgweb099State.authRetryCount=0;
+}
+
+function cgweb099ScheduleAuthRetry(
+  forceRefresh=false,
+  reason="session SPORT"
+){
+  if(
+    cgweb099State.authRetryCount >=
+    cgweb099State.authRetryMax
+  ){
+    const count=
+      cgweb099Node(
+        "cgweb099Count"
+      );
+
+    if(count){
+      count.textContent=
+        "Erreur : Connexion SPORT requise.";
+    }
+
+    return false;
+  }
+
+  cgweb099ClearAuthRetry();
+
+  const delays=[
+    350,
+    700,
+    1200,
+    2000,
+    3000,
+    4500
+  ];
+
+  const index=
+    Math.min(
+      cgweb099State.authRetryCount,
+      delays.length-1
+    );
+
+  const delay=
+    delays[index];
+
+  cgweb099State.authRetryCount+=1;
+
+  const count=
+    cgweb099Node(
+      "cgweb099Count"
+    );
+
+  if(count){
+    count.textContent=
+      "Connexion SPORT en cours… tentative "+
+      cgweb099State.authRetryCount+
+      "/"+
+      cgweb099State.authRetryMax;
+  }
+
+  console.info(
+    "CGWEB099 AUTH_READY_RETRY001",
+    {
+      reason,
+      retry:
+        cgweb099State.authRetryCount,
+      delay
+    }
+  );
+
+  cgweb099State.authRetryTimer=
+    setTimeout(
+      ()=>{
+        cgweb099State.authRetryTimer=null;
+        void cgweb099Load(
+          forceRefresh
+        );
+      },
+      delay
+    );
+
+  return true;
+}
+
 async function cgweb099Load(
   forceRefresh=false
 ){
@@ -27269,6 +27405,10 @@ async function cgweb099Load(
     !api ||
     typeof api.query!=="function"
   ){
+    cgweb099ScheduleAuthRetry(
+      forceRefresh,
+      "API SPORT_DIRECTORY_GLOBAL non prête"
+    );
     return;
   }
 
@@ -27296,6 +27436,8 @@ async function cgweb099Load(
         "Réponse Répertoire invalide"
       );
     }
+
+    cgweb099ResetAuthRetry();
 
     const summary=
       data.summary || {};
@@ -27397,15 +27539,33 @@ async function cgweb099Load(
 
     cgweb099HideLegacy();
   }catch(error){
-    console.error(
-      "CGWEB099 GLOBAL_DIRECTORY_QUERY001",
-      error
-    );
+    if(
+      cgweb099IsAuthPending(
+        error
+      )
+    ){
+      console.info(
+        "CGWEB099 AUTH_READY_RETRY001 · auth pas encore prête",
+        error
+      );
 
-    if(count){
-      count.textContent=
-        "Erreur : "+
-        (error?.message||error);
+      cgweb099ScheduleAuthRetry(
+        forceRefresh,
+        "Connexion SPORT requise"
+      );
+    }else{
+      cgweb099ResetAuthRetry();
+
+      console.error(
+        "CGWEB099 GLOBAL_DIRECTORY_QUERY001",
+        error
+      );
+
+      if(count){
+        count.textContent=
+          "Erreur : "+
+          (error?.message||error);
+      }
     }
   }finally{
     cgweb099State.busy=false;
@@ -27413,6 +27573,7 @@ async function cgweb099Load(
 }
 
 function cgweb099FilterChanged(){
+  cgweb099ResetAuthRetry();
   cgweb099State.offset=0;
   void cgweb099Load();
 }
@@ -27717,6 +27878,7 @@ function cgweb099Wire(){
     ?.addEventListener(
       "click",
       ()=>{
+        cgweb099ResetAuthRetry();
         cgweb099State.offset=0;
         void cgweb099Load(true);
       }
