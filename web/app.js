@@ -25499,7 +25499,7 @@ function cgweb096BindExactDownloadControls(
         try{
           await cgweb096WaitForApi();
 
-          await cgweb096DirectoryDownload(
+          await cgweb099Download(
             id
           );
         }catch(error){
@@ -26442,3 +26442,1333 @@ setTimeout(
 );
 
 /* CGWEB097_FIT_ORIGIN_VISUAL001_END */
+
+/* CGWEB099_GLOBAL_DIRECTORY_APP_START */
+
+const cgweb099State={
+  offset:0,
+  limit:100,
+  total:0,
+  rows:[],
+  meta:null,
+  busy:false,
+  duplicateBusy:false,
+  searchTimer:null
+};
+
+function cgweb099Node(id){
+  return document.getElementById(id);
+}
+
+function cgweb099Esc(value){
+  return String(value ?? "");
+}
+
+function cgweb099Date(iso){
+  const value=String(iso||"");
+
+  if(!value)return "—";
+
+  const p=value.slice(0,10).split("-");
+
+  if(p.length!==3)return value.slice(0,10);
+
+  return p[2]+"/"+p[1]+"/"+p[0];
+}
+
+function cgweb099Time(iso){
+  const value=String(iso||"");
+  return value.length>=16
+    ? value.slice(11,16)
+    : "—";
+}
+
+function cgweb099Duration(seconds){
+  const total=Math.max(
+    0,
+    Math.round(Number(seconds)||0)
+  );
+
+  const h=Math.floor(total/3600);
+  const m=Math.floor((total%3600)/60);
+  const s=total%60;
+
+  if(h){
+    return h+" h "+
+      String(m).padStart(2,"0")+
+      " min";
+  }
+
+  return m+" min "+
+    String(s).padStart(2,"0")+
+    " s";
+}
+
+function cgweb099Distance(meters){
+  const value=Number(meters)||0;
+
+  return (
+    value/1000
+  ).toLocaleString(
+    "fr-FR",
+    {
+      minimumFractionDigits:2,
+      maximumFractionDigits:2
+    }
+  )+" km";
+}
+
+function cgweb099SportIcon(sport){
+  const s=String(sport||"").toLowerCase();
+
+  if(
+    s.includes("bike") ||
+    s.includes("vélo") ||
+    s.includes("velo") ||
+    s.includes("cycling")
+  ){
+    return "🚲";
+  }
+
+  if(
+    s.includes("swim") ||
+    s.includes("nat")
+  ){
+    return "🏊";
+  }
+
+  if(
+    s.includes("walk") ||
+    s.includes("hike") ||
+    s.includes("marche") ||
+    s.includes("rand")
+  ){
+    return "🥾";
+  }
+
+  return "🏃";
+}
+
+function cgweb099Message(
+  text,
+  kind="info"
+){
+  if(
+    typeof setMessage==="function"
+  ){
+    setMessage(text,kind);
+    return;
+  }
+
+  console[
+    kind==="error" ? "error" : "log"
+  ](text);
+}
+
+async function cgweb099Download(
+  activityId
+){
+  const id=
+    String(activityId||"").trim();
+
+  if(!id){
+    cgweb099Message(
+      "Identifiant activité introuvable.",
+      "error"
+    );
+    return;
+  }
+
+  const api=
+    window.SPORT_DIRECTORY_FIT;
+
+  if(
+    !api ||
+    typeof api.resolve!=="function"
+  ){
+    cgweb099Message(
+      "Resolver FIT non chargé.",
+      "error"
+    );
+    return;
+  }
+
+  cgweb099Message(
+    "Préparation du FIT #"+id+"…"
+  );
+
+  try{
+    const data=
+      await api.resolve(id);
+
+    if(
+      !data?.ok ||
+      !data?.downloadable ||
+      !data?.url
+    ){
+      throw new Error(
+        data?.status ||
+        data?.error ||
+        "FIT non résolvable"
+      );
+    }
+
+    const fileName=
+      data.file_name ||
+      "activity_"+id+".fit";
+
+    /*
+     * Premier choix : récupérer le blob pour forcer
+     * réellement l'enregistrement local.
+     */
+    try{
+      const response=
+        await fetch(
+          data.url,
+          {
+            method:"GET",
+            mode:"cors",
+            cache:"no-store"
+          }
+        );
+
+      if(!response.ok){
+        throw new Error(
+          "HTTP "+response.status
+        );
+      }
+
+      const blob=
+        await response.blob();
+
+      if(!blob.size){
+        throw new Error(
+          "FIT vide"
+        );
+      }
+
+      const objectUrl=
+        URL.createObjectURL(blob);
+
+      const anchor=
+        document.createElement("a");
+
+      anchor.href=objectUrl;
+      anchor.download=fileName;
+      anchor.style.display="none";
+
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+
+      setTimeout(
+        ()=>URL.revokeObjectURL(objectUrl),
+        30000
+      );
+
+      cgweb099Message(
+        "FIT "+
+        (data.role||"")+
+        " téléchargé : "+
+        fileName
+      );
+
+      return;
+    }catch(blobError){
+      console.warn(
+        "CGWEB099 blob fallback",
+        blobError
+      );
+    }
+
+    /*
+     * Secours : la signed URL CGWEB096 contient déjà
+     * responseDisposition=attachment.
+     * Pas de target=_blank : évite le blocage popup.
+     */
+    const anchor=
+      document.createElement("a");
+
+    anchor.href=data.url;
+    anchor.download=fileName;
+    anchor.rel="noopener";
+    anchor.style.display="none";
+
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    cgweb099Message(
+      "Téléchargement FIT lancé : "+
+      fileName
+    );
+  }catch(error){
+    cgweb099Message(
+      "Téléchargement FIT impossible : "+
+      (error?.message||error),
+      "error"
+    );
+  }
+}
+
+function cgweb099BuildShell(){
+  const section=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if(!section)return null;
+
+  section.dataset.cgweb099Global="1";
+
+  let host=
+    cgweb099Node(
+      "cgweb099GlobalDirectory"
+    );
+
+  if(host)return host;
+
+  host=
+    document.createElement("div");
+
+  host.id=
+    "cgweb099GlobalDirectory";
+
+  host.innerHTML=
+    '<details open>'+
+      '<summary>Tri des activités · global</summary>'+
+      '<div class="cgweb099-filter-grid">'+
+        '<label>Année<select id="cgweb099Year"><option value="ALL">Toutes</option></select></label>'+
+        '<label>Sport<select id="cgweb099Sport"><option value="all">Tous</option></select></label>'+
+        '<label>Matériel<select id="cgweb099Equipment"><option value="all">Tous</option></select></label>'+
+        '<label>Repère<input id="cgweb099Marker" placeholder="B, Q, R…"></label>'+
+        '<label>Recherche<input id="cgweb099Search" placeholder="Nom, date, source…"></label>'+
+        '<label>Ordre<select id="cgweb099Sort"><option value="newest">Plus récentes</option><option value="oldest">Plus anciennes</option></select></label>'+
+      '</div>'+
+      '<div class="cgweb099-statusbar">'+
+        '<strong id="cgweb099Count">Chargement…</strong>'+
+        '<span id="cgweb099Universe"></span>'+
+        '<button id="cgweb099Reset" type="button">Réinitialiser</button>'+
+        '<button id="cgweb099Refresh" type="button">Actualiser la base</button>'+
+      '</div>'+
+    '</details>'+
+    '<div class="cgweb099-table">'+
+      '<div class="cgweb099-head">'+
+        '<span></span><span>Date</span><span>Heure</span><span>Distance</span><span>D+</span><span>Temps</span><span>Matériel</span><span>Repères</span><span>Charge</span><span></span>'+
+      '</div>'+
+      '<div id="cgweb099Rows"></div>'+
+    '</div>'+
+    '<div class="cgweb099-pages">'+
+      '<div class="group">'+
+        '<button id="cgweb099Prev" type="button">← Précédent</button>'+
+        '<button id="cgweb099Next" type="button">Suivant →</button>'+
+      '</div>'+
+      '<div class="group">'+
+        '<span id="cgweb099PageLabel"></span>'+
+        '<label>Par page <select id="cgweb099Limit"><option>50</option><option selected>100</option><option>200</option></select></label>'+
+      '</div>'+
+    '</div>'+
+    '<details>'+
+      '<summary>Audit des doublons d’activités</summary>'+
+      '<div class="cgweb099-duplicate-box">'+
+        '<div><button id="cgweb099DuplicateRun" type="button">Auditer les doublons</button></div>'+
+        '<p id="cgweb099DuplicateStatus" class="muted">Audit non lancé. Aucune suppression automatique.</p>'+
+        '<div id="cgweb099DuplicateRows"></div>'+
+      '</div>'+
+    '</details>';
+
+  /*
+   * Place le nouveau répertoire avant l'ancien contenu.
+   */
+  section.prepend(host);
+
+  return host;
+}
+
+function cgweb099HideLegacy(){
+  const section=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if(!section)return;
+
+  /*
+   * Ancien "Tri des activités".
+   */
+  for(
+    const details
+    of section.querySelectorAll("details")
+  ){
+    if(
+      details.closest(
+        "#cgweb099GlobalDirectory"
+      )
+    ){
+      continue;
+    }
+
+    const summary=
+      details.querySelector("summary");
+
+    const text=
+      String(
+        summary?.textContent || ""
+      ).trim();
+
+    if(
+      /tri des activités/i.test(text)
+    ){
+      details.classList.add(
+        "cgweb099-legacy-hidden"
+      );
+    }
+  }
+
+  /*
+   * Anciens boutons de pagination locale.
+   */
+  for(
+    const button
+    of section.querySelectorAll(
+      "button"
+    )
+  ){
+    if(
+      button.closest(
+        "#cgweb099GlobalDirectory"
+      )
+    ){
+      continue;
+    }
+
+    const text=
+      String(
+        button.textContent || ""
+      ).trim();
+
+    if(
+      /charger tout|afficher .*de plus/i
+        .test(text)
+    ){
+      button.classList.add(
+        "cgweb099-legacy-hidden"
+      );
+    }
+  }
+
+  /*
+   * Détecte le conteneur des lignes historiques
+   * à partir des boutons FIT existants.
+   */
+  try{
+    const controls=[
+      ...section.querySelectorAll(
+        "button,a,[role='button']"
+      )
+    ].filter(control=>{
+      try{
+        return (
+          typeof cgweb096IsExactDownloadControl===
+            "function" &&
+          cgweb096IsExactDownloadControl(
+            control
+          )
+        );
+      }catch(_){
+        return false;
+      }
+    });
+
+    const parents=
+      new Map();
+
+    for(const control of controls){
+      const row=
+        control.closest(
+          "[data-activity-id],[data-activity_id],[data-activity]"
+        );
+
+      const parent=
+        row?.parentElement;
+
+      if(
+        parent &&
+        parent!==section &&
+        !parent.closest(
+          "#cgweb099GlobalDirectory"
+        )
+      ){
+        parents.set(
+          parent,
+          (parents.get(parent)||0)+1
+        );
+      }
+    }
+
+    const best=
+      [...parents.entries()]
+        .sort(
+          (a,b)=>b[1]-a[1]
+        )[0]?.[0];
+
+    if(best){
+      best.classList.add(
+        "cgweb099-legacy-hidden"
+      );
+    }
+  }catch(error){
+    console.warn(
+      "CGWEB099 legacy detection",
+      error
+    );
+  }
+}
+
+function cgweb099FillSelect(
+  id,
+  values,
+  firstValue,
+  firstLabel
+){
+  const select=
+    cgweb099Node(id);
+
+  if(!select)return;
+
+  const current=
+    select.value;
+
+  select.replaceChildren();
+
+  const first=
+    document.createElement("option");
+
+  first.value=firstValue;
+  first.textContent=firstLabel;
+
+  select.appendChild(first);
+
+  for(const value of values||[]){
+    const option=
+      document.createElement("option");
+
+    option.value=String(value);
+    option.textContent=String(value);
+
+    select.appendChild(option);
+  }
+
+  if(
+    [...select.options]
+      .some(
+        option=>
+          option.value===current
+      )
+  ){
+    select.value=current;
+  }
+}
+
+function cgweb099Filters(
+  forceRefresh=false
+){
+  return {
+    year:
+      cgweb099Node("cgweb099Year")
+        ?.value || "ALL",
+    sport:
+      cgweb099Node("cgweb099Sport")
+        ?.value || "all",
+    equipment:
+      cgweb099Node("cgweb099Equipment")
+        ?.value || "all",
+    marker:
+      cgweb099Node("cgweb099Marker")
+        ?.value || "",
+    search:
+      cgweb099Node("cgweb099Search")
+        ?.value || "",
+    sort:
+      cgweb099Node("cgweb099Sort")
+        ?.value || "newest",
+    limit:
+      cgweb099State.limit,
+    offset:
+      cgweb099State.offset,
+    force_refresh:
+      forceRefresh
+  };
+}
+
+function cgweb099RenderRows(rows){
+  const host=
+    cgweb099Node(
+      "cgweb099Rows"
+    );
+
+  if(!host)return;
+
+  host.replaceChildren();
+
+  if(!rows?.length){
+    const empty=
+      document.createElement("div");
+
+    empty.className="muted";
+    empty.style.padding="18px 10px";
+    empty.textContent=
+      "Aucune activité correspondant aux filtres.";
+
+    host.appendChild(empty);
+    return;
+  }
+
+  for(const row of rows){
+    const item=
+      document.createElement("div");
+
+    item.className="cgweb099-row";
+    item.dataset.activityId=
+      String(row.activity_id||"");
+
+    const sport=
+      document.createElement("span");
+    sport.className=
+      "cgweb099-sport";
+    sport.textContent=
+      cgweb099SportIcon(
+        row.sport
+      );
+
+    const date=
+      document.createElement("strong");
+    date.className=
+      "cgweb099-date";
+    date.textContent=
+      cgweb099Date(
+        row.start_iso
+      );
+
+    const time=
+      document.createElement("strong");
+    time.textContent=
+      cgweb099Time(
+        row.start_iso
+      );
+
+    const distance=
+      document.createElement("strong");
+    distance.textContent=
+      cgweb099Distance(
+        row.distance_m
+      );
+
+    const elevation=
+      document.createElement("strong");
+    elevation.textContent=
+      Math.round(
+        Number(row.elevation_m)||0
+      )+" m";
+
+    const duration=
+      document.createElement("strong");
+    duration.textContent=
+      cgweb099Duration(
+        row.duration_s
+      );
+
+    const equipment=
+      document.createElement("strong");
+    equipment.className=
+      "cgweb099-main";
+    equipment.textContent=
+      row.equipment || "—";
+    equipment.title=
+      [
+        row.title,
+        row.sport,
+        row.source
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+    const markers=
+      document.createElement("strong");
+    markers.textContent=
+      row.markers || "—";
+
+    const load=
+      document.createElement("strong");
+    load.textContent=
+      Number.isFinite(
+        Number(row.load)
+      )
+        ? String(
+            Math.round(
+              Number(row.load)
+            )
+          )
+        : "—";
+
+    const download=
+      document.createElement("button");
+
+    download.type="button";
+    download.className=
+      "cgweb099-download";
+    download.textContent="⇩";
+    download.title=
+      "Télécharger le FIT";
+    download.setAttribute(
+      "aria-label",
+      "Télécharger le FIT"
+    );
+    download.dataset.activityId=
+      String(row.activity_id||"");
+
+    const meta=
+      document.createElement("span");
+    meta.className=
+      "cgweb099-meta";
+    meta.textContent=
+      [
+        cgweb099Time(row.start_iso),
+        cgweb099Distance(row.distance_m),
+        row.equipment
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+    item.append(
+      sport,
+      date,
+      time,
+      distance,
+      elevation,
+      duration,
+      equipment,
+      markers,
+      load,
+      download,
+      meta
+    );
+
+    download.addEventListener(
+      "click",
+      event=>{
+        event.preventDefault();
+        event.stopPropagation();
+
+        void cgweb099Download(
+          row.activity_id
+        );
+      }
+    );
+
+    item.addEventListener(
+      "click",
+      ()=>{
+        void cgweb099OpenActivity(
+          row.activity_id
+        );
+      }
+    );
+
+    host.appendChild(item);
+  }
+}
+
+async function cgweb099OpenActivity(
+  activityId
+){
+  const api=
+    window.SPORT_DIRECTORY_GLOBAL;
+
+  if(
+    !api ||
+    typeof api.activity!=="function"
+  ){
+    cgweb099Message(
+      "Service Répertoire global non chargé.",
+      "error"
+    );
+    return;
+  }
+
+  try{
+    const data=
+      await api.activity(
+        activityId
+      );
+
+    const activity=
+      data?.activity;
+
+    if(!data?.ok || !activity){
+      throw new Error(
+        data?.error ||
+        "Activité non chargée"
+      );
+    }
+
+    /*
+     * Réutilise en priorité le chemin historique
+     * du détail déjà présent dans app.js.
+     */
+    if(
+      typeof openActivity==="function"
+    ){
+      await openActivity(activity);
+      return;
+    }
+
+    if(
+      typeof openActivityDetail==="function"
+    ){
+      await openActivityDetail(activity);
+      return;
+    }
+
+    if(
+      typeof showActivityDetail==="function"
+    ){
+      await showActivityDetail(activity);
+      return;
+    }
+
+    if(
+      typeof renderDetail==="function"
+    ){
+      await renderDetail(activity);
+      return;
+    }
+
+    cgweb099Message(
+      "Activité chargée, mais gestionnaire de détail historique introuvable.",
+      "error"
+    );
+  }catch(error){
+    cgweb099Message(
+      "Ouverture activité impossible : "+
+      (error?.message||error),
+      "error"
+    );
+  }
+}
+
+async function cgweb099Load(
+  forceRefresh=false
+){
+  if(cgweb099State.busy)return;
+
+  const api=
+    window.SPORT_DIRECTORY_GLOBAL;
+
+  if(
+    !api ||
+    typeof api.query!=="function"
+  ){
+    return;
+  }
+
+  cgweb099State.busy=true;
+
+  const count=
+    cgweb099Node("cgweb099Count");
+
+  if(count){
+    count.textContent=
+      "Chargement global…";
+  }
+
+  try{
+    const data=
+      await api.query(
+        cgweb099Filters(
+          forceRefresh
+        )
+      );
+
+    if(!data?.ok){
+      throw new Error(
+        data?.error ||
+        "Réponse Répertoire invalide"
+      );
+    }
+
+    const summary=
+      data.summary || {};
+
+    cgweb099State.total=
+      Number(
+        summary.total_filtered || 0
+      );
+
+    cgweb099State.rows=
+      Array.isArray(data.rows)
+        ? data.rows
+        : [];
+
+    if(data.metadata){
+      cgweb099State.meta=
+        data.metadata;
+
+      cgweb099FillSelect(
+        "cgweb099Year",
+        data.metadata.years,
+        "ALL",
+        "Toutes"
+      );
+
+      cgweb099FillSelect(
+        "cgweb099Sport",
+        data.metadata.sports,
+        "all",
+        "Tous"
+      );
+
+      cgweb099FillSelect(
+        "cgweb099Equipment",
+        data.metadata.equipment,
+        "all",
+        "Tous"
+      );
+    }
+
+    cgweb099RenderRows(
+      cgweb099State.rows
+    );
+
+    if(count){
+      count.textContent=
+        summary.total_filtered+
+        " activité(s) filtrée(s)";
+    }
+
+    const universe=
+      cgweb099Node(
+        "cgweb099Universe"
+      );
+
+    if(universe){
+      universe.textContent=
+        "Base complète : "+
+        (summary.total_activities||0)+
+        " activités";
+    }
+
+    const start=
+      summary.total_filtered
+        ? summary.offset+1
+        : 0;
+
+    const end=
+      summary.offset+
+      summary.returned;
+
+    const label=
+      cgweb099Node(
+        "cgweb099PageLabel"
+      );
+
+    if(label){
+      label.textContent=
+        start+"–"+end+
+        " / "+
+        summary.total_filtered;
+    }
+
+    const prev=
+      cgweb099Node("cgweb099Prev");
+
+    const next=
+      cgweb099Node("cgweb099Next");
+
+    if(prev){
+      prev.disabled=
+        summary.offset<=0;
+    }
+
+    if(next){
+      next.disabled=
+        !summary.has_more;
+    }
+
+    cgweb099HideLegacy();
+  }catch(error){
+    console.error(
+      "CGWEB099 GLOBAL_DIRECTORY_QUERY001",
+      error
+    );
+
+    if(count){
+      count.textContent=
+        "Erreur : "+
+        (error?.message||error);
+    }
+  }finally{
+    cgweb099State.busy=false;
+  }
+}
+
+function cgweb099FilterChanged(){
+  cgweb099State.offset=0;
+  void cgweb099Load();
+}
+
+function cgweb099DebouncedSearch(){
+  clearTimeout(
+    cgweb099State.searchTimer
+  );
+
+  cgweb099State.searchTimer=
+    setTimeout(
+      cgweb099FilterChanged,
+      280
+    );
+}
+
+function cgweb099DupRow(pair){
+  const row=
+    document.createElement("div");
+
+  row.className=
+    "cgweb099-dup-row";
+
+  const badge=
+    document.createElement("span");
+  badge.className=
+    "cgweb099-dup-badge";
+  badge.textContent=
+    pair.classification;
+
+  const a=
+    document.createElement("span");
+  a.textContent=
+    cgweb099DateTimeTitle(
+      pair.a
+    );
+
+  const b=
+    document.createElement("span");
+  b.textContent=
+    cgweb099DateTimeTitle(
+      pair.b
+    );
+
+  const e=
+    document.createElement("span");
+  e.className="muted";
+
+  const ev=
+    pair.evidence || {};
+
+  e.textContent=
+    "Δt "+
+    (ev.start_delta_s??"—")+
+    " s · Δdist "+
+    (ev.distance_delta_m??"—")+
+    " m · Δdurée "+
+    (ev.duration_delta_s??"—")+
+    " s"+
+    (
+      ev.same_external_id
+        ? " · même ID externe"
+        : ""
+    );
+
+  row.append(
+    badge,
+    a,
+    b,
+    e
+  );
+
+  return row;
+}
+
+function cgweb099DateTimeTitle(row){
+  return [
+    cgweb099Date(row?.start_iso),
+    cgweb099Time(row?.start_iso),
+    row?.title,
+    row?.distance_m
+      ? cgweb099Distance(
+          row.distance_m
+        )
+      : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+async function cgweb099RunDuplicates(){
+  if(cgweb099State.duplicateBusy){
+    return;
+  }
+
+  const api=
+    window.SPORT_DIRECTORY_GLOBAL;
+
+  const status=
+    cgweb099Node(
+      "cgweb099DuplicateStatus"
+    );
+
+  const host=
+    cgweb099Node(
+      "cgweb099DuplicateRows"
+    );
+
+  if(
+    !api ||
+    typeof api.duplicates!=="function"
+  ){
+    return;
+  }
+
+  cgweb099State.duplicateBusy=true;
+
+  if(status){
+    status.textContent=
+      "Audit des 6 000+ activités en cours…";
+  }
+
+  try{
+    const data=
+      await api.duplicates();
+
+    if(!data?.ok){
+      throw new Error(
+        data?.error ||
+        "Audit invalide"
+      );
+    }
+
+    const s=
+      data.summary || {};
+
+    if(status){
+      status.textContent=
+        "Lecture seule · "+
+        (s.activities_scanned||0)+
+        " activités · "+
+        (s.exact_pairs||0)+
+        " paire(s) EXACT · "+
+        (s.probable_pairs||0)+
+        " paire(s) PROBABLE"+
+        (
+          s.truncated
+            ? " · résultat tronqué"
+            : ""
+        )+
+        ". Aucune suppression automatique.";
+    }
+
+    if(host){
+      host.replaceChildren();
+
+      for(
+        const pair
+        of [
+          ...(data.exact||[]),
+          ...(data.probable||[])
+        ]
+      ){
+        host.appendChild(
+          cgweb099DupRow(pair)
+        );
+      }
+
+      if(!host.childElementCount){
+        host.textContent=
+          "Aucun doublon potentiel détecté avec les critères CGWEB099.";
+      }
+    }
+  }catch(error){
+    if(status){
+      status.textContent=
+        "Audit impossible : "+
+        (error?.message||error);
+    }
+  }finally{
+    cgweb099State.duplicateBusy=false;
+  }
+}
+
+function cgweb099Wire(){
+  const host=
+    cgweb099BuildShell();
+
+  if(!host)return false;
+
+  if(
+    host.dataset.c099Wired==="1"
+  ){
+    cgweb099HideLegacy();
+    return true;
+  }
+
+  host.dataset.c099Wired="1";
+
+  for(const id of [
+    "cgweb099Year",
+    "cgweb099Sport",
+    "cgweb099Equipment",
+    "cgweb099Sort"
+  ]){
+    cgweb099Node(id)
+      ?.addEventListener(
+        "change",
+        cgweb099FilterChanged
+      );
+  }
+
+  cgweb099Node("cgweb099Marker")
+    ?.addEventListener(
+      "input",
+      cgweb099DebouncedSearch
+    );
+
+  cgweb099Node("cgweb099Search")
+    ?.addEventListener(
+      "input",
+      cgweb099DebouncedSearch
+    );
+
+  cgweb099Node("cgweb099Limit")
+    ?.addEventListener(
+      "change",
+      event=>{
+        cgweb099State.limit=
+          Number(
+            event.target.value
+          ) || 100;
+
+        cgweb099State.offset=0;
+        void cgweb099Load();
+      }
+    );
+
+  cgweb099Node("cgweb099Prev")
+    ?.addEventListener(
+      "click",
+      ()=>{
+        cgweb099State.offset=
+          Math.max(
+            0,
+            cgweb099State.offset-
+            cgweb099State.limit
+          );
+
+        void cgweb099Load();
+      }
+    );
+
+  cgweb099Node("cgweb099Next")
+    ?.addEventListener(
+      "click",
+      ()=>{
+        if(
+          cgweb099State.offset+
+          cgweb099State.limit >=
+          cgweb099State.total
+        ){
+          return;
+        }
+
+        cgweb099State.offset+=
+          cgweb099State.limit;
+
+        void cgweb099Load();
+      }
+    );
+
+  cgweb099Node("cgweb099Reset")
+    ?.addEventListener(
+      "click",
+      ()=>{
+        for(
+          const [id,value]
+          of [
+            ["cgweb099Year","ALL"],
+            ["cgweb099Sport","all"],
+            ["cgweb099Equipment","all"],
+            ["cgweb099Marker",""],
+            ["cgweb099Search",""],
+            ["cgweb099Sort","newest"]
+          ]
+        ){
+          const node=
+            cgweb099Node(id);
+
+          if(node){
+            node.value=value;
+          }
+        }
+
+        cgweb099State.offset=0;
+        void cgweb099Load();
+      }
+    );
+
+  cgweb099Node("cgweb099Refresh")
+    ?.addEventListener(
+      "click",
+      ()=>{
+        cgweb099State.offset=0;
+        void cgweb099Load(true);
+      }
+    );
+
+  cgweb099Node(
+    "cgweb099DuplicateRun"
+  )
+    ?.addEventListener(
+      "click",
+      ()=>void cgweb099RunDuplicates()
+    );
+
+  cgweb099HideLegacy();
+  void cgweb099Load();
+
+  return true;
+}
+
+function cgweb099Boot(){
+  if(cgweb099Wire()){
+    return;
+  }
+
+  let tries=0;
+
+  const timer=
+    setInterval(
+      ()=>{
+        tries+=1;
+
+        if(
+          cgweb099Wire() ||
+          tries>=40
+        ){
+          clearInterval(timer);
+        }
+      },
+      250
+    );
+}
+
+if(document.readyState==="loading"){
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb099Boot,
+    {once:true}
+  );
+}else{
+  queueMicrotask(
+    cgweb099Boot
+  );
+}
+
+/* CGWEB099_GLOBAL_DIRECTORY_APP_END */

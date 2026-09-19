@@ -6068,6 +6068,263 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
   }
 }
 </style>
+
+<style id="cgweb099-directory-css">
+#activityDirectorySection[data-cgweb099-global="1"]
+#activityDirectoryHeaderWeb059,
+#activityDirectorySection[data-cgweb099-global="1"]
+#cgweb083MeasuredActivityHeader{
+  display:none !important;
+}
+
+#cgweb099GlobalDirectory{
+  display:grid;
+  gap:10px;
+  width:100%;
+  margin:0 0 12px;
+}
+
+#cgweb099GlobalDirectory details{
+  border:1px solid rgba(190,255,55,.22);
+  border-radius:14px;
+  background:rgba(255,255,255,.02);
+  overflow:hidden;
+}
+
+#cgweb099GlobalDirectory summary{
+  cursor:pointer;
+  padding:9px 12px;
+  font-weight:700;
+}
+
+.cgweb099-filter-grid{
+  display:grid;
+  grid-template-columns:
+    minmax(120px,.7fr)
+    minmax(150px,1fr)
+    minmax(180px,1.2fr)
+    minmax(110px,.7fr)
+    minmax(180px,1.4fr)
+    minmax(110px,.7fr);
+  gap:8px;
+  padding:0 12px 12px;
+}
+
+.cgweb099-filter-grid label{
+  display:grid;
+  gap:4px;
+  min-width:0;
+  font-size:.78rem;
+  opacity:.92;
+}
+
+.cgweb099-filter-grid select,
+.cgweb099-filter-grid input{
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+
+.cgweb099-statusbar{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 14px;
+  align-items:center;
+  padding:0 12px 12px;
+}
+
+.cgweb099-statusbar strong{
+  color:var(--accent,#a8ff21);
+}
+
+.cgweb099-table{
+  display:grid;
+  gap:7px;
+}
+
+.cgweb099-head,
+.cgweb099-row{
+  display:grid;
+  grid-template-columns:
+    42px
+    118px
+    72px
+    100px
+    86px
+    125px
+    minmax(180px,1fr)
+    90px
+    74px
+    48px;
+  gap:8px;
+  align-items:center;
+}
+
+.cgweb099-head{
+  padding:7px 10px;
+  border-top:1px solid rgba(190,255,55,.18);
+  border-bottom:1px solid rgba(190,255,55,.18);
+  opacity:.72;
+  font-size:.78rem;
+}
+
+.cgweb099-row{
+  min-height:48px;
+  padding:0 10px;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:14px;
+  cursor:pointer;
+  background:rgba(255,255,255,.01);
+}
+
+.cgweb099-row:hover{
+  border-color:rgba(190,255,55,.45);
+}
+
+.cgweb099-row strong,
+.cgweb099-row span{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.cgweb099-sport{
+  font-size:1.35rem;
+  color:var(--accent,#a8ff21);
+  text-align:center;
+}
+
+.cgweb099-download{
+  width:34px;
+  height:34px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  justify-self:end;
+  padding:0 !important;
+  border-color:var(--accent,#a8ff21) !important;
+  color:var(--accent,#a8ff21) !important;
+}
+
+.cgweb099-pages{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  padding:4px 0 8px;
+}
+
+.cgweb099-pages .group{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+
+.cgweb099-duplicate-box{
+  display:grid;
+  gap:8px;
+  padding:0 12px 12px;
+}
+
+.cgweb099-dup-row{
+  display:grid;
+  grid-template-columns:
+    92px
+    minmax(180px,1fr)
+    minmax(180px,1fr)
+    minmax(160px,.8fr);
+  gap:8px;
+  align-items:center;
+  padding:8px 10px;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:10px;
+}
+
+.cgweb099-dup-badge{
+  display:inline-flex;
+  justify-content:center;
+  border:1px solid currentColor;
+  border-radius:999px;
+  padding:2px 7px;
+  font-size:.72rem;
+  font-weight:700;
+}
+
+.cgweb099-legacy-hidden{
+  display:none !important;
+}
+
+@media(max-width:1050px){
+  .cgweb099-filter-grid{
+    grid-template-columns:
+      repeat(3,minmax(140px,1fr));
+  }
+
+  .cgweb099-head,
+  .cgweb099-row{
+    grid-template-columns:
+      36px 102px 64px 82px 72px 110px
+      minmax(150px,1fr) 70px 62px 42px;
+    gap:6px;
+    font-size:.88rem;
+  }
+}
+
+@media(max-width:760px){
+  .cgweb099-filter-grid{
+    grid-template-columns:
+      repeat(2,minmax(130px,1fr));
+  }
+
+  .cgweb099-head{
+    display:none;
+  }
+
+  .cgweb099-row{
+    grid-template-columns:
+      36px 1fr auto;
+    grid-template-areas:
+      "sport date download"
+      "sport main download"
+      "sport meta download";
+    padding:8px 10px;
+  }
+
+  .cgweb099-row > *{
+    display:none;
+  }
+
+  .cgweb099-row .cgweb099-sport{
+    display:block;
+    grid-area:sport;
+  }
+
+  .cgweb099-row .cgweb099-date{
+    display:block;
+    grid-area:date;
+  }
+
+  .cgweb099-row .cgweb099-main{
+    display:block;
+    grid-area:main;
+  }
+
+  .cgweb099-row .cgweb099-meta{
+    display:block;
+    grid-area:meta;
+    opacity:.72;
+    font-size:.8rem;
+  }
+
+  .cgweb099-row .cgweb099-download{
+    display:inline-flex;
+    grid-area:download;
+  }
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -8448,8 +8705,8 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./fitcloud.js?v=CGWEB097-FIT-ORIGIN001"></script>
-<script type="module" src="./app.js?v=CGWEB097-DOWNLOAD-STATE-TRUTH001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB099-GLOBAL-DIRECTORY001"></script>
+<script type="module" src="./app.js?v=CGWEB099-DIRECTORY-DOWNLOAD001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

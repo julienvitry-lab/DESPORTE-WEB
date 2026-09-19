@@ -6048,6 +6048,967 @@ async function c091TransferAudit(uid) {
 
   /* CGWEB097_FIT_ORIGIN_HELPERS_END */
 
+
+  /* CGWEB099_GLOBAL_DIRECTORY_HELPERS_START */
+
+  const c099DirectoryCache =
+    new Map();
+
+  function c099Scalar(value) {
+    if (value == null) return "";
+
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      return String(value).trim();
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .map(c099Scalar)
+        .filter(Boolean)
+        .join(" ");
+    }
+
+    if (typeof value === "object") {
+      for (const key of [
+        "name",
+        "label",
+        "title",
+        "display_name",
+        "displayName",
+        "value"
+      ]) {
+        const text =
+          c099Scalar(value[key]);
+
+        if (text) return text;
+      }
+    }
+
+    return "";
+  }
+
+  function c099First(
+    object,
+    keys
+  ) {
+    for (const key of keys) {
+      const value =
+        object?.[key];
+
+      if (value == null) continue;
+
+      if (
+        typeof value === "number" &&
+        Number.isFinite(value)
+      ) {
+        return value;
+      }
+
+      const text =
+        c099Scalar(value);
+
+      if (text) return text;
+    }
+
+    return "";
+  }
+
+  function c099Number(
+    object,
+    keys,
+    fallback = 0
+  ) {
+    for (const key of keys) {
+      const value =
+        Number(object?.[key]);
+
+      if (Number.isFinite(value)) {
+        return value;
+      }
+    }
+
+    return fallback;
+  }
+
+  function c099Sport(activity) {
+    return (
+      c099First(
+        activity,
+        [
+          "sport_type",
+          "sportType",
+          "sub_sport",
+          "subSport",
+          "type",
+          "activity_type",
+          "activityType",
+          "sport"
+        ]
+      ) ||
+      "INCONNU"
+    );
+  }
+
+  function c099Equipment(activity) {
+    return (
+      c099First(
+        activity,
+        [
+          "equipment_name",
+          "equipmentName",
+          "equipment",
+          "gear_name",
+          "gearName",
+          "gear",
+          "material_name",
+          "materialName",
+          "material",
+          "shoe_name",
+          "shoeName",
+          "bike_name",
+          "bikeName"
+        ]
+      ) ||
+      ""
+    );
+  }
+
+  function c099Markers(activity) {
+    const raw =
+      c099First(
+        activity,
+        [
+          "markers",
+          "marker",
+          "reperes",
+          "repères",
+          "repere",
+          "repère",
+          "landmarks",
+          "landmark",
+          "route_markers",
+          "routeMarkers"
+        ]
+      );
+
+    return String(raw || "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function c099Source(activity) {
+    return (
+      c099First(
+        activity,
+        [
+          "import_source",
+          "importSource",
+          "source",
+          "provider",
+          "origin",
+          "provenance",
+          "platform"
+        ]
+      ) ||
+      ""
+    );
+  }
+
+  function c099ExternalId(activity) {
+    return (
+      c099First(
+        activity,
+        [
+          "strava_activity_id",
+          "stravaActivityId",
+          "garmin_activity_id",
+          "garminActivityId",
+          "external_id",
+          "externalId",
+          "source_id",
+          "sourceId"
+        ]
+      ) ||
+      ""
+    );
+  }
+
+  function c099Safe(value, depth = 0) {
+    if (depth > 10) return null;
+
+    if (
+      value == null ||
+      typeof value === "string" ||
+      typeof value === "boolean"
+    ) {
+      return value;
+    }
+
+    if (typeof value === "number") {
+      return Number.isFinite(value)
+        ? value
+        : null;
+    }
+
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+
+    if (
+      value &&
+      typeof value.toDate === "function"
+    ) {
+      try {
+        return value
+          .toDate()
+          .toISOString();
+      } catch (_) {}
+    }
+
+    if (Buffer.isBuffer(value)) {
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .slice(0, 25000)
+        .map(
+          item =>
+            c099Safe(
+              item,
+              depth + 1
+            )
+        );
+    }
+
+    if (typeof value === "object") {
+      const out = {};
+
+      for (
+        const [key, item]
+        of Object.entries(value)
+      ) {
+        const safe =
+          c099Safe(
+            item,
+            depth + 1
+          );
+
+        if (safe !== undefined) {
+          out[key] = safe;
+        }
+      }
+
+      return out;
+    }
+
+    return null;
+  }
+
+  function c099Row(
+    activityId,
+    activity
+  ) {
+    const startIso =
+      c097ActivityStartIso(
+        activity
+      );
+
+    const distance =
+      c099Number(
+        activity,
+        [
+          "distance",
+          "distance_m",
+          "distanceMeters",
+          "total_distance"
+        ],
+        0
+      );
+
+    const elevation =
+      c099Number(
+        activity,
+        [
+          "total_elevation_gain",
+          "totalElevationGain",
+          "elevation_gain",
+          "elevationGain",
+          "ascent",
+          "total_ascent",
+          "totalAscent"
+        ],
+        0
+      );
+
+    const duration =
+      c099Number(
+        activity,
+        [
+          "moving_time",
+          "movingTime",
+          "elapsed_time",
+          "elapsedTime",
+          "duration",
+          "duration_s",
+          "durationSeconds"
+        ],
+        0
+      );
+
+    const load =
+      c099Number(
+        activity,
+        [
+          "training_load",
+          "trainingLoad",
+          "load",
+          "activity_load",
+          "activityLoad"
+        ],
+        0
+      );
+
+    const title =
+      c095Title(
+        activity,
+        activityId
+      );
+
+    const sport =
+      c099Sport(activity);
+
+    const equipment =
+      c099Equipment(activity);
+
+    const markers =
+      c099Markers(activity);
+
+    const source =
+      c099Source(activity);
+
+    const externalId =
+      c099ExternalId(activity);
+
+    const haystack = [
+      title,
+      startIso,
+      sport,
+      equipment,
+      markers,
+      source,
+      externalId
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return {
+      activity_id:
+        String(activityId),
+      title,
+      start_iso:
+        startIso,
+      year:
+        startIso
+          ? startIso.slice(0, 4)
+          : "",
+      sport,
+      distance_m:
+        distance,
+      elevation_m:
+        elevation,
+      duration_s:
+        duration,
+      equipment,
+      markers,
+      load,
+      source,
+      external_id:
+        String(externalId || ""),
+      haystack
+    };
+  }
+
+  async function c099DirectoryData(
+    uid,
+    force = false
+  ) {
+    const now = Date.now();
+
+    const cached =
+      c099DirectoryCache.get(uid);
+
+    if (
+      !force &&
+      cached &&
+      now - cached.at < 60000
+    ) {
+      return cached.data;
+    }
+
+    const rows = [];
+    const rawById =
+      new Map();
+
+    for await (
+      const snap of db
+        .collection(
+          ROOT + "/" + uid + "/activities"
+        )
+        .stream()
+    ) {
+      const activity =
+        snap.data() || {};
+
+      if (
+        activity.deleted_at_ms != null
+      ) {
+        continue;
+      }
+
+      const id =
+        String(snap.id);
+
+      rows.push(
+        c099Row(
+          id,
+          activity
+        )
+      );
+
+      rawById.set(
+        id,
+        activity
+      );
+    }
+
+    rows.sort(
+      (a, b) =>
+        String(b.start_iso)
+          .localeCompare(
+            String(a.start_iso)
+          )
+    );
+
+    const years =
+      [...new Set(
+        rows
+          .map(row => row.year)
+          .filter(Boolean)
+      )]
+        .sort(
+          (a, b) =>
+            Number(b) - Number(a)
+        );
+
+    const sports =
+      [...new Set(
+        rows
+          .map(row => row.sport)
+          .filter(Boolean)
+      )]
+        .sort(
+          (a, b) =>
+            a.localeCompare(b)
+        );
+
+    const equipment =
+      [...new Set(
+        rows
+          .map(row => row.equipment)
+          .filter(Boolean)
+      )]
+        .sort(
+          (a, b) =>
+            a.localeCompare(b)
+        );
+
+    const data = {
+      rows,
+      rawById,
+      meta: {
+        total:
+          rows.length,
+        years,
+        sports,
+        equipment
+      }
+    };
+
+    c099DirectoryCache.set(
+      uid,
+      {
+        at: now,
+        data
+      }
+    );
+
+    return data;
+  }
+
+  function c099QueryFilters(
+    rows,
+    input
+  ) {
+    const year =
+      String(
+        input?.year || ""
+      ).trim();
+
+    const sport =
+      String(
+        input?.sport || ""
+      ).trim()
+        .toLowerCase();
+
+    const equipment =
+      String(
+        input?.equipment || ""
+      ).trim()
+        .toLowerCase();
+
+    const marker =
+      String(
+        input?.marker || ""
+      ).trim()
+        .toLowerCase();
+
+    const search =
+      String(
+        input?.search || ""
+      ).trim()
+        .toLowerCase();
+
+    return rows.filter(row => {
+      if (
+        year &&
+        year !== "ALL" &&
+        row.year !== year
+      ) {
+        return false;
+      }
+
+      if (
+        sport &&
+        sport !== "all" &&
+        String(row.sport || "")
+          .toLowerCase() !== sport
+      ) {
+        return false;
+      }
+
+      if (
+        equipment &&
+        equipment !== "all" &&
+        String(row.equipment || "")
+          .toLowerCase() !== equipment
+      ) {
+        return false;
+      }
+
+      if (
+        marker &&
+        !String(row.markers || "")
+          .toLowerCase()
+          .includes(marker)
+      ) {
+        return false;
+      }
+
+      if (
+        search &&
+        !String(row.haystack || "")
+          .includes(search)
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  async function c099GlobalDirectoryQuery(
+    uid,
+    input
+  ) {
+    const data =
+      await c099DirectoryData(
+        uid,
+        Boolean(input?.force_refresh)
+      );
+
+    let rows =
+      c099QueryFilters(
+        data.rows,
+        input
+      );
+
+    const sort =
+      String(
+        input?.sort || "newest"
+      );
+
+    if (sort === "oldest") {
+      rows =
+        [...rows].sort(
+          (a, b) =>
+            String(a.start_iso)
+              .localeCompare(
+                String(b.start_iso)
+              )
+        );
+    }
+
+    const limit =
+      Math.max(
+        20,
+        Math.min(
+          250,
+          Number(input?.limit) || 100
+        )
+      );
+
+    const offset =
+      Math.max(
+        0,
+        Number(input?.offset) || 0
+      );
+
+    const page =
+      rows.slice(
+        offset,
+        offset + limit
+      );
+
+    return {
+      summary: {
+        total_activities:
+          data.meta.total,
+        total_filtered:
+          rows.length,
+        offset,
+        limit,
+        returned:
+          page.length,
+        has_more:
+          offset + page.length <
+          rows.length
+      },
+      metadata:
+        data.meta,
+      rows:
+        page.map(row => {
+          const copy = {...row};
+          delete copy.haystack;
+          return copy;
+        })
+    };
+  }
+
+  async function c099GlobalActivity(
+    uid,
+    activityId
+  ) {
+    const id =
+      String(
+        activityId || ""
+      ).trim();
+
+    if (!id) {
+      throw Object.assign(
+        new Error(
+          "activity_id absent."
+        ),
+        {status:400}
+      );
+    }
+
+    const data =
+      await c099DirectoryData(
+        uid
+      );
+
+    let activity =
+      data.rawById.get(id);
+
+    if (!activity) {
+      const snap =
+        await db.doc(
+          ROOT +
+          "/" +
+          uid +
+          "/activities/" +
+          id
+        ).get();
+
+      if (!snap.exists) {
+        throw Object.assign(
+          new Error(
+            "Activité introuvable."
+          ),
+          {status:404}
+        );
+      }
+
+      activity =
+        snap.data() || {};
+    }
+
+    return {
+      activity_id: id,
+      activity: {
+        ...c099Safe(activity),
+        id,
+        activity_id: id
+      }
+    };
+  }
+
+  function c099RelativeDiff(
+    a,
+    b
+  ) {
+    const max =
+      Math.max(
+        Math.abs(a),
+        Math.abs(b),
+        1
+      );
+
+    return (
+      Math.abs(a - b) /
+      max
+    );
+  }
+
+  function c099DuplicatePair(
+    a,
+    b
+  ) {
+    const ta =
+      Date.parse(a.start_iso || "");
+
+    const tb =
+      Date.parse(b.start_iso || "");
+
+    if (
+      !Number.isFinite(ta) ||
+      !Number.isFinite(tb)
+    ) {
+      return null;
+    }
+
+    const dtSec =
+      Math.abs(ta - tb) / 1000;
+
+    if (dtSec > 120) {
+      return null;
+    }
+
+    const sportSame =
+      String(a.sport || "")
+        .toLowerCase() ===
+      String(b.sport || "")
+        .toLowerCase();
+
+    if (!sportSame) {
+      return null;
+    }
+
+    const distanceDiff =
+      Math.abs(
+        Number(a.distance_m || 0) -
+        Number(b.distance_m || 0)
+      );
+
+    const durationDiff =
+      Math.abs(
+        Number(a.duration_s || 0) -
+        Number(b.duration_s || 0)
+      );
+
+    const elevationDiff =
+      Math.abs(
+        Number(a.elevation_m || 0) -
+        Number(b.elevation_m || 0)
+      );
+
+    const sameExternal =
+      Boolean(
+        a.external_id &&
+        b.external_id &&
+        String(a.external_id) ===
+        String(b.external_id)
+      );
+
+    const exact =
+      sameExternal ||
+      (
+        dtSec <= 5 &&
+        (
+          distanceDiff <= 15 ||
+          c099RelativeDiff(
+            Number(a.distance_m || 0),
+            Number(b.distance_m || 0)
+          ) <= 0.003
+        ) &&
+        durationDiff <= 8 &&
+        elevationDiff <= 10
+      );
+
+    const probable =
+      !exact &&
+      dtSec <= 90 &&
+      (
+        distanceDiff <= 150 ||
+        c099RelativeDiff(
+          Number(a.distance_m || 0),
+          Number(b.distance_m || 0)
+        ) <= 0.015
+      ) &&
+      (
+        durationDiff <= 90 ||
+        c099RelativeDiff(
+          Number(a.duration_s || 0),
+          Number(b.duration_s || 0)
+        ) <= 0.03
+      ) &&
+      elevationDiff <= 40;
+
+    if (
+      !exact &&
+      !probable
+    ) {
+      return null;
+    }
+
+    return {
+      classification:
+        exact
+          ? "EXACT"
+          : "PROBABLE",
+      a,
+      b,
+      evidence: {
+        start_delta_s:
+          Number(dtSec.toFixed(1)),
+        distance_delta_m:
+          Number(distanceDiff.toFixed(1)),
+        duration_delta_s:
+          Number(durationDiff.toFixed(1)),
+        elevation_delta_m:
+          Number(elevationDiff.toFixed(1)),
+        same_external_id:
+          sameExternal
+      }
+    };
+  }
+
+  async function c099DuplicateAudit(
+    uid
+  ) {
+    const data =
+      await c099DirectoryData(
+        uid
+      );
+
+    const rows =
+      [...data.rows]
+        .filter(row => row.start_iso)
+        .sort(
+          (a, b) =>
+            String(a.start_iso)
+              .localeCompare(
+                String(b.start_iso)
+              )
+        );
+
+    const pairs = [];
+
+    for (
+      let i = 0;
+      i < rows.length;
+      i += 1
+    ) {
+      const a = rows[i];
+      const ta =
+        Date.parse(a.start_iso);
+
+      for (
+        let j = i + 1;
+        j < rows.length;
+        j += 1
+      ) {
+        const b = rows[j];
+        const tb =
+          Date.parse(b.start_iso);
+
+        if (
+          Number.isFinite(ta) &&
+          Number.isFinite(tb) &&
+          (tb - ta) / 1000 > 120
+        ) {
+          break;
+        }
+
+        const pair =
+          c099DuplicatePair(
+            a,
+            b
+          );
+
+        if (pair) {
+          pairs.push(pair);
+        }
+
+        if (pairs.length >= 1000) {
+          break;
+        }
+      }
+
+      if (pairs.length >= 1000) {
+        break;
+      }
+    }
+
+    const exact =
+      pairs.filter(
+        pair =>
+          pair.classification ===
+          "EXACT"
+      );
+
+    const probable =
+      pairs.filter(
+        pair =>
+          pair.classification ===
+          "PROBABLE"
+      );
+
+    return {
+      summary: {
+        activities_scanned:
+          rows.length,
+        exact_pairs:
+          exact.length,
+        probable_pairs:
+          probable.length,
+        truncated:
+          pairs.length >= 1000
+      },
+      exact:
+        exact.slice(0, 250),
+      probable:
+        probable.slice(0, 250)
+    };
+  }
+
+  /* CGWEB099_GLOBAL_DIRECTORY_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -7631,6 +8592,140 @@ if (action === "transfer_audit") {
 
         /* CGWEB096_DIRECTORY_DOWNLOAD_ACTIONS_END */
 
+
+
+        /* CGWEB099_GLOBAL_DIRECTORY_ACTIONS_START */
+
+        if (
+          action ===
+          "directory_global_query"
+        ) {
+          if (
+            req.method !== "POST"
+          ) {
+            return res.status(405).json({
+              error:
+                "POST requis."
+            });
+          }
+
+          let body = req.body;
+
+          if (Buffer.isBuffer(body)) {
+            try {
+              body =
+                JSON.parse(
+                  body.toString("utf8")
+                );
+            } catch {
+              body = {};
+            }
+          }
+
+          body =
+            !body ||
+            typeof body !== "object" ||
+            Array.isArray(body)
+              ? {}
+              : body;
+
+          const result =
+            await c099GlobalDirectoryQuery(
+              uid,
+              body
+            );
+
+          return res.json({
+            ok: true,
+            service:
+              "GLOBAL_DIRECTORY_QUERY001",
+            version:
+              "CGWEB099",
+            ...result
+          });
+        }
+
+        if (
+          action ===
+          "directory_global_activity"
+        ) {
+          if (
+            req.method !== "POST"
+          ) {
+            return res.status(405).json({
+              error:
+                "POST requis."
+            });
+          }
+
+          let body = req.body;
+
+          if (Buffer.isBuffer(body)) {
+            try {
+              body =
+                JSON.parse(
+                  body.toString("utf8")
+                );
+            } catch {
+              body = {};
+            }
+          }
+
+          body =
+            !body ||
+            typeof body !== "object" ||
+            Array.isArray(body)
+              ? {}
+              : body;
+
+          const result =
+            await c099GlobalActivity(
+              uid,
+              body.activity_id
+            );
+
+          return res.json({
+            ok: true,
+            service:
+              "GLOBAL_DIRECTORY_QUERY001",
+            version:
+              "CGWEB099",
+            ...result
+          });
+        }
+
+        if (
+          action ===
+          "activity_duplicate_audit"
+        ) {
+          if (
+            req.method !== "GET" &&
+            req.method !== "POST"
+          ) {
+            return res.status(405).json({
+              error:
+                "GET ou POST requis."
+            });
+          }
+
+          const result =
+            await c099DuplicateAudit(
+              uid
+            );
+
+          return res.json({
+            ok: true,
+            service:
+              "ACTIVITY_DUPLICATE_AUDIT001",
+            version:
+              "CGWEB099",
+            read_only:
+              true,
+            ...result
+          });
+        }
+
+        /* CGWEB099_GLOBAL_DIRECTORY_ACTIONS_END */
 
         /* CGWEB097_FIT_ORIGIN_ACTIONS_START */
 
