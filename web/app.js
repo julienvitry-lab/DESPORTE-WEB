@@ -27240,6 +27240,9 @@ function cgweb099FixDirectoryRowLayout(){
 /* CGWEB099_FIX4_UI_HELPERS_END */
 
 
+
+
+
 /* CGWEB099_FIX5_UI_HELPERS_START */
 
 function cgweb099InstallFix5Styles(){
@@ -27479,6 +27482,7 @@ function cgweb099BuildShell(){
       cgweb099KillDirectorySpacer();
       cgweb099FixDirectoryRowLayout();
       cgweb099FixDirectoryDownloadLayout();
+      cgweb099FixDirectoryDownloadLayout();
       cgweb099NormalizeDisclosureMarker();
     }
   );
@@ -27487,6 +27491,7 @@ function cgweb099BuildShell(){
     ()=>{
       cgweb099KillDirectorySpacer();
       cgweb099FixDirectoryRowLayout();
+      cgweb099FixDirectoryDownloadLayout();
       cgweb099FixDirectoryDownloadLayout();
       cgweb099NormalizeDisclosureMarker();
     },
