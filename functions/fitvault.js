@@ -7540,6 +7540,763 @@ async function c102FilterByFitProvenance(
 
   /* CGWEB103_FIT_RECOVERY_HELPERS_END */
 
+  /* CGWEB104_FIT_RECOVERY_PLAN_HELPERS_START */
+
+  function c104Title(row,id){
+    return String(
+      row?.custom_title ||
+      row?.title ||
+      row?.name ||
+      ("Activité "+String(id || ""))
+    );
+  }
+
+  function c104StartIso(row){
+    const value=
+      row?.start_iso ||
+      row?.start_time_iso ||
+      row?.start_date ||
+      row?.start_time_ms ||
+      "";
+
+    if(
+      typeof value==="number" &&
+      Number.isFinite(value)
+    ){
+      try{
+        return new Date(value).toISOString();
+      }catch(_){
+        return "";
+      }
+    }
+
+    return String(value || "");
+  }
+
+  function c104CloneRow(row){
+    if(!row || typeof row!=="object"){
+      return {};
+    }
+
+    const out={};
+
+    for(
+      const [key,value]
+      of Object.entries(row)
+    ){
+      if(
+        value &&
+        typeof value.toMillis==="function"
+      ){
+        out[key]=value.toMillis();
+      }else if(
+        value &&
+        typeof value.toDate==="function"
+      ){
+        out[key]=
+          value.toDate().getTime();
+      }else{
+        out[key]=value;
+      }
+    }
+
+    return out;
+  }
+
+  async function c104AllActivities(uid){
+    const map=new Map();
+
+    for await(
+      const snap of db
+        .collection(
+          ROOT+"/"+uid+"/activities"
+        )
+        .stream()
+    ){
+      map.set(
+        String(snap.id),
+        {
+          id:String(snap.id),
+          ...(snap.data() || {})
+        }
+      );
+    }
+
+    return map;
+  }
+
+  async function c104RouteExists(uid,id){
+    if(!id)return false;
+
+    const snap=
+      await db.doc(
+        ROOT+"/"+uid+
+        "/activity_routes/"+
+        String(id)
+      ).get();
+
+    return snap.exists;
+  }
+
+  function c104ResolvedFor(
+    activityId,
+    byActivity,
+    index
+  ){
+    const rows=
+      byActivity.get(
+        String(activityId)
+      ) || [];
+
+    const resolved=
+      c096ResolvePreferred(
+        rows,
+        index
+      );
+
+    return {
+      rows,
+      resolved,
+      downloadable:
+        Boolean(
+          resolved?.status?.startsWith(
+            "RESOLVED_"
+          )
+        ),
+      role:
+        Boolean(
+          resolved?.status?.startsWith(
+            "RESOLVED_"
+          )
+        )
+          ? String(
+              resolved?.role || "NONE"
+            ).toUpperCase()
+          : "ABSENT"
+    };
+  }
+
+  function c104ChildOriginalCandidate(
+    children,
+    byActivity,
+    index
+  ){
+    const candidates=[];
+
+    for(const child of children){
+      const state=
+        c104ResolvedFor(
+          child.id,
+          byActivity,
+          index
+        );
+
+      if(
+        !state.downloadable ||
+        state.role!=="ORIGINAL"
+      ){
+        continue;
+      }
+
+      const fileDocId=
+        String(
+          state.resolved?.file_doc_id || ""
+        ).trim();
+
+      const raw=
+        state.rows.find(
+          row =>
+            String(
+              row.__doc_id || ""
+            )===fileDocId
+        );
+
+      if(
+        !fileDocId ||
+        !raw
+      ){
+        continue;
+      }
+
+      candidates.push({
+        child_id:
+          String(child.id),
+        file_doc_id:
+          fileDocId,
+        file_name:
+          String(
+            state.resolved?.file_name || ""
+          ),
+        object_name:
+          String(
+            state.resolved?.object_name || ""
+          ),
+        sha256:
+          String(
+            state.resolved?.sha256 || ""
+          ),
+        file_row:
+          c104CloneRow(raw)
+      });
+    }
+
+    const unique=
+      new Map();
+
+    for(const item of candidates){
+      unique.set(
+        item.file_doc_id,
+        item
+      );
+    }
+
+    return [
+      ...unique.values()
+    ];
+  }
+
+  function c104PlanStatus({
+    parent,
+    parentRouteExists,
+    lineageOk,
+    parentFit,
+    childOriginals
+  }){
+    if(!parent){
+      return {
+        code:"BLOCKED_PARENT_MISSING",
+        ready:false
+      };
+    }
+
+    if(
+      String(
+        parent.split_status || ""
+      )!=="SOURCE_AUTO"
+    ){
+      return {
+        code:"BLOCKED_PARENT_NOT_AUTO",
+        ready:false
+      };
+    }
+
+    if(
+      parent.deleted_at_ms==null
+    ){
+      return {
+        code:"BLOCKED_PARENT_ALREADY_ACTIVE",
+        ready:false
+      };
+    }
+
+    if(!parentRouteExists){
+      return {
+        code:"BLOCKED_PARENT_ROUTE_MISSING",
+        ready:false
+      };
+    }
+
+    if(!lineageOk){
+      return {
+        code:"BLOCKED_LINEAGE",
+        ready:false
+      };
+    }
+
+    if(
+      parentFit.downloadable &&
+      (
+        parentFit.role==="ORIGINAL" ||
+        parentFit.role==="CANONICAL"
+      )
+    ){
+      return {
+        code:"READY_PARENT_FIT",
+        ready:true,
+        strategy:"KEEP_PARENT_FIT"
+      };
+    }
+
+    if(childOriginals.length===1){
+      return {
+        code:
+          "READY_RELINK_CHILD_ORIGINAL",
+        ready:true,
+        strategy:
+          "RELINK_CHILD_ORIGINAL"
+      };
+    }
+
+    return {
+      code:"BLOCKED_ARCHIVE_REQUIRED",
+      ready:false,
+      strategy:"ARCHIVE_REQUIRED"
+    };
+  }
+
+  async function c104RecoveryPlan(uid){
+    const [
+      audit,
+      activities,
+      byActivity,
+      index
+    ]=
+      await Promise.all([
+        c103FitRecoveryAudit(uid),
+        c104AllActivities(uid),
+        c096LinkedRows(uid),
+        c096StorageIndex()
+      ]);
+
+    const groups=new Map();
+
+    for(
+      const row
+      of audit.split_lineage || []
+    ){
+      const parentId=
+        String(
+          row.split_parent_activity_id || ""
+        ).trim();
+
+      if(!parentId)continue;
+
+      if(!groups.has(parentId)){
+        groups.set(
+          parentId,
+          []
+        );
+      }
+
+      groups.get(parentId).push(row);
+    }
+
+    const plans=[];
+
+    for(
+      const [parentId,lineageRows]
+      of groups
+    ){
+      const parent=
+        activities.get(parentId) ||
+        null;
+
+      const declaredIds=
+        c103StringArray(
+          parent?.split_children_ids
+        );
+
+      const observedIds=
+        [
+          ...new Set(
+            lineageRows.map(
+              row =>
+                String(
+                  row.activity_id || ""
+                )
+            ).filter(Boolean)
+          )
+        ];
+
+      const childIds=
+        declaredIds.length
+          ? declaredIds
+          : observedIds;
+
+      const children=
+        childIds
+          .map(
+            id =>
+              activities.get(id) ||
+              null
+          )
+          .filter(Boolean);
+
+      const allObservedBelong=
+        lineageRows.every(
+          row =>
+            row.lineage_status==="OK"
+        );
+
+      const allDeclaredPresent=
+        childIds.length>0 &&
+        children.length===
+          childIds.length;
+
+      const allChildParentsMatch=
+        children.every(
+          child =>
+            String(
+              child.split_parent_activity_id ||
+              ""
+            )===parentId
+        );
+
+      const lineageOk=
+        allObservedBelong &&
+        allDeclaredPresent &&
+        allChildParentsMatch;
+
+      const parentFit=
+        c104ResolvedFor(
+          parentId,
+          byActivity,
+          index
+        );
+
+      const childOriginals=
+        c104ChildOriginalCandidate(
+          children,
+          byActivity,
+          index
+        );
+
+      const parentRouteExists=
+        await c104RouteExists(
+          uid,
+          parentId
+        );
+
+      const status=
+        c104PlanStatus({
+          parent,
+          parentRouteExists,
+          lineageOk,
+          parentFit,
+          childOriginals
+        });
+
+      plans.push({
+        parent_activity_id:
+          parentId,
+        parent_title:
+          c104Title(
+            parent,
+            parentId
+          ),
+        parent_start_iso:
+          c104StartIso(parent),
+        parent_deleted:
+          Boolean(
+            parent &&
+            parent.deleted_at_ms!=null
+          ),
+        parent_split_status:
+          String(
+            parent?.split_status || ""
+          ),
+        parent_fit_role:
+          parentFit.role,
+        parent_fit_status:
+          String(
+            parentFit.resolved
+              ?.status || ""
+          ),
+        parent_route_exists:
+          parentRouteExists,
+        children_count:
+          children.length,
+        children_ids:
+          children.map(
+            child =>
+              String(child.id)
+          ),
+        active_children_count:
+          children.filter(
+            child =>
+              child.deleted_at_ms==null
+          ).length,
+        child_original_candidates:
+          childOriginals.map(
+            item => ({
+              child_id:item.child_id,
+              file_doc_id:
+                item.file_doc_id,
+              file_name:
+                item.file_name,
+              sha256:
+                item.sha256
+            })
+          ),
+        lineage_ok:
+          lineageOk,
+        plan_code:
+          status.code,
+        ready:
+          status.ready,
+        strategy:
+          status.strategy || "",
+        restore_effect:
+          status.ready
+            ? (
+                "Réactiver le parent puis placer "+
+                children.length+
+                " enfant(s) dans la corbeille."
+              )
+            : ""
+      });
+    }
+
+    plans.sort(
+      (a,b) =>
+        String(
+          b.parent_start_iso
+        ).localeCompare(
+          String(
+            a.parent_start_iso
+          )
+        )
+    );
+
+    const summary={
+      parent_groups:
+        plans.length,
+      ready:
+        plans.filter(
+          row => row.ready
+        ).length,
+      ready_parent_fit:
+        plans.filter(
+          row =>
+            row.plan_code===
+            "READY_PARENT_FIT"
+        ).length,
+      ready_relink:
+        plans.filter(
+          row =>
+            row.plan_code===
+            "READY_RELINK_CHILD_ORIGINAL"
+        ).length,
+      blocked_archive:
+        plans.filter(
+          row =>
+            row.plan_code===
+            "BLOCKED_ARCHIVE_REQUIRED"
+        ).length,
+      blocked_lineage:
+        plans.filter(
+          row =>
+            row.plan_code===
+            "BLOCKED_LINEAGE"
+        ).length,
+      blocked_other:
+        plans.filter(
+          row =>
+            !row.ready &&
+            ![
+              "BLOCKED_ARCHIVE_REQUIRED",
+              "BLOCKED_LINEAGE"
+            ].includes(
+              row.plan_code
+            )
+        ).length
+    };
+
+    return {
+      summary,
+      plans
+    };
+  }
+
+  async function c104PrepareParentRestore(
+    uid,
+    parentId
+  ){
+    const id=
+      String(parentId || "").trim();
+
+    if(!id){
+      throw Object.assign(
+        new Error(
+          "Identifiant parent requis."
+        ),
+        {status:400}
+      );
+    }
+
+    const [
+      activities,
+      byActivity,
+      index
+    ]=
+      await Promise.all([
+        c104AllActivities(uid),
+        c096LinkedRows(uid),
+        c096StorageIndex()
+      ]);
+
+    const parent=
+      activities.get(id) || null;
+
+    if(!parent){
+      throw Object.assign(
+        new Error(
+          "Parent introuvable."
+        ),
+        {status:404}
+      );
+    }
+
+    if(
+      String(
+        parent.split_status || ""
+      )!=="SOURCE_AUTO"
+    ){
+      throw Object.assign(
+        new Error(
+          "Restauration refusée : le parent n'est pas SOURCE_AUTO."
+        ),
+        {status:409}
+      );
+    }
+
+    if(
+      parent.deleted_at_ms==null
+    ){
+      throw Object.assign(
+        new Error(
+          "Restauration refusée : le parent est déjà actif."
+        ),
+        {status:409}
+      );
+    }
+
+    const routeExists=
+      await c104RouteExists(
+        uid,
+        id
+      );
+
+    if(!routeExists){
+      throw Object.assign(
+        new Error(
+          "Restauration refusée : route parent absente."
+        ),
+        {status:409}
+      );
+    }
+
+    const childIds=
+      c103StringArray(
+        parent.split_children_ids
+      );
+
+    if(!childIds.length){
+      throw Object.assign(
+        new Error(
+          "Restauration refusée : aucun enfant déclaré."
+        ),
+        {status:409}
+      );
+    }
+
+    const children=[];
+
+    for(const childId of childIds){
+      const child=
+        activities.get(childId) ||
+        null;
+
+      if(!child){
+        throw Object.assign(
+          new Error(
+            "Restauration refusée : enfant introuvable "+childId+"."
+          ),
+          {status:409}
+        );
+      }
+
+      if(
+        String(
+          child.split_parent_activity_id ||
+          ""
+        )!==id
+      ){
+        throw Object.assign(
+          new Error(
+            "Restauration refusée : filiation incohérente pour "+childId+"."
+          ),
+          {status:409}
+        );
+      }
+
+      children.push(child);
+    }
+
+    const parentFit=
+      c104ResolvedFor(
+        id,
+        byActivity,
+        index
+      );
+
+    const originals=
+      c104ChildOriginalCandidate(
+        children,
+        byActivity,
+        index
+      );
+
+    let strategy="";
+    let relink=null;
+
+    if(
+      parentFit.downloadable &&
+      (
+        parentFit.role==="ORIGINAL" ||
+        parentFit.role==="CANONICAL"
+      )
+    ){
+      strategy="KEEP_PARENT_FIT";
+    }else if(
+      originals.length===1
+    ){
+      strategy=
+        "RELINK_CHILD_ORIGINAL";
+
+      relink={
+        ...originals[0],
+        from_activity_id:
+          originals[0].child_id,
+        to_activity_id:id
+      };
+    }else{
+      throw Object.assign(
+        new Error(
+          "Restauration refusée : aucun FIT source unique n'est disponible. Archive FIT requise."
+        ),
+        {status:409}
+      );
+    }
+
+    return {
+      read_only_prepare:true,
+      parent:{
+        id,
+        row:c104CloneRow(parent)
+      },
+      children:
+        children.map(
+          child => ({
+            id:String(child.id),
+            row:c104CloneRow(child)
+          })
+        ),
+      strategy,
+      relink,
+      confirmation:{
+        parent_activity_id:id,
+        child_count:
+          children.length,
+        message:
+          "Réactiver le parent, puis placer les enfants dans la corbeille."
+      }
+    };
+  }
+
+  /* CGWEB104_FIT_RECOVERY_PLAN_HELPERS_END */
+
+
 async function c099GlobalDirectoryQuery(
     uid,
     input
@@ -9697,7 +10454,73 @@ if (action === "transfer_audit") {
           });
         }
 
-        /* CGWEB103_FIT_RECOVERY_ACTIONS_END */
+
+        /* CGWEB104_FIT_RECOVERY_PLAN_ACTIONS_START */
+
+        if (
+          action ===
+          "fit_recovery_plan"
+        ) {
+          if (
+            req.method!=="GET" &&
+            req.method!=="POST"
+          ) {
+            return res.status(405).json({
+              error:"GET ou POST requis."
+            });
+          }
+
+          const result=
+            await c104RecoveryPlan(uid);
+
+          return res.json({
+            ok:true,
+            service:
+              "FIT_RECOVERY_PLAN001",
+            version:"CGWEB104",
+            read_only:true,
+            ...result
+          });
+        }
+
+        if (
+          action ===
+          "split_parent_restore_prepare"
+        ) {
+          if (
+            req.method!=="POST"
+          ) {
+            return res.status(405).json({
+              error:"POST requis."
+            });
+          }
+
+          const parentId=
+            String(
+              req.body?.parent_activity_id ||
+              ""
+            ).trim();
+
+          const result=
+            await c104PrepareParentRestore(
+              uid,
+              parentId
+            );
+
+          return res.json({
+            ok:true,
+            service:
+              "SAFE_RESTORE_PREPARE001",
+            restore_service:
+              "SPLIT_PARENT_RESTORE001",
+            version:"CGWEB104",
+            ...result
+          });
+        }
+
+        /* CGWEB104_FIT_RECOVERY_PLAN_ACTIONS_END */
+
+/* CGWEB103_FIT_RECOVERY_ACTIONS_END */
 
 /* CGWEB099_GLOBAL_DIRECTORY_ACTIONS_END */
 

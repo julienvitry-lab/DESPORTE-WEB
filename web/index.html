@@ -7678,6 +7678,130 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
     <div id="cgweb103LineageList"
          class="cgweb103-list"></div>
   </details>
+
+<!-- CGWEB104_FIT_RECOVERY_PLAN_UI_START -->
+<div id="cgweb104RecoveryPlan"
+     class="cgweb104-plan">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">
+        CGWEB104 · FIT_RECOVERY_PLAN001 /
+        SPLIT_PARENT_RESTORE001
+      </p>
+      <h3>Plan de récupération</h3>
+      <p class="muted">
+        Prépare la restauration des parents WEBSPLIT.
+        Aucune restauration n'est automatique.
+      </p>
+    </div>
+    <span id="cgweb104PlanPill"
+          class="pill neutral">
+      Non calculé
+    </span>
+  </div>
+
+  <div class="cgweb104-summary">
+    <article>
+      <span>Parents analysés</span>
+      <strong id="cgweb104ParentGroups">—</strong>
+    </article>
+    <article>
+      <span>Restaurables</span>
+      <strong id="cgweb104ReadyCount">—</strong>
+    </article>
+    <article>
+      <span>Original à relinker</span>
+      <strong id="cgweb104RelinkCount">—</strong>
+    </article>
+    <article>
+      <span>Archive requise</span>
+      <strong id="cgweb104ArchiveCount">—</strong>
+    </article>
+  </div>
+
+  <div class="row-actions">
+    <button id="cgweb104PlanButton"
+            type="button">
+      Construire le plan de récupération
+    </button>
+  </div>
+
+  <p id="cgweb104PlanStatus"
+     class="muted">
+    Plan non calculé.
+  </p>
+
+  <div id="cgweb104PlanList"
+       class="cgweb104-list"></div>
+</div>
+
+<style id="cgweb104-fit-recovery-css">
+.cgweb104-plan{
+  margin-top:18px;
+  padding-top:14px;
+  border-top:1px solid rgba(255,255,255,.10);
+}
+.cgweb104-summary{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  margin:10px 0;
+}
+.cgweb104-summary article{
+  border:1px solid
+    color-mix(in srgb,var(--accent,#a7ff2a) 28%,transparent);
+  border-radius:12px;
+  padding:10px 12px;
+}
+.cgweb104-summary article span{
+  display:block;
+  font-size:.82rem;
+  opacity:.72;
+}
+.cgweb104-summary article strong{
+  display:block;
+  margin-top:3px;
+  font-size:1.15rem;
+}
+.cgweb104-list{
+  display:grid;
+  gap:8px;
+  margin-top:10px;
+}
+.cgweb104-row{
+  display:grid;
+  grid-template-columns:
+    105px minmax(180px,1fr) 170px
+    minmax(180px,1fr) auto;
+  gap:8px;
+  align-items:center;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:10px;
+  padding:9px 10px;
+}
+.cgweb104-row > *{
+  min-width:0;
+}
+.cgweb104-row .cgweb104-title,
+.cgweb104-row .cgweb104-note{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.cgweb104-row button{
+  white-space:nowrap;
+}
+@media(max-width:950px){
+  .cgweb104-summary{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .cgweb104-row{
+    grid-template-columns:100px minmax(0,1fr);
+  }
+}
+</style>
+<!-- CGWEB104_FIT_RECOVERY_PLAN_UI_END -->
+
 </section>
 
 <style id="cgweb103-fit-recovery-css">
@@ -8877,8 +9001,8 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./fitcloud.js?v=CGWEB103-FIT-RECOVERY-AUDIT001"></script>
-<script type="module" src="./app.js?v=CGWEB103-FIT-RECOVERY-AUDIT001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB104-FIT-RECOVERY-PLAN001"></script>
+<script type="module" src="./app.js?v=CGWEB104-FIT-RECOVERY-PLAN001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

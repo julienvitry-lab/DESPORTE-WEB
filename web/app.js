@@ -29817,3 +29817,616 @@ if(
 }
 
 /* CGWEB103_FIT_RECOVERY_APP_END */
+
+
+/* CGWEB104_FIT_RECOVERY_APP_START */
+
+function cgweb104Node(id){
+  return document.getElementById(id);
+}
+
+function cgweb104Date(value){
+  const text=
+    String(value || "").trim();
+
+  if(!text)return "—";
+
+  const date=new Date(text);
+
+  if(
+    Number.isNaN(
+      date.getTime()
+    )
+  ){
+    return text.slice(0,10) || "—";
+  }
+
+  return date.toLocaleDateString(
+    "fr-FR"
+  );
+}
+
+function cgweb104Escape(value){
+  return String(value ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function cgweb104PlanLabel(code){
+  const labels={
+    READY_PARENT_FIT:
+      "Parent FIT disponible",
+    READY_RELINK_CHILD_ORIGINAL:
+      "Original enfant à relinker",
+    BLOCKED_PARENT_MISSING:
+      "Parent introuvable",
+    BLOCKED_PARENT_NOT_AUTO:
+      "Découpe non automatique",
+    BLOCKED_PARENT_ALREADY_ACTIVE:
+      "Parent déjà actif",
+    BLOCKED_PARENT_ROUTE_MISSING:
+      "Route parent absente",
+    BLOCKED_LINEAGE:
+      "Lignée incohérente",
+    BLOCKED_ARCHIVE_REQUIRED:
+      "Archive FIT requise"
+  };
+
+  return labels[code] ||
+    code ||
+    "—";
+}
+
+function cgweb104SetSummary(summary){
+  const fields={
+    cgweb104ParentGroups:
+      summary?.parent_groups,
+    cgweb104ReadyCount:
+      summary?.ready,
+    cgweb104RelinkCount:
+      summary?.ready_relink,
+    cgweb104ArchiveCount:
+      summary?.blocked_archive
+  };
+
+  for(
+    const [id,value]
+    of Object.entries(fields)
+  ){
+    const node=
+      cgweb104Node(id);
+
+    if(node){
+      node.textContent=
+        Number(
+          value || 0
+        ).toLocaleString(
+          "fr-FR"
+        );
+    }
+  }
+}
+
+function cgweb104RenderPlan(rows){
+  const host=
+    cgweb104Node(
+      "cgweb104PlanList"
+    );
+
+  if(!host)return;
+
+  const list=
+    Array.isArray(rows)
+      ? rows
+      : [];
+
+  if(!list.length){
+    host.innerHTML=
+      '<p class="muted">Aucune lignée WEBSPLIT à planifier.</p>';
+    return;
+  }
+
+  host.innerHTML=
+    list.map(row => {
+      const ready=
+        Boolean(row.ready);
+
+      const note=
+        (
+          cgweb104PlanLabel(
+            row.plan_code
+          )+
+          " · "+
+          Number(
+            row.children_count || 0
+          ).toLocaleString(
+            "fr-FR"
+          )+
+          " enfant(s) · FIT parent "+
+          String(
+            row.parent_fit_role ||
+            "ABSENT"
+          )
+        );
+
+      const action=
+        ready
+          ? (
+              '<button type="button" '+
+              'class="cgweb104-restore-parent" '+
+              'data-parent-id="'+
+              cgweb104Escape(
+                row.parent_activity_id
+              )+
+              '">Restaurer le parent</button>'
+            )
+          : (
+              '<span class="pill neutral">'+
+              cgweb104Escape(
+                cgweb104PlanLabel(
+                  row.plan_code
+                )
+              )+
+              '</span>'
+            );
+
+      return (
+        '<div class="cgweb104-row">'+
+          '<span>'+
+            cgweb104Escape(
+              cgweb104Date(
+                row.parent_start_iso
+              )
+            )+
+          '</span>'+
+          '<strong class="cgweb104-title" title="'+
+            cgweb104Escape(
+              row.parent_activity_id
+            )+
+          '">'+
+            cgweb104Escape(
+              row.parent_title ||
+              row.parent_activity_id
+            )+
+          '</strong>'+
+          '<span class="pill '+
+            (
+              ready
+                ? "ok"
+                : "neutral"
+            )+
+          '">'+
+            cgweb104Escape(
+              row.strategy ||
+              row.plan_code
+            )+
+          '</span>'+
+          '<span class="cgweb104-note" title="'+
+            cgweb104Escape(note)+
+          '">'+
+            cgweb104Escape(note)+
+          '</span>'+
+          action+
+        '</div>'
+      );
+    }).join("");
+
+  for(
+    const button
+    of host.querySelectorAll(
+      ".cgweb104-restore-parent"
+    )
+  ){
+    button.addEventListener(
+      "click",
+      ()=>{
+        void cgweb104RestoreParent(
+          button.dataset.parentId,
+          button
+        );
+      }
+    );
+  }
+}
+
+async function cgweb104LoadPlan(){
+  const button=
+    cgweb104Node(
+      "cgweb104PlanButton"
+    );
+
+  const status=
+    cgweb104Node(
+      "cgweb104PlanStatus"
+    );
+
+  const pill=
+    cgweb104Node(
+      "cgweb104PlanPill"
+    );
+
+  const api=
+    window
+      .SPORT_FIT_RECOVERY_PLAN;
+
+  if(
+    !api ||
+    typeof api.plan!=="function"
+  ){
+    if(status){
+      status.textContent=
+        "Service CGWEB104 non chargé.";
+    }
+    return;
+  }
+
+  if(button){
+    button.disabled=true;
+  }
+
+  if(pill){
+    pill.textContent="Calcul…";
+  }
+
+  if(status){
+    status.textContent=
+      "Analyse des parents, enfants, routes et FIT…";
+  }
+
+  try{
+    const result=
+      await api.plan();
+
+    cgweb104SetSummary(
+      result?.summary || {}
+    );
+
+    cgweb104RenderPlan(
+      result?.plans || []
+    );
+
+    if(pill){
+      pill.textContent=
+        "Plan prêt";
+      pill.className=
+        "pill ok";
+    }
+
+    if(status){
+      status.textContent=
+        Number(
+          result?.summary?.ready || 0
+        ).toLocaleString("fr-FR")+
+        " parent(s) restaurable(s) · "+
+        Number(
+          result?.summary
+            ?.blocked_archive || 0
+        ).toLocaleString("fr-FR")+
+        " nécessitent une archive FIT.";
+    }
+  }catch(error){
+    console.error(
+      "CGWEB104 plan",
+      error
+    );
+
+    if(pill){
+      pill.textContent=
+        "Erreur";
+      pill.className=
+        "pill warn";
+    }
+
+    if(status){
+      status.textContent=
+        "Plan impossible : "+
+        (
+          error?.message ||
+          String(error)
+        );
+    }
+  }finally{
+    if(button){
+      button.disabled=false;
+    }
+  }
+}
+
+async function cgweb104RestoreParent(
+  parentId,
+  button
+){
+  const id=
+    String(parentId || "").trim();
+
+  if(!id)return;
+
+  const api=
+    window
+      .SPORT_FIT_RECOVERY_PLAN;
+
+  if(
+    !api ||
+    typeof api.prepareParentRestore!==
+      "function"
+  ){
+    throw new Error(
+      "Service de préparation CGWEB104 indisponible."
+    );
+  }
+
+  const status=
+    cgweb104Node(
+      "cgweb104PlanStatus"
+    );
+
+  if(button){
+    button.disabled=true;
+  }
+
+  try{
+    if(status){
+      status.textContent=
+        "Revalidation de la lignée "+
+        id+
+        "…";
+    }
+
+    const prepared=
+      await api
+        .prepareParentRestore(id);
+
+    const childCount=
+      Array.isArray(
+        prepared?.children
+      )
+        ? prepared.children.length
+        : 0;
+
+    const relink=
+      prepared?.strategy===
+      "RELINK_CHILD_ORIGINAL";
+
+    const confirmed=
+      window.confirm(
+        "CGWEB104 · restauration du parent\n\n"+
+        "Parent : "+
+        id+
+        "\n"+
+        "Enfants déplacés dans la corbeille : "+
+        childCount+
+        "\n"+
+        (
+          relink
+            ? "Le FIT ORIGINAL actuellement lié à un enfant sera relinké au parent.\n"
+            : ""
+        )+
+        "\nAucun FIT physique ne sera supprimé.\n"+
+        "Les enfants resteront récupérables dans la corbeille.\n\n"+
+        "Continuer ?"
+      );
+
+    if(!confirmed){
+      if(status){
+        status.textContent=
+          "Restauration annulée.";
+      }
+      return;
+    }
+
+    const now=Date.now();
+    const version=
+      "CGWEB104-SPLIT_PARENT_RESTORE001";
+
+    /*
+     * 1. Relink de métadonnée FIT, si nécessaire.
+     * Le fichier physique reste inchangé.
+     */
+    if(
+      prepared?.relink?.file_doc_id &&
+      prepared?.relink?.file_row
+    ){
+      const fileRow={
+        ...prepared.relink.file_row,
+        activity_id:id,
+        relinked_from_activity_id:
+          String(
+            prepared.relink
+              .from_activity_id || ""
+          ),
+        relinked_to_activity_id:id,
+        relinked_at_ms:now,
+        relink_version:version
+      };
+
+      delete fileRow.__doc_id;
+
+      await commitWebMutation({
+        table:"activity_files",
+        rowKey:String(
+          prepared.relink.file_doc_id
+        ),
+        operation:"UPSERT",
+        row:fileRow,
+        materializedCollection:
+          "activity_files",
+        materializedData:fileRow
+      });
+    }
+
+    /*
+     * 2. Parent d'abord :
+     * si la suite est interrompue, on préfère un doublon temporaire
+     * à une disparition de l'activité.
+     */
+    const parentRow={
+      ...(prepared?.parent?.row || {}),
+      deleted_at_ms:null,
+      split_status:
+        "SOURCE_AUTO_RESTORED",
+      split_restore_version:
+        version,
+      split_restored_at_ms:
+        now,
+      split_restore_previous_deleted_at_ms:
+        prepared?.parent?.row
+          ?.deleted_at_ms ?? null,
+      split_restored_children_ids:
+        (
+          prepared?.children || []
+        ).map(
+          child =>
+            String(child.id)
+        )
+    };
+
+    delete parentRow.__docId;
+    delete parentRow.__doc_id;
+
+    await commitWebMutation({
+      table:"activities",
+      rowKey:id,
+      operation:"UPSERT",
+      row:parentRow,
+      materializedCollection:
+        "activities",
+      materializedData:
+        parentRow
+    });
+
+    /*
+     * 3. Enfants en corbeille, jamais supprimés physiquement.
+     */
+    for(
+      const child
+      of prepared?.children || []
+    ){
+      const childId=
+        String(
+          child?.id || ""
+        );
+
+      if(!childId)continue;
+
+      const childRow={
+        ...(child?.row || {}),
+        deleted_at_ms:
+          child?.row?.deleted_at_ms ??
+          now,
+        split_restore_parent_id:
+          id,
+        split_restore_version:
+          version,
+        split_restore_at_ms:
+          now,
+        split_restore_previous_deleted_at_ms:
+          child?.row?.deleted_at_ms ??
+          null
+      };
+
+      delete childRow.__docId;
+      delete childRow.__doc_id;
+
+      await commitWebMutation({
+        table:"activities",
+        rowKey:childId,
+        operation:"UPSERT",
+        row:childRow,
+        materializedCollection:
+          "activities",
+        materializedData:
+          childRow
+      });
+    }
+
+    if(status){
+      status.textContent=
+        "Parent "+
+        id+
+        " restauré · "+
+        childCount+
+        " enfant(s) placé(s) dans la corbeille.";
+    }
+
+    setMessage(
+      "CGWEB104 · parent restauré · enfants conservés dans la corbeille.",
+      "success"
+    );
+
+    window.setTimeout(
+      ()=>{
+        window.location.reload();
+      },
+      900
+    );
+  }catch(error){
+    console.error(
+      "CGWEB104 restore",
+      error
+    );
+
+    if(status){
+      status.textContent=
+        "Restauration interrompue : "+
+        (
+          error?.message ||
+          String(error)
+        )+
+        ". Aucun fichier FIT physique n'a été supprimé.";
+    }
+
+    setMessage(
+      "CGWEB104 · restauration interrompue. Vérifier la lignée avant de relancer.",
+      "error"
+    );
+  }finally{
+    if(button){
+      button.disabled=false;
+    }
+  }
+}
+
+function cgweb104Init(){
+  const button=
+    cgweb104Node(
+      "cgweb104PlanButton"
+    );
+
+  if(
+    !button ||
+    button.dataset.cgweb104Bound===
+      "1"
+  ){
+    return;
+  }
+
+  button.dataset.cgweb104Bound=
+    "1";
+
+  button.addEventListener(
+    "click",
+    ()=>{
+      void cgweb104LoadPlan();
+    }
+  );
+}
+
+if(
+  document.readyState===
+  "loading"
+){
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb104Init,
+    {once:true}
+  );
+}else{
+  queueMicrotask(
+    cgweb104Init
+  );
+}
+
+/* CGWEB104_FIT_RECOVERY_APP_END */
