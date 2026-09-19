@@ -16033,7 +16033,7 @@ function splitGapDiagnostics(points) {
   return {maxAdjacent,signalCoverage};
 }
 
-function detectAutomaticSplitBoundariesFromPoints(points, sessions=[]) {
+function detectAutomaticSplitBoundariesLegacyFromPoints(points, sessions=[]) {
   const boundaries=[];
   for (let index=1;index<points.length;index++) {
     const previous=splitPointTimeMs(points[index-1]);
@@ -16108,6 +16108,115 @@ function detectAutomaticSplitBoundariesFromPoints(points, sessions=[]) {
   }
   return dedup;
 }
+/* CGWEB100_FIX4_STRICT_AUTOSPLIT_START */
+/*
+ * CGWEB100 FIX4
+ *
+ * Politique stricte :
+ *   - vrai saut temporel > 15 min ;
+ *   - vrai changement de sport.
+ *
+ * Les pauses continues (moving/speed), plateaux de distance,
+ * sous-sports et matériels restent visibles dans le rapport
+ * forensique mais ne provoquent plus de découpage automatique.
+ */
+function detectAutomaticSplitBoundariesFromPoints(points,sessions=[]) {
+  const raw=
+    detectAutomaticSplitBoundariesLegacyFromPoints(
+      points,
+      sessions
+    );
+
+  const accepted=[];
+  const rejected=[];
+
+  for(const boundary of raw) {
+    const reason=
+      String(
+        boundary?.reason || ""
+      ).toUpperCase();
+
+    const gapKind=
+      String(
+        boundary?.gap_kind || ""
+      ).toUpperCase();
+
+    const gapMs=
+      Number(
+        boundary?.gap_ms
+      );
+
+    const realTimestampGap=
+      reason==="PAUSE_OVER_THRESHOLD" &&
+      gapKind==="TIMESTAMP_JUMP" &&
+      Number.isFinite(gapMs) &&
+      gapMs>WEB_SPLIT_AUTO_GAP_MS;
+
+    const realSportChange=
+      reason==="SPORT_CHANGED";
+
+    if(
+      realTimestampGap ||
+      realSportChange
+    ){
+      accepted.push({
+        ...boundary,
+        cgweb100_policy:
+          realTimestampGap
+            ? "TIMESTAMP_GAP_GT_15_MIN"
+            : "SPORT_CHANGE"
+      });
+    }else{
+      rejected.push({
+        ...boundary,
+        cgweb100_rejected:true,
+        cgweb100_reject_reason:
+          "STRICT_AUTOSPLIT_POLICY001"
+      });
+    }
+  }
+
+  const report={
+    version:
+      "CGWEB100_FIX4",
+    created_at:
+      new Date().toISOString(),
+    point_count:
+      Array.isArray(points)
+        ? points.length
+        : 0,
+    session_count:
+      Array.isArray(sessions)
+        ? sessions.length
+        : 0,
+    raw_count:
+      raw.length,
+    accepted_count:
+      accepted.length,
+    rejected_count:
+      rejected.length,
+    accepted,
+    rejected
+  };
+
+  window.CGWEB100_LAST_SPLIT_FORENSICS=
+    report;
+
+  if(rejected.length){
+    console.warn(
+      "CGWEB100 FIX4 · ruptures automatiques rejetées",
+      report
+    );
+  }else{
+    console.info(
+      "CGWEB100 FIX4 · politique de découpage",
+      report
+    );
+  }
+
+  return accepted;
+}
+/* CGWEB100_FIX4_STRICT_AUTOSPLIT_END */
 
 function sessionForTime(sessions,timeMs,fallback={}) {
   const ordered=(Array.isArray(sessions)?sessions:[])
@@ -17405,7 +17514,7 @@ function renderWebImportCandidates() {
         <span><small>Calories</small><strong>${escapeHtml(calories)}</strong></span>
         <span><small>GPS</small><strong>${formatNumber(c.parsed.gps.length)}</strong></span>
       </div>
-      ${Array.isArray(c.autoSplitParts)&&c.autoSplitParts.length>1?`<div class="web-import-duplicate-warning"><span class="pill ok">${WEB_SPLIT_VERSION}</span><strong>Découpe automatique : ${c.autoSplitParts.length} activités</strong><small>GAP &gt; 15 min et/ou changement de sport, sous-sport ou matériel détecté dans la source.</small></div>`:""}
+      ${Array.isArray(c.autoSplitParts)&&c.autoSplitParts.length>1?`<div class="web-import-duplicate-warning"><span class="pill ok">${WEB_SPLIT_VERSION}</span><strong>Découpe automatique : ${c.autoSplitParts.length} activités</strong><small>Découpe autorisée uniquement sur un vrai GAP de données &gt; 15 min ou un changement réel de sport.</small></div>`:""}
       ${c.duplicate?`<div class="web-import-duplicate-warning"><span class="pill warning">${c.duplicate.kind==="exact"?"Doublon":"À vérifier"}</span><strong>${escapeHtml(c.duplicate.label)}</strong><small>Cochez la ligne uniquement si vous souhaitez réellement importer ce fichier malgré l’alerte.</small></div>`:""}`;
 
     const checkbox=card.querySelector('input[type="checkbox"]');
@@ -17424,6 +17533,125 @@ function renderWebImportCandidates() {
     : "Importer les activités sélectionnées";
 }
 
+
+/* CGWEB100_FIX4_IMPORT_GUARD_HELPER_START */
+function cgweb100ValidateWebImportPlan(
+  candidate,
+  sourceActivity,
+  rawRoute,
+  parts
+){
+  if(
+    !candidate ||
+    !sourceActivity ||
+    !rawRoute
+  ){
+    throw new Error(
+      "CGWEB100 : plan d’import FIT incomplet."
+    );
+  }
+
+  const list=
+    Array.isArray(parts)
+      ? parts
+      : [];
+
+  if(list.length<=1){
+    return {
+      ok:true,
+      split:false,
+      part_count:list.length
+    };
+  }
+
+  const ids=
+    new Set();
+
+  for(
+    let index=0;
+    index<list.length;
+    index+=1
+  ){
+    const item=list[index];
+    const child=item?.child;
+    const route=item?.route;
+
+    if(!child || !route){
+      throw new Error(
+        "CGWEB100 : partie d’import incomplète avant écriture."
+      );
+    }
+
+    const id=
+      String(
+        child.id ?? ""
+      );
+
+    if(!id || ids.has(id)){
+      throw new Error(
+        "CGWEB100 : identifiant de partie invalide ou dupliqué."
+      );
+    }
+
+    ids.add(id);
+
+    /*
+     * La première partie porte SOURCE_START.
+     * Toute partie suivante doit prouver sa frontière.
+     */
+    if(index>0){
+      const reason=
+        String(
+          child.split_reason || ""
+        ).toUpperCase();
+
+      const gapMs=
+        Number(
+          child.split_gap_ms
+        );
+
+      const allowedGap=
+        reason==="PAUSE_OVER_THRESHOLD" &&
+        Number.isFinite(gapMs) &&
+        gapMs>WEB_SPLIT_AUTO_GAP_MS;
+
+      const allowedSport=
+        reason==="SPORT_CHANGED";
+
+      if(
+        !allowedGap &&
+        !allowedSport
+      ){
+        throw new Error(
+          "CGWEB100 : import annulé avant écriture — découpage non justifié ("+
+          (reason || "raison absente")+
+          ")."
+        );
+      }
+    }
+
+    const pointCount=
+      Math.max(
+        route.time_ms?.length || 0,
+        route.lat?.length || 0,
+        route.lon?.length || 0
+      );
+
+    if(pointCount<2){
+      throw new Error(
+        "CGWEB100 : import annulé avant écriture — route dérivée insuffisante."
+      );
+    }
+  }
+
+  return {
+    ok:true,
+    split:true,
+    part_count:list.length
+  };
+}
+/* CGWEB100_FIX4_IMPORT_GUARD_HELPER_END */
+
 async function commitOneWebImport(candidate) {
   if (ui.webImportArchiveOriginals?.checked) await archiveOriginalFit(candidate);
 
@@ -17431,6 +17659,21 @@ async function commitOneWebImport(candidate) {
   const sourceActivity=buildWebImportActivity(candidate,sourceId);
   const rawRoute=buildWebImportRoute(candidate.parsed);
   const parts=automaticSplitPartsFromRawRoute(rawRoute,sourceActivity,candidate.parsed.sessions || []);
+  /* CGWEB100_FIX4_IMPORT_GUARD_CALL_START */
+  const cgweb100ImportPlan=
+    cgweb100ValidateWebImportPlan(
+      candidate,
+      sourceActivity,
+      rawRoute,
+      parts
+    );
+
+  console.info(
+    "CGWEB100 FIX4A · plan import validé",
+    cgweb100ImportPlan,
+    window.CGWEB100_LAST_SPLIT_FORENSICS || null
+  );
+  /* CGWEB100_FIX4_IMPORT_GUARD_CALL_END */
   const items=parts.length>1 ? parts : [{child:sourceActivity,route:rawRoute}];
   const created=[];
 
