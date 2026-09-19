@@ -30535,15 +30535,165 @@ function cgweb105FmtTime(ms,iso){
 }
 
 function cgweb105DetailHost(){
-  return (
-    ui?.activityDetail ||
+  const isVisible=
+    element => {
+      if(!element)return false;
+
+      const style=
+        window.getComputedStyle(
+          element
+        );
+
+      if(
+        style.display==="none" ||
+        style.visibility==="hidden"
+      ){
+        return false;
+      }
+
+      const rect=
+        element.getBoundingClientRect();
+
+      return (
+        rect.width>0 &&
+        rect.height>0
+      );
+    };
+
+  const direct=[
+    ui?.activityDetail,
     document.getElementById(
       "activityDetail"
-    ) ||
+    ),
+    document.getElementById(
+      "activity-detail"
+    ),
+    document.getElementById(
+      "detailActivity"
+    ),
     document.querySelector(
       "[data-activity-detail]"
+    ),
+    document.querySelector(
+      ".activity-detail"
+    ),
+    document.querySelector(
+      ".activity-detail-panel"
+    ),
+    document.querySelector(
+      ".detail-activity"
+    ),
+    document.querySelector(
+      ".activity-editor"
     )
+  ].find(isVisible);
+
+  if(direct){
+    return direct;
+  }
+
+  /*
+   * FIX2 : le détail historique n'utilise pas forcément
+   * #activityDetail. On retrouve alors le panneau actuellement
+   * visible à partir de marqueurs textuels stables.
+   */
+  const markers=[
+    "Fréquence cardiaque",
+    "Frequence cardiaque",
+    "Allure",
+    "Repères",
+    "Reperes",
+    "Matériel",
+    "Materiel"
+  ];
+
+  const candidates=[
+    ...document.querySelectorAll(
+      "section, article, .panel, .card, [role='dialog'], main > div"
+    )
+  ]
+    .filter(isVisible)
+    .map(element => {
+      const text=
+        String(
+          element.innerText || ""
+        );
+
+      const score=
+        markers.reduce(
+          (sum,marker) =>
+            sum+
+            (
+              text.includes(marker)
+                ? 1
+                : 0
+            ),
+          0
+        );
+
+      return {
+        element,
+        score,
+        size:
+          text.length
+      };
+    })
+    .filter(
+      item =>
+        item.score>=2
+    )
+    .sort(
+      (a,b) =>
+        b.score-a.score ||
+        a.size-b.size
+    );
+
+  if(candidates.length){
+    return candidates[0].element;
+  }
+
+  /*
+   * Dernier recours : chercher le bouton Fermer du détail.
+   * On remonte vers un conteneur suffisamment large.
+   */
+  const closeButton=[
+    ...document.querySelectorAll(
+      "button"
+    )
+  ].find(
+    button =>
+      isVisible(button) &&
+      /^fermer$/i.test(
+        String(
+          button.textContent || ""
+        ).trim()
+      )
   );
+
+  if(closeButton){
+    let node=
+      closeButton.parentElement;
+
+    while(node){
+      const rect=
+        node.getBoundingClientRect();
+
+      if(
+        rect.width>=
+          Math.min(
+            window.innerWidth*0.65,
+            700
+          ) &&
+        rect.height>=180
+      ){
+        return node;
+      }
+
+      node=node.parentElement;
+    }
+  }
+
+  return null;
 }
 
 function cgweb105RemovePanel(){
@@ -31235,28 +31385,82 @@ function cgweb105RenderJoinPanel(
     return;
   }
 
-  const panel=
-    cgweb105CreatePanel(
-      activity
+  const activityId=
+    String(
+      activityKey(activity) || ""
     );
 
-  if(!panel){
-    return;
-  }
+  let attempt=0;
+  const maxAttempts=20;
 
-  const button=
-    panel.querySelector(
-      "#cgweb105FindJoinCandidates"
-    );
+  const mount=()=>{
+    attempt++;
 
-  button?.addEventListener(
-    "click",
-    ()=>{
-      void cgweb105LoadCandidates(
-        activity,
-        panel
+    const existing=
+      document.getElementById(
+        "cgweb105JoinPanel"
+      );
+
+    if(
+      existing &&
+      existing.dataset.activityId===
+        activityId
+    ){
+      return;
+    }
+
+    if(existing){
+      existing.remove();
+    }
+
+    const panel=
+      cgweb105CreatePanel(
+        activity
+      );
+
+    if(panel){
+      panel.dataset.mountAttempt=
+        String(attempt);
+
+      const button=
+        panel.querySelector(
+          "#cgweb105FindJoinCandidates"
+        );
+
+      button?.addEventListener(
+        "click",
+        ()=>{
+          void cgweb105LoadCandidates(
+            activity,
+            panel
+          );
+        }
+      );
+
+      return;
+    }
+
+    if(attempt<maxAttempts){
+      window.setTimeout(
+        mount,
+        100
+      );
+    }else{
+      console.warn(
+        "CGWEB105 FIX2 : panneau détail introuvable après",
+        maxAttempts,
+        "tentatives"
       );
     }
+  };
+
+  /*
+   * Le détail historique peut terminer son montage après renderDetail().
+   * On attend donc le DOM réel au lieu de supposer qu'il existe déjà.
+   */
+  window.setTimeout(
+    mount,
+    0
   );
 }
 
