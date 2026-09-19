@@ -27239,6 +27239,177 @@ function cgweb099FixDirectoryRowLayout(){
 
 /* CGWEB099_FIX4_UI_HELPERS_END */
 
+
+/* CGWEB099_FIX5_UI_HELPERS_START */
+
+function cgweb099InstallFix5Styles(){
+  const id="cgweb099Fix5Styles";
+
+  let style=
+    document.getElementById(id);
+
+  if(style)return style;
+
+  style=
+    document.createElement("style");
+
+  style.id=id;
+
+  style.textContent=
+    [
+      "@media(min-width:1100px){",
+      "  #cgweb099GlobalDirectory .cgweb099-filter-grid{display:grid!important;grid-template-columns:145px 205px 125px 145px 145px minmax(200px,1fr) 155px!important;gap:8px!important;align-items:end!important;}",
+      "  #cgweb099GlobalDirectory .cgweb099-filter-grid>label{min-width:0!important;width:auto!important;max-width:none!important;}",
+      "  #cgweb099GlobalDirectory .cgweb099-filter-grid>label:nth-child(3){width:125px!important;max-width:125px!important;}",
+      "  #cgweb099GlobalDirectory .cgweb099-filter-grid>label:nth-child(5){width:145px!important;max-width:145px!important;}",
+      "  #cgweb099GlobalDirectory .cgweb099-filter-grid select,#cgweb099GlobalDirectory .cgweb099-filter-grid input{width:100%!important;min-width:0!important;}",
+      "}",
+      "#activityDirectorySection .cgweb099-fix5-row{display:flex!important;flex-wrap:nowrap!important;align-items:center!important;min-width:0!important;}",
+      "#activityDirectorySection .cgweb099-fix5-row>*{min-width:0!important;white-space:nowrap!important;}",
+      "#activityDirectorySection .cgweb099-fix5-download-cell{order:999!important;margin-left:auto!important;flex:0 0 42px!important;width:42px!important;min-width:42px!important;max-width:42px!important;overflow:visible!important;}",
+      "#activityDirectorySection .cgweb099-fix5-download{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:32px!important;min-width:32px!important;max-width:32px!important;height:32px!important;margin:0!important;}",
+      "#activityDirectorySection .cgweb099-fix5-download-hidden{display:none!important;width:0!important;min-width:0!important;max-width:0!important;flex:0 0 0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;}",
+      "#activityDirectorySection .cgweb099-fix5-row>:not(.cgweb099-fix5-download-cell){overflow:hidden!important;text-overflow:ellipsis!important;}"
+    ].join("\n");
+
+  document.head.appendChild(style);
+
+  return style;
+}
+
+function cgweb099DownloadAvailability(control){
+  if(!control){
+    return false;
+  }
+
+  const probe=
+    [
+      control.getAttribute?.("title"),
+      control.getAttribute?.("aria-label"),
+      control.getAttribute?.("data-state"),
+      control.getAttribute?.("data-status"),
+      control.getAttribute?.("data-fit-state"),
+      control.className,
+      control.textContent
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+  const unavailable=
+    control.disabled === true ||
+    String(
+      control.getAttribute?.("aria-disabled") || ""
+    ).toLowerCase()==="true" ||
+    /\b(disabled|unavailable|inactive|absent|missing)\b/.test(probe) ||
+    /aucun\s+fit|fit\s+indisponible|non\s+disponible|pas\s+de\s+fit|sans\s+fit|objet\s+cloud\s+introuvable|aucun\s+lien|lien\s+indisponible/.test(probe);
+
+  return !unavailable;
+}
+
+function cgweb099FixDirectoryDownloadLayout(){
+  const section=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if(!section)return;
+
+  const rows=[
+    ...section.querySelectorAll(
+      "[data-activity-id],.activity-row,.activity-card"
+    )
+  ];
+
+  for(const row of rows){
+    if(
+      row.closest(
+        "#cgweb099GlobalDirectory"
+      )
+    ){
+      continue;
+    }
+
+    row.classList.add(
+      "cgweb099-fix5-row"
+    );
+
+    const controls=[
+      ...row.querySelectorAll(
+        "button,a"
+      )
+    ]
+      .filter(
+        cgweb099IsDownloadControl
+      );
+
+    if(!controls.length){
+      continue;
+    }
+
+    for(const control of controls){
+      let cell=control;
+
+      while(
+        cell.parentElement &&
+        cell.parentElement!==row
+      ){
+        cell=cell.parentElement;
+      }
+
+      if(
+        cell.parentElement!==row
+      ){
+        cell=control;
+      }
+
+      if(
+        !cgweb099DownloadAvailability(
+          control
+        )
+      ){
+        control.classList.add(
+          "cgweb099-fix5-download-hidden"
+        );
+
+        if(
+          cell!==control
+        ){
+          cell.classList.add(
+            "cgweb099-fix5-download-hidden"
+          );
+        }
+
+        continue;
+      }
+
+      control.classList.remove(
+        "cgweb099-fix5-download-hidden"
+      );
+
+      control.classList.add(
+        "cgweb099-fix5-download"
+      );
+
+      cell.classList.remove(
+        "cgweb099-fix5-download-hidden"
+      );
+
+      cell.classList.add(
+        "cgweb099-fix5-download-cell"
+      );
+
+      if(
+        row.lastElementChild!==cell
+      ){
+        row.appendChild(cell);
+      }
+    }
+  }
+}
+
+/* CGWEB099_FIX5_UI_HELPERS_END */
+
 function cgweb099BuildShell(){
   const section=
     document.getElementById(
@@ -27249,6 +27420,7 @@ function cgweb099BuildShell(){
 
   cgweb099InstallFix3Styles();
   cgweb099InstallFix4Styles();
+  cgweb099InstallFix5Styles();
 
   section.dataset.cgweb099Global="4";
 
@@ -27306,6 +27478,7 @@ function cgweb099BuildShell(){
     ()=>{
       cgweb099KillDirectorySpacer();
       cgweb099FixDirectoryRowLayout();
+      cgweb099FixDirectoryDownloadLayout();
       cgweb099NormalizeDisclosureMarker();
     }
   );
@@ -27314,6 +27487,7 @@ function cgweb099BuildShell(){
     ()=>{
       cgweb099KillDirectorySpacer();
       cgweb099FixDirectoryRowLayout();
+      cgweb099FixDirectoryDownloadLayout();
       cgweb099NormalizeDisclosureMarker();
     },
     180
@@ -27747,6 +27921,7 @@ function cgweb099RenderRows(rows){
   cgweb099HideLegacy();
 
   cgweb099FixDirectoryRowLayout();
+  cgweb099FixDirectoryDownloadLayout();
   cgweb099NormalizeDisclosureMarker();
 }
 
