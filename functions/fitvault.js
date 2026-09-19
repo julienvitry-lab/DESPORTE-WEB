@@ -5756,6 +5756,298 @@ async function c091TransferAudit(uid) {
 
   /* CGWEB096_DIRECTORY_DOWNLOAD_HELPERS_END */
 
+
+  /* CGWEB097_FIT_ORIGIN_HELPERS_START */
+
+  function c097ToIso(value) {
+    if (value == null) return "";
+
+    try {
+      if (
+        value &&
+        typeof value.toDate === "function"
+      ) {
+        return value.toDate().toISOString();
+      }
+
+      if (
+        value &&
+        typeof value.toMillis === "function"
+      ) {
+        return new Date(
+          value.toMillis()
+        ).toISOString();
+      }
+
+      if (
+        typeof value === "number" &&
+        Number.isFinite(value)
+      ) {
+        const ms =
+          value > 1e12
+            ? value
+            : value > 1e9
+              ? value * 1000
+              : NaN;
+
+        if (Number.isFinite(ms)) {
+          return new Date(ms).toISOString();
+        }
+      }
+
+      const text =
+        String(value).trim();
+
+      if (!text) return "";
+
+      const ms = Date.parse(text);
+
+      if (Number.isFinite(ms)) {
+        return new Date(ms).toISOString();
+      }
+    } catch (_) {}
+
+    return "";
+  }
+
+  function c097ActivityStartIso(activity) {
+    const keys = [
+      "start_date_local",
+      "start_date",
+      "start_time",
+      "startTime",
+      "started_at",
+      "startedAt",
+      "date",
+      "datetime",
+      "start_date_ms",
+      "startDateMs",
+      "start_time_ms",
+      "startTimeMs",
+      "timestamp"
+    ];
+
+    for (const key of keys) {
+      const iso = c097ToIso(
+        activity?.[key]
+      );
+
+      if (iso) return iso;
+    }
+
+    return "";
+  }
+
+  function c097InProblemPeriod(iso) {
+    if (!iso) return false;
+
+    const day = iso.slice(0, 10);
+
+    return (
+      day >= "2026-08-26" &&
+      day <= "2026-09-14"
+    );
+  }
+
+  async function c097OriginAudit(uid) {
+    const [
+      coverage,
+      byActivity,
+      index
+    ] = await Promise.all([
+      c095Coverage(uid),
+      c096LinkedRows(uid),
+      c096StorageIndex()
+    ]);
+
+    const activities = [];
+
+    for await (
+      const snap of db
+        .collection(
+          ROOT + "/" + uid + "/activities"
+        )
+        .stream()
+    ) {
+      const activity = snap.data() || {};
+
+      if (
+        activity.deleted_at_ms != null
+      ) {
+        continue;
+      }
+
+      const activityId = String(snap.id);
+      const rows =
+        byActivity.get(activityId) || [];
+
+      const resolved =
+        c096ResolvePreferred(
+          rows,
+          index
+        );
+
+      const startIso =
+        c097ActivityStartIso(activity);
+
+      activities.push({
+        activity_id: activityId,
+        title:
+          c095Title(
+            activity,
+            activityId
+          ),
+        start_iso: startIso,
+        role:
+          resolved?.role || "NONE",
+        downloadable:
+          Boolean(
+            resolved?.status?.startsWith(
+              "RESOLVED_"
+            )
+          ),
+        resolution_status:
+          resolved?.status || "NO_LINKED_FILE",
+        resolution_method:
+          resolved?.method || "NONE",
+        file_name:
+          resolved?.file_name || "",
+        object_name:
+          resolved?.object_name || "",
+        in_problem_period:
+          c097InProblemPeriod(
+            startIso
+          )
+      });
+    }
+
+    activities.sort(
+      (a, b) =>
+        String(b.start_iso)
+          .localeCompare(
+            String(a.start_iso)
+          )
+    );
+
+    const canonical =
+      activities.filter(
+        row =>
+          row.role === "CANONICAL"
+      );
+
+    const original =
+      activities.filter(
+        row =>
+          row.role === "ORIGINAL"
+      );
+
+    const absent =
+      activities.filter(
+        row =>
+          !row.downloadable
+      );
+
+    const canonicalPeriod =
+      canonical.filter(
+        row => row.in_problem_period
+      );
+
+    return {
+      summary: {
+        activities_active:
+          Number(
+            coverage?.summary
+              ?.activities_active || 0
+          ),
+        original:
+          original.length,
+        canonical:
+          canonical.length,
+        absent:
+          absent.length,
+        canonical_problem_period:
+          canonicalPeriod.length,
+        problem_period_start:
+          "2026-08-26",
+        problem_period_end:
+          "2026-09-14"
+      },
+      canonical_activities:
+        canonical,
+      canonical_problem_period:
+        canonicalPeriod
+    };
+  }
+
+  async function c097StatesForActivities(
+    uid,
+    activityIds
+  ) {
+    const ids =
+      [...new Set(
+        (Array.isArray(activityIds)
+          ? activityIds
+          : []
+        )
+          .map(value =>
+            String(value || "").trim()
+          )
+          .filter(Boolean)
+      )]
+        .slice(0, 250);
+
+    if (!ids.length) {
+      return {
+        states: {}
+      };
+    }
+
+    const [
+      byActivity,
+      index
+    ] = await Promise.all([
+      c096LinkedRows(uid),
+      c096StorageIndex()
+    ]);
+
+    const states = {};
+
+    for (const activityId of ids) {
+      const rows =
+        byActivity.get(activityId) || [];
+
+      const resolved =
+        c096ResolvePreferred(
+          rows,
+          index
+        );
+
+      states[activityId] = {
+        activity_id: activityId,
+        role:
+          resolved?.role || "NONE",
+        downloadable:
+          Boolean(
+            resolved?.status?.startsWith(
+              "RESOLVED_"
+            )
+          ),
+        status:
+          resolved?.status || "NO_LINKED_FILE",
+        method:
+          resolved?.method || "NONE",
+        file_name:
+          resolved?.file_name || ""
+      };
+    }
+
+    return {
+      states
+    };
+  }
+
+  /* CGWEB097_FIT_ORIGIN_HELPERS_END */
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -7338,6 +7630,82 @@ if (action === "transfer_audit") {
         }
 
         /* CGWEB096_DIRECTORY_DOWNLOAD_ACTIONS_END */
+
+
+        /* CGWEB097_FIT_ORIGIN_ACTIONS_START */
+
+        if (
+          action ===
+          "fit_origin_audit"
+        ) {
+          if (
+            req.method !== "GET" &&
+            req.method !== "POST"
+          ) {
+            return res.status(405).json({
+              error: "GET ou POST requis."
+            });
+          }
+
+          const result =
+            await c097OriginAudit(uid);
+
+          return res.json({
+            ok: true,
+            service:
+              "CANONICAL_ACTIVITY_AUDIT001",
+            version: "CGWEB097",
+            read_only: true,
+            ...result
+          });
+        }
+
+        if (
+          action ===
+          "directory_fit_states"
+        ) {
+          if (req.method !== "POST") {
+            return res.status(405).json({
+              error: "POST requis."
+            });
+          }
+
+          let body = req.body;
+
+          if (Buffer.isBuffer(body)) {
+            try {
+              body =
+                JSON.parse(
+                  body.toString("utf8")
+                );
+            } catch {
+              body = {};
+            }
+          }
+
+          body =
+            !body ||
+            typeof body !== "object" ||
+            Array.isArray(body)
+              ? {}
+              : body;
+
+          const result =
+            await c097StatesForActivities(
+              uid,
+              body.activity_ids
+            );
+
+          return res.json({
+            ok: true,
+            service:
+              "DOWNLOAD_STATE_TRUTH001",
+            version: "CGWEB097",
+            ...result
+          });
+        }
+
+        /* CGWEB097_FIT_ORIGIN_ACTIONS_END */
 
         if (action === "global_fit_plan") {
           if (

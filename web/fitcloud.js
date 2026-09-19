@@ -5305,6 +5305,49 @@ window.SPORT_DIRECTORY_FIT=
 
 /* CGWEB096_DIRECTORY_FIT_CLIENT_END */
 
+
+/* CGWEB097_FIT_ORIGIN_CLIENT_START */
+
+async function c097OriginAudit(){
+  return request(
+    "fit_origin_audit",
+    {method:"GET"}
+  );
+}
+
+async function c097States(
+  activityIds
+){
+  return request(
+    "directory_fit_states",
+    {
+      method:"POST",
+      headers:{
+        "Content-Type":
+          "application/json"
+      },
+      body:JSON.stringify({
+        activity_ids:
+          Array.isArray(activityIds)
+            ? activityIds
+            : []
+      })
+    }
+  );
+}
+
+window.SPORT_FIT_ORIGIN=
+  Object.freeze({
+    version:
+      "CGWEB097-FIT_ORIGIN_VISUAL001-CANONICAL_ACTIVITY_AUDIT001-DOWNLOAD_STATE_TRUTH001",
+    audit:
+      c097OriginAudit,
+    states:
+      c097States
+  });
+
+/* CGWEB097_FIT_ORIGIN_CLIENT_END */
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));

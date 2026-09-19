@@ -5951,6 +5951,123 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
   cursor:pointer !important;
 }
 </style>
+<style id="cgweb097-fit-origin-css">
+.cgweb097-origin-audit{
+  display:grid;
+  gap:12px;
+}
+.cgweb097-summary{
+  display:grid;
+  grid-template-columns:
+    repeat(5,minmax(130px,1fr));
+  gap:8px;
+}
+.cgweb097-summary article{
+  min-width:0;
+  min-height:72px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:2px;
+  padding:10px 12px;
+  border:1px solid rgba(190,255,55,.20);
+  border-radius:14px;
+  background:rgba(255,255,255,.025);
+}
+.cgweb097-summary article span{
+  font-size:.84rem;
+  opacity:.78;
+}
+.cgweb097-summary article strong{
+  font-size:1.25rem;
+}
+.cgweb097-list{
+  display:grid;
+  gap:6px;
+  padding:8px 0 2px;
+}
+.cgweb097-row{
+  display:grid;
+  grid-template-columns:
+    minmax(120px,180px) 1fr auto;
+  gap:8px;
+  align-items:center;
+  padding:8px 10px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;
+}
+.cgweb097-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:26px;
+  height:22px;
+  padding:0 7px;
+  border-radius:999px;
+  border:1px solid currentColor;
+  font-size:.76rem;
+  font-weight:700;
+}
+
+/* Vérité visuelle du Répertoire */
+#activityDirectorySection
+[data-cgweb097-fit-origin="ORIGINAL"]{
+  opacity:1 !important;
+  pointer-events:auto !important;
+  cursor:pointer !important;
+  filter:none !important;
+  color:var(--accent,#a8ff21) !important;
+  border-color:currentColor !important;
+}
+#activityDirectorySection
+[data-cgweb097-fit-origin="CANONICAL"]{
+  position:relative !important;
+  opacity:1 !important;
+  pointer-events:auto !important;
+  cursor:pointer !important;
+  filter:none !important;
+  color:var(--accent,#a8ff21) !important;
+  border-style:dashed !important;
+  border-color:currentColor !important;
+}
+#activityDirectorySection
+[data-cgweb097-fit-origin="CANONICAL"]::after{
+  content:"C";
+  position:absolute;
+  right:-5px;
+  top:-7px;
+  min-width:15px;
+  height:15px;
+  padding:0 2px;
+  border-radius:999px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:9px;
+  line-height:1;
+  font-weight:800;
+  color:var(--accent,#a8ff21);
+  background:#0b0f0b;
+  border:1px solid currentColor;
+}
+#activityDirectorySection
+[data-cgweb097-fit-origin="ABSENT"]{
+  opacity:.38 !important;
+  pointer-events:none !important;
+  cursor:not-allowed !important;
+  filter:grayscale(1) !important;
+}
+
+@media(max-width:950px){
+  .cgweb097-summary{
+    grid-template-columns:
+      repeat(2,minmax(130px,1fr));
+  }
+  .cgweb097-row{
+    grid-template-columns:1fr;
+  }
+}
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -7136,6 +7253,88 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
     </div>
   </details>
 </section>
+
+<!-- CGWEB097_CANONICAL_AUDIT_UI_START -->
+<section id="cgweb097CanonicalAudit"
+         class="panel cgweb097-origin-audit">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">
+        CGWEB097 · FIT_ORIGIN_VISUAL001 /
+        CANONICAL_ACTIVITY_AUDIT001 /
+        DOWNLOAD_STATE_TRUTH001
+      </p>
+      <h2>Provenance des FIT</h2>
+      <p class="muted">
+        Distingue les originaux fournis des FIT canoniques reconstruits
+        et audite spécifiquement la période 26/08/2026 → 14/09/2026.
+      </p>
+    </div>
+    <span id="cgweb097OriginPill"
+          class="pill neutral">
+      Non audité
+    </span>
+  </div>
+
+  <div class="cgweb097-summary">
+    <article>
+      <span>Activités actives</span>
+      <strong id="cgweb097Active">—</strong>
+    </article>
+    <article>
+      <span>FIT original</span>
+      <strong id="cgweb097Original">—</strong>
+    </article>
+    <article>
+      <span>FIT canonique</span>
+      <strong id="cgweb097Canonical">—</strong>
+    </article>
+    <article>
+      <span>Sans FIT résolvable</span>
+      <strong id="cgweb097Absent">—</strong>
+    </article>
+    <article>
+      <span>Canoniques 26/08 → 14/09</span>
+      <strong id="cgweb097Period">—</strong>
+    </article>
+  </div>
+
+  <div class="cgweb097-actions">
+    <button id="cgweb097RunOriginAudit"
+            class="secondary"
+            type="button">
+      Auditer les FIT canoniques
+    </button>
+  </div>
+
+  <p id="cgweb097OriginStatus"
+     class="muted">
+    Audit non lancé.
+  </p>
+
+  <details open>
+    <summary>
+      FIT canoniques du 26 août au 14 septembre
+    </summary>
+    <div id="cgweb097PeriodList"
+         class="cgweb097-list muted">
+      Audit non lancé.
+    </div>
+  </details>
+
+  <details>
+    <summary>
+      Tous les FIT canoniques
+    </summary>
+    <div id="cgweb097CanonicalList"
+         class="cgweb097-list muted">
+      Audit non lancé.
+    </div>
+  </details>
+</section>
+<!-- CGWEB097_CANONICAL_AUDIT_UI_END -->
+
+
 <!-- CGWEB096_DIRECTORY_AUDIT_HTML_END -->
 
 </section>
@@ -8249,8 +8448,8 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module" src="./fitcloud.js?v=CGWEB096-FIX8-FITCLOUD-LOAD-GUARD001"></script>
-<script type="module" src="./app.js?v=CGWEB096-FIX9-DOWNLOAD-ICON-STATE-SYNC001"></script>
+  <script type="module" src="./fitcloud.js?v=CGWEB097-FIT-ORIGIN001"></script>
+<script type="module" src="./app.js?v=CGWEB097-DOWNLOAD-STATE-TRUTH001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

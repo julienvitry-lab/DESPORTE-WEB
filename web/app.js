@@ -25930,3 +25930,515 @@ if(document.readyState==="loading"){
 }
 
 /* CGWEB096_FIX9_DOWNLOAD_ICON_STATE_SYNC001_END */
+
+/* CGWEB097_FIT_ORIGIN_VISUAL001_START */
+
+const cgweb097StateCache=
+  new Map();
+
+let cgweb097StateBusy=false;
+let cgweb097StatePending=false;
+let cgweb097Observer=null;
+
+function cgweb097Node(id){
+  return document.getElementById(id);
+}
+
+function cgweb097Set(id,value){
+  const node=cgweb097Node(id);
+
+  if(node){
+    node.textContent=
+      String(value ?? "—");
+  }
+}
+
+function cgweb097FormatDate(iso){
+  const text=String(iso||"");
+
+  if(!text)return "Date inconnue";
+
+  const day=text.slice(0,10);
+  const parts=day.split("-");
+
+  if(parts.length!==3){
+    return text;
+  }
+
+  return [
+    parts[2],
+    parts[1],
+    parts[0]
+  ].join("/");
+}
+
+function cgweb097RenderList(
+  id,
+  rows,
+  emptyText
+){
+  const host=
+    cgweb097Node(id);
+
+  if(!host)return;
+
+  const values=
+    Array.isArray(rows)
+      ? rows
+      : [];
+
+  if(!values.length){
+    host.textContent=emptyText;
+    return;
+  }
+
+  host.replaceChildren();
+
+  for(const row of values){
+    const item=
+      document.createElement("div");
+
+    item.className="cgweb097-row";
+
+    const date=
+      document.createElement("strong");
+
+    date.textContent=
+      cgweb097FormatDate(
+        row.start_iso
+      );
+
+    const title=
+      document.createElement("span");
+
+    title.textContent=
+      row.title ||
+      ("Activité #" + row.activity_id);
+
+    const badge=
+      document.createElement("span");
+
+    badge.className=
+      "cgweb097-badge";
+
+    badge.textContent=
+      row.downloadable
+        ? "CANONICAL"
+        : "ABSENT";
+
+    item.append(
+      date,
+      title,
+      badge
+    );
+
+    host.appendChild(item);
+  }
+}
+
+async function cgweb097RunAudit(){
+  const button=
+    cgweb097Node(
+      "cgweb097RunOriginAudit"
+    );
+
+  const status=
+    cgweb097Node(
+      "cgweb097OriginStatus"
+    );
+
+  if(button){
+    button.disabled=true;
+    button.textContent=
+      "Audit en cours…";
+  }
+
+  if(status){
+    status.textContent=
+      "Analyse des originaux et des FIT canoniques…";
+  }
+
+  try{
+    const api=
+      window.SPORT_FIT_ORIGIN;
+
+    if(
+      !api ||
+      typeof api.audit!=="function"
+    ){
+      throw new Error(
+        "Service SPORT_FIT_ORIGIN non chargé."
+      );
+    }
+
+    const data=
+      await api.audit();
+
+    if(!data?.ok){
+      throw new Error(
+        data?.error ||
+        "Audit invalide."
+      );
+    }
+
+    const summary=
+      data.summary || {};
+
+    cgweb097Set(
+      "cgweb097Active",
+      summary.activities_active
+    );
+
+    cgweb097Set(
+      "cgweb097Original",
+      summary.original
+    );
+
+    cgweb097Set(
+      "cgweb097Canonical",
+      summary.canonical
+    );
+
+    cgweb097Set(
+      "cgweb097Absent",
+      summary.absent
+    );
+
+    cgweb097Set(
+      "cgweb097Period",
+      summary.canonical_problem_period
+    );
+
+    const pill=
+      cgweb097Node(
+        "cgweb097OriginPill"
+      );
+
+    if(pill){
+      pill.textContent=
+        (summary.canonical || 0) +
+        " canonique(s)";
+    }
+
+    cgweb097RenderList(
+      "cgweb097PeriodList",
+      data.canonical_problem_period,
+      "Aucun FIT canonique sur cette période."
+    );
+
+    cgweb097RenderList(
+      "cgweb097CanonicalList",
+      data.canonical_activities,
+      "Aucun FIT canonique."
+    );
+
+    if(status){
+      status.textContent=
+        "Audit terminé · " +
+        (summary.original || 0) +
+        " original(aux) · " +
+        (summary.canonical || 0) +
+        " canonique(s) · " +
+        (summary.canonical_problem_period || 0) +
+        " canonique(s) entre le 26/08 et le 14/09.";
+    }
+  }catch(error){
+    if(status){
+      status.textContent=
+        "Audit impossible : " +
+        (error?.message || error);
+    }
+  }finally{
+    if(button){
+      button.disabled=false;
+      button.textContent=
+        "Auditer les FIT canoniques";
+    }
+  }
+}
+
+function cgweb097DownloadControls(){
+  const directory=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if(!directory){
+    return [];
+  }
+
+  return [
+    ...directory.querySelectorAll(
+      "button,a,[role='button']"
+    )
+  ].filter(control=>{
+    try{
+      return (
+        typeof cgweb096IsExactDownloadControl===
+          "function" &&
+        cgweb096IsExactDownloadControl(
+          control
+        )
+      );
+    }catch(_){
+      return false;
+    }
+  });
+}
+
+function cgweb097ApplyState(
+  control,
+  state
+){
+  if(
+    !control ||
+    !state
+  ){
+    return;
+  }
+
+  const role=
+    state.downloadable
+      ? String(
+          state.role || "UNKNOWN"
+        ).toUpperCase()
+      : "ABSENT";
+
+  control.dataset
+    .cgweb097FitOrigin=
+      role;
+
+  control.disabled=
+    role==="ABSENT";
+
+  control.setAttribute(
+    "aria-disabled",
+    role==="ABSENT"
+      ? "true"
+      : "false"
+  );
+
+  if(role==="ORIGINAL"){
+    control.setAttribute(
+      "title",
+      "Télécharger le FIT original"
+    );
+  }else if(role==="CANONICAL"){
+    control.setAttribute(
+      "title",
+      "Télécharger le FIT canonique reconstruit"
+    );
+  }else{
+    control.setAttribute(
+      "title",
+      "FIT non résolvable"
+    );
+  }
+}
+
+async function cgweb097RefreshStates(){
+  if(cgweb097StateBusy){
+    cgweb097StatePending=true;
+    return;
+  }
+
+  const controls=
+    cgweb097DownloadControls();
+
+  if(!controls.length){
+    return;
+  }
+
+  const byId=
+    new Map();
+
+  for(const control of controls){
+    const id=
+      typeof cgweb096ExactActivityId===
+        "function"
+        ? cgweb096ExactActivityId(
+            control
+          )
+        : "";
+
+    if(!id)continue;
+
+    if(!byId.has(id)){
+      byId.set(id,[]);
+    }
+
+    byId.get(id).push(
+      control
+    );
+  }
+
+  if(!byId.size){
+    return;
+  }
+
+  const missing=
+    [...byId.keys()]
+      .filter(
+        id =>
+          !cgweb097StateCache.has(id)
+      );
+
+  cgweb097StateBusy=true;
+
+  try{
+    if(missing.length){
+      const api=
+        window.SPORT_FIT_ORIGIN;
+
+      if(
+        !api ||
+        typeof api.states!=="function"
+      ){
+        throw new Error(
+          "Service SPORT_FIT_ORIGIN non chargé."
+        );
+      }
+
+      for(
+        let offset=0;
+        offset<missing.length;
+        offset+=200
+      ){
+        const batch=
+          missing.slice(
+            offset,
+            offset+200
+          );
+
+        const data=
+          await api.states(
+            batch
+          );
+
+        if(!data?.ok){
+          throw new Error(
+            data?.error ||
+            "États FIT invalides."
+          );
+        }
+
+        for(
+          const [id,state]
+          of Object.entries(
+            data.states || {}
+          )
+        ){
+          cgweb097StateCache.set(
+            id,
+            state
+          );
+        }
+      }
+    }
+
+    for(
+      const [id,nodes]
+      of byId.entries()
+    ){
+      const state=
+        cgweb097StateCache.get(id);
+
+      if(!state)continue;
+
+      for(const control of nodes){
+        cgweb097ApplyState(
+          control,
+          state
+        );
+      }
+    }
+  }catch(error){
+    console.error(
+      "CGWEB097 DOWNLOAD_STATE_TRUTH001",
+      error
+    );
+  }finally{
+    cgweb097StateBusy=false;
+
+    if(cgweb097StatePending){
+      cgweb097StatePending=false;
+
+      setTimeout(
+        cgweb097RefreshStates,
+        50
+      );
+    }
+  }
+}
+
+function cgweb097Install(){
+  const auditButton=
+    cgweb097Node(
+      "cgweb097RunOriginAudit"
+    );
+
+  if(
+    auditButton &&
+    auditButton.dataset.c097!=="1"
+  ){
+    auditButton.dataset.c097="1";
+
+    auditButton.addEventListener(
+      "click",
+      ()=>void cgweb097RunAudit()
+    );
+  }
+
+  const directory=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if(directory){
+    void cgweb097RefreshStates();
+
+    if(!cgweb097Observer){
+      cgweb097Observer=
+        new MutationObserver(
+          ()=>{
+            setTimeout(
+              cgweb097RefreshStates,
+              20
+            );
+          }
+        );
+
+      cgweb097Observer.observe(
+        directory,
+        {
+          childList:true,
+          subtree:true
+        }
+      );
+    }
+  }
+}
+
+if(document.readyState==="loading"){
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb097Install,
+    {once:true}
+  );
+}else{
+  queueMicrotask(
+    cgweb097Install
+  );
+}
+
+setTimeout(
+  cgweb097Install,
+  250
+);
+
+setTimeout(
+  cgweb097Install,
+  1000
+);
+
+/* CGWEB097_FIT_ORIGIN_VISUAL001_END */
