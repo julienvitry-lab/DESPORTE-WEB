@@ -8198,6 +8198,9 @@ function web061RefreshSingleMetricRow(activity) {
 
 
 function renderDetail(activity) {
+  /* CGWEB105_RENDER_DETAIL_HOOK */
+  queueMicrotask(()=>cgweb105RenderJoinPanel(activity));
+
   const index = filteredActivities.findIndex((row) => activityKey(row) === activityKey(activity));
   const total = filteredActivities.length;
 
@@ -30430,3 +30433,831 @@ if(
 }
 
 /* CGWEB104_FIT_RECOVERY_APP_END */
+
+
+/* CGWEB105_JOIN_UI_START */
+
+function cgweb105Escape(value){
+  return String(value ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function cgweb105FmtDistance(m){
+  const n=Number(m);
+
+  if(!Number.isFinite(n)){
+    return "—";
+  }
+
+  return (
+    n/1000
+  ).toLocaleString(
+    "fr-FR",
+    {
+      minimumFractionDigits:2,
+      maximumFractionDigits:2
+    }
+  )+" km";
+}
+
+function cgweb105FmtDuration(sec){
+  const n=
+    Math.max(
+      0,
+      Math.round(
+        Number(sec) || 0
+      )
+    );
+
+  const h=
+    Math.floor(n/3600);
+
+  const m=
+    Math.floor(
+      (n%3600)/60
+    );
+
+  const s=n%60;
+
+  return (
+    h
+      ? h+" h "
+      : ""
+  )+
+  String(m).padStart(
+    h ? 2 : 1,
+    "0"
+  )+
+  " min "+
+  String(s).padStart(2,"0")+
+  " s";
+}
+
+function cgweb105FmtTime(ms,iso){
+  const n=Number(ms);
+
+  if(Number.isFinite(n)){
+    return new Date(n)
+      .toLocaleTimeString(
+        "fr-FR",
+        {
+          hour:"2-digit",
+          minute:"2-digit"
+        }
+      );
+  }
+
+  const parsed=
+    iso
+      ? new Date(iso)
+      : null;
+
+  if(
+    parsed &&
+    !Number.isNaN(
+      parsed.getTime()
+    )
+  ){
+    return parsed.toLocaleTimeString(
+      "fr-FR",
+      {
+        hour:"2-digit",
+        minute:"2-digit"
+      }
+    );
+  }
+
+  return "—";
+}
+
+function cgweb105DetailHost(){
+  return (
+    ui?.activityDetail ||
+    document.getElementById(
+      "activityDetail"
+    ) ||
+    document.querySelector(
+      "[data-activity-detail]"
+    )
+  );
+}
+
+function cgweb105RemovePanel(){
+  document
+    .getElementById(
+      "cgweb105JoinPanel"
+    )
+    ?.remove();
+}
+
+function cgweb105CreatePanel(activity){
+  cgweb105RemovePanel();
+
+  const host=
+    cgweb105DetailHost();
+
+  if(!host){
+    return null;
+  }
+
+  const panel=
+    document.createElement(
+      "section"
+    );
+
+  panel.id=
+    "cgweb105JoinPanel";
+
+  panel.className=
+    "panel cgweb105-join-panel";
+
+  panel.dataset.activityId=
+    String(
+      activityKey(activity) || ""
+    );
+
+  panel.innerHTML=
+    '<div class="section-heading">'+
+      '<div>'+
+        '<p class="eyebrow">CGWEB105 · SAME_DAY_SAME_SPORT_JOIN001</p>'+
+        '<h3>Joindre des activités du même jour</h3>'+
+        '<p class="muted">Même sport strict · même date locale · activités WEBSPLIT exclues.</p>'+
+      '</div>'+
+      '<span id="cgweb105JoinPill" class="pill neutral">Non recherché</span>'+
+    '</div>'+
+    '<div class="row-actions">'+
+      '<button id="cgweb105FindJoinCandidates" type="button">Rechercher les activités analogues</button>'+
+    '</div>'+
+    '<p id="cgweb105JoinStatus" class="muted">Aucune activité candidate recherchée.</p>'+
+    '<div id="cgweb105CandidateList" class="cgweb105-candidates"></div>'+
+    '<div id="cgweb105Preview" class="cgweb105-preview hidden"></div>';
+
+  host.appendChild(
+    panel
+  );
+
+  const styleId=
+    "cgweb105JoinStyles";
+
+  if(
+    !document.getElementById(
+      styleId
+    )
+  ){
+    const style=
+      document.createElement(
+        "style"
+      );
+
+    style.id=styleId;
+
+    style.textContent=[
+      "#cgweb105JoinPanel{",
+      "  margin-top:14px;",
+      "}",
+      ".cgweb105-candidates{",
+      "  display:grid;",
+      "  gap:7px;",
+      "  margin-top:10px;",
+      "}",
+      ".cgweb105-candidate{",
+      "  display:grid;",
+      "  grid-template-columns:30px 72px minmax(160px,1fr) 95px 80px 95px 130px 100px;",
+      "  gap:8px;",
+      "  align-items:center;",
+      "  border:1px solid rgba(255,255,255,.09);",
+      "  border-radius:10px;",
+      "  padding:8px 10px;",
+      "}",
+      ".cgweb105-candidate input{",
+      "  width:18px;",
+      "  height:18px;",
+      "  accent-color:#a7ff2a;",
+      "}",
+      ".cgweb105-candidate > *{",
+      "  min-width:0;",
+      "}",
+      ".cgweb105-candidate .cgweb105-title,",
+      ".cgweb105-candidate .cgweb105-equipment{",
+      "  overflow:hidden;",
+      "  text-overflow:ellipsis;",
+      "  white-space:nowrap;",
+      "}",
+      ".cgweb105-preview{",
+      "  margin-top:12px;",
+      "  border-top:1px solid rgba(255,255,255,.10);",
+      "  padding-top:12px;",
+      "}",
+      ".cgweb105-preview-grid{",
+      "  display:grid;",
+      "  grid-template-columns:repeat(4,minmax(0,1fr));",
+      "  gap:8px;",
+      "}",
+      ".cgweb105-preview-grid article{",
+      "  border:1px solid color-mix(in srgb,#a7ff2a 28%,transparent);",
+      "  border-radius:10px;",
+      "  padding:8px 10px;",
+      "}",
+      ".cgweb105-preview-grid span{",
+      "  display:block;",
+      "  opacity:.72;",
+      "  font-size:.8rem;",
+      "}",
+      ".cgweb105-preview-grid strong{",
+      "  display:block;",
+      "  margin-top:2px;",
+      "}",
+      ".cgweb105-warning{",
+      "  margin-top:8px;",
+      "}",
+      "@media(max-width:980px){",
+      "  .cgweb105-candidate{",
+      "    grid-template-columns:30px 70px minmax(0,1fr) 95px;",
+      "  }",
+      "  .cgweb105-preview-grid{",
+      "    grid-template-columns:repeat(2,minmax(0,1fr));",
+      "  }",
+      "}"
+    ].join("\\n");
+
+    document.head.appendChild(
+      style
+    );
+  }
+
+  return panel;
+}
+
+function cgweb105SelectionRows(
+  payload,
+  panel
+){
+  const source=
+    payload?.source;
+
+  const checked=
+    [
+      ...(payload?.candidates || [])
+    ].filter(
+      row => {
+        const input=
+          panel.querySelector(
+            'input.cgweb105-join-check[data-activity-id="'+
+            CSS.escape(
+              String(row.activity_id)
+            )+
+            '"]'
+          );
+
+        return Boolean(
+          input?.checked
+        );
+      }
+    );
+
+  return source
+    ? [source,...checked]
+    : checked;
+}
+
+function cgweb105BuildPreview(
+  payload,
+  panel
+){
+  const preview=
+    panel.querySelector(
+      "#cgweb105Preview"
+    );
+
+  if(!preview){
+    return;
+  }
+
+  const rows=
+    cgweb105SelectionRows(
+      payload,
+      panel
+    )
+      .filter(Boolean)
+      .sort(
+        (a,b) =>
+          (
+            Number(
+              a.start_time_ms
+            ) || 0
+          )-
+          (
+            Number(
+              b.start_time_ms
+            ) || 0
+          )
+      );
+
+  if(rows.length<2){
+    preview.classList.remove(
+      "hidden"
+    );
+
+    preview.innerHTML=
+      '<p class="muted">Coche au moins une activité analogue pour construire la prévisualisation.</p>';
+    return;
+  }
+
+  const totalDistance=
+    rows.reduce(
+      (sum,row) =>
+        sum+
+        (
+          Number(
+            row.distance_m
+          ) || 0
+        ),
+      0
+    );
+
+  const totalElevation=
+    rows.reduce(
+      (sum,row) =>
+        sum+
+        (
+          Number(
+            row.elevation_gain_m
+          ) || 0
+        ),
+      0
+    );
+
+  const activeDuration=
+    rows.reduce(
+      (sum,row) =>
+        sum+
+        (
+          Number(
+            row.duration_s
+          ) || 0
+        ),
+      0
+    );
+
+  const start=
+    Math.min(
+      ...rows
+        .map(
+          row =>
+            Number(
+              row.start_time_ms
+            )
+        )
+        .filter(
+          Number.isFinite
+        )
+    );
+
+  const end=
+    Math.max(
+      ...rows
+        .map(
+          row =>
+            Number(
+              row.end_time_ms
+            )
+        )
+        .filter(
+          Number.isFinite
+        )
+    );
+
+  const amplitudeSec=
+    Number.isFinite(start) &&
+    Number.isFinite(end)
+      ? Math.max(
+          0,
+          Math.round(
+            (end-start)/1000
+          )
+        )
+      : null;
+
+  const gaps=[];
+  const overlaps=[];
+
+  for(
+    let i=1;
+    i<rows.length;
+    i++
+  ){
+    const previous=
+      rows[i-1];
+
+    const current=
+      rows[i];
+
+    const prevEnd=
+      Number(
+        previous.end_time_ms
+      );
+
+    const curStart=
+      Number(
+        current.start_time_ms
+      );
+
+    if(
+      !Number.isFinite(prevEnd) ||
+      !Number.isFinite(curStart)
+    ){
+      continue;
+    }
+
+    const delta=
+      Math.round(
+        (curStart-prevEnd)/1000
+      );
+
+    if(delta<0){
+      overlaps.push(
+        Math.abs(delta)
+      );
+    }else{
+      gaps.push(delta);
+    }
+  }
+
+  const equipment=
+    [
+      ...new Set(
+        rows
+          .map(
+            row =>
+              String(
+                row.equipment || ""
+              ).trim()
+          )
+          .filter(Boolean)
+      )
+    ];
+
+  const fitRoles=
+    rows.map(
+      row =>
+        row.fit_role ||
+        "ABSENT"
+    );
+
+  const selectedIds=
+    rows.map(
+      row =>
+        String(
+          row.activity_id
+        )
+    );
+
+  preview.classList.remove(
+    "hidden"
+  );
+
+  preview.innerHTML=
+    '<h4>Prévisualisation de la jonction</h4>'+
+    '<div class="cgweb105-preview-grid">'+
+      '<article><span>Activités</span><strong>'+
+        rows.length+
+      '</strong></article>'+
+      '<article><span>Distance cumulée</span><strong>'+
+        cgweb105FmtDistance(
+          totalDistance
+        )+
+      '</strong></article>'+
+      '<article><span>D+ cumulé</span><strong>'+
+        Math.round(
+          totalElevation
+        ).toLocaleString("fr-FR")+
+        ' m</strong></article>'+
+      '<article><span>Durée active</span><strong>'+
+        cgweb105FmtDuration(
+          activeDuration
+        )+
+      '</strong></article>'+
+      '<article><span>Amplitude</span><strong>'+
+        (
+          amplitudeSec!=null
+            ? cgweb105FmtDuration(
+                amplitudeSec
+              )
+            : "—"
+        )+
+      '</strong></article>'+
+      '<article><span>GAP total</span><strong>'+
+        cgweb105FmtDuration(
+          gaps.reduce(
+            (a,b)=>a+b,
+            0
+          )
+        )+
+      '</strong></article>'+
+      '<article><span>Matériels</span><strong>'+
+        cgweb105Escape(
+          equipment.join(" · ") ||
+          "—"
+        )+
+      '</strong></article>'+
+      '<article><span>FIT</span><strong>'+
+        cgweb105Escape(
+          fitRoles.join(" · ")
+        )+
+      '</strong></article>'+
+    '</div>'+
+    (
+      overlaps.length
+        ? '<p class="cgweb105-warning warn">⚠ Chevauchement temporel détecté : la jonction devra être bloquée tant que ce conflit n’est pas résolu.</p>'
+        : '<p class="cgweb105-warning muted">Aucun chevauchement temporel détecté.</p>'
+    )+
+    (
+      equipment.length>1
+        ? '<p class="cgweb105-warning muted">Matériels différents : la future activité jointe devra conserver la provenance de chaque segment.</p>'
+        : ''
+    )+
+    '<p class="muted">JOIN_LINEAGE001 · sources : '+
+      cgweb105Escape(
+        selectedIds.join(" · ")
+      )+
+    '</p>'+
+    '<p class="muted">CGWEB105 est volontairement en prévisualisation : aucune activité ni aucun FIT n’est modifié.</p>';
+}
+
+function cgweb105RenderCandidates(
+  activity,
+  payload,
+  panel
+){
+  const list=
+    panel.querySelector(
+      "#cgweb105CandidateList"
+    );
+
+  const status=
+    panel.querySelector(
+      "#cgweb105JoinStatus"
+    );
+
+  const pill=
+    panel.querySelector(
+      "#cgweb105JoinPill"
+    );
+
+  const candidates=
+    Array.isArray(
+      payload?.candidates
+    )
+      ? payload.candidates
+      : [];
+
+  if(pill){
+    pill.textContent=
+      candidates.length+
+      " candidate(s)";
+    pill.className=
+      "pill "+
+      (
+        candidates.length
+          ? "ok"
+          : "neutral"
+      );
+  }
+
+  if(status){
+    status.textContent=
+      "Activité ouverte incluse d’office · "+
+      candidates.length+
+      " autre(s) activité(s) du même sport et du même jour.";
+  }
+
+  if(!list){
+    return;
+  }
+
+  if(!candidates.length){
+    list.innerHTML=
+      '<p class="muted">Aucune autre activité compatible.</p>';
+    return;
+  }
+
+  list.innerHTML=
+    candidates.map(
+      row => (
+        '<label class="cgweb105-candidate">'+
+          '<input type="checkbox" class="cgweb105-join-check" data-activity-id="'+
+            cgweb105Escape(
+              row.activity_id
+            )+
+          '">'+
+          '<span>'+
+            cgweb105Escape(
+              cgweb105FmtTime(
+                row.start_time_ms,
+                row.start_iso
+              )
+            )+
+          '</span>'+
+          '<strong class="cgweb105-title" title="'+
+            cgweb105Escape(
+              row.activity_id
+            )+
+          '">'+
+            cgweb105Escape(
+              row.title
+            )+
+          '</strong>'+
+          '<span>'+
+            cgweb105Escape(
+              cgweb105FmtDistance(
+                row.distance_m
+              )
+            )+
+          '</span>'+
+          '<span>'+
+            Math.round(
+              Number(
+                row.elevation_gain_m
+              ) || 0
+            ).toLocaleString(
+              "fr-FR"
+            )+
+            ' m</span>'+
+          '<span>'+
+            cgweb105Escape(
+              cgweb105FmtDuration(
+                row.duration_s
+              )
+            )+
+          '</span>'+
+          '<span class="cgweb105-equipment">'+
+            cgweb105Escape(
+              row.equipment || "—"
+            )+
+          '</span>'+
+          '<span class="pill neutral">'+
+            cgweb105Escape(
+              row.fit_role || "ABSENT"
+            )+
+          '</span>'+
+        '</label>'
+      )
+    ).join("");
+
+  for(
+    const input
+    of list.querySelectorAll(
+      ".cgweb105-join-check"
+    )
+  ){
+    input.addEventListener(
+      "change",
+      ()=>{
+        cgweb105BuildPreview(
+          payload,
+          panel
+        );
+      }
+    );
+  }
+
+  cgweb105BuildPreview(
+    payload,
+    panel
+  );
+}
+
+async function cgweb105LoadCandidates(
+  activity,
+  panel
+){
+  const id=
+    String(
+      activityKey(activity) ||
+      ""
+    );
+
+  const status=
+    panel.querySelector(
+      "#cgweb105JoinStatus"
+    );
+
+  const pill=
+    panel.querySelector(
+      "#cgweb105JoinPill"
+    );
+
+  const button=
+    panel.querySelector(
+      "#cgweb105FindJoinCandidates"
+    );
+
+  if(!id){
+    if(status){
+      status.textContent=
+        "Identifiant activité indisponible.";
+    }
+    return;
+  }
+
+  const api=
+    window.SPORT_ACTIVITY_JOIN;
+
+  if(
+    !api ||
+    typeof api.candidates!==
+      "function"
+  ){
+    if(status){
+      status.textContent=
+        "Service CGWEB105 non chargé.";
+    }
+    return;
+  }
+
+  if(button){
+    button.disabled=true;
+  }
+
+  if(pill){
+    pill.textContent=
+      "Recherche…";
+  }
+
+  if(status){
+    status.textContent=
+      "Recherche même date locale + même sport strict…";
+  }
+
+  try{
+    const payload=
+      await api.candidates(id);
+
+    cgweb105RenderCandidates(
+      activity,
+      payload,
+      panel
+    );
+  }catch(error){
+    console.error(
+      "CGWEB105 candidates",
+      error
+    );
+
+    if(pill){
+      pill.textContent=
+        "Bloqué";
+      pill.className=
+        "pill warn";
+    }
+
+    if(status){
+      status.textContent=
+        error?.message ||
+        String(error);
+    }
+  }finally{
+    if(button){
+      button.disabled=false;
+    }
+  }
+}
+
+function cgweb105RenderJoinPanel(
+  activity
+){
+  if(!activity){
+    cgweb105RemovePanel();
+    return;
+  }
+
+  const panel=
+    cgweb105CreatePanel(
+      activity
+    );
+
+  if(!panel){
+    return;
+  }
+
+  const button=
+    panel.querySelector(
+      "#cgweb105FindJoinCandidates"
+    );
+
+  button?.addEventListener(
+    "click",
+    ()=>{
+      void cgweb105LoadCandidates(
+        activity,
+        panel
+      );
+    }
+  );
+}
+
+/* CGWEB105_JOIN_UI_END */

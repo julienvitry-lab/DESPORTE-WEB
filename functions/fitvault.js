@@ -8296,6 +8296,534 @@ async function c102FilterByFitProvenance(
 
   /* CGWEB104_FIT_RECOVERY_PLAN_HELPERS_END */
 
+  /* CGWEB105_JOIN_DISCOVERY_HELPERS_START */
+
+  function c105Text(value){
+    return String(
+      value ?? ""
+    ).trim();
+  }
+
+  function c105Num(value){
+    const n=Number(value);
+    return Number.isFinite(n)
+      ? n
+      : null;
+  }
+
+  function c105LocalDateKey(row){
+    const direct=[
+      row?.local_date,
+      row?.date_local,
+      row?.start_local_date,
+      row?.activity_date,
+      row?.date
+    ]
+      .map(c105Text)
+      .find(
+        value =>
+          /^\d{4}-\d{2}-\d{2}$/.test(
+            value
+          )
+      );
+
+    if(direct){
+      return direct;
+    }
+
+    const localIso=[
+      row?.start_local,
+      row?.start_local_iso,
+      row?.start_iso
+    ]
+      .map(c105Text)
+      .find(Boolean);
+
+    if(
+      localIso &&
+      /^\d{4}-\d{2}-\d{2}/.test(
+        localIso
+      )
+    ){
+      return localIso.slice(0,10);
+    }
+
+    const ms=
+      c105Num(
+        row?.start_time_ms ??
+        row?.start_ms
+      );
+
+    if(ms!=null){
+      const offsetMin=
+        c105Num(
+          row?.timezone_offset_min ??
+          row?.utc_offset_min ??
+          row?.tz_offset_min
+        );
+
+      const adjusted=
+        offsetMin!=null
+          ? ms+offsetMin*60000
+          : ms;
+
+      return new Date(adjusted)
+        .toISOString()
+        .slice(0,10);
+    }
+
+    return "";
+  }
+
+  function c105SportKey(row){
+    return c105Text(
+      row?.sport ??
+      row?.sport_type ??
+      row?.type
+    ).toLocaleLowerCase(
+      "fr-FR"
+    );
+  }
+
+  function c105IsSplitRelated(row){
+    if(!row){
+      return false;
+    }
+
+    if(
+      c105Text(
+        row.split_parent_activity_id
+      )
+    ){
+      return true;
+    }
+
+    if(
+      Array.isArray(
+        row.split_children_ids
+      ) &&
+      row.split_children_ids.length
+    ){
+      return true;
+    }
+
+    if(
+      c105Text(
+        row.split_status
+      )
+    ){
+      return true;
+    }
+
+    if(
+      c105Num(
+        row.split_part
+      )!=null ||
+      c105Num(
+        row.split_total
+      )!=null
+    ){
+      return true;
+    }
+
+    if(
+      c105Text(
+        row.import_source
+      ).toUpperCase()==="WEB_SPLIT"
+    ){
+      return true;
+    }
+
+    return false;
+  }
+
+  function c105StartMs(row){
+    const direct=
+      c105Num(
+        row?.start_time_ms ??
+        row?.start_ms
+      );
+
+    if(direct!=null){
+      return direct;
+    }
+
+    const iso=
+      c105Text(
+        row?.start_iso ??
+        row?.start_time_iso
+      );
+
+    const parsed=
+      iso
+        ? Date.parse(iso)
+        : NaN;
+
+    return Number.isFinite(parsed)
+      ? parsed
+      : null;
+  }
+
+  function c105DurationSec(row){
+    return c105Num(
+      row?.moving_time_s ??
+      row?.elapsed_time_s ??
+      row?.duration_s ??
+      row?.time_s
+    ) ?? 0;
+  }
+
+  function c105DistanceM(row){
+    return c105Num(
+      row?.distance_m ??
+      row?.distance
+    ) ?? 0;
+  }
+
+  function c105ElevationM(row){
+    return c105Num(
+      row?.elevation_gain_m ??
+      row?.total_elevation_gain ??
+      row?.dplus_m ??
+      row?.elevation_m
+    ) ?? 0;
+  }
+
+  function c105Equipment(row){
+    return c105Text(
+      row?.equipment_name ??
+      row?.equipment ??
+      row?.gear_name ??
+      row?.material_name
+    );
+  }
+
+  function c105Title(row,id){
+    return c105Text(
+      row?.custom_title ??
+      row?.title ??
+      row?.name
+    ) || (
+      "Activité "+
+      String(id || "")
+    );
+  }
+
+  async function c105SameDaySameSportCandidates(
+    uid,
+    activityId
+  ){
+    const id=
+      c105Text(activityId);
+
+    if(!id){
+      throw Object.assign(
+        new Error(
+          "activity_id requis."
+        ),
+        {status:400}
+      );
+    }
+
+    const [
+      data,
+      byActivity,
+      storageIndex
+    ]=
+      await Promise.all([
+        c099DirectoryData(
+          uid,
+          false
+        ),
+        c096LinkedRows(uid),
+        c096StorageIndex()
+      ]);
+
+    const sourceRaw=
+      data.rawById.get(id) ||
+      null;
+
+    const sourceRow=
+      data.rows.find(
+        row =>
+          String(
+            row.activity_id
+          )===id
+      ) || null;
+
+    const source=
+      sourceRaw
+        ? {
+            ...sourceRaw,
+            ...(sourceRow || {})
+          }
+        : sourceRow;
+
+    if(!source){
+      throw Object.assign(
+        new Error(
+          "Activité source introuvable."
+        ),
+        {status:404}
+      );
+    }
+
+    if(
+      source.deleted_at_ms!=null
+    ){
+      throw Object.assign(
+        new Error(
+          "La jonction ne peut pas partir d'une activité en corbeille."
+        ),
+        {status:409}
+      );
+    }
+
+    if(
+      c105IsSplitRelated(
+        source
+      )
+    ){
+      throw Object.assign(
+        new Error(
+          "NON_SPLIT_GUARD001 : l'activité ouverte appartient à une lignée WEBSPLIT."
+        ),
+        {status:409}
+      );
+    }
+
+    const dateKey=
+      c105LocalDateKey(
+        source
+      );
+
+    const sportKey=
+      c105SportKey(
+        source
+      );
+
+    if(!dateKey){
+      throw Object.assign(
+        new Error(
+          "Date locale de l'activité source indéterminable."
+        ),
+        {status:409}
+      );
+    }
+
+    if(!sportKey){
+      throw Object.assign(
+        new Error(
+          "Sport de l'activité source indéterminable."
+        ),
+        {status:409}
+      );
+    }
+
+    const fitState=
+      activityId =>
+        c103FitState(
+          activityId,
+          byActivity,
+          storageIndex
+        );
+
+    const compact=
+      (row,raw) => {
+        const merged={
+          ...(raw || {}),
+          ...(row || {})
+        };
+
+        const activityId=
+          c105Text(
+            row?.activity_id ??
+            raw?.id ??
+            raw?.activity_id
+          );
+
+        const startMs=
+          c105StartMs(
+            merged
+          );
+
+        const durationSec=
+          c105DurationSec(
+            merged
+          );
+
+        const state=
+          fitState(
+            activityId
+          );
+
+        return {
+          activity_id:
+            activityId,
+          title:
+            c105Title(
+              merged,
+              activityId
+            ),
+          local_date:
+            c105LocalDateKey(
+              merged
+            ),
+          sport:
+            c105Text(
+              merged?.sport ??
+              merged?.sport_type ??
+              merged?.type
+            ),
+          sport_key:
+            c105SportKey(
+              merged
+            ),
+          start_iso:
+            c105Text(
+              merged?.start_iso ??
+              merged?.start_time_iso
+            ),
+          start_time_ms:
+            startMs,
+          end_time_ms:
+            startMs!=null
+              ? startMs+
+                durationSec*1000
+              : null,
+          duration_s:
+            durationSec,
+          distance_m:
+            c105DistanceM(
+              merged
+            ),
+          elevation_gain_m:
+            c105ElevationM(
+              merged
+            ),
+          equipment:
+            c105Equipment(
+              merged
+            ),
+          fit_role:
+            state.role,
+          fit_status:
+            state.status,
+          is_split_related:
+            c105IsSplitRelated(
+              merged
+            )
+        };
+      };
+
+    const sourceCompact=
+      compact(
+        sourceRow || {
+          activity_id:id
+        },
+        sourceRaw
+      );
+
+    const candidates=[];
+
+    for(const row of data.rows){
+      const candidateId=
+        c105Text(
+          row.activity_id
+        );
+
+      if(
+        !candidateId ||
+        candidateId===id
+      ){
+        continue;
+      }
+
+      const raw=
+        data.rawById.get(
+          candidateId
+        ) || {};
+
+      const merged={
+        ...raw,
+        ...row
+      };
+
+      if(
+        merged.deleted_at_ms!=null
+      ){
+        continue;
+      }
+
+      if(
+        c105IsSplitRelated(
+          merged
+        )
+      ){
+        continue;
+      }
+
+      if(
+        c105LocalDateKey(
+          merged
+        )!==dateKey
+      ){
+        continue;
+      }
+
+      if(
+        c105SportKey(
+          merged
+        )!==sportKey
+      ){
+        continue;
+      }
+
+      candidates.push(
+        compact(
+          row,
+          raw
+        )
+      );
+    }
+
+    candidates.sort(
+      (a,b) =>
+        (
+          a.start_time_ms ??
+          Number.MAX_SAFE_INTEGER
+        )-
+        (
+          b.start_time_ms ??
+          Number.MAX_SAFE_INTEGER
+        )
+    );
+
+    return {
+      source:
+        sourceCompact,
+      local_date:
+        dateKey,
+      sport_key:
+        sportKey,
+      candidate_count:
+        candidates.length,
+      candidates,
+      join_lineage_preview:{
+        join_status:
+          "JOIN_PARENT",
+        join_source_activity_ids:[
+          id
+        ],
+        join_version:
+          "CGWEB105"
+      }
+    };
+  }
+
+  /* CGWEB105_JOIN_DISCOVERY_HELPERS_END */
+
+
 
 async function c099GlobalDirectoryQuery(
     uid,
@@ -10518,7 +11046,63 @@ if (action === "transfer_audit") {
           });
         }
 
-        /* CGWEB104_FIT_RECOVERY_PLAN_ACTIONS_END */
+
+        /* CGWEB105_JOIN_DISCOVERY_ACTIONS_START */
+
+        if (
+          action ===
+          "same_day_same_sport_join_candidates"
+        ) {
+          if (
+            req.method!=="GET" &&
+            req.method!=="POST"
+          ) {
+            return res.status(405).json({
+              error:"GET ou POST requis."
+            });
+          }
+
+          const activityId=
+            String(
+              req.method==="GET"
+                ? (
+                    req.query?.activity_id ||
+                    ""
+                  )
+                : (
+                    req.body?.activity_id ||
+                    ""
+                  )
+            ).trim();
+
+          const result=
+            await c105SameDaySameSportCandidates(
+              uid,
+              activityId
+            );
+
+          return res.json({
+            ok:true,
+            service:
+              "JOIN_CANDIDATE_DISCOVERY001",
+            join_service:
+              "SAME_DAY_SAME_SPORT_JOIN001",
+            guard:
+              "NON_SPLIT_GUARD001",
+            preview:
+              "JOIN_PREVIEW001",
+            lineage:
+              "JOIN_LINEAGE001",
+            version:
+              "CGWEB105",
+            read_only:true,
+            ...result
+          });
+        }
+
+        /* CGWEB105_JOIN_DISCOVERY_ACTIONS_END */
+
+/* CGWEB104_FIT_RECOVERY_PLAN_ACTIONS_END */
 
 /* CGWEB103_FIT_RECOVERY_ACTIONS_END */
 

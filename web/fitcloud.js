@@ -5479,6 +5479,40 @@ window.SPORT_FIT_RECOVERY_PLAN=
 
 /* CGWEB104_FIT_RECOVERY_CLIENT_END */
 
+
+/* CGWEB105_JOIN_CLIENT_START */
+
+async function c105JoinCandidates(
+  activityId
+){
+  return request(
+    "same_day_same_sport_join_candidates",
+    {
+      method:"POST",
+      headers:{
+        "Content-Type":
+          "application/json"
+      },
+      body:JSON.stringify({
+        activity_id:
+          String(
+            activityId || ""
+          )
+      })
+    }
+  );
+}
+
+window.SPORT_ACTIVITY_JOIN=
+  Object.freeze({
+    version:
+      "CGWEB105-SAME_DAY_SAME_SPORT_JOIN001",
+    candidates:
+      c105JoinCandidates
+  });
+
+/* CGWEB105_JOIN_CLIENT_END */
+
 function init() {
   node("webFitCloudFiles")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
   node("webFitCloudFolder")?.addEventListener("change", (e) => selectionChanged(e.currentTarget.files));
