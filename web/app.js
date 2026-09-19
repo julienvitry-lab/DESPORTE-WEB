@@ -6028,19 +6028,6 @@ function v081ActivityId(activity) {
 
 function v081SetQuickState(control, state, label = "") {
 
-  /* CGWEB096_DOWNLOAD_BUTTON_REWIRE001 */
-  const __cgweb096ActivityId=
-    cgweb096ExtractActivityId(
-      this,
-      ...Array.from(arguments)
-    );
-
-  if(__cgweb096ActivityId){
-    void cgweb096DirectoryDownload(
-      __cgweb096ActivityId
-    );
-    return;
-  }
 
   if (!control) return;
   control.classList.remove("is-pending", "is-available", "is-unavailable", "is-busy", "is-error");
@@ -25280,3 +25267,346 @@ if(document.readyState==="loading"){
 }
 
 /* CGWEB096_DIRECTORY_REWIRE_END */
+
+/* CGWEB096_FIX5_DOWNLOAD_HANDLER_EXACT001_START */
+
+function cgweb096WaitForApi(timeoutMs=8000){
+  const started=Date.now();
+
+  return new Promise((resolve,reject)=>{
+    const probe=()=>{
+      const api=window.SPORT_DIRECTORY_FIT;
+
+      if(
+        api &&
+        typeof api.resolve==="function" &&
+        typeof api.audit==="function"
+      ){
+        resolve(api);
+        return;
+      }
+
+      if(Date.now()-started>=timeoutMs){
+        reject(
+          new Error(
+            "Service SPORT_DIRECTORY_FIT non chargé après attente."
+          )
+        );
+        return;
+      }
+
+      setTimeout(probe,50);
+    };
+
+    probe();
+  });
+}
+
+function cgweb096DownloadSignal(control){
+  if(!control)return "";
+
+  return [
+    control.getAttribute?.("title"),
+    control.getAttribute?.("aria-label"),
+    control.getAttribute?.("data-action"),
+    control.getAttribute?.("data-tooltip"),
+    control.getAttribute?.("name"),
+    control.id,
+    typeof control.className==="string"
+      ? control.className
+      : "",
+    control.textContent,
+    control.querySelector?.("title")?.textContent
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function cgweb096ExactActivityId(control){
+  if(!control)return "";
+
+  const candidates=[
+    control,
+    control.closest?.(
+      "[data-activity-id]"
+    ),
+    control.closest?.(
+      "[data-activity_id]"
+    ),
+    control.closest?.(
+      "[data-activity]"
+    ),
+    control.closest?.(
+      "[data-id]"
+    )
+  ].filter(Boolean);
+
+  for(const node of candidates){
+    const values=[
+      node.dataset?.activityId,
+      node.dataset?.activity_id,
+      node.dataset?.activity,
+      node.getAttribute?.(
+        "data-activity-id"
+      ),
+      node.getAttribute?.(
+        "data-activity_id"
+      ),
+      node.getAttribute?.(
+        "data-activity"
+      )
+    ];
+
+    for(const raw of values){
+      const id=String(raw||"").trim();
+
+      if(
+        /^\d{1,22}$/.test(id) ||
+        /^[A-Za-z0-9_-]{6,80}$/.test(id)
+      ){
+        return id;
+      }
+    }
+  }
+
+  /*
+   * Dernier recours : réutilise l'extracteur CGWEB096
+   * existant, mais uniquement après avoir confirmé
+   * qu'on se trouve sur un vrai contrôle Télécharger.
+   */
+  return cgweb096ExtractActivityId(
+    control,
+    ...candidates
+  );
+}
+
+function cgweb096IsExactDownloadControl(control){
+  if(
+    !control ||
+    !control.closest?.(
+      "#activityDirectorySection"
+    )
+  ){
+    return false;
+  }
+
+  const signal=
+    cgweb096DownloadSignal(control);
+
+  const explicit=
+    control.hasAttribute?.(
+      "data-fit-download"
+    ) ||
+    control.dataset?.action===
+      "download-fit" ||
+    control.dataset?.action===
+      "fit-download";
+
+  const lexical=
+    /\bfit\b/i.test(signal) &&
+    /(télécharg|telecharg|download)/i
+      .test(signal);
+
+  const downloadOnly=
+    /(télécharger|telecharger|download)/i
+      .test(signal) &&
+    (
+      control.matches?.(
+        "button,a,[role='button']"
+      ) ?? false
+    );
+
+  return Boolean(
+    explicit ||
+    lexical ||
+    downloadOnly
+  );
+}
+
+function cgweb096BindExactDownloadControls(
+  root=document
+){
+  const directory=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if(!directory)return 0;
+
+  const scope=
+    root instanceof Element &&
+    directory.contains(root)
+      ? root
+      : directory;
+
+  const controls=[
+    ...(scope.matches?.(
+      "button,a,[role='button']"
+    )
+      ? [scope]
+      : []),
+    ...scope.querySelectorAll(
+      "button,a,[role='button']"
+    )
+  ];
+
+  let bound=0;
+
+  for(const control of controls){
+    if(
+      control.dataset
+        ?.cgweb096ExactDownload==="1"
+    ){
+      continue;
+    }
+
+    if(
+      !cgweb096IsExactDownloadControl(
+        control
+      )
+    ){
+      continue;
+    }
+
+    const activityId=
+      cgweb096ExactActivityId(
+        control
+      );
+
+    if(!activityId){
+      continue;
+    }
+
+    control.dataset
+      .cgweb096ExactDownload="1";
+
+    control.dataset
+      .cgweb096ActivityId=
+        activityId;
+
+    control.addEventListener(
+      "click",
+      async(event)=>{
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+
+        const id=
+          control.dataset
+            .cgweb096ActivityId;
+
+        try{
+          await cgweb096WaitForApi();
+
+          await cgweb096DirectoryDownload(
+            id
+          );
+        }catch(error){
+          cgweb096Message(
+            "Téléchargement FIT impossible : " +
+              (error?.message||error),
+            "error"
+          );
+        }
+      },
+      true
+    );
+
+    bound+=1;
+  }
+
+  return bound;
+}
+
+let cgweb096DirectoryObserver=null;
+
+function cgweb096InstallExactDownloadHandler(){
+  const directory=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if(!directory)return 0;
+
+  const initial=
+    cgweb096BindExactDownloadControls(
+      directory
+    );
+
+  if(!cgweb096DirectoryObserver){
+    cgweb096DirectoryObserver=
+      new MutationObserver(
+        (mutations)=>{
+          for(const mutation of mutations){
+            for(const node of mutation.addedNodes){
+              if(node instanceof Element){
+                cgweb096BindExactDownloadControls(
+                  node
+                );
+              }
+            }
+          }
+        }
+      );
+
+    cgweb096DirectoryObserver.observe(
+      directory,
+      {
+        childList:true,
+        subtree:true
+      }
+    );
+  }
+
+  return initial;
+}
+
+async function cgweb096EnsureApiReady(){
+  try{
+    await cgweb096WaitForApi();
+    return true;
+  }catch(error){
+    console.error(
+      "CGWEB096 FITCLOUD_LOAD_GUARD001",
+      error
+    );
+    return false;
+  }
+}
+
+function cgweb096Fix5Boot(){
+  /*
+   * Aucune résolution/téléchargement n'est lancée
+   * au boot : on vérifie seulement la disponibilité
+   * de l'API, puis on câble les VRAIS contrôles du
+   * Répertoire.
+   */
+  void cgweb096EnsureApiReady();
+
+  cgweb096InstallExactDownloadHandler();
+
+  setTimeout(
+    cgweb096InstallExactDownloadHandler,
+    250
+  );
+
+  setTimeout(
+    cgweb096InstallExactDownloadHandler,
+    1000
+  );
+}
+
+if(document.readyState==="loading"){
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb096Fix5Boot,
+    {once:true}
+  );
+}else{
+  queueMicrotask(
+    cgweb096Fix5Boot
+  );
+}
+
+/* CGWEB096_FIX5_DOWNLOAD_HANDLER_EXACT001_END */
