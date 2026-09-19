@@ -26763,6 +26763,266 @@ async function cgweb099Download(
   }
 }
 
+
+/* CGWEB099_FIX3_UI_HELPERS_START */
+
+function cgweb099InstallFix3Styles(){
+  const id="cgweb099Fix3Styles";
+
+  let style=
+    document.getElementById(id);
+
+  if(style)return style;
+
+  style=
+    document.createElement("style");
+
+  style.id=id;
+
+  style.textContent=
+    [
+      "#cgweb099GlobalDirectory{min-height:0!important;height:auto!important;margin-bottom:0!important;padding-bottom:0!important;}",
+      "#cgweb099GlobalDirectory>.cgweb099-pages{min-height:0!important;height:auto!important;margin-top:.35rem!important;margin-bottom:0!important;padding-top:0!important;padding-bottom:0!important;}",
+      "#cgweb099GlobalDirectory+.cgweb099-legacy-hidden{display:none!important;}",
+      "#activityDirectorySection{min-height:0!important;}",
+      "#cgweb099GlobalDirectory details>summary::after{content:none!important;display:none!important;}",
+      "#cgweb099GlobalDirectory details>summary:after{content:none!important;display:none!important;}",
+      "#cgweb099DuplicateAuditMoved details>summary::after{content:none!important;display:none!important;}",
+      "#cgweb099DuplicateAuditMoved details>summary:after{content:none!important;display:none!important;}",
+      ".cgweb099-fix3-spacer-kill{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;}"
+    ].join("\n");
+
+  document.head.appendChild(style);
+
+  return style;
+}
+
+function cgweb099DuplicateMarkup(){
+  return (
+    '<div id="cgweb099DuplicateAuditMoved" class="cgweb099-duplicate-moved">'+
+      '<details>'+
+        '<summary>Audit des doublons d’activités</summary>'+
+        '<div class="cgweb099-duplicate-box">'+
+          '<div><button id="cgweb099DuplicateRun" type="button">Auditer les doublons</button></div>'+
+          '<p id="cgweb099DuplicateStatus" class="muted">Audit non lancé. Aucune suppression automatique.</p>'+
+          '<div id="cgweb099DuplicateRows"></div>'+
+        '</div>'+
+      '</details>'+
+    '</div>'
+  );
+}
+
+function cgweb099ResolvePlusFilesPane(){
+  const directIds=[
+    "filesPane",
+    "filesSection",
+    "plusFilesPane",
+    "plusFilesSection",
+    "paneFiles",
+    "tabFiles"
+  ];
+
+  for(const id of directIds){
+    const node=
+      document.getElementById(id);
+
+    if(node)return node;
+  }
+
+  const candidates=[
+    ...document.querySelectorAll(
+      'button,[role="tab"],a'
+    )
+  ];
+
+  for(const tab of candidates){
+    const text=
+      String(
+        tab.textContent || ""
+      ).trim();
+
+    if(text!=="Fichiers")continue;
+
+    const ids=[
+      tab.getAttribute("aria-controls"),
+      tab.dataset?.target,
+      tab.dataset?.pane,
+      tab.getAttribute("href")
+    ]
+      .filter(Boolean)
+      .map(
+        value =>
+          String(value).replace(/^#/,"")
+      );
+
+    for(const id of ids){
+      const target=
+        document.getElementById(id);
+
+      if(target)return target;
+    }
+  }
+
+  const headings=[
+    ...document.querySelectorAll(
+      'h1,h2,h3,h4,h5,strong'
+    )
+  ];
+
+  for(const heading of headings){
+    const text=
+      String(
+        heading.textContent || ""
+      ).trim();
+
+    if(text!=="Fichiers")continue;
+
+    const section=
+      heading.closest(
+        'section,[role="tabpanel"],.pane,.tab-pane,.panel'
+      );
+
+    if(section)return section;
+
+    if(heading.parentElement){
+      return heading.parentElement;
+    }
+  }
+
+  return null;
+}
+
+function cgweb099EnsureDuplicateAuditInPlus(){
+  let moved=
+    document.getElementById(
+      "cgweb099DuplicateAuditMoved"
+    );
+
+  if(!moved){
+    const holder=
+      document.createElement("div");
+
+    holder.innerHTML=
+      cgweb099DuplicateMarkup();
+
+    moved=
+      holder.firstElementChild;
+  }
+
+  const target=
+    cgweb099ResolvePlusFilesPane();
+
+  if(!target){
+    if(!moved.isConnected){
+      moved.style.display="none";
+      document.body.appendChild(moved);
+    }
+
+    return false;
+  }
+
+  moved.style.display="";
+
+  if(
+    moved.parentElement!==target
+  ){
+    target.appendChild(moved);
+  }
+
+  return true;
+}
+
+function cgweb099WatchDuplicateAuditHome(){
+  if(
+    window.cgweb099Fix3Observer
+  ){
+    return;
+  }
+
+  const observer=
+    new MutationObserver(
+      ()=>{
+        cgweb099EnsureDuplicateAuditInPlus();
+      }
+    );
+
+  observer.observe(
+    document.documentElement,
+    {
+      childList:true,
+      subtree:true
+    }
+  );
+
+  window.cgweb099Fix3Observer=
+    observer;
+}
+
+function cgweb099KillDirectorySpacer(){
+  const section=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  const host=
+    document.getElementById(
+      "cgweb099GlobalDirectory"
+    );
+
+  if(!section || !host)return;
+
+  /*
+   * Supprime les wrappers vides laissés par l'ancienne double-table,
+   * sans toucher aux lignes historiques.
+   */
+  const candidates=[
+    ...section.children
+  ];
+
+  for(const node of candidates){
+    if(
+      node===host ||
+      node.contains(host)
+    ){
+      continue;
+    }
+
+    if(
+      node.querySelector?.(
+        '[data-activity-id],.activity-row,.activity-card'
+      )
+    ){
+      continue;
+    }
+
+    const text=
+      String(
+        node.textContent || ""
+      ).replace(/\s+/g," ").trim();
+
+    const controls=
+      node.querySelectorAll?.(
+        'button,input,select,a,details'
+      ).length || 0;
+
+    const rect=
+      node.getBoundingClientRect?.();
+
+    if(
+      !text &&
+      controls===0 &&
+      rect &&
+      rect.height>12
+    ){
+      node.classList.add(
+        "cgweb099-fix3-spacer-kill"
+      );
+    }
+  }
+}
+
+/* CGWEB099_FIX3_UI_HELPERS_END */
+
 function cgweb099BuildShell(){
   const section=
     document.getElementById(
@@ -26771,7 +27031,9 @@ function cgweb099BuildShell(){
 
   if(!section)return null;
 
-  section.dataset.cgweb099Global="2";
+  cgweb099InstallFix3Styles();
+
+  section.dataset.cgweb099Global="3";
 
   let host=
     cgweb099Node(
@@ -26788,13 +27050,15 @@ function cgweb099BuildShell(){
     section.prepend(host);
   }
 
-  /*
-   * FIX2 : le host global ne contient PLUS de table d'activités.
-   * Les lignes restent exclusivement celles du renderer historique.
-   */
-  host.dataset.cgweb099Fix2=
-    "SINGLE_DIRECTORY_RENDER001";
+  host.dataset.cgweb099Fix3=
+    "DIRECTORY_COMPACT_UI001";
 
+  /*
+   * FIX3 :
+   * - aucun audit dans le Répertoire ;
+   * - aucun tableau global ;
+   * - uniquement filtres + pagination globale.
+   */
   host.innerHTML=
     '<details open>'+
       '<summary>Tri des activités</summary>'+
@@ -26822,15 +27086,19 @@ function cgweb099BuildShell(){
         '<span id="cgweb099PageLabel"></span>'+
         '<label>Par page <select id="cgweb099Limit"><option>50</option><option selected>100</option></select></label>'+
       '</div>'+
-    '</div>'+
-    '<details>'+
-      '<summary>Audit des doublons d’activités</summary>'+
-      '<div class="cgweb099-duplicate-box">'+
-        '<div><button id="cgweb099DuplicateRun" type="button">Auditer les doublons</button></div>'+
-        '<p id="cgweb099DuplicateStatus" class="muted">Audit non lancé. Aucune suppression automatique.</p>'+
-        '<div id="cgweb099DuplicateRows"></div>'+
-      '</div>'+
-    '</details>';
+    '</div>';
+
+  cgweb099EnsureDuplicateAuditInPlus();
+  cgweb099WatchDuplicateAuditHome();
+
+  requestAnimationFrame(
+    cgweb099KillDirectorySpacer
+  );
+
+  setTimeout(
+    cgweb099KillDirectorySpacer,
+    150
+  );
 
   return host;
 }
