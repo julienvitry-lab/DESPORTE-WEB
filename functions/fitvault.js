@@ -6752,6 +6752,21 @@ async function c091TransferAudit(uid) {
       ).trim()
         .toLowerCase();
 
+    const dateFromMs =
+      Number(
+        input?.date_from_ms
+      );
+
+    const dateToMs =
+      Number(
+        input?.date_to_ms
+      );
+
+    const hasDateRange =
+      Number.isFinite(dateFromMs) &&
+      Number.isFinite(dateToMs) &&
+      dateToMs > dateFromMs;
+
     return rows.filter(row => {
       if (
         year &&
@@ -6759,6 +6774,34 @@ async function c091TransferAudit(uid) {
         row.year !== year
       ) {
         return false;
+      }
+
+      if (
+        hasDateRange
+      ) {
+        let rowMs =
+          Number(
+            row.start_time_ms
+          );
+
+        if (
+          !Number.isFinite(rowMs)
+        ) {
+          rowMs =
+            Date.parse(
+              String(
+                row.start_iso || ""
+              )
+            );
+        }
+
+        if (
+          !Number.isFinite(rowMs) ||
+          rowMs < dateFromMs ||
+          rowMs >= dateToMs
+        ) {
+          return false;
+        }
       }
 
       if (

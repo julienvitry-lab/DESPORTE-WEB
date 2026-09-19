@@ -27023,6 +27023,222 @@ function cgweb099KillDirectorySpacer(){
 
 /* CGWEB099_FIX3_UI_HELPERS_END */
 
+
+/* CGWEB099_FIX4_UI_HELPERS_START */
+
+function cgweb099InstallFix4Styles(){
+  const id="cgweb099Fix4Styles";
+
+  let style=
+    document.getElementById(id);
+
+  if(style)return style;
+
+  style=
+    document.createElement("style");
+
+  style.id=id;
+
+  style.textContent=
+    [
+      "#cgweb099GlobalDirectory>.cgweb099-pages{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;}",
+      "html body #activityDirectorySection #cgweb099GlobalDirectory>details>summary::before{content:none!important;display:none!important;width:0!important;margin:0!important;padding:0!important;}",
+      "html body #activityDirectorySection #cgweb099GlobalDirectory>details>summary::after{content:none!important;display:none!important;width:0!important;margin:0!important;padding:0!important;}",
+      "html body #activityDirectorySection #cgweb099GlobalDirectory>details>summary:before{content:none!important;display:none!important;}",
+      "html body #activityDirectorySection #cgweb099GlobalDirectory>details>summary:after{content:none!important;display:none!important;}",
+      "#activityDirectorySection .cgweb099-fix4-one-line{flex-wrap:nowrap!important;align-items:center!important;}",
+      "#activityDirectorySection .cgweb099-fix4-one-line>*{min-width:0;white-space:nowrap!important;}",
+      "#activityDirectorySection .cgweb099-fix4-one-line>.cgweb099-fix4-download-cell{flex:0 0 44px!important;width:44px!important;min-width:44px!important;max-width:44px!important;overflow:visible!important;text-overflow:clip!important;}",
+      "#activityDirectorySection .cgweb099-fix4-one-line>:not(.cgweb099-fix4-download-cell){overflow:hidden;text-overflow:ellipsis;}",
+      "#activityDirectorySection .cgweb099-fix4-download{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 34px!important;width:34px!important;min-width:34px!important;max-width:34px!important;height:34px!important;margin:0!important;white-space:nowrap!important;}",
+      "#activityDirectorySection .cgweb099-fix4-one-line td{white-space:nowrap!important;vertical-align:middle!important;}",
+      "#activityDirectorySection .cgweb099-fix4-one-line td.cgweb099-fix4-download-cell{width:44px!important;min-width:44px!important;max-width:44px!important;}"
+    ].join("\n");
+
+  document.head.appendChild(style);
+
+  return style;
+}
+
+function cgweb099NormalizeDisclosureMarker(){
+  const summary=
+    document.querySelector(
+      "#cgweb099GlobalDirectory>details>summary"
+    );
+
+  if(!summary)return;
+
+  /*
+   * Notre summary n'a volontairement aucun contenu textuel :
+   * seul le triangle natif <details> doit rester visible.
+   * On retire donc tout éventuel caret/chevron ajouté en enfant.
+   */
+  for(
+    const child
+    of [...summary.children]
+  ){
+    child.remove();
+  }
+}
+
+function cgweb099LocalDateBounds(){
+  const value=
+    String(
+      cgweb099Node(
+        "cgweb099Date"
+      )?.value || ""
+    ).trim();
+
+  if(
+    !/^\d{4}-\d{2}-\d{2}$/.test(
+      value
+    )
+  ){
+    return {
+      from:null,
+      to:null
+    };
+  }
+
+  const [year,month,day]=
+    value.split("-")
+      .map(Number);
+
+  const from=
+    new Date(
+      year,
+      month-1,
+      day,
+      0,0,0,0
+    );
+
+  const to=
+    new Date(
+      year,
+      month-1,
+      day+1,
+      0,0,0,0
+    );
+
+  return {
+    from:from.getTime(),
+    to:to.getTime()
+  };
+}
+
+function cgweb099IsDownloadControl(control){
+  const probe=
+    [
+      control?.getAttribute?.("title"),
+      control?.getAttribute?.("aria-label"),
+      control?.getAttribute?.("download"),
+      control?.className,
+      control?.textContent
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+  return (
+    /télécharg|telecharg|download/.test(
+      probe
+    ) ||
+    (
+      /fit/.test(probe) &&
+      /original|cloud|fichier/.test(probe)
+    )
+  );
+}
+
+function cgweb099FixDirectoryRowLayout(){
+  const section=
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if(!section)return;
+
+  const controls=[
+    ...section.querySelectorAll(
+      "button,a"
+    )
+  ];
+
+  for(const control of controls){
+    if(
+      control.closest(
+        "#cgweb099GlobalDirectory"
+      )
+    ){
+      continue;
+    }
+
+    if(
+      !cgweb099IsDownloadControl(
+        control
+      )
+    ){
+      continue;
+    }
+
+    control.classList.add(
+      "cgweb099-fix4-download"
+    );
+
+    const row=
+      control.closest(
+        "[data-activity-id],.activity-row,.activity-card,tr"
+      );
+
+    if(!row)continue;
+
+    row.classList.add(
+      "cgweb099-fix4-one-line"
+    );
+
+    let cell=control;
+
+    while(
+      cell.parentElement &&
+      cell.parentElement!==row
+    ){
+      cell=cell.parentElement;
+    }
+
+    if(
+      cell.parentElement===row
+    ){
+      cell.classList.add(
+        "cgweb099-fix4-download-cell"
+      );
+    }
+  }
+
+  /*
+   * Même les lignes sans bouton visible gardent une seule ligne.
+   */
+  for(
+    const row
+    of section.querySelectorAll(
+      "[data-activity-id],.activity-row,.activity-card"
+    )
+  ){
+    if(
+      row.closest(
+        "#cgweb099GlobalDirectory"
+      )
+    ){
+      continue;
+    }
+
+    row.classList.add(
+      "cgweb099-fix4-one-line"
+    );
+  }
+}
+
+/* CGWEB099_FIX4_UI_HELPERS_END */
+
 function cgweb099BuildShell(){
   const section=
     document.getElementById(
@@ -27032,8 +27248,9 @@ function cgweb099BuildShell(){
   if(!section)return null;
 
   cgweb099InstallFix3Styles();
+  cgweb099InstallFix4Styles();
 
-  section.dataset.cgweb099Global="3";
+  section.dataset.cgweb099Global="4";
 
   let host=
     cgweb099Node(
@@ -27050,20 +27267,22 @@ function cgweb099BuildShell(){
     section.prepend(host);
   }
 
-  host.dataset.cgweb099Fix3=
-    "DIRECTORY_COMPACT_UI001";
+  host.dataset.cgweb099Fix4=
+    "FILTER_CLOSED_DEFAULT001";
 
   /*
-   * FIX3 :
-   * - aucun audit dans le Répertoire ;
-   * - aucun tableau global ;
-   * - uniquement filtres + pagination globale.
+   * Pas d'attribut "open" :
+   * le filtre est fermé par défaut.
+   *
+   * Summary vide :
+   * seul le triangle natif plein du navigateur est visible.
    */
   host.innerHTML=
-    '<details open>'+
-      '<summary>Tri des activités</summary>'+
+    '<details>'+
+      '<summary aria-label="Tri des activités"></summary>'+
       '<div class="cgweb099-filter-grid">'+
         '<label>Année<select id="cgweb099Year"><option value="ALL">Toutes</option></select></label>'+
+        '<label>Date<input id="cgweb099Date" type="date"></label>'+
         '<label>Sport<select id="cgweb099Sport"><option value="all">Tous</option></select></label>'+
         '<label>Matériel<select id="cgweb099Equipment"><option value="all">Tous</option></select></label>'+
         '<label>Repère<input id="cgweb099Marker" placeholder="B, Q, R…"></label>'+
@@ -27076,28 +27295,28 @@ function cgweb099BuildShell(){
         '<button id="cgweb099Reset" type="button">Réinitialiser</button>'+
         '<button id="cgweb099Refresh" type="button">Actualiser la base</button>'+
       '</div>'+
-    '</details>'+
-    '<div class="cgweb099-pages">'+
-      '<div class="group">'+
-        '<button id="cgweb099Prev" type="button">← Précédent</button>'+
-        '<button id="cgweb099Next" type="button">Suivant →</button>'+
-      '</div>'+
-      '<div class="group">'+
-        '<span id="cgweb099PageLabel"></span>'+
-        '<label>Par page <select id="cgweb099Limit"><option>50</option><option selected>100</option></select></label>'+
-      '</div>'+
-    '</div>';
+    '</details>';
+
+  cgweb099NormalizeDisclosureMarker();
 
   cgweb099EnsureDuplicateAuditInPlus();
   cgweb099WatchDuplicateAuditHome();
 
   requestAnimationFrame(
-    cgweb099KillDirectorySpacer
+    ()=>{
+      cgweb099KillDirectorySpacer();
+      cgweb099FixDirectoryRowLayout();
+      cgweb099NormalizeDisclosureMarker();
+    }
   );
 
   setTimeout(
-    cgweb099KillDirectorySpacer,
-    150
+    ()=>{
+      cgweb099KillDirectorySpacer();
+      cgweb099FixDirectoryRowLayout();
+      cgweb099NormalizeDisclosureMarker();
+    },
+    180
   );
 
   return host;
@@ -27247,10 +27466,17 @@ function cgweb099FillSelect(
 function cgweb099Filters(
   forceRefresh=false
 ){
+  const date=
+    cgweb099LocalDateBounds();
+
   return {
     year:
       cgweb099Node("cgweb099Year")
         ?.value || "ALL",
+    date_from_ms:
+      date.from,
+    date_to_ms:
+      date.to,
     sport:
       cgweb099Node("cgweb099Sport")
         ?.value || "all",
@@ -27269,7 +27495,7 @@ function cgweb099Filters(
     limit:
       cgweb099State.limit,
     offset:
-      cgweb099State.offset,
+      0,
     force_refresh:
       forceRefresh
   };
@@ -27519,6 +27745,9 @@ function cgweb099RenderRows(rows){
   applyFiltersAndRender();
 
   cgweb099HideLegacy();
+
+  cgweb099FixDirectoryRowLayout();
+  cgweb099NormalizeDisclosureMarker();
 }
 
 async function cgweb099OpenActivity(
@@ -28116,6 +28345,7 @@ function cgweb099Wire(){
     "cgweb099Year",
     "cgweb099Sport",
     "cgweb099Equipment",
+    "cgweb099Date",
     "cgweb099Sort"
   ]){
     cgweb099Node(id)
@@ -28195,6 +28425,7 @@ function cgweb099Wire(){
             ["cgweb099Year","ALL"],
             ["cgweb099Sport","all"],
             ["cgweb099Equipment","all"],
+            ["cgweb099Date",""],
             ["cgweb099Marker",""],
             ["cgweb099Search",""],
             ["cgweb099Sort","newest"]
