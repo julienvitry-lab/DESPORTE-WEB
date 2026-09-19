@@ -30739,7 +30739,7 @@ function cgweb105CreatePanel(activity){
       '</div>'+
       '<span id="cgweb105JoinPill" class="pill neutral">Non recherché</span>'+
     '</div>'+
-    '<div class="row-actions">'+
+    '<div class="row-actions cgweb105-actions">'+
       '<button id="cgweb105FindJoinCandidates" type="button">Rechercher les activités analogues</button>'+
     '</div>'+
     '<p id="cgweb105JoinStatus" class="muted">Aucune activité candidate recherchée.</p>'+
@@ -30753,91 +30753,52 @@ function cgweb105CreatePanel(activity){
   const styleId=
     "cgweb105JoinStyles";
 
-  if(
-    !document.getElementById(
+  let style=
+    document.getElementById(
       styleId
-    )
-  ){
-    const style=
+    );
+
+  if(!style){
+    style=
       document.createElement(
         "style"
       );
 
     style.id=styleId;
-
-    style.textContent=[
-      "#cgweb105JoinPanel{",
-      "  margin-top:14px;",
-      "}",
-      ".cgweb105-candidates{",
-      "  display:grid;",
-      "  gap:7px;",
-      "  margin-top:10px;",
-      "}",
-      ".cgweb105-candidate{",
-      "  display:grid;",
-      "  grid-template-columns:30px 72px minmax(160px,1fr) 95px 80px 95px 130px 100px;",
-      "  gap:8px;",
-      "  align-items:center;",
-      "  border:1px solid rgba(255,255,255,.09);",
-      "  border-radius:10px;",
-      "  padding:8px 10px;",
-      "}",
-      ".cgweb105-candidate input{",
-      "  width:18px;",
-      "  height:18px;",
-      "  accent-color:#a7ff2a;",
-      "}",
-      ".cgweb105-candidate > *{",
-      "  min-width:0;",
-      "}",
-      ".cgweb105-candidate .cgweb105-title,",
-      ".cgweb105-candidate .cgweb105-equipment{",
-      "  overflow:hidden;",
-      "  text-overflow:ellipsis;",
-      "  white-space:nowrap;",
-      "}",
-      ".cgweb105-preview{",
-      "  margin-top:12px;",
-      "  border-top:1px solid rgba(255,255,255,.10);",
-      "  padding-top:12px;",
-      "}",
-      ".cgweb105-preview-grid{",
-      "  display:grid;",
-      "  grid-template-columns:repeat(4,minmax(0,1fr));",
-      "  gap:8px;",
-      "}",
-      ".cgweb105-preview-grid article{",
-      "  border:1px solid color-mix(in srgb,#a7ff2a 28%,transparent);",
-      "  border-radius:10px;",
-      "  padding:8px 10px;",
-      "}",
-      ".cgweb105-preview-grid span{",
-      "  display:block;",
-      "  opacity:.72;",
-      "  font-size:.8rem;",
-      "}",
-      ".cgweb105-preview-grid strong{",
-      "  display:block;",
-      "  margin-top:2px;",
-      "}",
-      ".cgweb105-warning{",
-      "  margin-top:8px;",
-      "}",
-      "@media(max-width:980px){",
-      "  .cgweb105-candidate{",
-      "    grid-template-columns:30px 70px minmax(0,1fr) 95px;",
-      "  }",
-      "  .cgweb105-preview-grid{",
-      "    grid-template-columns:repeat(2,minmax(0,1fr));",
-      "  }",
-      "}"
-    ].join("\\n");
-
     document.head.appendChild(
       style
     );
   }
+
+  style.textContent=[
+    "#cgweb105JoinPanel{margin-top:14px;overflow:hidden;}",
+    "#cgweb105JoinPanel .section-heading{align-items:flex-start;}",
+    ".cgweb105-actions{margin-top:8px;}",
+    ".cgweb105-candidates{display:grid;gap:6px;margin-top:10px;overflow-x:auto;}",
+    ".cgweb105-table-head,.cgweb105-candidate{display:grid!important;grid-template-columns:28px 62px minmax(150px,1.25fr) 86px 72px 96px minmax(135px,.9fr) 96px;gap:8px;align-items:center;min-width:850px;}",
+    ".cgweb105-table-head{padding:0 10px 4px;font-size:.74rem;opacity:.65;}",
+    ".cgweb105-candidate{border:1px solid rgba(255,255,255,.10);border-radius:10px;padding:8px 10px;background:rgba(255,255,255,.015);cursor:pointer;}",
+    ".cgweb105-candidate:hover{border-color:rgba(167,255,42,.38);}",
+    ".cgweb105-candidate.cgweb105-source{border-color:rgba(167,255,42,.34);background:rgba(167,255,42,.035);cursor:default;}",
+    ".cgweb105-candidate input.cgweb105-join-check{appearance:auto!important;-webkit-appearance:checkbox!important;width:17px!important;height:17px!important;min-width:17px!important;max-width:17px!important;min-height:17px!important;max-height:17px!important;margin:0!important;padding:0!important;transform:none!important;position:static!important;display:block!important;accent-color:#a7ff2a;justify-self:center;}",
+    ".cgweb105-candidate>*{min-width:0;}",
+    ".cgweb105-candidate .cgweb105-title,.cgweb105-candidate .cgweb105-equipment{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+    ".cgweb105-candidate .cgweb105-num{text-align:right;font-variant-numeric:tabular-nums;}",
+    ".cgweb105-base-tag{font-size:.68rem;opacity:.72;display:block;margin-top:2px;}",
+    ".cgweb105-fit-pill{justify-self:start;white-space:nowrap;}",
+    ".cgweb105-preview{margin-top:14px;border-top:1px solid rgba(255,255,255,.10);padding-top:12px;}",
+    ".cgweb105-preview-title{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px;}",
+    ".cgweb105-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}",
+    ".cgweb105-preview-grid article{border:1px solid rgba(167,255,42,.24);border-radius:10px;padding:8px 10px;}",
+    ".cgweb105-preview-grid span{display:block;opacity:.68;font-size:.76rem;}",
+    ".cgweb105-preview-grid strong{display:block;margin-top:2px;font-size:.98rem;}",
+    ".cgweb105-timeline{display:grid;gap:4px;margin-top:10px;}",
+    ".cgweb105-timeline-row{display:grid;grid-template-columns:62px minmax(150px,1fr) 92px 92px 90px;gap:8px;align-items:center;border-radius:8px;padding:6px 8px;background:rgba(255,255,255,.025);}",
+    ".cgweb105-gap-row{display:flex;align-items:center;gap:8px;padding:2px 8px;font-size:.75rem;opacity:.68;}",
+    ".cgweb105-gap-line{height:1px;background:rgba(255,255,255,.12);flex:1;}",
+    ".cgweb105-warning{margin-top:8px;}",
+    "@media(max-width:850px){.cgweb105-preview-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.cgweb105-timeline-row{grid-template-columns:56px minmax(130px,1fr) 84px 84px;}.cgweb105-timeline-row .cgweb105-hide-mobile{display:none;}}"
+  ].join("\n");
 
   return panel;
 }
@@ -30907,13 +30868,18 @@ function cgweb105BuildPreview(
           )
       );
 
-  if(rows.length<2){
-    preview.classList.remove(
-      "hidden"
-    );
+  preview.classList.remove(
+    "hidden"
+  );
 
+  if(rows.length<2){
     preview.innerHTML=
-      '<p class="muted">Coche au moins une activité analogue pour construire la prévisualisation.</p>';
+      '<div class="cgweb105-preview-title">'+
+        '<h4>Prévisualisation</h4>'+
+        '<span class="pill neutral">1 activité</span>'+
+      '</div>'+
+      '<p class="muted">Coche au moins une activité analogue. La fiche ouverte constitue toujours la première source de la jonction.</p>';
+
     return;
   }
 
@@ -30953,33 +30919,39 @@ function cgweb105BuildPreview(
       0
     );
 
+  const validStarts=
+    rows
+      .map(
+        row =>
+          Number(
+            row.start_time_ms
+          )
+      )
+      .filter(
+        Number.isFinite
+      );
+
+  const validEnds=
+    rows
+      .map(
+        row =>
+          Number(
+            row.end_time_ms
+          )
+      )
+      .filter(
+        Number.isFinite
+      );
+
   const start=
-    Math.min(
-      ...rows
-        .map(
-          row =>
-            Number(
-              row.start_time_ms
-            )
-        )
-        .filter(
-          Number.isFinite
-        )
-    );
+    validStarts.length
+      ? Math.min(...validStarts)
+      : null;
 
   const end=
-    Math.max(
-      ...rows
-        .map(
-          row =>
-            Number(
-              row.end_time_ms
-            )
-        )
-        .filter(
-          Number.isFinite
-        )
-    );
+    validEnds.length
+      ? Math.max(...validEnds)
+      : null;
 
   const amplitudeSec=
     Number.isFinite(start) &&
@@ -30994,48 +30966,60 @@ function cgweb105BuildPreview(
 
   const gaps=[];
   const overlaps=[];
+  const timeline=[];
 
-  for(
-    let i=1;
-    i<rows.length;
-    i++
-  ){
-    const previous=
-      rows[i-1];
+  rows.forEach(
+    (row,index) => {
+      if(index>0){
+        const previous=
+          rows[index-1];
 
-    const current=
-      rows[i];
+        const prevEnd=
+          Number(
+            previous.end_time_ms
+          );
 
-    const prevEnd=
-      Number(
-        previous.end_time_ms
-      );
+        const curStart=
+          Number(
+            row.start_time_ms
+          );
 
-    const curStart=
-      Number(
-        current.start_time_ms
-      );
+        if(
+          Number.isFinite(prevEnd) &&
+          Number.isFinite(curStart)
+        ){
+          const delta=
+            Math.round(
+              (curStart-prevEnd)/1000
+            );
 
-    if(
-      !Number.isFinite(prevEnd) ||
-      !Number.isFinite(curStart)
-    ){
-      continue;
+          if(delta<0){
+            overlaps.push(
+              Math.abs(delta)
+            );
+
+            timeline.push({
+              kind:"overlap",
+              seconds:
+                Math.abs(delta)
+            });
+          }else{
+            gaps.push(delta);
+
+            timeline.push({
+              kind:"gap",
+              seconds:delta
+            });
+          }
+        }
+      }
+
+      timeline.push({
+        kind:"activity",
+        row
+      });
     }
-
-    const delta=
-      Math.round(
-        (curStart-prevEnd)/1000
-      );
-
-    if(delta<0){
-      overlaps.push(
-        Math.abs(delta)
-      );
-    }else{
-      gaps.push(delta);
-    }
-  }
+  );
 
   const equipment=
     [
@@ -31052,11 +31036,15 @@ function cgweb105BuildPreview(
     ];
 
   const fitRoles=
-    rows.map(
-      row =>
-        row.fit_role ||
-        "ABSENT"
-    );
+    [
+      ...new Set(
+        rows.map(
+          row =>
+            row.fit_role ||
+            "ABSENT"
+        )
+      )
+    ];
 
   const selectedIds=
     rows.map(
@@ -31066,32 +31054,118 @@ function cgweb105BuildPreview(
         )
     );
 
-  preview.classList.remove(
-    "hidden"
-  );
+  const gapTotal=
+    gaps.reduce(
+      (a,b)=>a+b,
+      0
+    );
+
+  const timelineHtml=
+    timeline.map(
+      item => {
+        if(
+          item.kind==="gap" ||
+          item.kind==="overlap"
+        ){
+          const overlap=
+            item.kind==="overlap";
+
+          return (
+            '<div class="cgweb105-gap-row'+
+            (
+              overlap
+                ? ' warn'
+                : ''
+            )+
+            '">'+
+              '<span>'+
+                (
+                  overlap
+                    ? '⚠ Chevauchement '
+                    : '↕ GAP '
+                )+
+                cgweb105Escape(
+                  cgweb105FmtDuration(
+                    item.seconds
+                  )
+                )+
+              '</span>'+
+              '<span class="cgweb105-gap-line"></span>'+
+            '</div>'
+          );
+        }
+
+        const row=
+          item.row;
+
+        return (
+          '<div class="cgweb105-timeline-row">'+
+            '<strong>'+
+              cgweb105Escape(
+                cgweb105FmtTime(
+                  row.start_time_ms,
+                  row.start_iso
+                )
+              )+
+            '</strong>'+
+            '<span title="'+
+              cgweb105Escape(
+                row.title
+              )+
+            '">'+
+              cgweb105Escape(
+                row.title
+              )+
+            '</span>'+
+            '<span>'+
+              cgweb105Escape(
+                cgweb105FmtDistance(
+                  row.distance_m
+                )
+              )+
+            '</span>'+
+            '<span>'+
+              cgweb105Escape(
+                cgweb105FmtDuration(
+                  row.duration_s
+                )
+              )+
+            '</span>'+
+            '<span class="pill neutral cgweb105-hide-mobile">'+
+              cgweb105Escape(
+                row.fit_role ||
+                "ABSENT"
+              )+
+            '</span>'+
+          '</div>'
+        );
+      }
+    ).join("");
 
   preview.innerHTML=
-    '<h4>Prévisualisation de la jonction</h4>'+
-    '<div class="cgweb105-preview-grid">'+
-      '<article><span>Activités</span><strong>'+
+    '<div class="cgweb105-preview-title">'+
+      '<h4>Prévisualisation de la jonction</h4>'+
+      '<span class="pill ok">'+
         rows.length+
-      '</strong></article>'+
-      '<article><span>Distance cumulée</span><strong>'+
+        ' activités sélectionnées</span>'+
+    '</div>'+
+    '<div class="cgweb105-preview-grid">'+
+      '<article><span>Distance</span><strong>'+
         cgweb105FmtDistance(
           totalDistance
         )+
       '</strong></article>'+
-      '<article><span>D+ cumulé</span><strong>'+
+      '<article><span>D+</span><strong>'+
         Math.round(
           totalElevation
         ).toLocaleString("fr-FR")+
         ' m</strong></article>'+
-      '<article><span>Durée active</span><strong>'+
+      '<article><span>Temps actif</span><strong>'+
         cgweb105FmtDuration(
           activeDuration
         )+
       '</strong></article>'+
-      '<article><span>Amplitude</span><strong>'+
+      '<article><span>Amplitude journée</span><strong>'+
         (
           amplitudeSec!=null
             ? cgweb105FmtDuration(
@@ -31100,42 +31174,50 @@ function cgweb105BuildPreview(
             : "—"
         )+
       '</strong></article>'+
-      '<article><span>GAP total</span><strong>'+
+      '<article><span>GAP cumulé</span><strong>'+
         cgweb105FmtDuration(
-          gaps.reduce(
-            (a,b)=>a+b,
-            0
-          )
+          gapTotal
         )+
       '</strong></article>'+
-      '<article><span>Matériels</span><strong>'+
+      '<article><span>Matériel</span><strong>'+
         cgweb105Escape(
           equipment.join(" · ") ||
           "—"
         )+
       '</strong></article>'+
-      '<article><span>FIT</span><strong>'+
+      '<article><span>Provenance FIT</span><strong>'+
         cgweb105Escape(
           fitRoles.join(" · ")
         )+
       '</strong></article>'+
+      '<article><span>Chevauchements</span><strong>'+
+        (
+          overlaps.length
+            ? overlaps.length+
+              " ⚠"
+            : "0"
+        )+
+      '</strong></article>'+
+    '</div>'+
+    '<div class="cgweb105-timeline">'+
+      timelineHtml+
     '</div>'+
     (
       overlaps.length
-        ? '<p class="cgweb105-warning warn">⚠ Chevauchement temporel détecté : la jonction devra être bloquée tant que ce conflit n’est pas résolu.</p>'
-        : '<p class="cgweb105-warning muted">Aucun chevauchement temporel détecté.</p>'
+        ? '<p class="cgweb105-warning warn">⚠ Jonction à bloquer : au moins deux activités se chevauchent temporellement.</p>'
+        : '<p class="cgweb105-warning muted">Chronologie compatible : aucun chevauchement temporel détecté.</p>'
     )+
     (
       equipment.length>1
-        ? '<p class="cgweb105-warning muted">Matériels différents : la future activité jointe devra conserver la provenance de chaque segment.</p>'
+        ? '<p class="cgweb105-warning muted">Plusieurs matériels détectés : ils resteront associés à leurs segments respectifs dans la future jonction.</p>'
         : ''
     )+
-    '<p class="muted">JOIN_LINEAGE001 · sources : '+
+    '<p class="muted">JOIN_LINEAGE001 · '+
       cgweb105Escape(
-        selectedIds.join(" · ")
+        selectedIds.join(" → ")
       )+
     '</p>'+
-    '<p class="muted">CGWEB105 est volontairement en prévisualisation : aucune activité ni aucun FIT n’est modifié.</p>';
+    '<p class="muted">Prévisualisation uniquement : aucune activité, aucun FIT et aucune route ne sont modifiés.</p>';
 }
 
 function cgweb105RenderCandidates(
@@ -31165,6 +31247,10 @@ function cgweb105RenderCandidates(
       ? payload.candidates
       : [];
 
+  const source=
+    payload?.source ||
+    null;
+
   if(pill){
     pill.textContent=
       candidates.length+
@@ -31180,22 +31266,82 @@ function cgweb105RenderCandidates(
 
   if(status){
     status.textContent=
-      "Activité ouverte incluse d’office · "+
-      candidates.length+
-      " autre(s) activité(s) du même sport et du même jour.";
+      candidates.length
+        ? "Coche uniquement les activités à joindre à l’activité ouverte."
+        : "Aucune autre activité compatible.";
   }
 
   if(!list){
     return;
   }
 
-  if(!candidates.length){
-    list.innerHTML=
-      '<p class="muted">Aucune autre activité compatible.</p>';
-    return;
-  }
+  const header=
+    '<div class="cgweb105-table-head">'+
+      '<span></span>'+
+      '<span>Heure</span>'+
+      '<span>Activité</span>'+
+      '<span style="text-align:right">Distance</span>'+
+      '<span style="text-align:right">D+</span>'+
+      '<span style="text-align:right">Durée</span>'+
+      '<span>Matériel</span>'+
+      '<span>FIT</span>'+
+    '</div>';
 
-  list.innerHTML=
+  const sourceHtml=
+    source
+      ? (
+          '<div class="cgweb105-candidate cgweb105-source">'+
+            '<input type="checkbox" class="cgweb105-join-check" checked disabled aria-label="Activité ouverte incluse">'+
+            '<strong>'+
+              cgweb105Escape(
+                cgweb105FmtTime(
+                  source.start_time_ms,
+                  source.start_iso
+                )
+              )+
+            '</strong>'+
+            '<span class="cgweb105-title">'+
+              cgweb105Escape(
+                source.title
+              )+
+              '<small class="cgweb105-base-tag">ACTIVITÉ OUVERTE · BASE DE LA JONCTION</small>'+
+            '</span>'+
+            '<span class="cgweb105-num">'+
+              cgweb105Escape(
+                cgweb105FmtDistance(
+                  source.distance_m
+                )
+              )+
+            '</span>'+
+            '<span class="cgweb105-num">'+
+              Math.round(
+                Number(
+                  source.elevation_gain_m
+                ) || 0
+              ).toLocaleString("fr-FR")+
+              ' m</span>'+
+            '<span class="cgweb105-num">'+
+              cgweb105Escape(
+                cgweb105FmtDuration(
+                  source.duration_s
+                )
+              )+
+            '</span>'+
+            '<span class="cgweb105-equipment">'+
+              cgweb105Escape(
+                source.equipment || "—"
+              )+
+            '</span>'+
+            '<span class="pill neutral cgweb105-fit-pill">'+
+              cgweb105Escape(
+                source.fit_role || "ABSENT"
+              )+
+            '</span>'+
+          '</div>'
+        )
+      : '';
+
+  const candidateHtml=
     candidates.map(
       row => (
         '<label class="cgweb105-candidate">'+
@@ -31204,52 +31350,54 @@ function cgweb105RenderCandidates(
               row.activity_id
             )+
           '">'+
-          '<span>'+
+          '<strong>'+
             cgweb105Escape(
               cgweb105FmtTime(
                 row.start_time_ms,
                 row.start_iso
               )
             )+
-          '</span>'+
-          '<strong class="cgweb105-title" title="'+
+          '</strong>'+
+          '<span class="cgweb105-title" title="'+
             cgweb105Escape(
-              row.activity_id
+              row.title
             )+
           '">'+
             cgweb105Escape(
               row.title
             )+
-          '</strong>'+
-          '<span>'+
+          '</span>'+
+          '<span class="cgweb105-num">'+
             cgweb105Escape(
               cgweb105FmtDistance(
                 row.distance_m
               )
             )+
           '</span>'+
-          '<span>'+
+          '<span class="cgweb105-num">'+
             Math.round(
               Number(
                 row.elevation_gain_m
               ) || 0
-            ).toLocaleString(
-              "fr-FR"
-            )+
+            ).toLocaleString("fr-FR")+
             ' m</span>'+
-          '<span>'+
+          '<span class="cgweb105-num">'+
             cgweb105Escape(
               cgweb105FmtDuration(
                 row.duration_s
               )
             )+
           '</span>'+
-          '<span class="cgweb105-equipment">'+
+          '<span class="cgweb105-equipment" title="'+
+            cgweb105Escape(
+              row.equipment || ""
+            )+
+          '">'+
             cgweb105Escape(
               row.equipment || "—"
             )+
           '</span>'+
-          '<span class="pill neutral">'+
+          '<span class="pill neutral cgweb105-fit-pill">'+
             cgweb105Escape(
               row.fit_role || "ABSENT"
             )+
@@ -31258,10 +31406,18 @@ function cgweb105RenderCandidates(
       )
     ).join("");
 
+  list.innerHTML=
+    header+
+    sourceHtml+
+    (
+      candidateHtml ||
+      '<p class="muted">Aucune autre activité compatible.</p>'
+    );
+
   for(
     const input
     of list.querySelectorAll(
-      ".cgweb105-join-check"
+      ".cgweb105-join-check:not(:disabled)"
     )
   ){
     input.addEventListener(
