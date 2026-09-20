@@ -31711,3 +31711,760 @@ async function cgweb108Run(){
 })();
 
 /* CGWEB108_ORPHAN_AUDIT_APP_END */
+
+
+/* CGWEB109_FIT_TRUTH_APP_START */
+
+let cgweb109LastResult=null;
+
+const cgweb109Esc=value=>
+  String(value ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+
+function cgweb109Num(value){
+  return Number(
+    value || 0
+  ).toLocaleString(
+    "fr-FR"
+  );
+}
+
+function cgweb109Pct(
+  num,
+  den
+){
+  const a=Number(num)||0;
+  const b=Number(den)||0;
+
+  if(!b){
+    return "0 %";
+  }
+
+  return (
+    100*a/b
+  ).toLocaleString(
+    "fr-FR",
+    {
+      minimumFractionDigits:0,
+      maximumFractionDigits:2
+    }
+  )+" %";
+}
+
+function cgweb109Mount(){
+  if(
+    document.getElementById(
+      "cgweb109FitTruthParity"
+    )
+  ){
+    return true;
+  }
+
+  const anchor=
+    document.getElementById(
+      "cgweb108FitOrphanAudit"
+    ) ||
+    document.getElementById(
+      "cgweb104PlanList"
+    )?.closest(
+      ".cgweb104-plan"
+    ) ||
+    document.getElementById(
+      "webFilesSection"
+    );
+
+  if(!anchor){
+    return false;
+  }
+
+  const panel=
+    document.createElement(
+      "section"
+    );
+
+  panel.id=
+    "cgweb109FitTruthParity";
+
+  panel.innerHTML=
+    '<div class="section-heading">'+
+      '<div>'+
+        '<p class="eyebrow">CGWEB109 · DIRECTORY_FIT_TRUTH_PARITY001 / ICON_FALSE_NEGATIVE_AUDIT001</p>'+
+        '<h3>Parité FIT ↔ icône du Répertoire</h3>'+
+        '<p class="muted">Compare la vérité backend avec le mécanisme historique FITQUICKDOWNLOAD001 qui alimente les icônes. Lecture seule.</p>'+
+      '</div>'+
+      '<span id="cg109Badge" class="pill neutral">Non audité</span>'+
+    '</div>'+
+    '<div class="cg109-summary">'+
+      '<article><span>Activités actives</span><strong id="cg109Active">—</strong></article>'+
+      '<article><span>FIT réellement téléchargeables</span><strong id="cg109Truth">—</strong></article>'+
+      '<article><span>Vrais FIT absents</span><strong id="cg109Missing">—</strong></article>'+
+      '<article><span>Icônes positives V081</span><strong id="cg109LegacyPositive">—</strong></article>'+
+      '<article><span>Faux négatifs icône</span><strong id="cg109FalseNegative">—</strong></article>'+
+      '<article><span>Faux positifs icône</span><strong id="cg109FalsePositive">—</strong></article>'+
+      '<article><span>Liste V081 chargée</span><strong id="cg109LegacyLoaded">—</strong></article>'+
+      '<article><span>Plafond V081</span><strong id="cg109Limit">1000</strong></article>'+
+    '</div>'+
+    '<div class="row-actions">'+
+      '<button id="cg109Run" type="button">Auditer la parité FIT / icônes</button>'+
+    '</div>'+
+    '<p id="cg109Status" class="muted">Aucune écriture. Le test recharge volontairement la liste V081 limitée à 1000 FIT.</p>'+
+    '<div id="cg109Diagnosis" class="cg109-diagnosis"></div>'+
+    '<details open class="cg109-history">'+
+      '<summary>Visibilité historique par année</summary>'+
+      '<div class="cg109-table-wrap">'+
+        '<table>'+
+          '<thead><tr>'+
+            '<th>Année</th>'+
+            '<th>Activités</th>'+
+            '<th>FIT backend</th>'+
+            '<th>Icône V081</th>'+
+            '<th>Faux négatifs</th>'+
+            '<th>Vrais absents</th>'+
+            '<th>Couverture FIT</th>'+
+          '</tr></thead>'+
+          '<tbody id="cg109YearRows">'+
+            '<tr><td colspan="7" class="muted">Audit non lancé.</td></tr>'+
+          '</tbody>'+
+        '</table>'+
+      '</div>'+
+    '</details>'+
+    '<details class="cg109-examples">'+
+      '<summary>Exemples de faux négatifs <span id="cg109ExamplesBadge" class="pill neutral">0</span></summary>'+
+      '<div id="cg109Examples"></div>'+
+    '</details>';
+
+  anchor.insertAdjacentElement(
+    "afterend",
+    panel
+  );
+
+  let style=
+    document.getElementById(
+      "cgweb109Styles"
+    );
+
+  if(!style){
+    style=
+      document.createElement(
+        "style"
+      );
+
+    style.id=
+      "cgweb109Styles";
+
+    style.textContent=[
+      "#cgweb109FitTruthParity{margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.10)}",
+      ".cg109-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}",
+      ".cg109-summary article{border:1px solid rgba(167,255,42,.25);border-radius:11px;padding:9px 10px}",
+      ".cg109-summary span{display:block;opacity:.72;font-size:.78rem}",
+      ".cg109-summary strong{display:block;margin-top:3px;font-size:1.08rem}",
+      ".cg109-diagnosis{margin:10px 0}",
+      ".cg109-diagnosis .cg109-alert{border:1px solid rgba(167,255,42,.35);border-radius:10px;padding:9px 11px}",
+      ".cg109-table-wrap{overflow:auto;margin-top:8px}",
+      ".cg109-table-wrap table{width:100%;border-collapse:collapse}",
+      ".cg109-table-wrap th,.cg109-table-wrap td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.07);text-align:right;white-space:nowrap}",
+      ".cg109-table-wrap th:first-child,.cg109-table-wrap td:first-child{text-align:left}",
+      ".cg109-history,.cg109-examples{margin-top:10px;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 10px}",
+      ".cg109-example{display:grid;grid-template-columns:150px minmax(180px,1fr) 110px 180px;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:.82rem}",
+      "@media(max-width:900px){.cg109-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.cg109-example{grid-template-columns:1fr 1fr}}"
+    ].join("\n");
+
+    document.head.appendChild(
+      style
+    );
+  }
+
+  document
+    .getElementById(
+      "cg109Run"
+    )
+    ?.addEventListener(
+      "click",
+      ()=>{
+        void cgweb109Run();
+      }
+    );
+
+  return true;
+}
+
+function cgweb109Set(
+  id,
+  value
+){
+  const node=
+    document.getElementById(id);
+
+  if(node){
+    node.textContent=
+      cgweb109Num(value);
+  }
+}
+
+function cgweb109BuildParity(
+  truthPayload,
+  legacyMap,
+  legacyLoaded
+){
+  const rows=
+    Array.isArray(
+      truthPayload?.rows
+    )
+      ? truthPayload.rows
+      : [];
+
+  const years=
+    new Map();
+
+  let truePositive=0;
+  let falseNegative=0;
+  let falsePositive=0;
+  let trueNegative=0;
+  let legacyPositive=0;
+
+  const falseNegativeRows=[];
+
+  for(const row of rows){
+    const id=
+      String(
+        row?.activity_id || ""
+      ).trim();
+
+    if(!id){
+      continue;
+    }
+
+    const truth=
+      Boolean(
+        row?.downloadable
+      );
+
+    const legacy=
+      Boolean(
+        legacyMap?.[id]
+          ?.hasFit
+      );
+
+    if(legacy){
+      legacyPositive+=1;
+    }
+
+    if(truth && legacy){
+      truePositive+=1;
+    }else if(truth && !legacy){
+      falseNegative+=1;
+      falseNegativeRows.push(row);
+    }else if(!truth && legacy){
+      falsePositive+=1;
+    }else{
+      trueNegative+=1;
+    }
+
+    const year=
+      String(
+        row?.year ||
+        "unknown"
+      );
+
+    if(!years.has(year)){
+      years.set(
+        year,
+        {
+          year,
+          activities:0,
+          truth_downloadable:0,
+          legacy_positive:0,
+          false_negative:0,
+          false_positive:0,
+          true_missing:0
+        }
+      );
+    }
+
+    const bucket=
+      years.get(year);
+
+    bucket.activities+=1;
+
+    if(truth){
+      bucket.truth_downloadable+=1;
+    }else{
+      bucket.true_missing+=1;
+    }
+
+    if(legacy){
+      bucket.legacy_positive+=1;
+    }
+
+    if(truth && !legacy){
+      bucket.false_negative+=1;
+    }
+
+    if(!truth && legacy){
+      bucket.false_positive+=1;
+    }
+  }
+
+  const byYear=[
+    ...years.values()
+  ].sort(
+    (a,b)=>{
+      if(a.year==="unknown")return 1;
+      if(b.year==="unknown")return -1;
+      return Number(b.year)-Number(a.year);
+    }
+  );
+
+  const backend=
+    truthPayload?.summary || {};
+
+  const limit=
+    Number(
+      backend
+        .legacy_quick_list_limit ||
+      1000
+    );
+
+  const loaded=
+    Array.isArray(
+      legacyLoaded
+    )
+      ? legacyLoaded.length
+      : Number(
+          legacyLoaded || 0
+        );
+
+  let diagnosis=
+    "PARITY_OK";
+
+  if(
+    falseNegative>0 &&
+    loaded===limit &&
+    Number(
+      backend.truth_downloadable || 0
+    )>limit
+  ){
+    diagnosis=
+      "V081_LIST_LIMIT_1000_CONFIRMED";
+  }else if(falseNegative>0){
+    diagnosis=
+      "ICON_FALSE_NEGATIVES_CONFIRMED";
+  }else if(falsePositive>0){
+    diagnosis=
+      "ICON_FALSE_POSITIVES_CONFIRMED";
+  }
+
+  return {
+    backend,
+    loaded,
+    limit,
+    true_positive:truePositive,
+    false_negative:falseNegative,
+    false_positive:falsePositive,
+    true_negative:trueNegative,
+    legacy_positive:legacyPositive,
+    diagnosis,
+    by_year:byYear,
+    false_negative_rows:
+      falseNegativeRows
+  };
+}
+
+function cgweb109Render(
+  payload
+){
+  cgweb109LastResult=payload;
+
+  const backend=
+    payload?.backend || {};
+
+  cgweb109Set(
+    "cg109Active",
+    backend.activities_active
+  );
+
+  cgweb109Set(
+    "cg109Truth",
+    backend.truth_downloadable
+  );
+
+  cgweb109Set(
+    "cg109Missing",
+    backend.true_missing
+  );
+
+  cgweb109Set(
+    "cg109LegacyPositive",
+    payload.legacy_positive
+  );
+
+  cgweb109Set(
+    "cg109FalseNegative",
+    payload.false_negative
+  );
+
+  cgweb109Set(
+    "cg109FalsePositive",
+    payload.false_positive
+  );
+
+  cgweb109Set(
+    "cg109LegacyLoaded",
+    payload.loaded
+  );
+
+  cgweb109Set(
+    "cg109Limit",
+    payload.limit
+  );
+
+  const badge=
+    document.getElementById(
+      "cg109Badge"
+    );
+
+  if(badge){
+    badge.textContent=
+      payload.diagnosis===
+      "PARITY_OK"
+        ? "Parité OK"
+        : "Anomalie confirmée";
+
+    badge.className=
+      payload.diagnosis===
+      "PARITY_OK"
+        ? "pill ok"
+        : "pill warn";
+  }
+
+  const diagnosis=
+    document.getElementById(
+      "cg109Diagnosis"
+    );
+
+  if(diagnosis){
+    let text="";
+
+    if(
+      payload.diagnosis===
+      "V081_LIST_LIMIT_1000_CONFIRMED"
+    ){
+      text=
+        "QUICK_LIST_LIMIT_FORENSICS001 : le mécanisme historique FITQUICKDOWNLOAD001 a chargé exactement "+
+        cgweb109Num(
+          payload.loaded
+        )+
+        " FIT, soit son plafond de "+
+        cgweb109Num(
+          payload.limit
+        )+
+        ", alors que le backend résout "+
+        cgweb109Num(
+          backend.truth_downloadable
+        )+
+        " activité(s) avec FIT. Les "+
+        cgweb109Num(
+          payload.false_negative
+        )+
+        " absences d’icône détectées sont donc de faux négatifs d’affichage, pas des FIT disparus.";
+    }else if(
+      payload.false_negative>0
+    ){
+      text=
+        "ICON_FALSE_NEGATIVE_AUDIT001 : "+
+        cgweb109Num(
+          payload.false_negative
+        )+
+        " activité(s) possèdent un FIT résolu par le backend mais sont déclarées sans FIT par le mécanisme d’icône historique.";
+    }else{
+      text=
+        "DIRECTORY_FIT_TRUTH_PARITY001 : aucune divergence FIT → icône détectée.";
+    }
+
+    diagnosis.innerHTML=
+      '<div class="cg109-alert"><strong>'+
+      cgweb109Esc(
+        payload.diagnosis
+      )+
+      '</strong><br>'+
+      cgweb109Esc(text)+
+      '</div>';
+  }
+
+  const yearHost=
+    document.getElementById(
+      "cg109YearRows"
+    );
+
+  if(yearHost){
+    yearHost.innerHTML=
+      payload.by_year
+        .map(
+          row =>
+            "<tr>"+
+              "<td>"+
+                cgweb109Esc(
+                  row.year
+                )+
+              "</td>"+
+              "<td>"+
+                cgweb109Num(
+                  row.activities
+                )+
+              "</td>"+
+              "<td>"+
+                cgweb109Num(
+                  row.truth_downloadable
+                )+
+              "</td>"+
+              "<td>"+
+                cgweb109Num(
+                  row.legacy_positive
+                )+
+              "</td>"+
+              "<td><strong>"+
+                cgweb109Num(
+                  row.false_negative
+                )+
+              "</strong></td>"+
+              "<td>"+
+                cgweb109Num(
+                  row.true_missing
+                )+
+              "</td>"+
+              "<td>"+
+                cgweb109Esc(
+                  cgweb109Pct(
+                    row.truth_downloadable,
+                    row.activities
+                  )
+                )+
+              "</td>"+
+            "</tr>"
+        )
+        .join("");
+  }
+
+  const examples=
+    payload.false_negative_rows
+      .slice(0,100);
+
+  const exampleBadge=
+    document.getElementById(
+      "cg109ExamplesBadge"
+    );
+
+  if(exampleBadge){
+    exampleBadge.textContent=
+      cgweb109Num(
+        payload.false_negative_rows
+          .length
+      );
+  }
+
+  const exampleHost=
+    document.getElementById(
+      "cg109Examples"
+    );
+
+  if(exampleHost){
+    exampleHost.innerHTML=
+      examples.length
+        ? examples
+            .map(
+              row =>
+                '<div class="cg109-example">'+
+                  '<span>'+
+                    cgweb109Esc(
+                      row.year
+                    )+
+                  '</span>'+
+                  '<strong>'+
+                    cgweb109Esc(
+                      row.title ||
+                      row.activity_id
+                    )+
+                  '</strong>'+
+                  '<span>'+
+                    cgweb109Esc(
+                      row.role ||
+                      "FIT"
+                    )+
+                  '</span>'+
+                  '<span>'+
+                    cgweb109Esc(
+                      row.file_name ||
+                      row.status
+                    )+
+                  '</span>'+
+                '</div>'
+            )
+            .join("")
+        : '<p class="muted">Aucun faux négatif.</p>';
+  }
+}
+
+async function cgweb109Run(){
+  const api=
+    window
+      .SPORT_DIRECTORY_FIT_TRUTH;
+
+  const legacy=
+    window
+      .SPORT_FIT_QUICKDOWNLOAD;
+
+  const button=
+    document.getElementById(
+      "cg109Run"
+    );
+
+  const status=
+    document.getElementById(
+      "cg109Status"
+    );
+
+  const badge=
+    document.getElementById(
+      "cg109Badge"
+    );
+
+  if(
+    !api?.audit ||
+    !legacy?.availability ||
+    !legacy?.refresh
+  ){
+    if(status){
+      status.textContent=
+        "API CGWEB109 ou FITQUICKDOWNLOAD001 indisponible.";
+    }
+    return;
+  }
+
+  if(button){
+    button.disabled=true;
+  }
+
+  if(badge){
+    badge.textContent=
+      "Audit…";
+    badge.className=
+      "pill neutral";
+  }
+
+  if(status){
+    status.textContent=
+      "Lecture de la vérité backend, puis reproduction volontaire du mécanisme historique V081 limité à 1000 FIT…";
+  }
+
+  try{
+    const truth=
+      await api.audit();
+
+    const ids=
+      (truth?.rows || [])
+        .map(
+          row =>
+            String(
+              row?.activity_id || ""
+            ).trim()
+        )
+        .filter(Boolean);
+
+    /*
+     * Important : on reproduit volontairement la logique historique.
+     * refresh() recharge la liste V081 avec limit=1000.
+     */
+    const legacyLoaded=
+      await legacy.refresh();
+
+    const legacyMap=
+      await legacy.availability(
+        ids
+      );
+
+    const parity=
+      cgweb109BuildParity(
+        truth,
+        legacyMap,
+        legacyLoaded
+      );
+
+    cgweb109Render(
+      parity
+    );
+
+    if(status){
+      status.textContent=
+        cgweb109Num(
+          parity.backend
+            .truth_downloadable
+        )+
+        " FIT réellement téléchargeables · "+
+        cgweb109Num(
+          parity.legacy_positive
+        )+
+        " visibles par V081 · "+
+        cgweb109Num(
+          parity.false_negative
+        )+
+        " faux négatifs · "+
+        cgweb109Num(
+          parity.backend
+            .true_missing
+        )+
+        " vrais absents. Aucune modification.";
+    }
+  }catch(error){
+    console.error(
+      "CGWEB109",
+      error
+    );
+
+    if(badge){
+      badge.textContent=
+        "Erreur";
+      badge.className=
+        "pill warn";
+    }
+
+    if(status){
+      status.textContent=
+        "Audit impossible : "+
+        (
+          error?.message ||
+          String(error)
+        );
+    }
+  }finally{
+    if(button){
+      button.disabled=false;
+    }
+  }
+}
+
+(function cgweb109Boot(){
+  let attempts=0;
+
+  const mount=()=>{
+    attempts+=1;
+
+    if(cgweb109Mount()){
+      return;
+    }
+
+    if(attempts<50){
+      setTimeout(
+        mount,
+        250
+      );
+    }
+  };
+
+  mount();
+})();
+
+/* CGWEB109_FIT_TRUTH_APP_END */

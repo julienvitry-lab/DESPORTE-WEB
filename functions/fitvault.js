@@ -6423,6 +6423,404 @@ async function c091TransferAudit(uid) {
 
   /* CGWEB108_ORPHAN_AUDIT_HELPERS_END */
 
+  /* CGWEB109_FIT_TRUTH_HELPERS_START */
+
+  const C109_LEGACY_QUICK_LIST_LIMIT=1000;
+  const C109_BULK_LIMIT=1000;
+
+  function c109Text(value){
+    return String(value ?? "").trim();
+  }
+
+  function c109Finite(value){
+    if(value==null || value==="")return null;
+    const n=Number(value);
+    return Number.isFinite(n)?n:null;
+  }
+
+  function c109StartMs(row){
+    const direct=[
+      row?.start_time_ms,
+      row?.start_ms,
+      row?.start_date_ms,
+      row?.startDateMs,
+      row?.timestamp_ms
+    ];
+
+    for(const value of direct){
+      const n=c109Finite(value);
+      if(n!=null && n>0){
+        return n>1e12?n:(n>1e9?n*1000:null);
+      }
+    }
+
+    const texts=[
+      row?.start_iso,
+      row?.start_time_iso,
+      row?.start_date_local,
+      row?.start_date,
+      row?.start_time,
+      row?.started_at,
+      row?.date
+    ];
+
+    for(const value of texts){
+      const text=c109Text(value);
+      if(!text)continue;
+      const ms=Date.parse(text);
+      if(Number.isFinite(ms))return ms;
+    }
+
+    return null;
+  }
+
+  function c109Year(row){
+    const ms=c109StartMs(row);
+
+    if(ms!=null){
+      const y=new Date(ms).getUTCFullYear();
+      if(Number.isInteger(y) && y>=1980 && y<=2200){
+        return String(y);
+      }
+    }
+
+    const candidates=[
+      row?.start_iso,
+      row?.start_date_local,
+      row?.start_date,
+      row?.date
+    ];
+
+    for(const value of candidates){
+      const text=c109Text(value);
+      const match=text.match(/^(19|20|21)\d{2}/);
+      if(match)return match[0];
+    }
+
+    return "unknown";
+  }
+
+  function c109CompactTruth(
+    activityId,
+    row,
+    raw,
+    linked,
+    resolved
+  ){
+    const merged={
+      ...(raw||{}),
+      ...(row||{})
+    };
+
+    const status=c109Text(
+      resolved?.status || "NO_LINKED_FILE"
+    );
+
+    const downloadable=
+      status.startsWith("RESOLVED_");
+
+    return {
+      activity_id:String(activityId),
+      year:c109Year(merged),
+      start_time_ms:c109StartMs(merged),
+      title:c095Title(
+        merged,
+        activityId
+      ),
+      source:c109Text(
+        merged?.import_source ??
+        merged?.source ??
+        merged?.origin ??
+        merged?.provider
+      ),
+      linked_file_count:
+        Array.isArray(linked)
+          ? linked.length
+          : 0,
+      downloadable,
+      status,
+      role:c109Text(
+        resolved?.role || "NONE"
+      ),
+      method:c109Text(
+        resolved?.method || "NONE"
+      ),
+      file_name:c109Text(
+        resolved?.file_name
+      ),
+      sha256:c109Text(
+        resolved?.sha256
+      ),
+      object_name:c109Text(
+        resolved?.object_name
+      )
+    };
+  }
+
+  async function c109DirectoryFitTruthParity(uid){
+    const [
+      data,
+      byActivity,
+      index
+    ]=await Promise.all([
+      c099DirectoryData(uid,true),
+      c096LinkedRows(uid),
+      c096StorageIndex()
+    ]);
+
+    const rows=[];
+    const years=new Map();
+
+    let linkedMetadata=0;
+    let truthDownloadable=0;
+    let trueMissing=0;
+    let unresolvedObject=0;
+    let ambiguousObject=0;
+    let original=0;
+    let canonical=0;
+    let edited=0;
+
+    for(const row of data.rows||[]){
+      const id=c109Text(row?.activity_id);
+      if(!id)continue;
+
+      const raw=data.rawById.get(id)||{};
+
+      if(raw.deleted_at_ms!=null){
+        continue;
+      }
+
+      const linked=byActivity.get(id)||[];
+
+      if(linked.length){
+        linkedMetadata+=1;
+      }
+
+      const resolved=
+        c096ResolvePreferred(
+          linked,
+          index
+        );
+
+      const compact=
+        c109CompactTruth(
+          id,
+          row,
+          raw,
+          linked,
+          resolved
+        );
+
+      rows.push(compact);
+
+      if(compact.downloadable){
+        truthDownloadable+=1;
+
+        if(compact.role==="ORIGINAL"){
+          original+=1;
+        }else if(compact.role==="CANONICAL"){
+          canonical+=1;
+        }else{
+          edited+=1;
+        }
+      }else{
+        trueMissing+=1;
+
+        if(
+          compact.status.startsWith(
+            "AMBIGUOUS_"
+          )
+        ){
+          ambiguousObject+=1;
+        }else if(
+          compact.status!=="NO_LINKED_FILE"
+        ){
+          unresolvedObject+=1;
+        }
+      }
+
+      if(!years.has(compact.year)){
+        years.set(
+          compact.year,
+          {
+            year:compact.year,
+            activities:0,
+            truth_downloadable:0,
+            true_missing:0,
+            linked_metadata:0,
+            original:0,
+            canonical:0,
+            edited:0
+          }
+        );
+      }
+
+      const bucket=years.get(compact.year);
+
+      bucket.activities+=1;
+
+      if(compact.linked_file_count>0){
+        bucket.linked_metadata+=1;
+      }
+
+      if(compact.downloadable){
+        bucket.truth_downloadable+=1;
+
+        if(compact.role==="ORIGINAL"){
+          bucket.original+=1;
+        }else if(compact.role==="CANONICAL"){
+          bucket.canonical+=1;
+        }else{
+          bucket.edited+=1;
+        }
+      }else{
+        bucket.true_missing+=1;
+      }
+    }
+
+    const byYear=[
+      ...years.values()
+    ]
+      .map(row=>({
+        ...row,
+        truth_pct:
+          row.activities
+            ? Math.round(
+                100000*
+                row.truth_downloadable/
+                row.activities
+              )/1000
+            : 0
+      }))
+      .sort((a,b)=>{
+        if(a.year==="unknown")return 1;
+        if(b.year==="unknown")return -1;
+        return Number(b.year)-Number(a.year);
+      });
+
+    rows.sort(
+      (a,b)=>
+        Number(b.start_time_ms||0)-
+        Number(a.start_time_ms||0)
+    );
+
+    return {
+      summary:{
+        activities_active:rows.length,
+        linked_metadata:linkedMetadata,
+        truth_downloadable:truthDownloadable,
+        true_missing:trueMissing,
+        downloadable_original:original,
+        downloadable_canonical:canonical,
+        downloadable_edited:edited,
+        unresolved_object:unresolvedObject,
+        ambiguous_object:ambiguousObject,
+        storage_objects:index.object_count,
+        legacy_quick_list_limit:
+          C109_LEGACY_QUICK_LIST_LIMIT,
+        legacy_quick_limit_risk:
+          truthDownloadable>
+          C109_LEGACY_QUICK_LIST_LIMIT,
+        minimum_possible_legacy_false_negatives:
+          Math.max(
+            0,
+            truthDownloadable-
+            C109_LEGACY_QUICK_LIST_LIMIT
+          )
+      },
+      by_year:byYear,
+      rows
+    };
+  }
+
+  async function c109BulkDownloadability(
+    uid,
+    activityIds
+  ){
+    const ids=[
+      ...new Set(
+        (Array.isArray(activityIds)
+          ? activityIds
+          : []
+        )
+          .map(c109Text)
+          .filter(Boolean)
+      )
+    ];
+
+    if(ids.length>C109_BULK_LIMIT){
+      throw Object.assign(
+        new Error(
+          "BULK_DOWNLOADABILITY001 : "+
+          "maximum "+
+          C109_BULK_LIMIT+
+          " identifiants par appel."
+        ),
+        {status:400}
+      );
+    }
+
+    const [
+      byActivity,
+      index
+    ]=await Promise.all([
+      c096LinkedRows(uid),
+      c096StorageIndex()
+    ]);
+
+    const availability={};
+
+    for(const id of ids){
+      const linked=
+        byActivity.get(id)||[];
+
+      const resolved=
+        c096ResolvePreferred(
+          linked,
+          index
+        );
+
+      const status=c109Text(
+        resolved?.status ||
+        "NO_LINKED_FILE"
+      );
+
+      availability[id]={
+        activity_id:id,
+        downloadable:
+          status.startsWith(
+            "RESOLVED_"
+          ),
+        linked_file_count:
+          linked.length,
+        status,
+        role:c109Text(
+          resolved?.role ||
+          "NONE"
+        ),
+        method:c109Text(
+          resolved?.method ||
+          "NONE"
+        ),
+        file_name:c109Text(
+          resolved?.file_name
+        ),
+        sha256:c109Text(
+          resolved?.sha256
+        )
+      };
+    }
+
+    return {
+      requested:ids.length,
+      limit:C109_BULK_LIMIT,
+      availability
+    };
+  }
+
+  /* CGWEB109_FIT_TRUTH_HELPERS_END */
+
+
 
 /* CGWEB096_DIRECTORY_DOWNLOAD_HELPERS_END */
 
@@ -11568,6 +11966,88 @@ if (action === "transfer_audit") {
         }
 
         /* CGWEB108_ORPHAN_AUDIT_ACTIONS_END */
+
+        /* CGWEB109_FIT_TRUTH_ACTIONS_START */
+
+        if(action==="directory_fit_truth_parity"){
+          if(req.method!=="GET"){
+            return res.status(405).json({
+              ok:false,
+              error:"GET requis."
+            });
+          }
+
+          const result=
+            await c109DirectoryFitTruthParity(
+              uid
+            );
+
+          return res.json({
+            ok:true,
+            version:"CGWEB109",
+            service:
+              "DIRECTORY_FIT_TRUTH_PARITY001",
+            icon_audit:
+              "ICON_FALSE_NEGATIVE_AUDIT001",
+            bulk:
+              "BULK_DOWNLOADABILITY001",
+            historical:
+              "HISTORICAL_FIT_VISIBILITY001",
+            read_only:true,
+            activities_modified:0,
+            fit_metadata_modified:0,
+            storage_modified:0,
+            ...result
+          });
+        }
+
+        if(action==="bulk_downloadability"){
+          if(req.method!=="POST"){
+            return res.status(405).json({
+              ok:false,
+              error:"POST requis."
+            });
+          }
+
+          let body=req.body;
+
+          if(Buffer.isBuffer(body)){
+            try{
+              body=JSON.parse(
+                body.toString("utf8")
+              );
+            }catch{
+              body={};
+            }
+          }
+
+          if(
+            !body ||
+            typeof body!=="object" ||
+            Array.isArray(body)
+          ){
+            body={};
+          }
+
+          const result=
+            await c109BulkDownloadability(
+              uid,
+              body.activity_ids
+            );
+
+          return res.json({
+            ok:true,
+            version:"CGWEB109",
+            service:
+              "BULK_DOWNLOADABILITY001",
+            read_only:true,
+            ...result
+          });
+        }
+
+        /* CGWEB109_FIT_TRUTH_ACTIONS_END */
+
+
 
 
 

@@ -5643,3 +5643,81 @@ window.SPORT_STRAVA_FIT_ORPHAN_AUDIT=Object.freeze({
 });
 
 /* CGWEB108_ORPHAN_AUDIT_CLIENT_END */
+
+
+/* CGWEB109_FIT_TRUTH_CLIENT_START */
+
+async function c109FitTruthAudit(){
+  return request(
+    "directory_fit_truth_parity",
+    {
+      method:"GET"
+    }
+  );
+}
+
+async function c109BulkDownloadability(
+  activityIds
+){
+  const ids=[
+    ...new Set(
+      (Array.isArray(activityIds)
+        ? activityIds
+        : []
+      )
+        .map(
+          value =>
+            String(value ?? "").trim()
+        )
+        .filter(Boolean)
+    )
+  ];
+
+  const out={};
+
+  for(
+    let i=0;
+    i<ids.length;
+    i+=1000
+  ){
+    const chunk=
+      ids.slice(
+        i,
+        i+1000
+      );
+
+    const result=
+      await request(
+        "bulk_downloadability",
+        {
+          method:"POST",
+          headers:{
+            "Content-Type":
+              "application/json"
+          },
+          body:JSON.stringify({
+            activity_ids:chunk
+          })
+        }
+      );
+
+    Object.assign(
+      out,
+      result?.availability || {}
+    );
+  }
+
+  return out;
+}
+
+window.SPORT_DIRECTORY_FIT_TRUTH=
+  Object.freeze({
+    version:
+      "CGWEB109-DIRECTORY_FIT_TRUTH_PARITY001",
+    audit:
+      c109FitTruthAudit,
+    bulkDownloadability:
+      c109BulkDownloadability
+  });
+
+/* CGWEB109_FIT_TRUTH_CLIENT_END */
