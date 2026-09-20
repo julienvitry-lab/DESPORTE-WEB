@@ -5293,6 +5293,75 @@ async function c096ResolveDownload(
   );
 }
 
+
+
+/* CGWEB107_DIRECT_DOWNLOAD_CLIENT_START */
+
+function c107DispositionName(value,fallback){
+  const text=String(value||"");
+  const utf=text.match(/filename\*=UTF-8''([^;]+)/i);
+  if(utf?.[1]){
+    try{return decodeURIComponent(utf[1].trim());}catch(_){}
+  }
+  const normal=text.match(/filename="?([^";]+)"?/i);
+  return normal?.[1]?.trim()||fallback;
+}
+
+async function c107DirectActivityDownload(activityId){
+  const id=String(activityId||"").trim();
+  if(!id)throw new Error("ACTIVITY_ID_REQUIRED — activity_id absent.");
+
+  const user=bridge().getUser();
+  if(!user)throw new Error("AUTH_REQUIRED — Connexion SPORT requise.");
+
+  const token=await user.getIdToken();
+  const url=new URL(VAULT_URL);
+  url.searchParams.set("action","directory_fit_direct_download");
+
+  const response=await fetch(url.toString(),{
+    method:"POST",
+    headers:{
+      Authorization:"Bearer "+token,
+      "Content-Type":"application/json"
+    },
+    body:JSON.stringify({activity_id:id}),
+    cache:"no-store"
+  });
+
+  if(!response.ok){
+    const text=await response.text();
+    let payload=null;
+    try{payload=text?JSON.parse(text):null;}catch(_){}
+    throw new Error(
+      (payload?.status||("HTTP_"+response.status))+
+      " — "+
+      (payload?.error||text||("HTTP "+response.status))
+    );
+  }
+
+  const blob=await response.blob();
+  if(!blob.size)throw new Error("DIRECT_DOWNLOAD_EMPTY — FIT vide reçu.");
+
+  const fileName=c107DispositionName(
+    response.headers.get("Content-Disposition"),
+    "activity_"+id+".fit"
+  );
+
+  bridge().triggerBlobDownload(blob,fileName);
+
+  return {
+    ok:true,
+    status:"DIRECT_DOWNLOAD_OK",
+    service:response.headers.get("X-Sport-Download-Service")||"FIT_DIRECT_DOWNLOAD001",
+    role:response.headers.get("X-Sport-Fit-Role")||"",
+    method:response.headers.get("X-Sport-Fit-Resolve-Method")||"",
+    file_name:fileName,
+    size_bytes:blob.size
+  };
+}
+
+/* CGWEB107_DIRECT_DOWNLOAD_CLIENT_END */
+
 window.SPORT_DIRECTORY_FIT=
   Object.freeze({
     version:
@@ -5300,7 +5369,9 @@ window.SPORT_DIRECTORY_FIT=
     audit:
       c096DirectoryAudit,
     resolve:
-      c096ResolveDownload
+      c096ResolveDownload,
+    directDownload:
+      c107DirectActivityDownload
   });
 
 

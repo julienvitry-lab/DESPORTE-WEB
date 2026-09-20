@@ -5959,6 +5959,157 @@ async function c091TransferAudit(uid) {
   }
 
   /* CGWEB107_SIGN_FORENSICS_HELPERS_END */
+
+  /* CGWEB107_DIRECT_DOWNLOAD_HELPERS_START */
+
+  function c107DirectName(value,id){
+    let name=(c096Basename(value)||("activity_"+String(id||"")+".fit"))
+      .replace(/[\u0000-\u001f\u007f]/g,"")
+      .replace(/[\\/:*?"<>|]/g,"_")
+      .trim();
+    if(!/\.fit$/i.test(name))name+=".fit";
+    return name.slice(0,220)||("activity_"+String(id||"")+".fit");
+  }
+
+  async function c107DirectResolve(uid,activityId){
+    const id=c096Text(activityId);
+
+    if(!uid)throw Object.assign(
+      new Error("AUTH_DOWNLOAD_GUARD001 : connexion SPORT requise."),
+      {status:401,code:"AUTH_REQUIRED"}
+    );
+
+    if(!id)throw Object.assign(
+      new Error("AUTH_DOWNLOAD_GUARD001 : activity_id absent."),
+      {status:400,code:"ACTIVITY_ID_REQUIRED"}
+    );
+
+    const activitySnap=await db.doc(ROOT+"/"+uid+"/activities/"+id).get();
+    if(!activitySnap.exists)throw Object.assign(
+      new Error("AUTH_DOWNLOAD_GUARD001 : activité introuvable."),
+      {status:404,code:"ACTIVITY_NOT_FOUND"}
+    );
+
+    const activity=activitySnap.data()||{};
+    if(activity.deleted_at_ms!=null)throw Object.assign(
+      new Error("AUTH_DOWNLOAD_GUARD001 : activité en corbeille."),
+      {status:409,code:"ACTIVITY_DELETED"}
+    );
+
+    const linked=await files(uid).where("activity_id","==",id).get();
+    const rows=linked.docs
+      .map(x=>({...x.data(),__doc_id:String(x.id)}))
+      .filter(x=>x.deleted_at_ms==null)
+      .sort((a,b)=>c096RoleRank(b)-c096RoleRank(a));
+
+    if(!rows.length)throw Object.assign(
+      new Error("DOWNLOAD_ERROR_TRUTH001 : aucun FIT lié à cette activité."),
+      {status:404,code:"NO_LINKED_FILE"}
+    );
+
+    const {getStorage}=require("firebase-admin/storage");
+    const bucket=getStorage().bucket();
+
+    for(const row of rows){
+      const candidates=c096CandidateObjectNames(row,bucket.name);
+      for(const objectName of candidates){
+        if(!objectName || objectName===c096Basename(objectName))continue;
+        const object=bucket.file(objectName);
+        try{
+          const [exists]=await object.exists();
+          if(!exists)continue;
+          const [meta]=await object.getMetadata();
+          return {
+            id, activity, object,
+            object_name:objectName,
+            role:c096RoleLabel(row),
+            method:"DIRECT_METADATA_PATH",
+            file_name:c107DirectName(row.file_name||row.fileName||objectName,id),
+            size:Number(meta?.size||0)||0,
+            content_type:String(meta?.contentType||"application/vnd.ant.fit")
+          };
+        }catch(_){}
+      }
+    }
+
+    const index=await c096StorageIndex();
+    const resolved=c096ResolvePreferred(rows,index);
+
+    if(!String(resolved?.status||"").startsWith("RESOLVED_")){
+      throw Object.assign(
+        new Error("DOWNLOAD_ERROR_TRUTH001 : objet FIT non résolu ("+
+          String(resolved?.status||"NO_STATUS")+")."),
+        {status:404,code:String(resolved?.status||"OBJECT_NOT_RESOLVED")}
+      );
+    }
+
+    const object=index.bucket.file(resolved.object_name);
+    let meta;
+    try{
+      [meta]=await object.getMetadata();
+    }catch(error){
+      throw Object.assign(
+        new Error("DOWNLOAD_ERROR_TRUTH001 : objet Storage inaccessible — "+
+          (error?.message||String(error))),
+        {status:502,code:"STORAGE_OBJECT_READ_ERROR"}
+      );
+    }
+
+    return {
+      id, activity, object,
+      object_name:resolved.object_name,
+      role:resolved.role||"UNKNOWN",
+      method:resolved.method||"CGWEB096_RESOLVER",
+      file_name:c107DirectName(resolved.file_name||resolved.object_name,id),
+      size:Number(meta?.size||0)||0,
+      content_type:String(meta?.contentType||"application/vnd.ant.fit")
+    };
+  }
+
+  async function c107StreamFit(res,uid,activityId){
+    const r=await c107DirectResolve(uid,activityId);
+    const ascii=r.file_name.normalize("NFKD")
+      .replace(/[^\x20-\x7E]/g,"_").replace(/["\\]/g,"_");
+    const encoded=encodeURIComponent(r.file_name);
+
+    res.status(200);
+    res.set("Content-Type",r.content_type);
+    res.set("Content-Disposition",
+      'attachment; filename="'+ascii+'"; filename*=UTF-8\'\''+encoded);
+    res.set("Cache-Control","private, no-store, max-age=0");
+    res.set("X-Content-Type-Options","nosniff");
+    res.set("X-Sport-Download-Service","FIT_DIRECT_DOWNLOAD001");
+    res.set("X-Sport-Fit-Role",String(r.role||""));
+    res.set("X-Sport-Fit-Resolve-Method",String(r.method||""));
+    res.set("X-Sport-Fit-Object-Size",String(r.size||0));
+    res.set("Access-Control-Expose-Headers",
+      "Content-Disposition, Content-Length, X-Sport-Download-Service, X-Sport-Fit-Role, X-Sport-Fit-Resolve-Method, X-Sport-Fit-Object-Size");
+    if(r.size>0)res.set("Content-Length",String(r.size));
+
+    return await new Promise(resolve=>{
+      const stream=r.object.createReadStream();
+      let done=false;
+      const finish=()=>{if(!done){done=true;resolve();}};
+      stream.on("error",error=>{
+        console.error("STORAGE_STREAM_DOWNLOAD001",r.id,r.object_name,error);
+        if(!res.headersSent){
+          res.status(502).json({
+            ok:false,status:"STORAGE_STREAM_ERROR",
+            error:error?.message||String(error)
+          });
+        }else{
+          try{res.destroy(error);}catch(_){}
+        }
+        finish();
+      });
+      res.on("finish",finish);
+      res.on("close",finish);
+      stream.pipe(res);
+    });
+  }
+
+  /* CGWEB107_DIRECT_DOWNLOAD_HELPERS_END */
+
 /* CGWEB096_DIRECTORY_DOWNLOAD_HELPERS_END */
 
 
@@ -11042,7 +11193,42 @@ if (action === "transfer_audit") {
           });
         }
 
-        /* CGWEB107_SIGN_FORENSICS_ACTIONS_END */
+
+
+        /* CGWEB107_DIRECT_DOWNLOAD_ACTIONS_START */
+
+        if(action==="directory_fit_direct_download"){
+          if(req.method!=="POST"){
+            return res.status(405).json({ok:false,status:"METHOD_NOT_ALLOWED",error:"POST requis."});
+          }
+
+          let body=req.body;
+          if(Buffer.isBuffer(body)){
+            try{body=JSON.parse(body.toString("utf8"));}catch{body={};}
+          }
+          if(!body||typeof body!=="object"||Array.isArray(body))body={};
+
+          try{
+            return await c107StreamFit(res,uid,body.activity_id);
+          }catch(error){
+            const http=Math.max(400,Math.min(599,Number(error?.status)||500));
+            console.error("FIT_DIRECT_DOWNLOAD001",body.activity_id,error);
+            return res.status(http).json({
+              ok:false,
+              service:"FIT_DIRECT_DOWNLOAD001",
+              bypass:"SIGNED_URL_BYPASS001",
+              stream:"STORAGE_STREAM_DOWNLOAD001",
+              auth_guard:"AUTH_DOWNLOAD_GUARD001",
+              error_truth:"DOWNLOAD_ERROR_TRUTH001",
+              status:error?.code||"DIRECT_DOWNLOAD_ERROR",
+              error:error?.message||String(error)
+            });
+          }
+        }
+
+        /* CGWEB107_DIRECT_DOWNLOAD_ACTIONS_END */
+
+/* CGWEB107_SIGN_FORENSICS_ACTIONS_END */
 
 /* CGWEB096_DIRECTORY_DOWNLOAD_ACTIONS_END */
 

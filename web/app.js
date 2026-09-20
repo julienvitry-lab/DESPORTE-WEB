@@ -27132,190 +27132,47 @@ function cgweb099Message(
 async function cgweb099Download(
   activityId
 ){
-  const id=
-    String(activityId||"").trim();
+  const id=String(activityId||"").trim();
 
   if(!id){
+    cgweb099Message("Identifiant activité introuvable.","error");
+    return;
+  }
+
+  const api=window.SPORT_DIRECTORY_FIT;
+
+  if(!api || typeof api.directDownload!=="function"){
     cgweb099Message(
-      "Identifiant activité introuvable.",
+      "Téléchargement direct FIT non chargé. Recharge SPORT Web.",
       "error"
     );
     return;
   }
 
-  const api=
-    window.SPORT_DIRECTORY_FIT;
-
-  if(
-    !api ||
-    typeof api.resolve!=="function"
-  ){
-    cgweb099Message(
-      "Resolver FIT non chargé.",
-      "error"
-    );
-    return;
-  }
-
-  cgweb099Message(
-    "Préparation du FIT #"+id+"…"
-  );
+  cgweb099Message("Téléchargement direct du FIT #"+id+"…");
 
   try{
-    const data=
-      await api.resolve(id);
+    const result=await api.directDownload(id);
 
-    if(
-      !data?.ok ||
-      !data?.downloadable ||
-      !data?.url
-    ){
-      let detail=
-        [data?.status,data?.error]
-          .filter(Boolean)
-          .join(" — ") ||
-        "FIT non résolvable";
-
-      if(data?.status==="SIGN_URL_ERROR"){
-        const forensicApi=
-          window.SPORT_FIT_SIGN_FORENSICS;
-
-        if(
-          forensicApi &&
-          typeof forensicApi.inspect==="function"
-        ){
-          try{
-            const forensic=
-              await forensicApi.inspect(id);
-
-            window.CGWEB107_LAST_SIGN_FORENSICS=
-              forensic;
-
-            const objectState=
-              forensic?.storage?.exists
-                ? (
-                    "objet Storage vérifié"+
-                    (
-                      forensic?.storage?.metadata?.size_bytes
-                        ? " ("+
-                          Number(forensic.storage.metadata.size_bytes)
-                            .toLocaleString("fr-FR")+
-                          " octets)"
-                        : ""
-                    )
-                  )
-                : "objet Storage non vérifié";
-
-            detail=[
-              "SIGN_URL_ERROR",
-              objectState,
-              forensic?.diagnosis,
-              forensic?.diagnosis_detail
-            ].filter(Boolean).join(" — ");
-          }catch(forensicError){
-            console.warn("CGWEB107 forensic",forensicError);
-          }
-        }
-      }
-
-      throw new Error(detail);
+    if(!result?.ok || result?.status!=="DIRECT_DOWNLOAD_OK"){
+      throw new Error(result?.status||"DIRECT_DOWNLOAD_FAILED");
     }
-
-    const fileName=
-      data.file_name ||
-      "activity_"+id+".fit";
-
-    /*
-     * Premier choix : récupérer le blob pour forcer
-     * réellement l'enregistrement local.
-     */
-    try{
-      const response=
-        await fetch(
-          data.url,
-          {
-            method:"GET",
-            mode:"cors",
-            cache:"no-store"
-          }
-        );
-
-      if(!response.ok){
-        throw new Error(
-          "HTTP "+response.status
-        );
-      }
-
-      const blob=
-        await response.blob();
-
-      if(!blob.size){
-        throw new Error(
-          "FIT vide"
-        );
-      }
-
-      const objectUrl=
-        URL.createObjectURL(blob);
-
-      const anchor=
-        document.createElement("a");
-
-      anchor.href=objectUrl;
-      anchor.download=fileName;
-      anchor.style.display="none";
-
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-
-      setTimeout(
-        ()=>URL.revokeObjectURL(objectUrl),
-        30000
-      );
-
-      cgweb099Message(
-        "FIT "+
-        (data.role||"")+
-        " téléchargé : "+
-        fileName
-      );
-
-      return;
-    }catch(blobError){
-      console.warn(
-        "CGWEB099 blob fallback",
-        blobError
-      );
-    }
-
-    /*
-     * Secours : la signed URL CGWEB096 contient déjà
-     * responseDisposition=attachment.
-     * Pas de target=_blank : évite le blocage popup.
-     */
-    const anchor=
-      document.createElement("a");
-
-    anchor.href=data.url;
-    anchor.download=fileName;
-    anchor.rel="noopener";
-    anchor.style.display="none";
-
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
 
     cgweb099Message(
-      "Téléchargement FIT lancé : "+
-      fileName
+      "FIT "+(result.role||"")+" téléchargé : "+
+      (result.file_name||("activity_"+id+".fit"))+
+      (result.size_bytes
+        ? " · "+Number(result.size_bytes).toLocaleString("fr-FR")+" octets"
+        : "")
     );
   }catch(error){
-    cgweb099Message(
-      "Téléchargement FIT impossible : "+
-      (error?.message||error),
-      "error"
-    );
+    const detail=error?.message||String(error);
+    window.CGWEB107_LAST_DOWNLOAD_ERROR={
+      activity_id:id,
+      at:new Date().toISOString(),
+      detail
+    };
+    cgweb099Message("Téléchargement FIT impossible : "+detail,"error");
   }
 }
 
