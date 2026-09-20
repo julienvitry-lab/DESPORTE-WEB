@@ -31522,3 +31522,192 @@ function cgweb105RenderJoinPanel(
 }
 
 /* CGWEB105_JOIN_UI_END */
+
+
+/* CGWEB108_ORPHAN_AUDIT_APP_START */
+
+const cgweb108Esc=v=>String(v??"")
+  .replaceAll("&","&amp;").replaceAll("<","&lt;")
+  .replaceAll(">","&gt;").replaceAll('"',"&quot;")
+  .replaceAll("'","&#039;");
+
+function cgweb108Date(ms){
+  const n=Number(ms);
+  return Number.isFinite(n)
+    ? new Date(n).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})
+    : "—";
+}
+
+function cgweb108Label(v){
+  return ({
+    EXACT_FILE_DOC_UNLINKED:"FIT exact · lien manquant",
+    EXACT_ORPHAN_MATCH:"FIT orphelin exact",
+    PROBABLE_STORAGE_MATCH:"FIT probable",
+    MULTIPLE_CANDIDATES:"Plusieurs FIT possibles",
+    SPLIT_PARENT_ORIGINAL_FOUND:"FIT sur parent WEBSPLIT",
+    LINKED_OBJECT_MISSING:"Lien FIT présent · objet absent",
+    DEEP_STORAGE_SCAN_REQUIRED:"Scan Storage approfondi requis",
+    ARCHIVE_REQUIRED:"Archive personnelle requise"
+  })[v]||v||"—";
+}
+
+function cgweb108Mount(){
+  if(document.getElementById("cgweb108FitOrphanAudit"))return true;
+
+  const planList=
+    document.getElementById("cgweb104PlanList");
+
+  const anchor=
+    planList?.closest(".cgweb104-plan") ||
+    planList ||
+    document.getElementById("webFilesSection");
+
+  if(!anchor)return false;
+
+  const panel=document.createElement("section");
+  panel.id="cgweb108FitOrphanAudit";
+  panel.innerHTML=
+    '<div class="section-heading"><div>'+
+    '<p class="eyebrow">CGWEB108 · STRAVA_FIT_ORPHAN_AUDIT001</p>'+
+    '<h3>Réconciliation des activités sans FIT</h3>'+
+    '<p class="muted">Rapproche activités, activity_files, Storage, Strava et WEBSPLIT. Lecture seule.</p>'+
+    '</div><span id="cgweb108Pill" class="pill neutral">Non audité</span></div>'+
+    '<div class="cgweb108-summary">'+
+    '<article><span>Sans FIT</span><strong id="cg108Missing">—</strong></article>'+
+    '<article><span>Dont Strava</span><strong id="cg108Strava">—</strong></article>'+
+    '<article><span>Relinks exacts</span><strong id="cg108Exact">—</strong></article>'+
+    '<article><span>FIT probables</span><strong id="cg108Probable">—</strong></article>'+
+    '<article><span>Parents WEBSPLIT</span><strong id="cg108Split">—</strong></article>'+
+    '<article><span>Ambigus</span><strong id="cg108Ambiguous">—</strong></article>'+
+    '<article><span>Archive requise</span><strong id="cg108Archive">—</strong></article>'+
+    '<article><span>Objets FIT non indexés</span><strong id="cg108Unindexed">—</strong></article>'+
+    '</div>'+
+    '<button id="cgweb108Run" type="button">Auditer les activités sans FIT</button>'+
+    '<p id="cgweb108Status" class="muted">Aucune donnée ne sera modifiée.</p>'+
+    '<details class="cgweb108-exact"><summary>Prévisualisation relinks exacts <span id="cg108ExactBadge" class="pill neutral">0</span></summary>'+
+    '<div id="cg108ExactList"></div></details>'+
+    '<div id="cg108Rows" class="cgweb108-rows"></div>';
+
+  anchor.insertAdjacentElement("afterend",panel);
+
+  const style=document.createElement("style");
+  style.id="cgweb108Styles";
+  style.textContent=[
+    "#cgweb108FitOrphanAudit{margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.10)}",
+    ".cgweb108-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}",
+    ".cgweb108-summary article{border:1px solid rgba(167,255,42,.25);border-radius:11px;padding:9px}",
+    ".cgweb108-summary span{display:block;opacity:.72;font-size:.78rem}.cgweb108-summary strong{font-size:1.08rem}",
+    ".cgweb108-rows{display:grid;gap:7px;margin-top:10px}.cgweb108-row{border:1px solid rgba(255,255,255,.09);border-radius:10px;overflow:hidden}",
+    ".cgweb108-row summary{display:grid;grid-template-columns:140px minmax(180px,1fr) 110px 220px;gap:8px;padding:9px;cursor:pointer}",
+    ".cgweb108-body{padding:0 10px 10px;font-size:.82rem}.cgweb108-candidates{display:grid;gap:4px;margin-top:7px}",
+    ".cgweb108-candidate{border-top:1px solid rgba(255,255,255,.06);padding-top:5px}",
+    ".cgweb108-exact{margin-top:10px;border:1px solid rgba(167,255,42,.18);border-radius:10px;padding:8px 10px}",
+    "@media(max-width:900px){.cgweb108-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.cgweb108-row summary{grid-template-columns:110px minmax(140px,1fr)}}"
+  ].join("\n");
+  document.head.appendChild(style);
+
+  document.getElementById("cgweb108Run")?.addEventListener("click",()=>void cgweb108Run());
+  return true;
+}
+
+function cgweb108Set(id,value){
+  const n=document.getElementById(id);
+  if(n)n.textContent=Number(value||0).toLocaleString("fr-FR");
+}
+
+function cgweb108Render(result){
+  const s=result?.summary||{};
+  cgweb108Set("cg108Missing",s.activities_without_downloadable_fit);
+  cgweb108Set("cg108Strava",s.strava_without_downloadable_fit);
+  cgweb108Set("cg108Exact",s.exact_relink_preview);
+  cgweb108Set("cg108Probable",s.probable_storage_match);
+  cgweb108Set("cg108Split",s.split_parent_original_found);
+  cgweb108Set("cg108Ambiguous",s.multiple_candidates);
+  cgweb108Set("cg108Archive",s.archive_required);
+  cgweb108Set("cg108Unindexed",s.unindexed_fit_objects);
+
+  const exact=result?.exact_relink_preview||[];
+  const badge=document.getElementById("cg108ExactBadge");
+  if(badge)badge.textContent=String(exact.length);
+
+  const exactHost=document.getElementById("cg108ExactList");
+  if(exactHost){
+    exactHost.innerHTML=exact.length
+      ? exact.map(r=>'<p><strong>#'+cgweb108Esc(r.activity_id)+'</strong> · '+cgweb108Esc(cgweb108Date(r.start_time_ms))+
+        ' · '+cgweb108Esc(r.file_name||r.sha256)+' · <span class="pill ok">'+cgweb108Esc(cgweb108Label(r.classification))+'</span></p>').join("")
+      : '<p class="muted">Aucun relink exact identifié.</p>';
+  }
+
+  const host=document.getElementById("cg108Rows");
+  if(!host)return;
+
+  host.innerHTML=(result?.rows||[]).map(r=>{
+    const fps=(r.fingerprint_candidates||[]).map(c=>
+      '<div class="cgweb108-candidate">'+cgweb108Esc(c.file_name||c.sha256)+
+      ' · '+cgweb108Esc(c.class||"")+
+      ' · Δt '+cgweb108Esc(c.time_delta_s??"NA")+' s'+
+      ' · contradictions '+cgweb108Esc(c.contradiction_count??"NA")+'</div>'
+    ).join("");
+
+    return '<details class="cgweb108-row"><summary>'+
+      '<span>'+cgweb108Esc(cgweb108Date(r.start_time_ms))+'</span>'+
+      '<strong>'+cgweb108Esc(r.title)+'</strong>'+
+      '<span>'+cgweb108Esc(r.strava_import?"Strava":(r.source||"—"))+'</span>'+
+      '<span class="pill '+(["EXACT_FILE_DOC_UNLINKED","EXACT_ORPHAN_MATCH"].includes(r.classification)?"ok":"neutral")+'">'+
+      cgweb108Esc(cgweb108Label(r.classification))+'</span></summary>'+
+      '<div class="cgweb108-body">'+
+      '<p>ID : <strong>'+cgweb108Esc(r.activity_id)+'</strong> · lien actuel : <strong>'+cgweb108Esc(r.linked_status)+'</strong></p>'+
+      '<p>IDs externes : <strong>'+cgweb108Esc((r.external_ids||[]).join(" · ")||"—")+'</strong></p>'+
+      '<p>Parent WEBSPLIT : <strong>'+cgweb108Esc(r.lineage?.split_parent_activity_id||"—")+'</strong> · FIT parent : <strong>'+
+      cgweb108Esc(r.lineage?.parent_fit?.downloadable?(r.lineage?.parent_fit?.role||"présent"):"—")+'</strong></p>'+
+      '<p>NO_FIT_TRUTH001 : <strong>'+cgweb108Esc(r.no_fit_truth)+'</strong></p>'+
+      (r.selected_preview?'<p>Prévisualisation : <strong>'+cgweb108Esc(r.selected_preview.file_name||r.selected_preview.sha256)+'</strong></p>':'')+
+      '<div class="cgweb108-candidates">'+(fps||'<span class="muted">Aucun candidat fingerprint.</span>')+'</div>'+
+      '<p class="muted">Lecture seule : aucun relink exécuté.</p></div></details>';
+  }).join("");
+}
+
+async function cgweb108Run(){
+  const api=window.SPORT_STRAVA_FIT_ORPHAN_AUDIT;
+  const button=document.getElementById("cgweb108Run");
+  const status=document.getElementById("cgweb108Status");
+  const pill=document.getElementById("cgweb108Pill");
+
+  if(!api?.audit){
+    if(status)status.textContent="Service CGWEB108 non chargé.";
+    return;
+  }
+
+  if(button)button.disabled=true;
+  if(pill){pill.textContent="Audit…";pill.className="pill neutral";}
+  if(status)status.textContent="Analyse activity_files / Storage / Strava / WEBSPLIT…";
+
+  try{
+    const result=await api.audit();
+    cgweb108Render(result);
+    if(pill){pill.textContent="Audit terminé";pill.className="pill ok";}
+    if(status)status.textContent=
+      Number(result?.summary?.activities_without_downloadable_fit||0).toLocaleString("fr-FR")+
+      " activité(s) sans FIT · "+
+      Number(result?.summary?.exact_relink_preview||0).toLocaleString("fr-FR")+
+      " relink(s) exact(s) prévisualisé(s) · aucune modification.";
+  }catch(error){
+    console.error("CGWEB108",error);
+    if(pill){pill.textContent="Erreur";pill.className="pill warn";}
+    if(status)status.textContent="Audit impossible : "+(error?.message||String(error));
+  }finally{
+    if(button)button.disabled=false;
+  }
+}
+
+(function cgweb108Boot(){
+  let n=0;
+  const run=()=>{
+    n++;
+    if(cgweb108Mount())return;
+    if(n<40)setTimeout(run,250);
+  };
+  run();
+})();
+
+/* CGWEB108_ORPHAN_AUDIT_APP_END */

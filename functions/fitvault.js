@@ -6110,6 +6110,320 @@ async function c091TransferAudit(uid) {
 
   /* CGWEB107_DIRECT_DOWNLOAD_HELPERS_END */
 
+  /* CGWEB108_ORPHAN_AUDIT_HELPERS_START */
+
+  function c108Text(v){
+    return String(v ?? "").trim();
+  }
+
+  function c108ExternalIds(row){
+    const keys=[
+      "strava_id","strava_activity_id","stravaActivityId",
+      "external_id","externalId","provider_id","providerId",
+      "source_activity_id","sourceActivityId","remote_id","remoteId"
+    ];
+    return [...new Set(
+      keys.map(k=>c108Text(row?.[k])).filter(Boolean)
+    )];
+  }
+
+  function c108Source(row){
+    return c108Text(
+      row?.import_source ?? row?.source ?? row?.origin ??
+      row?.provider ?? row?.upload_mode ?? row?.strava_sport_type
+    );
+  }
+
+  function c108IsStrava(row){
+    return Boolean(
+      c108Text(row?.strava_id ?? row?.strava_activity_id) ||
+      c108Source(row).toLowerCase().includes("strava")
+    );
+  }
+
+  function c108Lineage(raw,byActivity,index){
+    const parentId=c108Text(raw?.split_parent_activity_id ?? raw?.split_parent_id);
+    let parentFit=null;
+
+    if(parentId){
+      const linked=byActivity.get(parentId)||[];
+      if(linked.length){
+        const r=c096ResolvePreferred(linked,index);
+        parentFit={
+          activity_id:parentId,
+          status:r.status,
+          role:r.role,
+          downloadable:c108Text(r.status).startsWith("RESOLVED_"),
+          file_name:r.file_name||"",
+          sha256:r.sha256||""
+        };
+      }
+    }
+
+    return {
+      import_source:c108Source(raw),
+      strava_import:c108IsStrava(raw),
+      external_ids:c108ExternalIds(raw),
+      split_status:c108Text(raw?.split_status),
+      split_parent_activity_id:parentId||null,
+      split_children_ids:Array.isArray(raw?.split_children_ids)
+        ? raw.split_children_ids.map(c108Text).filter(Boolean)
+        : [],
+      parent_fit:parentFit
+    };
+  }
+
+  async function c108Audit(uid){
+    const [
+      directory,
+      inventory,
+      deep,
+      byActivity,
+      index
+    ]=await Promise.all([
+      c099DirectoryData(uid,true),
+      c091Inventory(uid),
+      c092DeepAnalysis(uid),
+      c096LinkedRows(uid),
+      c096StorageIndex()
+    ]);
+
+    const safe=c093SafePreviewFromDeep(deep);
+    const orphanSearch=await c093OrphanFingerprintSearch(
+      uid,deep,inventory,safe
+    );
+
+    const activeFileRows=[];
+    const representedObjects=new Set();
+
+    for await(const snap of files(uid).stream()){
+      const row=snap.data()||{};
+      if(row.deleted_at_ms!=null)continue;
+
+      const entry={...row,__doc_id:String(snap.id)};
+      activeFileRows.push(entry);
+
+      const resolved=c096ResolveRowObject(entry,index);
+      if(c108Text(resolved.status).startsWith("RESOLVED_") && resolved.object_name){
+        representedObjects.add(resolved.object_name);
+      }
+    }
+
+    const unindexedObjects=[
+      ...index.exact.values()
+    ].filter(name=>
+      /\.fit$/i.test(name) &&
+      !representedObjects.has(name)
+    );
+
+    const safeByActivity=new Map();
+    for(const row of safe?.rows||[]){
+      const id=c108Text(row?.proposed_activity_id);
+      if(id && row?.classification==="SAFE_EXACT"){
+        if(!safeByActivity.has(id))safeByActivity.set(id,[]);
+        safeByActivity.get(id).push(row);
+      }
+    }
+
+    const fingerprintByActivity=new Map();
+    for(const fileRow of orphanSearch?.files||[]){
+      for(const candidate of fileRow?.candidates||[]){
+        const id=c108Text(candidate?.activity_id);
+        if(!id)continue;
+        if(!fingerprintByActivity.has(id))fingerprintByActivity.set(id,[]);
+        fingerprintByActivity.get(id).push({
+          sha256:fileRow.sha256,
+          file_name:fileRow.file_name,
+          fit:fileRow.fit,
+          ...candidate
+        });
+      }
+    }
+
+    for(const values of fingerprintByActivity.values()){
+      values.sort(c093FingerprintSort);
+    }
+
+    const rows=[];
+
+    for(const directoryRow of directory.rows||[]){
+      const id=c108Text(directoryRow.activity_id);
+      if(!id)continue;
+
+      const linked=byActivity.get(id)||[];
+      const resolved=c096ResolvePreferred(linked,index);
+
+      if(c108Text(resolved.status).startsWith("RESOLVED_")){
+        continue;
+      }
+
+      const raw=directory.rawById.get(id)||{};
+      const lineage=c108Lineage(raw,byActivity,index);
+      const safeExact=safeByActivity.get(id)||[];
+      const fingerprint=fingerprintByActivity.get(id)||[];
+
+      const exactFingerprint=fingerprint.filter((item,indexPos)=>{
+        if(item?.fingerprint_class!=="FINGERPRINT_EXACT")return false;
+        if(Number(item?.contradiction_count||0)!==0)return false;
+        if(indexPos>0 && ["FINGERPRINT_EXACT","FINGERPRINT_STRONG"].includes(fingerprint[0]?.fingerprint_class)){
+          return false;
+        }
+        return true;
+      });
+
+      let classification="";
+      let truth="";
+      let selected=null;
+
+      if(safeExact.length===1){
+        const r=safeExact[0];
+        selected={
+          sha256:r.sha256,
+          file_name:r.file_name,
+          reasons:r.reasons||[],
+          source:"SAFE_EXACT"
+        };
+        classification="EXACT_FILE_DOC_UNLINKED";
+        truth="FIT_PRESENT_RELINKABLE_PREVIEW";
+      }else if(safeExact.length>1){
+        classification="MULTIPLE_CANDIDATES";
+        truth="FIT_PRESENT_BUT_AMBIGUOUS";
+      }else if(exactFingerprint.length===1){
+        const r=exactFingerprint[0];
+        selected={
+          sha256:r.sha256,
+          file_name:r.file_name,
+          reasons:[
+            "empreinte "+r.fingerprint_class,
+            "contradictions "+String(r.contradiction_count||0),
+            "écart temps "+String(r.time_delta_s??"NA")+" s"
+          ],
+          source:"FINGERPRINT_EXACT"
+        };
+        classification="EXACT_ORPHAN_MATCH";
+        truth="FIT_PRESENT_RELINKABLE_PREVIEW";
+      }else if(
+        fingerprint[0] &&
+        ["FINGERPRINT_EXACT","FINGERPRINT_STRONG","FINGERPRINT_PLAUSIBLE"]
+          .includes(fingerprint[0].fingerprint_class)
+      ){
+        if(
+          fingerprint[1] &&
+          ["FINGERPRINT_EXACT","FINGERPRINT_STRONG"]
+            .includes(fingerprint[1].fingerprint_class)
+        ){
+          classification="MULTIPLE_CANDIDATES";
+          truth="FIT_PRESENT_BUT_AMBIGUOUS";
+        }else{
+          classification="PROBABLE_STORAGE_MATCH";
+          truth="FIT_PRESENT_PROBABLE";
+          selected={
+            sha256:fingerprint[0].sha256,
+            file_name:fingerprint[0].file_name,
+            reasons:[
+              "empreinte "+fingerprint[0].fingerprint_class,
+              "écart temps "+String(fingerprint[0].time_delta_s??"NA")+" s"
+            ],
+            source:"FINGERPRINT"
+          };
+        }
+      }else if(lineage.parent_fit?.downloadable){
+        classification="SPLIT_PARENT_ORIGINAL_FOUND";
+        truth="FIT_PRESENT_ON_SPLIT_PARENT";
+      }else if(linked.length){
+        classification="LINKED_OBJECT_MISSING";
+        truth="FILE_DOC_PRESENT_OBJECT_UNRESOLVED";
+      }else if(unindexedObjects.length===0){
+        classification="ARCHIVE_REQUIRED";
+        truth="TRUE_ABSENT_CLOUD";
+      }else{
+        classification="DEEP_STORAGE_SCAN_REQUIRED";
+        truth="NO_INDEXED_MATCH_UNINDEXED_OBJECTS_REMAIN";
+      }
+
+      rows.push({
+        activity_id:id,
+        title:directoryRow.title,
+        start_time_ms:directoryRow.start_time_ms,
+        sport:directoryRow.sport,
+        distance_m:directoryRow.distance_m,
+        duration_s:directoryRow.duration_s,
+        source:directoryRow.source,
+        external_id:directoryRow.external_id||"",
+        strava_import:c108IsStrava(raw),
+        external_ids:c108ExternalIds(raw),
+        linked_metadata_count:linked.length,
+        linked_status:resolved.status||"NO_LINKED_FILE",
+        linked_role:resolved.role||"NONE",
+        lineage,
+        classification,
+        no_fit_truth:truth,
+        selected_preview:selected,
+        safe_exact_candidates:safeExact.slice(0,4).map(r=>({
+          sha256:r.sha256,file_name:r.file_name,reasons:r.reasons||[]
+        })),
+        fingerprint_candidates:fingerprint.slice(0,5).map(r=>({
+          sha256:r.sha256,
+          file_name:r.file_name,
+          class:r.fingerprint_class,
+          strong_count:r.strong_count,
+          compatible_count:r.compatible_count,
+          contradiction_count:r.contradiction_count,
+          time_delta_s:r.time_delta_s
+        }))
+      });
+    }
+
+    rows.sort((a,b)=>Number(b.start_time_ms||0)-Number(a.start_time_ms||0));
+
+    const exactPreview=rows
+      .filter(r=>["EXACT_FILE_DOC_UNLINKED","EXACT_ORPHAN_MATCH"].includes(r.classification))
+      .map(r=>({
+        activity_id:r.activity_id,
+        title:r.title,
+        start_time_ms:r.start_time_ms,
+        classification:r.classification,
+        sha256:r.selected_preview?.sha256||"",
+        file_name:r.selected_preview?.file_name||"",
+        reasons:r.selected_preview?.reasons||[]
+      }));
+
+    const count=type=>rows.filter(r=>r.classification===type).length;
+
+    return {
+      summary:{
+        activities_active:(directory.rows||[]).length,
+        activities_without_downloadable_fit:rows.length,
+        strava_without_downloadable_fit:rows.filter(r=>r.strava_import).length,
+        exact_file_doc_unlinked:count("EXACT_FILE_DOC_UNLINKED"),
+        exact_orphan_match:count("EXACT_ORPHAN_MATCH"),
+        probable_storage_match:count("PROBABLE_STORAGE_MATCH"),
+        multiple_candidates:count("MULTIPLE_CANDIDATES"),
+        split_parent_original_found:count("SPLIT_PARENT_ORIGINAL_FOUND"),
+        linked_object_missing:count("LINKED_OBJECT_MISSING"),
+        deep_storage_scan_required:count("DEEP_STORAGE_SCAN_REQUIRED"),
+        archive_required:count("ARCHIVE_REQUIRED"),
+        exact_relink_preview:exactPreview.length,
+        unresolved_original_file_docs:(inventory.unresolved||[]).length,
+        storage_objects:index.object_count,
+        unindexed_fit_objects:unindexedObjects.length,
+        fingerprint_searched_files:Number(orphanSearch?.summary?.searched_files||0)
+      },
+      exact_relink_preview:exactPreview,
+      rows,
+      storage_reconciliation:{
+        storage_objects:index.object_count,
+        represented_fit_objects:representedObjects.size,
+        unindexed_fit_objects:unindexedObjects.length,
+        unindexed_fit_object_examples:unindexedObjects.slice(0,100),
+        unresolved_original_file_docs:(inventory.unresolved||[]).length
+      }
+    };
+  }
+
+  /* CGWEB108_ORPHAN_AUDIT_HELPERS_END */
+
+
 /* CGWEB096_DIRECTORY_DOWNLOAD_HELPERS_END */
 
 
@@ -11227,6 +11541,35 @@ if (action === "transfer_audit") {
         }
 
         /* CGWEB107_DIRECT_DOWNLOAD_ACTIONS_END */
+
+        /* CGWEB108_ORPHAN_AUDIT_ACTIONS_START */
+
+        if(action==="strava_fit_orphan_audit"){
+          if(req.method!=="GET" && req.method!=="POST"){
+            return res.status(405).json({error:"GET ou POST requis."});
+          }
+
+          const result=await c108Audit(uid);
+
+          return res.json({
+            ok:true,
+            version:"CGWEB108",
+            service:"STRAVA_FIT_ORPHAN_AUDIT001",
+            reconciliation:"STORAGE_ACTIVITY_RECONCILIATION001",
+            preview:"EXACT_FIT_RELINK_PREVIEW001",
+            lineage:"STRAVA_IMPORT_LINEAGE001",
+            truth:"NO_FIT_TRUTH001",
+            read_only:true,
+            activities_modified:0,
+            fit_metadata_modified:0,
+            storage_modified:0,
+            ...result
+          });
+        }
+
+        /* CGWEB108_ORPHAN_AUDIT_ACTIONS_END */
+
+
 
 /* CGWEB107_SIGN_FORENSICS_ACTIONS_END */
 

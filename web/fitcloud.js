@@ -5629,3 +5629,17 @@ if (document.readyState === "loading") {
 } else {
   queueMicrotask(init);
 }
+
+
+/* CGWEB108_ORPHAN_AUDIT_CLIENT_START */
+
+async function c108StravaFitOrphanAudit(){
+  return request("strava_fit_orphan_audit",{method:"GET"});
+}
+
+window.SPORT_STRAVA_FIT_ORPHAN_AUDIT=Object.freeze({
+  version:"CGWEB108-STRAVA_FIT_ORPHAN_AUDIT001",
+  audit:c108StravaFitOrphanAudit
+});
+
+/* CGWEB108_ORPHAN_AUDIT_CLIENT_END */
