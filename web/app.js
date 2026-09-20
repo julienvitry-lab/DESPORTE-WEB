@@ -27170,11 +27170,55 @@ async function cgweb099Download(
       !data?.downloadable ||
       !data?.url
     ){
-      throw new Error(
-        data?.status ||
-        data?.error ||
-        "FIT non résolvable"
-      );
+      let detail=
+        [data?.status,data?.error]
+          .filter(Boolean)
+          .join(" — ") ||
+        "FIT non résolvable";
+
+      if(data?.status==="SIGN_URL_ERROR"){
+        const forensicApi=
+          window.SPORT_FIT_SIGN_FORENSICS;
+
+        if(
+          forensicApi &&
+          typeof forensicApi.inspect==="function"
+        ){
+          try{
+            const forensic=
+              await forensicApi.inspect(id);
+
+            window.CGWEB107_LAST_SIGN_FORENSICS=
+              forensic;
+
+            const objectState=
+              forensic?.storage?.exists
+                ? (
+                    "objet Storage vérifié"+
+                    (
+                      forensic?.storage?.metadata?.size_bytes
+                        ? " ("+
+                          Number(forensic.storage.metadata.size_bytes)
+                            .toLocaleString("fr-FR")+
+                          " octets)"
+                        : ""
+                    )
+                  )
+                : "objet Storage non vérifié";
+
+            detail=[
+              "SIGN_URL_ERROR",
+              objectState,
+              forensic?.diagnosis,
+              forensic?.diagnosis_detail
+            ].filter(Boolean).join(" — ");
+          }catch(forensicError){
+            console.warn("CGWEB107 forensic",forensicError);
+          }
+        }
+      }
+
+      throw new Error(detail);
     }
 
     const fileName=

@@ -5303,6 +5303,27 @@ window.SPORT_DIRECTORY_FIT=
       c096ResolveDownload
   });
 
+
+/* CGWEB107_SIGN_FORENSICS_CLIENT_START */
+
+async function c107SignUrlForensics(activityId){
+  return request(
+    "fit_sign_url_forensics",
+    {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({activity_id:String(activityId||"")})
+    }
+  );
+}
+
+window.SPORT_FIT_SIGN_FORENSICS=Object.freeze({
+  version:"CGWEB107-FIT_SIGN_URL_FORENSICS001-SIGN_ERROR_DETAIL001-STORAGE_OBJECT_VERIFY001",
+  inspect:c107SignUrlForensics
+});
+
+/* CGWEB107_SIGN_FORENSICS_CLIENT_END */
+
 /* CGWEB096_DIRECTORY_FIT_CLIENT_END */
 
 

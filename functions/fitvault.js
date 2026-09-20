@@ -5754,7 +5754,212 @@ async function c091TransferAudit(uid) {
     };
   }
 
-  /* CGWEB096_DIRECTORY_DOWNLOAD_HELPERS_END */
+
+
+  /* CGWEB107_SIGN_FORENSICS_HELPERS_START */
+
+  function c107SignErrorDetail(error){
+    const message=String(error?.message||error?.details||error||"").trim();
+    const code=String(error?.code??error?.status??error?.response?.status??"").trim();
+    const low=(message+" "+code).toLowerCase();
+    let classification="SIGN_URL_UNKNOWN";
+
+    if(
+      low.includes("iam.serviceaccounts.signblob") ||
+      (low.includes("signblob") && (low.includes("permission")||low.includes("denied")))
+    ){
+      classification="IAM_SIGNBLOB_DENIED";
+    }else if(low.includes("signblob")){
+      classification="IAM_SIGNBLOB_ERROR";
+    }else if(
+      low.includes("private key") ||
+      low.includes("client_email") ||
+      low.includes("could not sign") ||
+      low.includes("cannot sign") ||
+      low.includes("unable to sign")
+    ){
+      classification="CREDENTIAL_SIGNING_ERROR";
+    }else if(code==="403" || low.includes("permission denied") || low.includes("forbidden")){
+      classification="PERMISSION_DENIED";
+    }else if(code==="404" || low.includes("not found")){
+      classification="NOT_FOUND";
+    }else if(low.includes("invalid argument") || low.includes("invalid value")){
+      classification="INVALID_SIGN_ARGUMENT";
+    }
+
+    return {
+      classification,
+      code,
+      name:String(error?.name||""),
+      message:message.slice(0,1200)
+    };
+  }
+
+  function c107SafeMetadata(row){
+    row=row&&typeof row==="object"?row:{};
+    return {
+      name:String(row.name||""),
+      bucket:String(row.bucket||""),
+      size_bytes:Number(row.size||0)||0,
+      content_type:String(row.contentType||""),
+      generation:String(row.generation||""),
+      metageneration:String(row.metageneration||""),
+      storage_class:String(row.storageClass||""),
+      created:String(row.timeCreated||""),
+      updated:String(row.updated||""),
+      crc32c:String(row.crc32c||""),
+      md5_hash:String(row.md5Hash||"")
+    };
+  }
+
+  async function c107TrySign(file,options){
+    try{
+      const [url]=await file.getSignedUrl(options);
+      return {
+        ok:Boolean(url),
+        classification:"SIGN_OK",
+        code:"",
+        error:"",
+        expires_in_seconds:120
+      };
+    }catch(error){
+      const d=c107SignErrorDetail(error);
+      return {
+        ok:false,
+        classification:d.classification,
+        code:d.code,
+        error:d.message,
+        expires_in_seconds:0
+      };
+    }
+  }
+
+  async function c107FitSignUrlForensics(uid,activityId){
+    const id=c096Text(activityId);
+    if(!id)throw Object.assign(new Error("activity_id absent."),{status:400});
+
+    const activitySnap=await db.doc(ROOT+"/"+uid+"/activities/"+id).get();
+    if(!activitySnap.exists)throw Object.assign(new Error("Activité introuvable."),{status:404});
+
+    const activity=activitySnap.data()||{};
+    if(activity.deleted_at_ms!=null)throw Object.assign(new Error("Activité supprimée."),{status:404});
+
+    const [byActivity,index]=await Promise.all([
+      c096LinkedRows(uid),
+      c096StorageIndex()
+    ]);
+
+    const rows=byActivity.get(id)||[];
+    const resolved=c096ResolvePreferred(rows,index);
+
+    const base={
+      activity_id:id,
+      title:c095Title(activity,id),
+      linked_file_count:rows.length,
+      role:resolved.role||"NONE",
+      resolve_status:resolved.status||"NO_STATUS",
+      resolve_method:resolved.method||"NONE",
+      file_name:resolved.file_name||"",
+      sha256:resolved.sha256||"",
+      object_name:resolved.object_name||"",
+      bucket:index.bucket.name,
+      read_only:true
+    };
+
+    if(!String(resolved.status||"").startsWith("RESOLVED_")){
+      return {
+        ...base,
+        storage:{exists:false,metadata_ok:false,error:"Objet non résolu."},
+        sign_minimal:{ok:false,classification:"NOT_ATTEMPTED"},
+        sign_attachment:{ok:false,classification:"NOT_ATTEMPTED"},
+        diagnosis:"OBJECT_RESOLVE_FAILED",
+        diagnosis_detail:"Aucun objet Storage unique n'a pu être résolu."
+      };
+    }
+
+    const file=index.bucket.file(resolved.object_name);
+    let exists=false, existsError=null, metadata=null, metadataError=null;
+
+    try{
+      const [value]=await file.exists();
+      exists=Boolean(value);
+    }catch(error){
+      existsError=c107SignErrorDetail(error);
+    }
+
+    if(exists){
+      try{
+        const [raw]=await file.getMetadata();
+        metadata=c107SafeMetadata(raw);
+      }catch(error){
+        metadataError=c107SignErrorDetail(error);
+      }
+    }
+
+    const storage={
+      exists,
+      exists_check_ok:!existsError,
+      metadata_ok:Boolean(metadata),
+      metadata,
+      exists_error:existsError,
+      metadata_error:metadataError
+    };
+
+    if(!exists){
+      return {
+        ...base,
+        storage,
+        sign_minimal:{ok:false,classification:"NOT_ATTEMPTED"},
+        sign_attachment:{ok:false,classification:"NOT_ATTEMPTED"},
+        diagnosis:existsError?"STORAGE_VERIFY_ERROR":"STORAGE_OBJECT_MISSING",
+        diagnosis_detail:existsError
+          ? existsError.classification+" — "+existsError.message
+          : "L'objet Storage résolu n'existe plus."
+      };
+    }
+
+    const expires=Date.now()+2*60*1000;
+    const minimal=await c107TrySign(file,{
+      version:"v4",action:"read",expires
+    });
+
+    const dispositionName=
+      c096Basename(resolved.file_name||resolved.object_name)||
+      ("activity_"+id+".fit");
+
+    const attachment=await c107TrySign(file,{
+      version:"v4",
+      action:"read",
+      expires,
+      responseDisposition:'attachment; filename="'+dispositionName.replace(/"/g,"")+'"'
+    });
+
+    let diagnosis="SIGNING_OK_NOW";
+    let diagnosisDetail="Les deux signatures V4 réussissent actuellement.";
+
+    if(!minimal.ok && !attachment.ok){
+      diagnosis=minimal.classification||attachment.classification||"SIGN_URL_UNKNOWN";
+      diagnosisDetail=[minimal.classification,minimal.error].filter(Boolean).join(" — ");
+    }else if(minimal.ok && !attachment.ok){
+      diagnosis="RESPONSE_DISPOSITION_SIGN_ERROR";
+      diagnosisDetail=[attachment.classification,attachment.error].filter(Boolean).join(" — ");
+    }else if(!minimal.ok && attachment.ok){
+      diagnosis="MINIMAL_SIGN_ANOMALY";
+      diagnosisDetail=[minimal.classification,minimal.error].filter(Boolean).join(" — ");
+    }
+
+    return {
+      ...base,
+      storage,
+      sign_minimal:minimal,
+      sign_attachment:attachment,
+      diagnosis,
+      diagnosis_detail:diagnosisDetail
+    };
+  }
+
+  /* CGWEB107_SIGN_FORENSICS_HELPERS_END */
+/* CGWEB096_DIRECTORY_DOWNLOAD_HELPERS_END */
 
 
   /* CGWEB097_FIT_ORIGIN_HELPERS_START */
@@ -10809,7 +11014,37 @@ if (action === "transfer_audit") {
           });
         }
 
-        /* CGWEB096_DIRECTORY_DOWNLOAD_ACTIONS_END */
+
+
+        /* CGWEB107_SIGN_FORENSICS_ACTIONS_START */
+
+        if(action==="fit_sign_url_forensics"){
+          if(req.method!=="GET" && req.method!=="POST"){
+            return res.status(405).json({error:"GET ou POST requis."});
+          }
+
+          const activityId=String(
+            req.method==="GET"
+              ? (req.query?.activity_id||"")
+              : (req.body?.activity_id||"")
+          ).trim();
+
+          const result=await c107FitSignUrlForensics(uid,activityId);
+
+          return res.json({
+            ok:true,
+            service:"FIT_SIGN_URL_FORENSICS001",
+            detail_service:"SIGN_ERROR_DETAIL001",
+            storage_service:"STORAGE_OBJECT_VERIFY001",
+            version:"CGWEB107",
+            read_only:true,
+            ...result
+          });
+        }
+
+        /* CGWEB107_SIGN_FORENSICS_ACTIONS_END */
+
+/* CGWEB096_DIRECTORY_DOWNLOAD_ACTIONS_END */
 
 
 
