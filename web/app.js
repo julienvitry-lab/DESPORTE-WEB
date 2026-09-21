@@ -6592,6 +6592,86 @@ function cgweb112EnsureVisibleMissing(
 
 
 
+
+/* CGWEB113_VISIBLE_PARITY_AUDIT_START */
+
+async function cgweb113AuditVisibleFits() {
+  const api =
+    window.SPORT_FIT_TIMESTAMP_AUDIT;
+
+  if (
+    !api ||
+    typeof api.audit !==
+      "function"
+  ) {
+    throw new Error(
+      "CGWEB113 : API d'audit FIT non chargée."
+    );
+  }
+
+  const ids = [
+    ...new Set(
+      [
+        ...document.querySelectorAll(
+          "#activityList .web081-fit-quick"
+        )
+      ]
+        .map(
+          control =>
+            String(
+              control?.dataset
+                ?.activityId ||
+              ""
+            ).trim()
+        )
+        .filter(Boolean)
+    )
+  ]
+    .slice(0, 25);
+
+  const result =
+    await api.audit(ids);
+
+  window.CGWEB113_LAST_AUDIT =
+    result;
+
+  if (
+    Array.isArray(
+      result?.rows
+    )
+  ) {
+    console.table(
+      result.rows.map(
+        row => ({
+          activity_id:
+            row.activity_id,
+          status:
+            row.status,
+          activity_start_ms:
+            row.activity_start_ms,
+          fit_start_ms:
+            row.fit_start_ms,
+          delta_ms:
+            row.internal_delta_ms,
+          fichier:
+            row.actual_file_name,
+          attendu_local:
+            row.expected_local_file_name,
+          nom_utc_legacy:
+            row.legacy_utc_filename
+        })
+      )
+    );
+  }
+
+  return result;
+}
+
+window.CGWEB113_AUDIT_VISIBLE =
+  cgweb113AuditVisibleFits;
+
+/* CGWEB113_VISIBLE_PARITY_AUDIT_END */
+
 /* CGWEB112_FIX1_POST_RENDER_TRUTH_START */
 
 const cgweb112Fix1TruthCache =

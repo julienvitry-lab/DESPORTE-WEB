@@ -6,7 +6,8 @@ const {
   inspectFitBuffer,
   fitWriterSelfTest,
   canonicalFitFileName,
-  decodeCanonicalFitSummary
+  decodeCanonicalFitSummary,
+  fitStartTimeMsFromBuffer
 } = require("./fitwriter");
 /* CGWEB075_FITWRITER001_IMPORT_END */
 
@@ -10577,6 +10578,604 @@ async function c099GlobalDirectoryQuery(
     }
   }
 
+
+  /* CGWEB113_FIT_TIMESTAMP_PARITY_AUDIT001_START */
+
+  const C113_TIME_ZONE =
+    "Europe/Paris";
+
+  function c113Text(value) {
+    return String(
+      value ?? ""
+    ).trim();
+  }
+
+  function c113Finite(value) {
+    const n =
+      Number(value);
+
+    return Number.isFinite(n)
+      ? n
+      : null;
+  }
+
+  function c113UtcCanonicalPrefix(
+    startMs
+  ) {
+    const date =
+      new Date(
+        Number(startMs)
+      );
+
+    if (
+      !Number.isFinite(
+        date.getTime()
+      )
+    ) {
+      return null;
+    }
+
+    const pad =
+      value =>
+        String(value)
+          .padStart(2, "0");
+
+    return [
+      date.getUTCFullYear(),
+      pad(
+        date.getUTCMonth() + 1
+      ),
+      pad(
+        date.getUTCDate()
+      ),
+      pad(
+        date.getUTCHours()
+      ),
+      pad(
+        date.getUTCMinutes()
+      ),
+      pad(
+        date.getUTCSeconds()
+      )
+    ].join("_");
+  }
+
+  function c113CanonicalNameInfo(
+    fileName
+  ) {
+    const name =
+      c113Text(fileName);
+
+    const match =
+      name.match(
+        /^(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_([A-Z0-9]{1,4})\.fit$/i
+      );
+
+    if (!match) {
+      return {
+        canonical_pattern:
+          false,
+        code: null,
+        prefix: null
+      };
+    }
+
+    return {
+      canonical_pattern:
+        true,
+      code:
+        String(
+          match[7] || "C"
+        ).toUpperCase(),
+      prefix:
+        match
+          .slice(1, 7)
+          .join("_")
+    };
+  }
+
+  function c113StoragePath(
+    uid,
+    row,
+    docId,
+    activityStartMs
+  ) {
+    const direct = [
+      row?.object_path,
+      row?.storage_path,
+      row?.storage_object,
+      row?.object_name,
+      row?.path
+    ]
+      .map(c113Text)
+      .find(Boolean);
+
+    if (direct) {
+      return direct;
+    }
+
+    const hash =
+      c113Text(
+        row?.sha256 ||
+        row?.hash ||
+        docId
+      );
+
+    if (!hash) {
+      return null;
+    }
+
+    const start =
+      c113Finite(
+        row?.start_time_ms
+      ) ??
+      c113Finite(
+        activityStartMs
+      );
+
+    return objectPath(
+      uid,
+      hash,
+      start
+    );
+  }
+
+  async function c113LinkedFiles(
+    uid,
+    activityId
+  ) {
+    const snap =
+      await files(uid)
+        .where(
+          "activity_id",
+          "==",
+          activityId
+        )
+        .limit(30)
+        .get();
+
+    return snap.docs.map(
+      docSnap => ({
+        id: docSnap.id,
+        ...(
+          docSnap.data() ||
+          {}
+        )
+      })
+    );
+  }
+
+  function c113ChooseFile(
+    rows,
+    resolved
+  ) {
+    const list =
+      Array.isArray(rows)
+        ? rows
+        : [];
+
+    const wantedName =
+      c113Text(
+        resolved?.file_name
+      );
+
+    if (wantedName) {
+      const exact =
+        list.find(
+          row =>
+            c113Text(
+              row?.file_name ||
+              row?.original_name ||
+              row?.name
+            ) === wantedName
+        );
+
+      if (exact) {
+        return exact;
+      }
+    }
+
+    const wantedRole =
+      c113Text(
+        resolved?.role
+      ).toUpperCase();
+
+    if (wantedRole) {
+      const roleMatch =
+        list.find(
+          row =>
+            c113Text(
+              row?.role ||
+              row?.fit_role
+            ).toUpperCase() ===
+            wantedRole
+        );
+
+      if (roleMatch) {
+        return roleMatch;
+      }
+    }
+
+    return (
+      list.find(
+        row =>
+          c113Text(
+            row?.role ||
+            row?.fit_role
+          ).toUpperCase() ===
+          "ORIGINAL"
+      ) ||
+      list.find(
+        row =>
+          c113Text(
+            row?.role ||
+            row?.fit_role
+          ).toUpperCase() ===
+          "CANONICAL"
+      ) ||
+      list[0] ||
+      null
+    );
+  }
+
+  async function c113AuditOne(
+    uid,
+    rawActivityId
+  ) {
+    const activityId =
+      c113Text(
+        rawActivityId
+      );
+
+    if (!activityId) {
+      return {
+        activity_id: "",
+        status:
+          "INVALID_ACTIVITY_ID"
+      };
+    }
+
+    const activitySnap =
+      await db.doc(
+        `${ROOT}/${uid}/activities/${activityId}`
+      ).get();
+
+    if (!activitySnap.exists) {
+      return {
+        activity_id:
+          activityId,
+        status:
+          "ACTIVITY_MISSING"
+      };
+    }
+
+    const activity =
+      activitySnap.data() || {};
+
+    const activityStartMs =
+      c113Finite(
+        activity.start_time_ms
+      );
+
+    if (
+      activityStartMs == null ||
+      activityStartMs <= 0
+    ) {
+      return {
+        activity_id:
+          activityId,
+        status:
+          "ACTIVITY_START_MISSING"
+      };
+    }
+
+    const resolved =
+      await c096ResolveActivity(
+        uid,
+        activityId
+      );
+
+    if (
+      resolved?.downloadable !==
+      true
+    ) {
+      return {
+        activity_id:
+          activityId,
+        status:
+          "FIT_NOT_DOWNLOADABLE",
+        activity_start_ms:
+          activityStartMs,
+        resolution_status:
+          resolved?.status ||
+          null
+      };
+    }
+
+    const linked =
+      await c113LinkedFiles(
+        uid,
+        activityId
+      );
+
+    const row =
+      c113ChooseFile(
+        linked,
+        resolved
+      );
+
+    if (!row) {
+      return {
+        activity_id:
+          activityId,
+        status:
+          "FIT_METADATA_MISSING",
+        activity_start_ms:
+          activityStartMs,
+        resolved_file_name:
+          resolved?.file_name ||
+          null
+      };
+    }
+
+    const actualName =
+      c113Text(
+        row?.file_name ||
+        row?.original_name ||
+        row?.name ||
+        resolved?.file_name
+      );
+
+    const nameInfo =
+      c113CanonicalNameInfo(
+        actualName
+      );
+
+    const expectedName =
+      nameInfo.canonical_pattern
+        ? canonicalFitFileName(
+            activityStartMs,
+            nameInfo.code
+          )
+        : null;
+
+    const expectedPrefix =
+      expectedName
+        ? expectedName
+            .replace(
+              /_[A-Z0-9]{1,4}\.fit$/i,
+              ""
+            )
+        : null;
+
+    const utcPrefix =
+      c113UtcCanonicalPrefix(
+        activityStartMs
+      );
+
+    const legacyUtcName =
+      Boolean(
+        nameInfo.canonical_pattern &&
+        utcPrefix &&
+        nameInfo.prefix ===
+          utcPrefix &&
+        expectedPrefix &&
+        nameInfo.prefix !==
+          expectedPrefix
+      );
+
+    const storagePath =
+      c113StoragePath(
+        uid,
+        row,
+        row.id,
+        activityStartMs
+      );
+
+    let fitStartMs=null;
+    let fitReadStatus=
+      "NOT_READ";
+
+    if (storagePath) {
+      try {
+        const object =
+          bucket().file(
+            storagePath
+          );
+
+        const [exists] =
+          await object.exists();
+
+        if (!exists) {
+          fitReadStatus =
+            "OBJECT_NOT_FOUND";
+        } else {
+          const [buffer] =
+            await object.download();
+
+          fitStartMs =
+            await fitStartTimeMsFromBuffer(
+              buffer
+            );
+
+          fitReadStatus =
+            fitStartMs == null
+              ? "START_NOT_FOUND"
+              : "OK";
+        }
+      } catch (error) {
+        fitReadStatus =
+          "READ_ERROR:" +
+          c113Text(
+            error?.message ||
+            error
+          ).slice(0, 180);
+      }
+    } else {
+      fitReadStatus =
+        "OBJECT_PATH_UNKNOWN";
+    }
+
+    const internalDeltaMs =
+      fitStartMs == null
+        ? null
+        : fitStartMs -
+          activityStartMs;
+
+    const internalTimestampOk =
+      internalDeltaMs == null
+        ? null
+        : Math.abs(
+            internalDeltaMs
+          ) <= 1000;
+
+    const localNameOk =
+      nameInfo.canonical_pattern
+        ? actualName ===
+          expectedName
+        : null;
+
+    let status="OK";
+
+    if (
+      internalTimestampOk ===
+      false
+    ) {
+      status =
+        "INTERNAL_TIMESTAMP_MISMATCH";
+    } else if (
+      legacyUtcName
+    ) {
+      status =
+        "LEGACY_UTC_FILENAME";
+    } else if (
+      localNameOk === false
+    ) {
+      status =
+        "CANONICAL_FILENAME_MISMATCH";
+    } else if (
+      internalTimestampOk == null
+    ) {
+      status =
+        "FIT_INTERNAL_TIME_UNVERIFIED";
+    } else if (
+      localNameOk == null
+    ) {
+      status =
+        "ORIGINAL_FILENAME_NOT_CANONICAL";
+    }
+
+    return {
+      activity_id:
+        activityId,
+      status,
+      time_zone:
+        C113_TIME_ZONE,
+      activity_start_ms:
+        activityStartMs,
+      fit_start_ms:
+        fitStartMs,
+      internal_delta_ms:
+        internalDeltaMs,
+      internal_timestamp_ok:
+        internalTimestampOk,
+      fit_read_status:
+        fitReadStatus,
+      actual_file_name:
+        actualName || null,
+      expected_local_file_name:
+        expectedName,
+      local_filename_ok:
+        localNameOk,
+      legacy_utc_filename:
+        legacyUtcName,
+      role:
+        resolved?.role ||
+        row?.role ||
+        row?.fit_role ||
+        null,
+      storage_path:
+        storagePath
+    };
+  }
+
+  async function c113AuditMany(
+    uid,
+    rawIds
+  ) {
+    const ids = [
+      ...new Set(
+        (
+          Array.isArray(rawIds)
+            ? rawIds
+            : []
+        )
+          .map(c113Text)
+          .filter(Boolean)
+      )
+    ]
+      .slice(0, 25);
+
+    const rows=[];
+
+    /*
+     * Lecture séquentielle volontaire :
+     * on évite un pic de téléchargements Storage lors d'un audit.
+     */
+    for (const id of ids) {
+      try {
+        rows.push(
+          await c113AuditOne(
+            uid,
+            id
+          )
+        );
+      } catch (error) {
+        rows.push({
+          activity_id: id,
+          status: "AUDIT_ERROR",
+          error:
+            c113Text(
+              error?.message ||
+              error
+            ).slice(0, 240)
+        });
+      }
+    }
+
+    const summary =
+      rows.reduce(
+        (acc,row)=>{
+          const key =
+            c113Text(
+              row?.status ||
+              "UNKNOWN"
+            );
+
+          acc[key] =
+            Number(
+              acc[key] || 0
+            ) + 1;
+
+          return acc;
+        },
+        {}
+      );
+
+    return {
+      ok: true,
+      version: "CGWEB113",
+      time_zone:
+        C113_TIME_ZONE,
+      requested:
+        ids.length,
+      rows,
+      summary
+    };
+  }
+
+  /* CGWEB113_FIT_TIMESTAMP_PARITY_AUDIT001_END */
+
   /* CGWEB112_FIRST_DISPLAY_FIT_ENSURE_BACKEND_END */
 
   /* CGWEB099_GLOBAL_DIRECTORY_HELPERS_END */
@@ -10591,6 +11190,31 @@ async function c099GlobalDirectoryQuery(
         const decoded = await requireUser(req);
         const uid = decoded.uid;
         const action = String(req.query.action || "health").trim();
+
+        if (action === "fit_timestamp_parity_audit") {
+          if (req.method !== "POST") {
+            return res.status(405).json({
+              ok: false,
+              version: "CGWEB113",
+              error: "POST requis."
+            });
+          }
+
+          const body =
+            req.body &&
+            typeof req.body === "object" &&
+            !Buffer.isBuffer(req.body)
+              ? req.body
+              : {};
+
+          const result =
+            await c113AuditMany(
+              uid,
+              body.activity_ids
+            );
+
+          return res.json(result);
+        }
 
         if (action === "ensure_activity_fit") {
           if (req.method !== "POST") {

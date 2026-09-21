@@ -1268,6 +1268,54 @@ window.SPORT_FIT_ENSURE =
 
 /* CGWEB112_FIT_ENSURE_API_END */
 
+
+/* CGWEB113_FIT_TIMESTAMP_AUDIT_API_START */
+
+async function c113AuditFitTimestamps(
+  activityIds
+) {
+  const ids = [
+    ...new Set(
+      (
+        Array.isArray(activityIds)
+          ? activityIds
+          : []
+      )
+        .map(
+          value =>
+            String(value || "")
+              .trim()
+        )
+        .filter(Boolean)
+    )
+  ]
+    .slice(0, 25);
+
+  return request(
+    "fit_timestamp_parity_audit",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json"
+      },
+      body: JSON.stringify({
+        activity_ids: ids
+      })
+    }
+  );
+}
+
+window.SPORT_FIT_TIMESTAMP_AUDIT =
+  Object.freeze({
+    version: "CGWEB113",
+    timeZone: "Europe/Paris",
+    audit:
+      c113AuditFitTimestamps
+  });
+
+/* CGWEB113_FIT_TIMESTAMP_AUDIT_API_END */
+
 window.SPORT_FIT_PIPELINE = Object.freeze({
   version: "FITPIPELINE001",
   generateStravaFit: fp077GenerateStravaFit,

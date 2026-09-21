@@ -435,18 +435,86 @@ function activityStats(payload, normalized) {
   };
 }
 
-function canonicalFitFileName(startMs, code = "C") {
-  const date = new Date(Number(startMs));
+/* CGWEB113_FIT_LOCAL_TIME_CANONICAL_NAME001_START */
 
-  if (!Number.isFinite(date.getTime())) {
+const CGWEB113_CANONICAL_TIME_ZONE =
+  "Europe/Paris";
+
+function cgweb113ParisDateTimeParts(
+  startMs
+) {
+  const date =
+    new Date(
+      Number(startMs)
+    );
+
+  if (
+    !Number.isFinite(
+      date.getTime()
+    )
+  ) {
     throw new Error(
       "FITWRITER001 : date de départ invalide."
     );
   }
 
-  const pad =
-    (value) =>
-      String(value).padStart(2, "0");
+  /*
+   * EUROPE_PARIS_TIMEZONE001
+   *
+   * Le nom d'un FIT canonique représente l'heure de départ telle qu'elle
+   * est affichée dans SPORT Web en France. Le fuseau est explicite :
+   * il ne dépend donc plus du timezone du runtime Cloud Functions.
+   *
+   * Intl applique automatiquement CET (UTC+1) / CEST (UTC+2).
+   */
+  const formatter =
+    new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        timeZone:
+          CGWEB113_CANONICAL_TIME_ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23"
+      }
+    );
+
+  const values = {};
+
+  for (
+    const part
+    of formatter.formatToParts(date)
+  ) {
+    if (
+      part.type !== "literal"
+    ) {
+      values[part.type] =
+        part.value;
+    }
+  }
+
+  return {
+    year: values.year,
+    month: values.month,
+    day: values.day,
+    hour: values.hour,
+    minute: values.minute,
+    second: values.second
+  };
+}
+
+function canonicalFitFileName(
+  startMs,
+  code = "C"
+) {
+  const parts =
+    cgweb113ParisDateTimeParts(
+      startMs
+    );
 
   const safeCode =
     String(code || "C")
@@ -455,14 +523,17 @@ function canonicalFitFileName(startMs, code = "C") {
       .slice(0, 4) || "C";
 
   return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds())
-  ].join("_") + `_${safeCode}.fit`;
+    parts.year,
+    parts.month,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second
+  ].join("_") +
+    `_${safeCode}.fit`;
 }
+
+/* CGWEB113_FIT_LOCAL_TIME_CANONICAL_NAME001_END */
 
 function sportFileCode(sport, subSport) {
   const s = Number(sport || 0);
@@ -871,6 +942,110 @@ async function encodeCanonicalFit(payload = {}) {
   };
 }
 
+
+/* CGWEB113_FIT_TIMESTAMP_PARITY_AUDIT001_HELPER_START */
+
+async function fitStartTimeMsFromBuffer(
+  buffer
+) {
+  const {
+    Decoder,
+    Stream
+  } = await fitSdk();
+
+  const source =
+    Buffer.isBuffer(buffer)
+      ? buffer
+      : Buffer.from(buffer);
+
+  const firstStream =
+    Stream.fromBuffer(source);
+
+  if (
+    !Decoder.isFIT(
+      firstStream
+    )
+  ) {
+    return null;
+  }
+
+  const decoder =
+    new Decoder(
+      Stream.fromBuffer(source)
+    );
+
+  const result =
+    decoder.read({
+      applyScaleAndOffset: true,
+      expandSubFields: true,
+      expandComponents: true,
+      convertTypesToStrings: true,
+      convertDateTimesToDates: true,
+      includeUnknownData: false,
+      mergeHeartRates: true,
+      decodeMemoGlobs: false,
+      skipHeader: false,
+      dataOnly: false,
+      legacyArrayMode: false
+    });
+
+  const messages =
+    result?.messages || {};
+
+  const first =
+    (value) =>
+      Array.isArray(value) &&
+      value.length
+        ? value[0]
+        : null;
+
+  const session =
+    first(
+      messages.sessionMesgs
+    );
+
+  const lap =
+    first(
+      messages.lapMesgs
+    );
+
+  const record =
+    first(
+      messages.recordMesgs
+    );
+
+  const fileId =
+    first(
+      messages.fileIdMesgs
+    );
+
+  const candidates = [
+    session?.startTime,
+    lap?.startTime,
+    record?.timestamp,
+    fileId?.timeCreated
+  ];
+
+  for (
+    const candidate
+    of candidates
+  ) {
+    const ms =
+      timestampMs(candidate);
+
+    if (
+      ms != null &&
+      Number.isFinite(ms)
+    ) {
+      return ms;
+    }
+  }
+
+  return null;
+}
+
+/* CGWEB113_FIT_TIMESTAMP_PARITY_AUDIT001_HELPER_END */
+
 async function inspectFitBuffer(buffer) {
   const {
     Decoder,
@@ -1130,6 +1305,7 @@ module.exports = {
   inspectFitBuffer,
   fitWriterSelfTest,
   canonicalFitFileName,
+  fitStartTimeMsFromBuffer,
   sportFileCode,
   decodeCanonicalFitSummary
 };
