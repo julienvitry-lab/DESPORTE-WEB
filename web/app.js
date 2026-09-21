@@ -6352,6 +6352,38 @@ function cgweb112MarkAvailable(
       );
     }
   }
+
+  cgweb112Fix1RememberAvailability(
+    activityId,
+    {
+      downloadable: true,
+      status:
+        result?.resolution_status ||
+        result?.status ||
+        "AVAILABLE",
+      role:
+        result?.role || "",
+      method:
+        result?.resolution_method ||
+        "CGWEB112_ENSURE",
+      file_name:
+        result?.file_name || ""
+    }
+  );
+
+  setTimeout(
+    ()=>{
+      Promise.resolve(
+        v081RefreshFitQuickControls()
+      ).catch(error=>{
+        console.warn(
+          "CGWEB112 FIX1 ENSURE recheck",
+          error
+        );
+      });
+    },
+    250
+  );
 }
 
 async function cgweb112EnsureOne(
@@ -6527,6 +6559,13 @@ function cgweb112EnsureVisibleMissing(
         availability?.[id];
 
       if (
+        !info ||
+        typeof info !== "object"
+      ) {
+        return false;
+      }
+
+      if (
         info?.downloadable === true
       ) {
         return false;
@@ -6535,7 +6574,7 @@ function cgweb112EnsureVisibleMissing(
       return (
         String(
           info?.status ||
-          "NO_LINKED_FILE"
+          ""
         )
           .trim()
           .toUpperCase() ===
@@ -6550,6 +6589,259 @@ function cgweb112EnsureVisibleMissing(
 }
 
 /* CGWEB112_FIRST_DISPLAY_FIT_ENSURE_WEB_END */
+
+
+
+/* CGWEB112_FIX1_POST_RENDER_TRUTH_START */
+
+const cgweb112Fix1TruthCache =
+  new Map();
+
+let cgweb112Fix1PostRenderScheduled =
+  false;
+
+function cgweb112Fix1ActivityId(
+  control
+) {
+  return String(
+    control?.dataset?.activityId ||
+    ""
+  ).trim();
+}
+
+function cgweb112Fix1LiveControls(
+  ids=null
+) {
+  const wanted =
+    ids
+      ? new Set(
+          [...ids]
+            .map(
+              value =>
+                String(value || "")
+                  .trim()
+            )
+            .filter(Boolean)
+        )
+      : null;
+
+  return [
+    ...document.querySelectorAll(
+      "#activityList .web081-fit-quick"
+    )
+  ].filter(control => {
+    const id =
+      cgweb112Fix1ActivityId(
+        control
+      );
+
+    return (
+      Boolean(id) &&
+      (
+        !wanted ||
+        wanted.has(id)
+      )
+    );
+  });
+}
+
+function cgweb112Fix1RememberAvailability(
+  activityId,
+  info
+) {
+  const id =
+    String(activityId || "")
+      .trim();
+
+  if (
+    !id ||
+    !info ||
+    typeof info !== "object"
+  ) {
+    return false;
+  }
+
+  cgweb112Fix1TruthCache.set(
+    id,
+    {
+      ...info
+    }
+  );
+
+  window.CGWEB112_FIX1_TRUTH_CACHE_SIZE =
+    cgweb112Fix1TruthCache.size;
+
+  return true;
+}
+
+function cgweb112Fix1RememberBulk(
+  availability
+) {
+  if (
+    !availability ||
+    typeof availability !== "object"
+  ) {
+    return;
+  }
+
+  for (
+    const [activityId,info]
+    of Object.entries(availability)
+  ) {
+    cgweb112Fix1RememberAvailability(
+      activityId,
+      info
+    );
+  }
+}
+
+function cgweb112Fix1ApplyAvailability(
+  availability=null,
+  reason="truth"
+) {
+  cgweb112Fix1RememberBulk(
+    availability
+  );
+
+  const controls =
+    cgweb112Fix1LiveControls();
+
+  let matched=0;
+  let availableCount=0;
+  let absentCount=0;
+
+  for (const control of controls) {
+    const id =
+      cgweb112Fix1ActivityId(
+        control
+      );
+
+    const direct =
+      availability &&
+      typeof availability === "object"
+        ? availability[id]
+        : null;
+
+    const info =
+      (
+        direct &&
+        typeof direct === "object"
+      )
+        ? direct
+        : cgweb112Fix1TruthCache.get(id);
+
+    if (
+      !info ||
+      typeof info !== "object"
+    ) {
+      continue;
+    }
+
+    matched+=1;
+
+    const downloadable =
+      info.downloadable === true;
+
+    control.dataset.cgweb110Truth =
+      downloadable
+        ? "AVAILABLE"
+        : "ABSENT";
+
+    control.dataset.cgweb110Status =
+      String(
+        info.status || ""
+      );
+
+    control.dataset.cgweb110Role =
+      String(
+        info.role || ""
+      );
+
+    control.dataset.cgweb110Method =
+      String(
+        info.method || ""
+      );
+
+    if (downloadable) {
+      availableCount+=1;
+
+      v081SetQuickState(
+        control,
+        "available",
+        info.file_name ||
+        "le FIT associé"
+      );
+    } else {
+      absentCount+=1;
+
+      v081SetQuickState(
+        control,
+        "unavailable"
+      );
+    }
+
+    if (
+      typeof
+        cgweb099ApplyFitTruthVisibility ===
+        "function"
+    ) {
+      cgweb099ApplyFitTruthVisibility(
+        control
+      );
+    }
+  }
+
+  window.CGWEB112_FIX1_LAST_APPLY = {
+    at:
+      new Date().toISOString(),
+    reason,
+    live_controls:
+      controls.length,
+    matched,
+    available:
+      availableCount,
+    absent:
+      absentCount,
+    cache_size:
+      cgweb112Fix1TruthCache.size
+  };
+
+  return controls;
+}
+
+function cgweb112Fix1SchedulePostRender(
+  reason="directory_render"
+) {
+  if (
+    cgweb112Fix1PostRenderScheduled
+  ) {
+    return;
+  }
+
+  cgweb112Fix1PostRenderScheduled=true;
+
+  queueMicrotask(()=>{
+    requestAnimationFrame(()=>{
+      cgweb112Fix1PostRenderScheduled=false;
+
+      cgweb112Fix1ApplyAvailability(
+        null,
+        reason + ":cache"
+      );
+
+      Promise.resolve(
+        v081RefreshFitQuickControls()
+      ).catch(error=>{
+        console.warn(
+          "CGWEB112 FIX1 POST_RENDER refresh",
+          error
+        );
+      });
+    });
+  });
+}
+
+/* CGWEB112_FIX1_POST_RENDER_TRUTH_END */
 
 async function v081RefreshFitQuickControls() {
   if (v081RefreshPromise) {
@@ -6623,62 +6915,16 @@ async function v081RefreshFitQuickControls() {
           ids
         );
 
-      for (const control of controls) {
-        const id=String(
-          control.dataset.activityId ||
-          ""
-        ).trim();
-
-        const info =
-          availability?.[id];
-
-        const downloadable =
-          info?.downloadable === true;
-
-        control.dataset.cgweb110Truth =
-          downloadable
-            ? "AVAILABLE"
-            : "ABSENT";
-
-        control.dataset.cgweb110Status =
-          String(
-            info?.status ||
-            ""
-          );
-
-        control.dataset.cgweb110Role =
-          String(
-            info?.role ||
-            ""
-          );
-
-        control.dataset.cgweb110Method =
-          String(
-            info?.method ||
-            ""
-          );
-
-        /*
-         * CGWEB110 · ICON_TRUTH_RENDER001
-         *
-         * v081SetQuickState reste le composant visuel historique.
-         * CGWEB099/FIX6 masque déjà complètement l'icône lorsque l'état
-         * vaut unavailable.
-         */
-        if (downloadable) {
-          v081SetQuickState(
-            control,
-            "available",
-            info?.file_name ||
-            "le FIT associé"
-          );
-        } else {
-          v081SetQuickState(
-            control,
-            "unavailable"
-          );
-        }
-      }
+      /*
+       * CGWEB112 FIX1 · STALE_NODE_GUARD001
+       * Appliquer la vérité aux contrôles réellement présents après
+       * la réponse réseau, et non aux références DOM capturées avant.
+       */
+      const liveControls =
+        cgweb112Fix1ApplyAvailability(
+          availability,
+          "bulk_response"
+        );
 
       /*
        * CGWEB112 · FIRST_DISPLAY_FIT_ENSURE001
@@ -6686,7 +6932,7 @@ async function v081RefreshFitQuickControls() {
        * réellement sans aucun lien FIT.
        */
       cgweb112EnsureVisibleMissing(
-        controls,
+        liveControls,
         availability
       );
 
@@ -6697,21 +6943,27 @@ async function v081RefreshFitQuickControls() {
         requested:
           ids.length,
         available:
-          controls.filter(
+          liveControls.filter(
             control =>
               control.dataset
                 .cgweb110Truth ===
               "AVAILABLE"
           ).length,
         absent:
-          controls.filter(
+          liveControls.filter(
             control =>
               control.dataset
                 .cgweb110Truth ===
               "ABSENT"
           ).length,
         legacy_v081_bypassed:
-          true
+          true,
+        stale_node_guard:
+          true,
+        live_controls:
+          liveControls.length,
+        truth_cache_size:
+          cgweb112Fix1TruthCache.size
       };
     } catch (error) {
       console.warn(
@@ -6719,7 +6971,10 @@ async function v081RefreshFitQuickControls() {
         error
       );
 
-      for (const control of controls) {
+      for (
+        const control
+        of cgweb112Fix1LiveControls(ids)
+      ) {
         if (
           control.dataset.fitState ===
           "pending"
@@ -29057,6 +29312,10 @@ function cgweb099RenderRows(rows){
   cgweb099FixDirectoryRowLayout();
   cgweb099FixDirectoryDownloadLayout();
   cgweb099NormalizeDisclosureMarker();
+
+  cgweb112Fix1SchedulePostRender(
+    "cgweb099RenderRows"
+  );
 }
 
 async function cgweb099OpenActivity(
