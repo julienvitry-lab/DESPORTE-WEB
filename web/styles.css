@@ -2679,3 +2679,62 @@ footer {
 #detailView details#performanceTerrainAnalysis.cgweb111-detail-disclosure>summary{
   margin:0!important;
 }
+
+/* CGWEB111 FIX3 · BOTTOM_DETAIL_STACK001 */
+#cgweb111Fix3BottomStack{
+  display:grid;
+  gap:9px;
+  margin:10px 0 14px;
+}
+
+#cgweb111Fix3BottomStack>details.cgweb111-fix3-uniform-disclosure{
+  margin:0!important;
+  width:100%;
+}
+
+#cgweb111Fix3BottomStack>details.cgweb111-fix3-uniform-disclosure>summary{
+  min-height:50px;
+  display:flex;
+  align-items:center;
+  width:100%;
+  padding:12px 14px;
+  cursor:pointer;
+  color:var(--text);
+  font-weight:800;
+  font-size:.82rem;
+}
+
+/* PERFORMANCE_DISCLOSURE_PARITY001 : fermé = exactement un titre simple. */
+#cgweb111Fix3BottomStack>#performanceTerrainAnalysis:not([open])>summary{
+  font-size:0!important;
+}
+#cgweb111Fix3BottomStack>#performanceTerrainAnalysis:not([open])>summary>*{
+  display:none!important;
+}
+#cgweb111Fix3BottomStack>#performanceTerrainAnalysis:not([open])>summary::before{
+  content:"Analyse performance et terrain";
+  font-size:.82rem;
+  font-weight:800;
+  color:var(--text);
+}
+
+/* SAME_DAY_JOIN_DISCLOSURE001 */
+#cgweb111Fix3BottomStack>details.cgweb111-fix3-join-disclosure>#cgweb105JoinPanel{
+  margin:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+#cgweb111Fix3BottomStack>details.cgweb111-fix3-join-disclosure>#cgweb105JoinPanel>.section-heading h3,
+#cgweb111Fix3BottomStack>details.cgweb111-fix3-join-disclosure>#cgweb105JoinPanel>.section-heading .eyebrow{
+  display:none!important;
+}
+
+@media(max-width:760px){
+  #cgweb111Fix3BottomStack{gap:7px}
+  #cgweb111Fix3BottomStack>details.cgweb111-fix3-uniform-disclosure>summary{
+    min-height:46px;
+    padding:11px 12px;
+  }
+}

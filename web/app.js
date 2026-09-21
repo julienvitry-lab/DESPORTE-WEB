@@ -32995,3 +32995,134 @@ function cgweb111InstallDetailUi(){
 cgweb111InstallDetailUi();
 
 /* CGWEB111_DETAIL_DISCLOSURE_COMPACT_END */
+
+/* CGWEB111_FIX3_BOTTOM_DETAIL_STACK_START */
+
+let cgweb111Fix3Scheduled=false;
+let cgweb111Fix3LastActivityKey=null;
+
+const CGWEB111_FIX3_ORDER=[
+  {kind:"target",selector:"#routeAnalysis",title:"Ascensions et descentes"},
+  {kind:"target",selector:"#detailView .route-km-analysis-card",title:"Analyse par kilomètre"},
+  {kind:"target",selector:"#performanceTerrainAnalysis",title:"Analyse performance et terrain"},
+  {kind:"summary",title:"Édition réversible de l’activité"},
+  {kind:"summary",title:"Historique des modifications"},
+  {kind:"summary",title:"Modifier le fichier FIT"},
+  {kind:"join",title:"Joindre des activités du même jour"}
+];
+
+function cgweb111Fix3Text(v){
+  return String(v??"").replace(/\s+/g," ").trim();
+}
+
+function cgweb111Fix3FindBySummary(title){
+  const wanted=cgweb111Fix3Text(title);
+  return [...document.querySelectorAll("#detailView details.cgweb111-detail-disclosure")]
+    .find(details=>{
+      const summary=details.querySelector(":scope > summary");
+      const text=cgweb111Fix3Text(summary?.textContent);
+      return text===wanted || text.startsWith(wanted+" ");
+    }) || null;
+}
+
+function cgweb111Fix3FromTarget(selector){
+  const target=document.querySelector(selector);
+  if(!target)return null;
+  if(target.matches("details.cgweb111-detail-disclosure"))return target;
+  return target.closest("details.cgweb111-detail-disclosure");
+}
+
+function cgweb111Fix3EnsureStack(){
+  let stack=document.getElementById("cgweb111Fix3BottomStack");
+  if(stack)return stack;
+
+  const edit=cgweb111Fix3FindBySummary("Édition réversible de l’activité");
+  if(!edit?.parentElement)return null;
+
+  stack=document.createElement("div");
+  stack.id="cgweb111Fix3BottomStack";
+  stack.className="cgweb111-fix3-bottom-stack";
+
+  /* Le menu Édition est déjà hors du cadre Carte/profil : ancre de sortie. */
+  edit.parentElement.insertBefore(stack,edit);
+  return stack;
+}
+
+function cgweb111Fix3EnsureJoin(){
+  for(const wrapper of document.querySelectorAll("#detailView details.cgweb111-fix3-join-disclosure")){
+    if(!wrapper.querySelector("#cgweb105JoinPanel"))wrapper.remove();
+  }
+
+  const panel=document.getElementById("cgweb105JoinPanel");
+  if(!panel)return null;
+
+  const existing=panel.closest("details.cgweb111-fix3-join-disclosure");
+  if(existing){
+    existing.classList.add("cgweb111-detail-disclosure");
+    return existing;
+  }
+
+  const details=document.createElement("details");
+  details.className="cgweb111-detail-disclosure cgweb111-fix3-join-disclosure";
+
+  const summary=document.createElement("summary");
+  summary.textContent="Joindre des activités du même jour";
+
+  panel.insertAdjacentElement("beforebegin",details);
+  details.append(summary,panel);
+  panel.classList.add("cgweb111-fix3-join-body");
+  return details;
+}
+
+function cgweb111Fix3Resolve(spec){
+  if(spec.kind==="join")return cgweb111Fix3EnsureJoin();
+  if(spec.kind==="target")return cgweb111Fix3FromTarget(spec.selector);
+  return cgweb111Fix3FindBySummary(spec.title);
+}
+
+function cgweb111Fix3Rehome(){
+  const stack=cgweb111Fix3EnsureStack();
+  if(!stack)return false;
+
+  for(const spec of CGWEB111_FIX3_ORDER){
+    const details=cgweb111Fix3Resolve(spec);
+    if(!details)continue;
+    details.classList.add("cgweb111-fix3-uniform-disclosure");
+    details.dataset.cgweb111Fix3Title=spec.title;
+    /* Déplacement du nœud existant : IDs et écouteurs restent intacts. */
+    stack.appendChild(details);
+  }
+  return true;
+}
+
+function cgweb111Fix3Reset(){
+  const key=String(currentDetailId??"");
+  if(!key || key===cgweb111Fix3LastActivityKey)return;
+  cgweb111Fix3LastActivityKey=key;
+  document.querySelectorAll("#cgweb111Fix3BottomStack > details")
+    .forEach(details=>details.removeAttribute("open"));
+}
+
+function cgweb111Fix3Schedule(){
+  if(cgweb111Fix3Scheduled)return;
+  cgweb111Fix3Scheduled=true;
+  queueMicrotask(()=>{
+    cgweb111Fix3Scheduled=false;
+    cgweb111Fix3Rehome();
+    cgweb111Fix3Reset();
+  });
+}
+
+function cgweb111Fix3Install(){
+  const detail=document.getElementById("detailView");
+  if(!detail)return;
+  cgweb111Fix3Schedule();
+  if(window.cgweb111Fix3Observer)return;
+  const observer=new MutationObserver(()=>cgweb111Fix3Schedule());
+  observer.observe(detail,{childList:true,subtree:true});
+  window.cgweb111Fix3Observer=observer;
+}
+
+cgweb111Fix3Install();
+
+/* CGWEB111_FIX3_BOTTOM_DETAIL_STACK_END */
