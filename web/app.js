@@ -7402,13 +7402,28 @@ function web071IndoorBadge() {
 }
 
 function web071DecorateDetailIndoor(activity) {
-  const row=document.getElementById("web061SingleMetricRow");
+  /*
+   * CGWEB111 · DETAIL_LIGHTNING_REMOVE001
+   *
+   * Le badge indoor reste disponible dans le Répertoire, mais il n'est
+   * plus injecté dans le bandeau détaillé de l'activité. Avec les layouts
+   * WEB061/066/071, son positionnement absolu pouvait le faire apparaître
+   * visuellement dans la carte "FC moy.".
+   */
+  const row=
+    document.getElementById(
+      "web061SingleMetricRow"
+    );
+
   if(!row) return;
-  const sportCard=row.querySelector(".web061-sport-card") || row.querySelector(".web066-sport-card") || row.firstElementChild;
-  if(!sportCard) return;
-  sportCard.classList.add("web071-detail-sport-card","web071-fix1-detail-sport-card");
-  sportCard.querySelectorAll(".web071-indoor-badge").forEach(n=>n.remove());
-  if(web071IsIndoorActivity(activity)) sportCard.appendChild(web071IndoorBadge());
+
+  row
+    .querySelectorAll(
+      ".web071-indoor-badge"
+    )
+    .forEach(
+      node=>node.remove()
+    );
 }
 
 
@@ -32746,3 +32761,237 @@ async function cgweb109Run(){
 })();
 
 /* CGWEB109_FIT_TRUTH_APP_END */
+
+/* CGWEB111_DETAIL_DISCLOSURE_COMPACT_START */
+
+let cgweb111DisclosureScheduled=false;
+let cgweb111LastDetailKey=null;
+
+const CGWEB111_DISCLOSURES=[
+  {
+    selector:"#routeAnalysis",
+    title:"Ascensions et descentes"
+  },
+  {
+    selector:"#detailView .route-km-analysis-card",
+    title:"Analyse par kilomètre"
+  },
+  {
+    selector:"#performanceTerrainAnalysis",
+    title:"Analyse performance et terrain"
+  },
+  {
+    selector:"#detailView .detail-edit-panel",
+    title:"Édition réversible de l’activité"
+  },
+  {
+    selector:"#cgweb084RevisionSection",
+    title:"Historique des modifications"
+  },
+  {
+    selector:"#cgweb085aFitEditorSection",
+    title:"Modifier le fichier FIT"
+  }
+];
+
+function cgweb111DetailKey(){
+  return String(
+    currentDetailId ??
+    ""
+  );
+}
+
+function cgweb111MakeDisclosure(
+  target,
+  title
+){
+  if(!target){
+    return null;
+  }
+
+  /*
+   * Analyse performance et terrain est déjà un <details>.
+   * On garde son DOM natif et on l'intègre seulement au style CGWEB111.
+   */
+  if(
+    target.tagName==="DETAILS"
+  ){
+    target.classList.add(
+      "cgweb111-detail-disclosure"
+    );
+
+    if(
+      target.dataset
+        .cgweb111DisclosureInit!=="1"
+    ){
+      target.removeAttribute(
+        "open"
+      );
+
+      target.dataset
+        .cgweb111DisclosureInit=
+          "1";
+    }
+
+    return target;
+  }
+
+  const existing=
+    target.parentElement;
+
+  if(
+    existing?.tagName==="DETAILS" &&
+    existing.classList.contains(
+      "cgweb111-detail-disclosure"
+    )
+  ){
+    return existing;
+  }
+
+  const details=
+    document.createElement(
+      "details"
+    );
+
+  details.className=
+    "cgweb111-detail-disclosure";
+
+  details.dataset.cgweb111Title=
+    title;
+
+  details.dataset.cgweb111DisclosureInit=
+    "1";
+
+  const summary=
+    document.createElement(
+      "summary"
+    );
+
+  summary.textContent=
+    title;
+
+  target.insertAdjacentElement(
+    "beforebegin",
+    details
+  );
+
+  details.append(
+    summary,
+    target
+  );
+
+  target.classList.add(
+    "cgweb111-disclosure-body"
+  );
+
+  return details;
+}
+
+function cgweb111CompactDetailPanels(){
+  for(
+    const spec
+    of CGWEB111_DISCLOSURES
+  ){
+    const target=
+      document.querySelector(
+        spec.selector
+      );
+
+    if(!target){
+      continue;
+    }
+
+    cgweb111MakeDisclosure(
+      target,
+      spec.title
+    );
+  }
+}
+
+function cgweb111ResetForActivity(){
+  const key=
+    cgweb111DetailKey();
+
+  if(
+    !key ||
+    key===cgweb111LastDetailKey
+  ){
+    return;
+  }
+
+  cgweb111LastDetailKey=
+    key;
+
+  document
+    .querySelectorAll(
+      "#detailView details.cgweb111-detail-disclosure"
+    )
+    .forEach(
+      details=>
+        details.removeAttribute(
+          "open"
+        )
+    );
+}
+
+function cgweb111ScheduleDetailUi(){
+  if(
+    cgweb111DisclosureScheduled
+  ){
+    return;
+  }
+
+  cgweb111DisclosureScheduled=true;
+
+  queueMicrotask(
+    ()=>{
+      cgweb111DisclosureScheduled=false;
+
+      cgweb111CompactDetailPanels();
+      cgweb111ResetForActivity();
+    }
+  );
+}
+
+function cgweb111InstallDetailUi(){
+  const detail=
+    document.getElementById(
+      "detailView"
+    );
+
+  if(!detail){
+    return;
+  }
+
+  cgweb111ScheduleDetailUi();
+
+  if(
+    window
+      .cgweb111DetailObserver
+  ){
+    return;
+  }
+
+  const observer=
+    new MutationObserver(
+      ()=>{
+        cgweb111ScheduleDetailUi();
+      }
+    );
+
+  observer.observe(
+    detail,
+    {
+      childList:true,
+      subtree:true
+    }
+  );
+
+  window
+    .cgweb111DetailObserver=
+      observer;
+}
+
+cgweb111InstallDetailUi();
+
+/* CGWEB111_DETAIL_DISCLOSURE_COMPACT_END */

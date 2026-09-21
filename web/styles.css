@@ -2418,7 +2418,8 @@ footer {
 .metric-chart-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
 .metric-chart-head>div{display:grid;gap:3px}
 .metric-chart-svg{width:100%;height:220px;border:1px solid rgba(255,255,255,.07);border-radius:10px;background:rgba(0,0,0,.12)}
-.metric-chart-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.metric-chart-line{fill:none;stroke:var(--green,#b6ff3b);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.metric-chart-line.cgweb101-metric-line{stroke:#a7ff2a!important;opacity:1!important;visibility:visible!important}
 .metric-chart-grid{stroke:rgba(255,255,255,.08);stroke-width:1}
 .metric-chart-label{fill:var(--muted);font:11px "Comfortaa",sans-serif}
 .detail-edit-panel.hidden{display:none!important}
@@ -2641,3 +2642,40 @@ footer {
 .web-fit-cloud-card-main strong,.web-fit-cloud-card-main small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:760px){.web-fit-cloud-head,.web-fit-cloud-card,.web-fit-cloud-picker-row{align-items:stretch;flex-direction:column}.web-fit-cloud-actions,.web-fit-cloud-card-actions{flex-wrap:wrap}}
 /* WEB074_FITCLOUD001_CSS_END */
+
+/* CGWEB111 · DETAIL_DISCLOSURE_COMPACT001 */
+#detailView .cgweb111-detail-disclosure{
+  margin:10px 0;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:12px;
+  background:rgba(255,255,255,.018);
+  overflow:hidden;
+}
+
+#detailView .cgweb111-detail-disclosure>summary{
+  cursor:pointer;
+  padding:12px 14px;
+  color:var(--text);
+  font-weight:800;
+  font-size:.82rem;
+  user-select:none;
+}
+
+#detailView .cgweb111-detail-disclosure[open]>summary{
+  border-bottom:1px solid rgba(255,255,255,.07);
+}
+
+#detailView .cgweb111-detail-disclosure>.cgweb111-disclosure-body{
+  margin:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+}
+
+#detailView details#performanceTerrainAnalysis.cgweb111-detail-disclosure{
+  padding:0!important;
+}
+
+#detailView details#performanceTerrainAnalysis.cgweb111-detail-disclosure>summary{
+  margin:0!important;
+}
