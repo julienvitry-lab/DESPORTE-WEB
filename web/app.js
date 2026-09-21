@@ -33084,14 +33084,32 @@ function cgweb111Fix3Rehome(){
   const stack=cgweb111Fix3EnsureStack();
   if(!stack)return false;
 
+  let slot=0;
+
   for(const spec of CGWEB111_FIX3_ORDER){
     const details=cgweb111Fix3Resolve(spec);
     if(!details)continue;
+
     details.classList.add("cgweb111-fix3-uniform-disclosure");
     details.dataset.cgweb111Fix3Title=spec.title;
-    /* Déplacement du nœud existant : IDs et écouteurs restent intacts. */
-    stack.appendChild(details);
+
+    /*
+     * FIX1 : ne déplacer le nœud que si sa position est réellement fausse.
+     * appendChild() sur un enfant déjà présent déclenchait encore une mutation,
+     * laquelle réveillait l'observer et pouvait créer une boucle sans fin.
+     */
+    const expected=stack.children[slot] || null;
+
+    if(
+      details.parentElement!==stack ||
+      details!==expected
+    ){
+      stack.insertBefore(details,expected);
+    }
+
+    slot++;
   }
+
   return true;
 }
 
@@ -33105,11 +33123,41 @@ function cgweb111Fix3Reset(){
 
 function cgweb111Fix3Schedule(){
   if(cgweb111Fix3Scheduled)return;
+
   cgweb111Fix3Scheduled=true;
+
   queueMicrotask(()=>{
     cgweb111Fix3Scheduled=false;
-    cgweb111Fix3Rehome();
-    cgweb111Fix3Reset();
+
+    const detail=document.getElementById("detailView");
+    const observer=window.cgweb111Fix3Observer || null;
+
+    /*
+     * FIX1 : l'observer est suspendu pendant les déplacements DOM produits
+     * par CGWEB111 lui-même. Il est réarmé immédiatement ensuite.
+     */
+    if(observer){
+      observer.disconnect();
+    }
+
+    try{
+      cgweb111Fix3Rehome();
+      cgweb111Fix3Reset();
+    }finally{
+      if(
+        observer &&
+        detail &&
+        detail.isConnected
+      ){
+        observer.observe(
+          detail,
+          {
+            childList:true,
+            subtree:true
+          }
+        );
+      }
+    }
   });
 }
 
