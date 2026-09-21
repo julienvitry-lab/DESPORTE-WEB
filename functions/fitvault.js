@@ -10294,6 +10294,291 @@ async function c099GlobalDirectoryQuery(
     };
   }
 
+
+  /* CGWEB112_FIRST_DISPLAY_FIT_ENSURE_BACKEND_START */
+
+  const C112_LEASE_MS = 120000;
+  const C112_WAIT_ATTEMPTS = 8;
+  const C112_WAIT_MS = 300;
+
+  function c112Text(value) {
+    return String(value ?? "").trim();
+  }
+
+  async function c112Sleep(ms) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function c112AcquireLease(uid, activityId) {
+    const id = c112Text(activityId);
+    const ref = db.doc(`${ROOT}/${uid}/fit_ensure_locks/${id}`);
+    const token = crypto.randomBytes(12).toString("hex");
+    let acquired = false;
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const row = snap.exists ? (snap.data() || {}) : {};
+      const now = Date.now();
+      const started = Number(row.started_at_ms || 0);
+      const active =
+        row.state === "RUNNING" &&
+        Number.isFinite(started) &&
+        started > 0 &&
+        now - started < C112_LEASE_MS;
+
+      if (active) return;
+
+      tx.set(
+        ref,
+        {
+          state: "RUNNING",
+          token,
+          started_at_ms: now,
+          updated_at_ms: now,
+          version: "CGWEB112"
+        },
+        {merge: true}
+      );
+
+      acquired = true;
+    });
+
+    return {acquired, token, ref};
+  }
+
+  async function c112ReleaseLease(lease) {
+    if (!lease?.acquired || !lease?.ref || !lease?.token) return;
+
+    try {
+      const snap = await lease.ref.get();
+      const row = snap.exists ? (snap.data() || {}) : {};
+
+      if (c112Text(row.token) === c112Text(lease.token)) {
+        await lease.ref.delete();
+      }
+    } catch (error) {
+      console.warn(
+        "CGWEB112 lease release",
+        error?.message || error
+      );
+    }
+  }
+
+  async function c112WaitForAvailability(uid, activityId) {
+    let last = null;
+
+    for (let i = 0; i < C112_WAIT_ATTEMPTS; i += 1) {
+      if (i > 0) await c112Sleep(C112_WAIT_MS);
+
+      last = await c096ResolveActivity(uid, activityId);
+
+      if (last?.downloadable === true) return last;
+
+      if (c112Text(last?.status) !== "NO_LINKED_FILE") {
+        return last;
+      }
+    }
+
+    return last;
+  }
+
+  async function c112EnsureActivityFit(uid, rawActivityId) {
+    const activityId = c112Text(rawActivityId);
+
+    if (!activityId) {
+      throw Object.assign(
+        new Error("activity_id absent."),
+        {status: 400}
+      );
+    }
+
+    const before = await c096ResolveActivity(uid, activityId);
+
+    if (before?.downloadable === true) {
+      return {
+        ok: true,
+        version: "CGWEB112",
+        activity_id: activityId,
+        status: "ALREADY_AVAILABLE",
+        downloadable: true,
+        generated: false,
+        role: before.role || null,
+        file_name: before.file_name || null,
+        resolution_status: before.status || null,
+        resolution_method: before.method || null
+      };
+    }
+
+    if (c112Text(before?.status) !== "NO_LINKED_FILE") {
+      return {
+        ok: true,
+        version: "CGWEB112",
+        activity_id: activityId,
+        status: "STORAGE_UNRESOLVED",
+        downloadable: false,
+        generated: false,
+        resolution_status: before?.status || "UNKNOWN",
+        resolution_method: before?.method || "NONE"
+      };
+    }
+
+    const lease = await c112AcquireLease(uid, activityId);
+
+    if (!lease.acquired) {
+      const waited = await c112WaitForAvailability(uid, activityId);
+
+      if (waited?.downloadable === true) {
+        return {
+          ok: true,
+          version: "CGWEB112",
+          activity_id: activityId,
+          status: "AVAILABLE_AFTER_WAIT",
+          downloadable: true,
+          generated: false,
+          role: waited.role || null,
+          file_name: waited.file_name || null,
+          resolution_status: waited.status || null,
+          resolution_method: waited.method || null
+        };
+      }
+
+      return {
+        ok: true,
+        version: "CGWEB112",
+        activity_id: activityId,
+        status: "IN_PROGRESS",
+        downloadable: false,
+        generated: false,
+        resolution_status: waited?.status || "NO_LINKED_FILE"
+      };
+    }
+
+    try {
+      const locked = await c096ResolveActivity(uid, activityId);
+
+      if (locked?.downloadable === true) {
+        return {
+          ok: true,
+          version: "CGWEB112",
+          activity_id: activityId,
+          status: "ALREADY_AVAILABLE",
+          downloadable: true,
+          generated: false,
+          role: locked.role || null,
+          file_name: locked.file_name || null,
+          resolution_status: locked.status || null,
+          resolution_method: locked.method || null
+        };
+      }
+
+      if (c112Text(locked?.status) !== "NO_LINKED_FILE") {
+        return {
+          ok: true,
+          version: "CGWEB112",
+          activity_id: activityId,
+          status: "STORAGE_UNRESOLVED",
+          downloadable: false,
+          generated: false,
+          resolution_status: locked?.status || "UNKNOWN",
+          resolution_method: locked?.method || "NONE"
+        };
+      }
+
+      const activitySnap =
+        await db.doc(`${ROOT}/${uid}/activities/${activityId}`).get();
+
+      if (!activitySnap.exists) {
+        return {
+          ok: false,
+          version: "CGWEB112",
+          activity_id: activityId,
+          status: "ACTIVITY_MISSING",
+          downloadable: false,
+          generated: false
+        };
+      }
+
+      const activity = activitySnap.data() || {};
+
+      if (activity.deleted_at_ms != null) {
+        return {
+          ok: false,
+          version: "CGWEB112",
+          activity_id: activityId,
+          status: "ACTIVITY_DELETED",
+          downloadable: false,
+          generated: false
+        };
+      }
+
+      const core = v088Core(activity);
+
+      if (!core?.ok) {
+        return {
+          ok: true,
+          version: "CGWEB112",
+          activity_id: activityId,
+          status: "INSUFFICIENT",
+          downloadable: false,
+          generated: false,
+          missing: Array.isArray(core?.missing) ? core.missing : []
+        };
+      }
+
+      const generated =
+        await v088RecoverOne(
+          uid,
+          {activity_id: activityId}
+        );
+
+      if (generated?.ok === false) {
+        return {
+          ...generated,
+          version: "CGWEB112",
+          downloadable: false,
+          generated: false
+        };
+      }
+
+      const after = await c096ResolveActivity(uid, activityId);
+
+      if (after?.downloadable === true) {
+        return {
+          ok: true,
+          version: "CGWEB112",
+          activity_id: activityId,
+          status:
+            generated?.status === "STORED"
+              ? "STORED_AVAILABLE"
+              : "ALREADY_AVAILABLE",
+          downloadable: true,
+          generated: generated?.status === "STORED",
+          generation_status: generated?.status || null,
+          role: after.role || null,
+          file_name: after.file_name || null,
+          resolution_status: after.status || null,
+          resolution_method: after.method || null
+        };
+      }
+
+      return {
+        ok: true,
+        version: "CGWEB112",
+        activity_id: activityId,
+        status: "POST_WRITE_NOT_DOWNLOADABLE",
+        downloadable: false,
+        generated: generated?.status === "STORED",
+        generation_status: generated?.status || null,
+        resolution_status: after?.status || "UNKNOWN",
+        resolution_method: after?.method || "NONE"
+      };
+    } finally {
+      await c112ReleaseLease(lease);
+    }
+  }
+
+  /* CGWEB112_FIRST_DISPLAY_FIT_ENSURE_BACKEND_END */
+
   /* CGWEB099_GLOBAL_DIRECTORY_HELPERS_END */
 
   return onRequest(
@@ -10306,6 +10591,38 @@ async function c099GlobalDirectoryQuery(
         const decoded = await requireUser(req);
         const uid = decoded.uid;
         const action = String(req.query.action || "health").trim();
+
+        if (action === "ensure_activity_fit") {
+          if (req.method !== "POST") {
+            return res.status(405).json({
+              ok: false,
+              version: "CGWEB112",
+              error: "POST requis."
+            });
+          }
+
+          const body =
+            req.body &&
+            typeof req.body === "object" &&
+            !Buffer.isBuffer(req.body)
+              ? req.body
+              : {};
+
+          const activityId =
+            String(
+              body.activity_id ||
+              req.query.activity_id ||
+              ""
+            ).trim();
+
+          const result =
+            await c112EnsureActivityFit(
+              uid,
+              activityId
+            );
+
+          return res.json(result);
+        }
 
         if (action === "health") {
           return res.json({

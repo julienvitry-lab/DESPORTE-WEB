@@ -6269,6 +6269,288 @@ function v081CreateFitQuickControl(activity) {
   return control;
 }
 
+
+/* CGWEB112_FIRST_DISPLAY_FIT_ENSURE_WEB_START */
+
+const cgweb112EnsureAttempted =
+  new Set();
+
+const cgweb112EnsureInFlight =
+  new Map();
+
+function cgweb112ControlsForActivity(
+  activityId
+) {
+  const id =
+    String(activityId || "").trim();
+
+  if (!id) return [];
+
+  return [
+    ...document.querySelectorAll(
+      "#activityList .web081-fit-quick"
+    )
+  ].filter(
+    control =>
+      String(
+        control?.dataset
+          ?.activityId || ""
+      ).trim() === id
+  );
+}
+
+function cgweb112Record(
+  activityId,
+  payload
+) {
+  window.CGWEB112_LAST_ENSURE = {
+    at: new Date().toISOString(),
+    activity_id:
+      String(activityId || ""),
+    ...(payload || {})
+  };
+}
+
+function cgweb112MarkAvailable(
+  activityId,
+  result
+) {
+  const label =
+    String(
+      result?.file_name ||
+      "le FIT associé"
+    );
+
+  for (
+    const control
+    of cgweb112ControlsForActivity(
+      activityId
+    )
+  ) {
+    control.dataset.cgweb110Truth =
+      "AVAILABLE";
+
+    control.dataset.cgweb112Ensure =
+      String(
+        result?.status ||
+        "AVAILABLE"
+      );
+
+    v081SetQuickState(
+      control,
+      "available",
+      label
+    );
+
+    if (
+      typeof
+        cgweb099ApplyFitTruthVisibility ===
+        "function"
+    ) {
+      cgweb099ApplyFitTruthVisibility(
+        control
+      );
+    }
+  }
+}
+
+async function cgweb112EnsureOne(
+  activityId
+) {
+  const id =
+    String(activityId || "").trim();
+
+  if (
+    !id ||
+    cgweb112EnsureAttempted.has(id) ||
+    cgweb112EnsureInFlight.has(id)
+  ) {
+    return;
+  }
+
+  const api =
+    window.SPORT_FIT_ENSURE;
+
+  if (
+    !api ||
+    typeof api.ensureActivityFit !==
+      "function"
+  ) {
+    cgweb112Record(
+      id,
+      {status: "API_NOT_READY"}
+    );
+    return;
+  }
+
+  /*
+   * NO_PERPETUAL_BACKFILL001 :
+   * une seule tentative automatique par activité et par session de page.
+   * Aucun balayage global n'est lancé.
+   */
+  cgweb112EnsureAttempted.add(id);
+
+  const promise =
+    (async () => {
+      for (
+        const control
+        of cgweb112ControlsForActivity(id)
+      ) {
+        control.dataset.cgweb112Ensure =
+          "IN_PROGRESS";
+      }
+
+      try {
+        const result =
+          await api.ensureActivityFit(id);
+
+        cgweb112Record(
+          id,
+          {
+            status:
+              result?.status ||
+              "UNKNOWN",
+            downloadable:
+              result?.downloadable === true,
+            generated:
+              result?.generated === true,
+            resolution_status:
+              result?.resolution_status ||
+              null
+          }
+        );
+
+        if (
+          result?.downloadable === true
+        ) {
+          cgweb112MarkAvailable(
+            id,
+            result
+          );
+          return;
+        }
+
+        for (
+          const control
+          of cgweb112ControlsForActivity(id)
+        ) {
+          control.dataset.cgweb112Ensure =
+            String(
+              result?.status ||
+              "NOT_AVAILABLE"
+            );
+        }
+
+        if (
+          result?.status ===
+          "IN_PROGRESS"
+        ) {
+          setTimeout(
+            () =>
+              void
+                v081RefreshFitQuickControls(),
+            1400
+          );
+
+          setTimeout(
+            () =>
+              void
+                v081RefreshFitQuickControls(),
+            4200
+          );
+        }
+      } catch (error) {
+        cgweb112Record(
+          id,
+          {
+            status: "ERROR",
+            error:
+              error?.message ||
+              String(error)
+          }
+        );
+
+        for (
+          const control
+          of cgweb112ControlsForActivity(id)
+        ) {
+          control.dataset.cgweb112Ensure =
+            "ERROR";
+        }
+
+        console.warn(
+          "CGWEB112 FIRST_DISPLAY_FIT_ENSURE001",
+          id,
+          error
+        );
+      }
+    })();
+
+  cgweb112EnsureInFlight.set(
+    id,
+    promise
+  );
+
+  try {
+    await promise;
+  } finally {
+    cgweb112EnsureInFlight.delete(id);
+  }
+}
+
+function cgweb112EnsureVisibleMissing(
+  controls,
+  availability
+) {
+  const ids = [
+    ...new Set(
+      (controls || [])
+        .map(
+          control =>
+            String(
+              control?.dataset
+                ?.activityId || ""
+            ).trim()
+        )
+        .filter(Boolean)
+    )
+  ]
+    .filter(id => {
+      if (
+        cgweb112EnsureAttempted.has(id) ||
+        cgweb112EnsureInFlight.has(id)
+      ) {
+        return false;
+      }
+
+      const info =
+        availability?.[id];
+
+      if (
+        info?.downloadable === true
+      ) {
+        return false;
+      }
+
+      return (
+        String(
+          info?.status ||
+          "NO_LINKED_FILE"
+        )
+          .trim()
+          .toUpperCase() ===
+        "NO_LINKED_FILE"
+      );
+    })
+    .slice(0, 4);
+
+  for (const id of ids) {
+    void cgweb112EnsureOne(id);
+  }
+}
+
+/* CGWEB112_FIRST_DISPLAY_FIT_ENSURE_WEB_END */
+
 async function v081RefreshFitQuickControls() {
   if (v081RefreshPromise) {
     return v081RefreshPromise;
@@ -6397,6 +6679,16 @@ async function v081RefreshFitQuickControls() {
           );
         }
       }
+
+      /*
+       * CGWEB112 · FIRST_DISPLAY_FIT_ENSURE001
+       * Après la vérité bulk, provisionner uniquement les lignes visibles
+       * réellement sans aucun lien FIT.
+       */
+      cgweb112EnsureVisibleMissing(
+        controls,
+        availability
+      );
 
       window.CGWEB110_LAST_PAGE_TRUTH = {
         at:

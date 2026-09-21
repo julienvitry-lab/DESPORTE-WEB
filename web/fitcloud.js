@@ -1235,6 +1235,39 @@ async function fp077StoreImportedOriginalFit(file, activity) {
   return result;
 }
 
+
+/* CGWEB112_FIT_ENSURE_API_START */
+
+async function c112EnsureActivityFit(activityId) {
+  const id = String(activityId || "").trim();
+
+  if (!id) {
+    throw new Error("CGWEB112 : activity_id absent.");
+  }
+
+  return request(
+    "ensure_activity_fit",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        activity_id: id
+      })
+    }
+  );
+}
+
+window.SPORT_FIT_ENSURE =
+  Object.freeze({
+    version: "CGWEB112",
+    ensureActivityFit:
+      c112EnsureActivityFit
+  });
+
+/* CGWEB112_FIT_ENSURE_API_END */
+
 window.SPORT_FIT_PIPELINE = Object.freeze({
   version: "FITPIPELINE001",
   generateStravaFit: fp077GenerateStravaFit,
