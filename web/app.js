@@ -6125,32 +6125,112 @@ function v081SetQuickState(control, state, label = "") {
   }
 
 async function v081DownloadFromControl(control) {
-  const activityId = String(control?.dataset?.activityId || "").trim();
-  if (!activityId) return;
-  if (control?.dataset?.fitState === "unavailable" || control?.dataset?.fitState === "error") return;
+  const activityId = String(
+    control?.dataset?.activityId || ""
+  ).trim();
 
-  const api = v081FitQuickApi();
-  if (!api?.downloadActivity) {
-    setMessage("FIT Cloud : module de téléchargement non chargé.", "info");
+  if (!activityId) return;
+
+  if (
+    control?.dataset?.fitState === "unavailable" ||
+    control?.dataset?.fitState === "error"
+  ) {
     return;
   }
 
-  v081SetQuickState(control, "busy");
+  /*
+   * CGWEB110 · HISTORICAL_DOWNLOAD_RESTORE001
+   *
+   * Le Répertoire ne passe plus par le cache V081 / list(limit=1000)
+   * pour télécharger une activité.
+   *
+   * CGWEB107 résout le FIT réel par activity_id et le diffuse directement
+   * depuis Storage vers le navigateur.
+   */
+  const api =
+    window.SPORT_DIRECTORY_FIT;
 
-  try {
-    const result = await api.downloadActivity(activityId);
-    v081SetQuickState(control, "available", result?.file_name || "le FIT associé");
-    setMessage(`FIT téléchargé · ${result?.file_name || `activité #${activityId}`}`, "success");
-  } catch (error) {
-    const noFit = error?.code === "NO_FIT" || /aucun fit/i.test(String(error?.message || ""));
-    v081SetQuickState(control, noFit ? "unavailable" : "error");
+  if (
+    !api ||
+    typeof api.directDownload !== "function"
+  ) {
     setMessage(
-      noFit
-        ? `Aucun FIT Cloud associé à l’activité #${activityId}.`
-        : `Téléchargement FIT impossible : ${error?.message || error}`,
+      "FIT : téléchargement direct CGWEB107 non chargé.",
       "info"
     );
-    console.error("FITQUICKDOWNLOAD001", error);
+    return;
+  }
+
+  v081SetQuickState(
+    control,
+    "busy"
+  );
+
+  try {
+    const result =
+      await api.directDownload(
+        activityId
+      );
+
+    if (
+      !result?.ok ||
+      result?.status !== "DIRECT_DOWNLOAD_OK"
+    ) {
+      throw new Error(
+        result?.status ||
+        "DIRECT_DOWNLOAD_FAILED"
+      );
+    }
+
+    control.dataset.cgweb110Download =
+      "DIRECT";
+
+    v081SetQuickState(
+      control,
+      "available",
+      result?.file_name ||
+      "le FIT associé"
+    );
+
+    setMessage(
+      "FIT téléchargé · " +
+      (
+        result?.file_name ||
+        ("activité #" + activityId)
+      ),
+      "success"
+    );
+  } catch (error) {
+    const text=String(
+      error?.message ||
+      error ||
+      ""
+    );
+
+    const noFit=
+      /NO_LINKED_FILE|OBJECT_NOT_RESOLVED|aucun\s+fit|fit\s+absent/i
+        .test(text);
+
+    v081SetQuickState(
+      control,
+      noFit
+        ? "unavailable"
+        : "error"
+    );
+
+    setMessage(
+      noFit
+        ? "Aucun FIT associé à l’activité #" +
+          activityId + "."
+        : "Téléchargement FIT impossible : " +
+          text,
+      "info"
+    );
+
+    console.error(
+      "CGWEB110 HISTORICAL_DOWNLOAD_RESTORE001",
+      error
+    );
   }
 }
 
@@ -6190,47 +6270,185 @@ function v081CreateFitQuickControl(activity) {
 }
 
 async function v081RefreshFitQuickControls() {
-  if (v081RefreshPromise) return v081RefreshPromise;
+  if (v081RefreshPromise) {
+    return v081RefreshPromise;
+  }
 
   const run = (async () => {
-    const controls = Array.from(document.querySelectorAll("#activityList .web081-fit-quick"));
-    if (!controls.length) return;
+    /*
+     * CGWEB110 · PAGE_SCOPED_FIT_TRUTH001
+     *
+     * On interroge UNIQUEMENT les contrôles actuellement rendus dans
+     * #activityList. Avec le Répertoire à 100 lignes par défaut, cela
+     * représente la page visible et non les 6339 activités.
+     */
+    const controls = Array.from(
+      document.querySelectorAll(
+        "#activityList .web081-fit-quick"
+      )
+    );
 
-    const api = v081FitQuickApi();
-    if (!api?.availability) return;
+    if (!controls.length) {
+      return;
+    }
 
-    const ids = [...new Set(
-      controls
-        .map((control) => String(control.dataset.activityId || "").trim())
-        .filter(Boolean)
-    )];
+    const ids = [
+      ...new Set(
+        controls
+          .map(
+            control =>
+              String(
+                control.dataset.activityId ||
+                ""
+              ).trim()
+          )
+          .filter(Boolean)
+      )
+    ];
 
-    if (!ids.length) return;
+    if (!ids.length) {
+      return;
+    }
+
+    /*
+     * CGWEB110 · DIRECTORY_BULK_DOWNLOADABILITY_REWIRE001
+     * CGWEB110 · LEGACY_V081_BYPASS001
+     *
+     * IMPORTANT :
+     * aucune consultation de SPORT_FIT_QUICKDOWNLOAD.availability().
+     * Le plafond historique V081 de 1000 FIT n'intervient plus dans le
+     * Répertoire.
+     *
+     * CGWEB109 chunk automatiquement les demandes par paquets de 1000,
+     * donc le mécanisme reste correct même si l'utilisateur affiche
+     * exceptionnellement plus de 1000 lignes.
+     */
+    const truth =
+      window.SPORT_DIRECTORY_FIT_TRUTH;
+
+    if (
+      !truth ||
+      typeof truth.bulkDownloadability !== "function"
+    ) {
+      throw new Error(
+        "BULK_DOWNLOADABILITY001 non chargé."
+      );
+    }
 
     try {
-      const availability = await api.availability(ids);
+      const availability =
+        await truth.bulkDownloadability(
+          ids
+        );
+
       for (const control of controls) {
-        const id = String(control.dataset.activityId || "").trim();
-        const info = availability?.[id];
-        if (info?.hasFit) {
-          v081SetQuickState(control, "available", info.file_name || "le FIT associé");
+        const id=String(
+          control.dataset.activityId ||
+          ""
+        ).trim();
+
+        const info =
+          availability?.[id];
+
+        const downloadable =
+          info?.downloadable === true;
+
+        control.dataset.cgweb110Truth =
+          downloadable
+            ? "AVAILABLE"
+            : "ABSENT";
+
+        control.dataset.cgweb110Status =
+          String(
+            info?.status ||
+            ""
+          );
+
+        control.dataset.cgweb110Role =
+          String(
+            info?.role ||
+            ""
+          );
+
+        control.dataset.cgweb110Method =
+          String(
+            info?.method ||
+            ""
+          );
+
+        /*
+         * CGWEB110 · ICON_TRUTH_RENDER001
+         *
+         * v081SetQuickState reste le composant visuel historique.
+         * CGWEB099/FIX6 masque déjà complètement l'icône lorsque l'état
+         * vaut unavailable.
+         */
+        if (downloadable) {
+          v081SetQuickState(
+            control,
+            "available",
+            info?.file_name ||
+            "le FIT associé"
+          );
         } else {
-          v081SetQuickState(control, "unavailable");
+          v081SetQuickState(
+            control,
+            "unavailable"
+          );
         }
       }
+
+      window.CGWEB110_LAST_PAGE_TRUTH = {
+        at:
+          new Date()
+            .toISOString(),
+        requested:
+          ids.length,
+        available:
+          controls.filter(
+            control =>
+              control.dataset
+                .cgweb110Truth ===
+              "AVAILABLE"
+          ).length,
+        absent:
+          controls.filter(
+            control =>
+              control.dataset
+                .cgweb110Truth ===
+              "ABSENT"
+          ).length,
+        legacy_v081_bypassed:
+          true
+      };
     } catch (error) {
-      console.warn("FITQUICKDOWNLOAD001 disponibilité", error);
+      console.warn(
+        "CGWEB110 BULK_DOWNLOADABILITY001",
+        error
+      );
+
       for (const control of controls) {
-        if (control.dataset.fitState === "pending") v081SetQuickState(control, "error");
+        if (
+          control.dataset.fitState ===
+          "pending"
+        ) {
+          v081SetQuickState(
+            control,
+            "error"
+          );
+        }
       }
+
+      throw error;
     }
   })();
 
-  v081RefreshPromise = run;
+  v081RefreshPromise=run;
+
   try {
     await run;
   } finally {
-    v081RefreshPromise = null;
+    v081RefreshPromise=null;
   }
 }
 
