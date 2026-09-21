@@ -26901,9 +26901,32 @@ function cgweb097ApplyState(
       .cgweb097FitOrigin=
         role;
 
-    const downloadable=
+    /*
+     * CGWEB110 FIX2 · DOWNLOADABLE_ICON_PRIORITY001
+     * CGWEB097_FALLBACK001
+     *
+     * Si CGWEB110 a déjà résolu l'activité, sa vérité bulk est
+     * prioritaire pour disponibilité + interaction.
+     * Sinon CGWEB097 conserve son rôle historique de fallback.
+     */
+    const bulkTruth=
+      String(
+        control.dataset
+          .cgweb110Truth || ""
+      )
+        .trim()
+        .toUpperCase();
+
+    const fallbackDownloadable=
       role==="ORIGINAL" ||
       role==="CANONICAL";
+
+    const downloadable=
+      bulkTruth==="AVAILABLE"
+        ? true
+        : bulkTruth==="ABSENT"
+          ? false
+          : fallbackDownloadable;
 
     control.disabled=
       !downloadable;
@@ -26934,6 +26957,16 @@ function cgweb097ApplyState(
       control.setAttribute(
         "aria-label",
         "Télécharger le FIT canonique reconstruit"
+      );
+    }else if(bulkTruth==="AVAILABLE"){
+      control.setAttribute(
+        "title",
+        "Télécharger le FIT associé"
+      );
+
+      control.setAttribute(
+        "aria-label",
+        "Télécharger le FIT associé"
       );
     }else{
       control.setAttribute(
@@ -28059,6 +28092,33 @@ function cgweb099FitTruthRole(control){
 }
 
 function cgweb099FitTruthVisible(control){
+  /*
+   * CGWEB110 FIX2 · IMMEDIATE_ICON_TRUTH001
+   * CGWEB110 FIX2 · BULK_TRUTH_VISIBILITY001
+   *
+   * CGWEB110 connaît déjà la vérité backend dès que
+   * BULK_DOWNLOADABILITY001 répond pour les lignes visibles.
+   * Cette vérité doit commander immédiatement l'icône.
+   *
+   * CGWEB097 ne reste qu'un fallback lorsque CGWEB110 n'a pas encore
+   * produit d'état pour ce contrôle.
+   */
+  const bulkTruth=
+    String(
+      control?.dataset
+        ?.cgweb110Truth || ""
+    )
+      .trim()
+      .toUpperCase();
+
+  if(bulkTruth==="AVAILABLE"){
+    return true;
+  }
+
+  if(bulkTruth==="ABSENT"){
+    return false;
+  }
+
   const role=
     cgweb099FitTruthRole(control);
 
