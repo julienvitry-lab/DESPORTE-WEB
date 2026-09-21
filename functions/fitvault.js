@@ -10818,6 +10818,8 @@ async function c099GlobalDirectoryQuery(
     );
   }
 
+  /* CGWEB113_FIX1_DIRECT_STORAGE_PARITY_AUDIT001 */
+
   async function c113AuditOne(
     uid,
     rawActivityId
@@ -10869,40 +10871,96 @@ async function c099GlobalDirectoryQuery(
       };
     }
 
-    const resolved =
-      await c096ResolveActivity(
-        uid,
+
+    /*
+     * CGWEB113 FIX1 · DIRECT_STORAGE_PARITY_AUDIT001
+     *
+     * L'audit de parité ne doit PAS dépendre de c096ResolveActivity(),
+     * car cette fonction essaie aussi de fabriquer une URL signée V4.
+     * Une erreur de signature peut donc produire downloadable=false
+     * alors que l'objet FIT existe réellement et se télécharge déjà
+     * via le flux direct Storage utilisé par le Répertoire.
+     *
+     * Ici on utilise exactement la vérité Storage :
+     *   c096LinkedRows + c096StorageIndex + c096ResolvePreferred.
+     */
+    const [
+      linkedByActivity,
+      index
+    ] = await Promise.all([
+      c096LinkedRows(uid),
+      c096StorageIndex()
+    ]);
+
+    const linked =
+      linkedByActivity.get(
         activityId
+      ) || [];
+
+    if (!linked.length) {
+      return {
+        activity_id:
+          activityId,
+        status:
+          "FIT_METADATA_MISSING",
+        activity_start_ms:
+          activityStartMs,
+        resolve_status:
+          "NO_LINKED_FILE",
+        resolve_method:
+          "NONE"
+      };
+    }
+
+    const resolved =
+      c096ResolvePreferred(
+        linked,
+        index
+      );
+
+    const resolveStatus =
+      c113Text(
+        resolved?.status ||
+        "NO_LINKED_FILE"
       );
 
     if (
-      resolved?.downloadable !==
-      true
+      !resolveStatus.startsWith(
+        "RESOLVED_"
+      )
     ) {
       return {
         activity_id:
           activityId,
         status:
-          "FIT_NOT_DOWNLOADABLE",
+          "FIT_NOT_RESOLVED",
         activity_start_ms:
           activityStartMs,
-        resolution_status:
-          resolved?.status ||
+        resolve_status:
+          resolveStatus,
+        resolve_method:
+          resolved?.method ||
+          "NONE",
+        resolved_file_name:
+          resolved?.file_name ||
+          null,
+        storage_object:
+          resolved?.object_name ||
           null
       };
     }
 
-    const linked =
-      await c113LinkedFiles(
-        uid,
-        activityId
-      );
-
+    /*
+     * SIGN_URL_INDEPENDENCE001
+     * À partir d'ici aucun getSignedUrl() n'est appelé.
+     */
     const row =
       c113ChooseFile(
         linked,
         resolved
-      );
+      ) ||
+      linked[0] ||
+      null;
 
     if (!row) {
       return {
@@ -10912,18 +10970,20 @@ async function c099GlobalDirectoryQuery(
           "FIT_METADATA_MISSING",
         activity_start_ms:
           activityStartMs,
-        resolved_file_name:
-          resolved?.file_name ||
-          null
+        resolve_status:
+          resolveStatus,
+        resolve_method:
+          resolved?.method ||
+          "NONE"
       };
     }
 
     const actualName =
       c113Text(
+        resolved?.file_name ||
         row?.file_name ||
         row?.original_name ||
-        row?.name ||
-        resolved?.file_name
+        row?.name
       );
 
     const nameInfo =
@@ -10965,10 +11025,14 @@ async function c099GlobalDirectoryQuery(
       );
 
     const storagePath =
+      c113Text(
+        resolved?.object_name
+      ) ||
       c113StoragePath(
         uid,
         row,
-        row.id,
+        row?.__doc_id ||
+        row?.id,
         activityStartMs
       );
 
@@ -10978,8 +11042,12 @@ async function c099GlobalDirectoryQuery(
 
     if (storagePath) {
       try {
+        /*
+         * FIT_INTERNAL_TIMESTAMP_READ001
+         * Lecture directe dans le bucket déjà indexé par c096StorageIndex().
+         */
         const object =
-          bucket().file(
+          index.bucket.file(
             storagePath
           );
 
@@ -11094,6 +11162,13 @@ async function c099GlobalDirectoryQuery(
         row?.role ||
         row?.fit_role ||
         null,
+      resolve_status:
+        resolveStatus,
+      resolve_method:
+        resolved?.method ||
+        "NONE",
+      sign_url_required:
+        false,
       storage_path:
         storagePath
     };
