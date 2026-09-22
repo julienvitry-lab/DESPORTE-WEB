@@ -2128,24 +2128,8 @@ function web055StartOfYear(value = Date.now()) {
 }
 
 function web055ActivityDurationMs(activity) {
-  /* WEB067 · HOME_MOVINGTIME002 */
-  try {
-    if (typeof web060MovingTimeMs === "function") {
-      const moving = Number(web060MovingTimeMs(activity));
-      if (Number.isFinite(moving) && moving > 0) return moving;
-    }
-  } catch (error) {
-    console.warn("WEB067 web060MovingTimeMs", error);
-  }
-
-  const computed = Number(activity?.moving_time_computed_ms);
-  if (Number.isFinite(computed) && computed > 0) return computed;
-
-  const timer = Number(activity?.timer_time_ms);
-  if (Number.isFinite(timer) && timer > 0) return timer;
-
-  const elapsed = Number(activity?.elapsed_time_ms);
-  return Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
+  /* CGWEB114 · ORIGINAL_TIME_RESTORE001 / HOME */
+  return web060MovingTimeMs(activity);
 }
 
 function web055FormatHms(ms) {
@@ -2511,6 +2495,9 @@ let web067HomeAuditToken = 0;
 const web067HomeAuditSession = new Set();
 
 function web067HomeNeedsMovingAudit(activity) {
+  /* CGWEB114 · ROUTE_MOVING_AUDIT_DISABLE001 */
+  return false;
+
   if (!activity || activity.deleted_at_ms != null) return false;
 
   const key = String(activityKey(activity) || "");
@@ -5433,34 +5420,45 @@ function web060MovingAudit(activity, route = null) {
     web060MovingAuditCache.set(String(key), result);
   }
 
-  if (activity && result.movingMs > 0) {
-    activity.moving_time_computed_ms = result.movingMs;
-    activity.moving_time_source = result.source;
-    activity.moving_pause_ms = result.pauseMs;
-  }
+  /*
+   * CGWEB114 · MOVING_CACHE_BYPASS001
+   * Le résultat de l'audit reste purement diagnostique :
+   * aucune réinjection dans l'activité.
+   */
 
   return result;
 }
 
 function web060MovingTimeMs(activity) {
-  const key = activityKey(activity);
+  /*
+   * CGWEB114 · ORIGINAL_TIME_RESTORE001
+   *
+   * Retour au comportement antérieur à WEB060/WEB063 :
+   * aucune priorité au cache calculé moving_time_computed_ms.
+   *
+   * Les champs importés sont lus dans l'ordre historique :
+   *  1. timer_time_ms
+   *  2. moving_time_ms
+   *  3. moving_time (secondes)
+   *  4. elapsed_time_ms
+   *
+   * Les anciens champs moving_time_computed_* restent en base,
+   * mais sont volontairement ignorés.
+   */
+  const candidates = [
+    Number(activity?.timer_time_ms),
+    Number(activity?.moving_time_ms),
+    Number(activity?.moving_time) * 1000,
+    Number(activity?.elapsed_time_ms)
+  ];
 
-  if (key) {
-    const cached = web060MovingAuditCache.get(String(key));
-    if (cached?.movingMs > 0) return cached.movingMs;
-  }
-
-  const computed = web060FinitePositive(
-    activity?.moving_time_computed_ms
+  const value = candidates.find(
+    (candidate) =>
+      Number.isFinite(candidate) &&
+      candidate > 0
   );
 
-  if (computed) return computed;
-
-  const timer = web060FinitePositive(activity?.timer_time_ms);
-  if (timer) return timer;
-
-  const elapsed = web060FinitePositive(activity?.elapsed_time_ms);
-  return elapsed || 0;
+  return Number.isFinite(value) ? value : 0;
 }
 
 function web060MovingSourceLabel(activity) {
@@ -5494,6 +5492,9 @@ function web060MovingSourceLabel(activity) {
 const web063MovingPersistPending = new Map();
 
 async function web063PersistMovingAudit(activity, audit) {
+  /* CGWEB114 · MOVING_PERSIST_DISABLE001 */
+  return;
+
   if (!activity || !audit?.movingMs) return;
 
   const key = String(activityKey(activity) || "");
@@ -5560,6 +5561,9 @@ async function web063PersistMovingAudit(activity, audit) {
 
 
 function web060ApplyMovingAudit(activity, route) {
+  /* CGWEB114 · ROUTE_MOVING_AUDIT_DISABLE001 */
+  return;
+
   if (!activity || !route?.points?.length) return;
 
   const result = web060MovingAudit(activity, route);
@@ -5943,6 +5947,9 @@ function web062UpdateDirectoryDuration(activity) {
 }
 
 async function web062AuditDirectoryActivity(activity) {
+  /* CGWEB114 · ROUTE_MOVING_AUDIT_DISABLE001 */
+  return;
+
   if (!activity) return;
 
   const route = await web062LoadRouteForMoving(activity);
@@ -7169,6 +7176,106 @@ window.CGWEB113_FIX3_MASS_SWEEP = async function(confirm) {
 };
 
 /* CGWEB113_FIX3_MASS_SAFE_SWEEP001_END */
+
+/* CGWEB114_ORIGINAL_TIME_RESTORE001_START */
+
+window.ORIGINAL_TIME_RESTORE001 = Object.freeze({
+  version: "ORIGINAL_TIME_RESTORE001",
+
+  inspect(activity = null) {
+    const row =
+      activity ||
+      (
+        typeof currentDetailActivity === "function"
+          ? currentDetailActivity()
+          : null
+      );
+
+    if (!row) {
+      console.warn(
+        "ORIGINAL_TIME_RESTORE001 : aucune activité courante."
+      );
+      return null;
+    }
+
+    const result = {
+      activity_id:
+        activityKey(row),
+      timer_time_ms:
+        Number(row?.timer_time_ms) || null,
+      moving_time_ms:
+        Number(row?.moving_time_ms) || null,
+      moving_time_seconds:
+        Number(row?.moving_time) || null,
+      elapsed_time_ms:
+        Number(row?.elapsed_time_ms) || null,
+      ignored_moving_time_computed_ms:
+        Number(row?.moving_time_computed_ms) || null,
+      displayed_duration_ms:
+        web060MovingTimeMs(row),
+      ignored_moving_time_source:
+        row?.moving_time_source || null
+    };
+
+    console.table([result]);
+    return result;
+  },
+
+  auditLoaded() {
+    const rows = (
+      Array.isArray(activities)
+        ? activities
+        : []
+    )
+      .map((row) => {
+        const original =
+          web060MovingTimeMs(row);
+        const computed =
+          Number(
+            row?.moving_time_computed_ms
+          );
+
+        if (
+          !Number.isFinite(computed) ||
+          computed <= 0 ||
+          !Number.isFinite(original) ||
+          original <= 0
+        ) {
+          return null;
+        }
+
+        const delta =
+          computed - original;
+
+        return {
+          activity_id:
+            activityKey(row),
+          start_time_ms:
+            Number(row?.start_time_ms) || null,
+          original_duration_ms:
+            original,
+          ignored_computed_ms:
+            computed,
+          delta_ms:
+            delta,
+          ignored_source:
+            row?.moving_time_source || null
+        };
+      })
+      .filter(Boolean)
+      .filter(
+        (row) =>
+          Math.abs(row.delta_ms) >= 1000
+      );
+
+    console.table(rows);
+    return rows;
+  }
+});
+
+/* CGWEB114_ORIGINAL_TIME_RESTORE001_END */
+
+
 
 
 
