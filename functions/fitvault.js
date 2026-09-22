@@ -11257,9 +11257,300 @@ async function c099GlobalDirectoryQuery(
   const C113_FIX2_APPLY_MAX = 10;
   const C113_FIX2_APPLY_TOKEN = "APPLY_LEGACY_UTC_NAMES";
 
-  function c113Fix2Role(row) {
-    return c113Text(row?.role || row?.fit_role).toUpperCase();
+  /* CGWEB113_FIX2_FIX1_ROLE_INFERENCE_START */
+
+  function c113Fix2DirectRole(row) {
+    const raw =
+      c113Text(
+        row?.role ||
+        row?.fit_role
+      ).toUpperCase();
+
+    if (!raw) return "UNKNOWN";
+    if (raw.includes("ORIGINAL")) return "ORIGINAL";
+    if (raw.includes("EDITED")) return "EDITED";
+    if (raw.includes("CANONICAL")) return "CANONICAL";
+
+    return raw;
   }
+
+  function c113Fix2ResolverRole(row) {
+    /*
+     * RESOLVER_ROLE_FALLBACK001
+     *
+     * Réutilise l'inférence historique déjà centralisée dans
+     * c096RoleLabel()/CGWEB090 : source, upload_mode, archive_roles,
+     * fitwriter_version, fitrecovery_version, fitbackfill_version,
+     * version_kind, etc.
+     */
+    const label =
+      c113Text(
+        c096RoleLabel(row)
+      ).toUpperCase();
+
+    return label || "UNKNOWN";
+  }
+
+  function c113Fix2RoleEvidence(
+    row,
+    docId,
+    index,
+    linkedByActivity
+  ) {
+    const directRole =
+      c113Fix2DirectRole(row);
+
+    const resolverRole =
+      c113Fix2ResolverRole(row);
+
+    const c090RolesList =
+      (
+        typeof c090Roles === "function"
+          ? c090Roles(row)
+          : []
+      )
+        .map(
+          value =>
+            c113Text(value)
+              .toUpperCase()
+        )
+        .filter(Boolean);
+
+    const base = {
+      role: "UNKNOWN",
+      direct_role: directRole,
+      resolver_role: resolverRole,
+      role_source: "NONE",
+      role_confidence: "NONE",
+      role_evidence: [],
+      resolver_selected: false,
+      linked_file_count: 0,
+      resolved_object_name: null
+    };
+
+    if (
+      ["ORIGINAL","EDITED","CANONICAL"]
+        .includes(directRole)
+    ) {
+      return {
+        ...base,
+        role: directRole,
+        role_source: "DIRECT_ROLE_FIELD",
+        role_confidence: "EXPLICIT",
+        role_evidence: [
+          "DIRECT_ROLE_FIELD"
+        ]
+      };
+    }
+
+    if (
+      ["ORIGINAL","EDITED","CANONICAL"]
+        .includes(resolverRole)
+    ) {
+      return {
+        ...base,
+        role: resolverRole,
+        role_source: "RESOLVER_ROLE_FALLBACK001",
+        role_confidence: "HIGH",
+        role_evidence: [
+          "C096_ROLE_LABEL",
+          ...c090RolesList.map(
+            role =>
+              "C090:" + role
+          )
+        ]
+      };
+    }
+
+    /*
+     * LEGACY_CANONICAL_ROLE_INFERENCE001
+     *
+     * NO_FILENAME_ONLY_TRUST001 :
+     * le suffixe _C.fit n'est JAMAIS une preuve suffisante.
+     *
+     * Il faut simultanément :
+     * - un activity_id ;
+     * - le document réellement présent parmi les fichiers liés ;
+     * - un objet Storage résolu ;
+     * - c096ResolvePreferred() sélectionnant précisément ce document ;
+     * - le code canonique C dans le nom.
+     *
+     * Après cette inférence, c113Fix2InspectFile() doit encore lire le FIT
+     * et confirmer la parité de son timestamp interne à ±1 seconde.
+     */
+    const currentName =
+      c113Fix2CurrentName(row);
+
+    const nameInfo =
+      c113CanonicalNameInfo(
+        currentName
+      );
+
+    const activityId =
+      c113Text(
+        row?.activity_id
+      );
+
+    const linked =
+      activityId &&
+      linkedByActivity instanceof Map
+        ? (
+            linkedByActivity.get(
+              activityId
+            ) || []
+          )
+        : [];
+
+    const presentInLinked =
+      linked.some(
+        item =>
+          c113Text(
+            item?.__doc_id
+          ) === c113Text(docId)
+      );
+
+    const candidateRow = {
+      __doc_id: docId,
+      ...row
+    };
+
+    const rowResolved =
+      c096ResolveRowObject(
+        candidateRow,
+        index
+      );
+
+    const storageResolved =
+      c113Text(
+        rowResolved?.status
+      ).startsWith(
+        "RESOLVED_"
+      );
+
+    const preferred =
+      linked.length
+        ? c096ResolvePreferred(
+            linked,
+            index
+          )
+        : null;
+
+    const resolverSelected =
+      Boolean(
+        preferred &&
+        c113Text(
+          preferred?.status
+        ).startsWith(
+          "RESOLVED_"
+        ) &&
+        c113Text(
+          preferred?.file_doc_id
+        ) ===
+          c113Text(docId) &&
+        (
+          !rowResolved?.object_name ||
+          !preferred?.object_name ||
+          c113Text(
+            preferred.object_name
+          ) ===
+            c113Text(
+              rowResolved.object_name
+            )
+        )
+      );
+
+    const canonicalCode =
+      Boolean(
+        nameInfo?.canonical_pattern &&
+        c113Text(
+          nameInfo?.code
+        ).toUpperCase() ===
+          "C"
+      );
+
+    const evidence=[];
+
+    if (canonicalCode) {
+      evidence.push(
+        "CANONICAL_FILENAME_CODE_C"
+      );
+    }
+
+    if (activityId) {
+      evidence.push(
+        "ACTIVITY_ID_PRESENT"
+      );
+    }
+
+    if (presentInLinked) {
+      evidence.push(
+        "LINKED_METADATA_MATCH"
+      );
+    }
+
+    if (storageResolved) {
+      evidence.push(
+        "STORAGE_OBJECT_RESOLVED"
+      );
+    }
+
+    if (resolverSelected) {
+      evidence.push(
+        "RESOLVER_SELECTED_THIS_FILE"
+      );
+    }
+
+    if (
+      canonicalCode &&
+      activityId &&
+      presentInLinked &&
+      storageResolved &&
+      resolverSelected
+    ) {
+      return {
+        ...base,
+        role: "CANONICAL",
+        role_source:
+          "LEGACY_CANONICAL_ROLE_INFERENCE001",
+        role_confidence: "GUARDED",
+        role_evidence: evidence,
+        resolver_selected: true,
+        linked_file_count: linked.length,
+        resolved_object_name:
+          rowResolved?.object_name ||
+          preferred?.object_name ||
+          null
+      };
+    }
+
+    return {
+      ...base,
+      role_evidence: evidence,
+      resolver_selected: resolverSelected,
+      linked_file_count: linked.length,
+      resolved_object_name:
+        rowResolved?.object_name ||
+        null
+    };
+  }
+
+  function c113Fix2Role(row) {
+    const direct =
+      c113Fix2DirectRole(row);
+
+    if (
+      ["ORIGINAL","EDITED","CANONICAL"]
+        .includes(direct)
+    ) {
+      return direct;
+    }
+
+    return c113Fix2ResolverRole(
+      row
+    );
+  }
+
+  /* CGWEB113_FIX2_FIX1_ROLE_INFERENCE_END */
 
   function c113Fix2CurrentName(row) {
     return c113Text(row?.file_name || row?.original_name || row?.name);
@@ -11290,16 +11581,48 @@ async function c099GlobalDirectoryQuery(
     return {activity_id: activityId || null, start_time_ms: null, source: "NONE"};
   }
 
-  async function c113Fix2InspectFile(uid, docId, row, index) {
-    const role = c113Fix2Role(row);
-    const currentName = c113Fix2CurrentName(row);
-    const timeInfo = await c113Fix2ActivityStartMs(uid, row);
-    const startMs = timeInfo.start_time_ms;
+  async function c113Fix2InspectFile(
+    uid,
+    docId,
+    row,
+    index,
+    linkedByActivity
+  ) {
+    const currentName =
+      c113Fix2CurrentName(row);
+
+    const roleInfo =
+      c113Fix2RoleEvidence(
+        row,
+        docId,
+        index,
+        linkedByActivity
+      );
+
+    const role =
+      roleInfo.role;
+
+    const timeInfo =
+      await c113Fix2ActivityStartMs(
+        uid,
+        row
+      );
+
+    const startMs =
+      timeInfo.start_time_ms;
 
     const base = {
       file_doc_id: docId,
       activity_id: timeInfo.activity_id,
       role: role || null,
+      raw_role: roleInfo.direct_role,
+      resolver_role: roleInfo.resolver_role,
+      role_source: roleInfo.role_source,
+      role_confidence: roleInfo.role_confidence,
+      role_evidence: roleInfo.role_evidence,
+      resolver_selected: roleInfo.resolver_selected,
+      linked_file_count: roleInfo.linked_file_count,
+      inferred_object_name: roleInfo.resolved_object_name,
       current_name: currentName || null,
       start_time_ms: startMs,
       start_time_source: timeInfo.source,
@@ -11307,12 +11630,42 @@ async function c099GlobalDirectoryQuery(
       repairable: false
     };
 
-    if (role !== "CANONICAL") return {...base, status: "SKIP_NOT_CANONICAL"};
-    if (!currentName) return {...base, status: "SKIP_NAME_MISSING"};
+    if (role !== "CANONICAL") {
+      return {
+        ...base,
+        status: "SKIP_NOT_CANONICAL"
+      };
+    }
 
-    const nameInfo = c113CanonicalNameInfo(currentName);
+    if (!currentName) {
+      return {
+        ...base,
+        status: "SKIP_NAME_MISSING"
+      };
+    }
+
+    const nameInfo =
+      c113CanonicalNameInfo(
+        currentName
+      );
+
     if (!nameInfo.canonical_pattern) {
-      return {...base, status: "SKIP_NONCANONICAL_NAME"};
+      return {
+        ...base,
+        status: "SKIP_NONCANONICAL_NAME"
+      };
+    }
+
+    if (
+      c113Text(
+        nameInfo.code
+      ).toUpperCase() !== "C"
+    ) {
+      return {
+        ...base,
+        status:
+          "SKIP_NONBASE_CANONICAL_CODE"
+      };
     }
 
     if (startMs == null || startMs <= 0) {
@@ -11431,11 +11784,28 @@ async function c099GlobalDirectoryQuery(
     let query = files(uid).orderBy(FieldPath.documentId()).limit(limit);
     if (cursor) query = query.startAfter(cursor);
 
-    const [snap, index] = await Promise.all([query.get(), c096StorageIndex()]);
+    const [
+      snap,
+      index,
+      linkedByActivity
+    ] = await Promise.all([
+      query.get(),
+      c096StorageIndex(),
+      c096LinkedRows(uid)
+    ]);
+
     const rows = [];
 
     for (const docSnap of snap.docs) {
-      rows.push(await c113Fix2InspectFile(uid, docSnap.id, docSnap.data() || {}, index));
+      rows.push(
+        await c113Fix2InspectFile(
+          uid,
+          docSnap.id,
+          docSnap.data() || {},
+          index,
+          linkedByActivity
+        )
+      );
     }
 
     const summary = rows.reduce(
@@ -11464,7 +11834,12 @@ async function c099GlobalDirectoryQuery(
     };
   }
 
-  async function c113Fix2ApplyOne(uid, rawItem, index) {
+  async function c113Fix2ApplyOne(
+    uid,
+    rawItem,
+    index,
+    linkedByActivity
+  ) {
     const item = rawItem && typeof rawItem === "object" ? rawItem : {};
     const fileDocId = c113Text(item.file_doc_id);
     const requestedFrom = c113Text(item.from_name);
@@ -11481,7 +11856,14 @@ async function c099GlobalDirectoryQuery(
       return {ok: false, file_doc_id: fileDocId, status: "FILE_METADATA_MISSING"};
     }
 
-    const audit = await c113Fix2InspectFile(uid, fileDocId, snap.data() || {}, index);
+    const audit =
+      await c113Fix2InspectFile(
+        uid,
+        fileDocId,
+        snap.data() || {},
+        index,
+        linkedByActivity
+      );
 
     /*
      * INTERNAL_TIMESTAMP_GUARD001
@@ -11519,12 +11901,32 @@ async function c099GlobalDirectoryQuery(
       const current = await tx.get(ref);
       if (!current.exists) throw new Error("FILE_METADATA_MISSING_DURING_TRANSACTION");
 
-      const latest = current.data() || {};
+      const latest =
+        current.data() || {};
+
+      const latestRoleInfo =
+        c113Fix2RoleEvidence(
+          latest,
+          fileDocId,
+          index,
+          linkedByActivity
+        );
+
       if (
-        c113Fix2Role(latest) !== "CANONICAL" ||
-        c113Fix2CurrentName(latest) !== requestedFrom
+        latestRoleInfo.role !== "CANONICAL" ||
+        c113Fix2CurrentName(
+          latest
+        ) !== requestedFrom ||
+        c113Text(
+          latest?.activity_id
+        ) !==
+          c113Text(
+            audit?.activity_id
+          )
       ) {
-        throw new Error("FILE_METADATA_CHANGED_DURING_REPAIR");
+        throw new Error(
+          "FILE_METADATA_CHANGED_DURING_REPAIR"
+        );
       }
 
       /*
@@ -11582,12 +11984,26 @@ async function c099GlobalDirectoryQuery(
       return {ok: true, version: "CGWEB113_FIX2", applied: 0, rows: []};
     }
 
-    const index = await c096StorageIndex();
+    const [
+      index,
+      linkedByActivity
+    ] = await Promise.all([
+      c096StorageIndex(),
+      c096LinkedRows(uid)
+    ]);
+
     const rows = [];
 
     for (const item of items) {
       try {
-        rows.push(await c113Fix2ApplyOne(uid, item, index));
+        rows.push(
+          await c113Fix2ApplyOne(
+            uid,
+            item,
+            index,
+            linkedByActivity
+          )
+        );
       } catch (error) {
         rows.push({
           ok: false,

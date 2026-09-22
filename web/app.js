@@ -6596,9 +6596,15 @@ function cgweb112EnsureVisibleMissing(
 
 /* CGWEB113_FIX2_FILENAME_REPAIR_CONSOLE_START */
 
+/* CGWEB113_FIX2_FIX1_ROLE_DIAGNOSTIC001 */
+
 function cgweb113Fix2PrintRows(rows) {
   console.table(
-    (Array.isArray(rows) ? rows : []).map(row => ({
+    (
+      Array.isArray(rows)
+        ? rows
+        : []
+    ).map(row => ({
       file_doc_id: row.file_doc_id,
       activity_id: row.activity_id,
       status: row.status,
@@ -6606,7 +6612,17 @@ function cgweb113Fix2PrintRows(rows) {
       current_name: row.current_name,
       expected_local_name: row.expected_local_name,
       delta_ms: row.internal_delta_ms,
-      role: row.role
+      role: row.role,
+      raw_role: row.raw_role,
+      resolver_role: row.resolver_role,
+      role_source: row.role_source,
+      role_confidence: row.role_confidence,
+      resolver_selected: row.resolver_selected,
+      linked_files: row.linked_file_count,
+      role_evidence:
+        Array.isArray(row.role_evidence)
+          ? row.role_evidence.join(" | ")
+          : ""
     }))
   );
 }
