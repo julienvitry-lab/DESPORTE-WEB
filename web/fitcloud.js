@@ -1306,12 +1306,52 @@ async function c113AuditFitTimestamps(
   );
 }
 
+
+/* CGWEB113_FIX2_FILENAME_REPAIR_API_START */
+
+async function c113Fix2PreviewFilenameRepair({
+  cursor=null,
+  limit=25
+}={}) {
+  return request(
+    "fit_filename_repair_preview",
+    {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({cursor,limit})
+    }
+  );
+}
+
+async function c113Fix2ApplyFilenameRepair(
+  items,
+  confirm
+) {
+  return request(
+    "fit_filename_repair_apply",
+    {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        items: Array.isArray(items) ? items : [],
+        confirm
+      })
+    }
+  );
+}
+
+/* CGWEB113_FIX2_FILENAME_REPAIR_API_END */
+
 window.SPORT_FIT_TIMESTAMP_AUDIT =
   Object.freeze({
     version: "CGWEB113",
     timeZone: "Europe/Paris",
     audit:
-      c113AuditFitTimestamps
+      c113AuditFitTimestamps,
+    previewFilenameRepair:
+      c113Fix2PreviewFilenameRepair,
+    applyFilenameRepair:
+      c113Fix2ApplyFilenameRepair
   });
 
 /* CGWEB113_FIT_TIMESTAMP_AUDIT_API_END */

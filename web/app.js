@@ -6593,6 +6593,111 @@ function cgweb112EnsureVisibleMissing(
 
 
 
+
+/* CGWEB113_FIX2_FILENAME_REPAIR_CONSOLE_START */
+
+function cgweb113Fix2PrintRows(rows) {
+  console.table(
+    (Array.isArray(rows) ? rows : []).map(row => ({
+      file_doc_id: row.file_doc_id,
+      activity_id: row.activity_id,
+      status: row.status,
+      repairable: row.repairable,
+      current_name: row.current_name,
+      expected_local_name: row.expected_local_name,
+      delta_ms: row.internal_delta_ms,
+      role: row.role
+    }))
+  );
+}
+
+window.CGWEB113_FIX2_PREVIEW = async function({
+  cursor=null,
+  limit=25
+}={}) {
+  const api = window.SPORT_FIT_TIMESTAMP_AUDIT;
+
+  if (!api || typeof api.previewFilenameRepair !== "function") {
+    throw new Error("CGWEB113 FIX2 : API preview non chargée.");
+  }
+
+  const result = await api.previewFilenameRepair({cursor,limit});
+  window.CGWEB113_FIX2_LAST_PREVIEW = result;
+  cgweb113Fix2PrintRows(result?.rows);
+
+  console.log("CGWEB113 FIX2 PREVIEW", {
+    summary: result?.summary,
+    next_cursor: result?.next_cursor,
+    done: result?.done
+  });
+
+  return result;
+};
+
+window.CGWEB113_FIX2_PREVIEW_NEXT = async function() {
+  const previous = window.CGWEB113_FIX2_LAST_PREVIEW;
+
+  if (!previous) return window.CGWEB113_FIX2_PREVIEW();
+
+  if (previous.done === true) {
+    console.log("CGWEB113 FIX2 : fin du catalogue atteinte.");
+    return previous;
+  }
+
+  return window.CGWEB113_FIX2_PREVIEW({
+    cursor: previous.next_cursor,
+    limit: previous.limit || 25
+  });
+};
+
+window.CGWEB113_FIX2_APPLY_LAST = async function(confirm) {
+  if (confirm !== "APPLY_LEGACY_UTC_NAMES") {
+    throw new Error(
+      'Confirmation requise : CGWEB113_FIX2_APPLY_LAST("APPLY_LEGACY_UTC_NAMES")'
+    );
+  }
+
+  const preview = window.CGWEB113_FIX2_LAST_PREVIEW;
+  if (!preview || !Array.isArray(preview.rows)) {
+    throw new Error("CGWEB113 FIX2 : lancez d'abord CGWEB113_FIX2_PREVIEW().");
+  }
+
+  const items = preview.rows
+    .filter(row => row?.repairable === true && row?.status === "LEGACY_UTC_FILENAME")
+    .slice(0,10)
+    .map(row => ({
+      file_doc_id: row.file_doc_id,
+      activity_id: row.activity_id,
+      from_name: row.current_name,
+      to_name: row.expected_local_name
+    }));
+
+  if (!items.length) {
+    console.log("CGWEB113 FIX2 : aucun nom réparable dans le dernier aperçu.");
+    return {ok:true, applied:0, rows:[]};
+  }
+
+  const api = window.SPORT_FIT_TIMESTAMP_AUDIT;
+  const result = await api.applyFilenameRepair(items, confirm);
+  window.CGWEB113_FIX2_LAST_APPLY = result;
+
+  console.table(
+    (result?.rows || []).map(row => ({
+      file_doc_id: row.file_doc_id,
+      activity_id: row.activity_id,
+      status: row.status,
+      from_name: row.from_name,
+      to_name: row.to_name,
+      delta_ms: row.internal_delta_ms,
+      reaudit_status: row.reaudit_status
+    }))
+  );
+
+  return result;
+};
+
+/* CGWEB113_FIX2_FILENAME_REPAIR_CONSOLE_END */
+
 /* CGWEB113_VISIBLE_PARITY_AUDIT_START */
 
 async function cgweb113AuditVisibleFits() {

@@ -16,7 +16,7 @@ const {
 const {onRequest} = require("firebase-functions/v2/https");
 const {getApps, initializeApp} = require("firebase-admin/app");
 const {getAuth} = require("firebase-admin/auth");
-const {getFirestore} = require("firebase-admin/firestore");
+const {getFirestore, FieldPath} = require("firebase-admin/firestore");
 const {getStorage} = require("firebase-admin/storage");
 const crypto = require("crypto");
 
@@ -11250,6 +11250,364 @@ async function c099GlobalDirectoryQuery(
   }
 
   /* CGWEB113_FIT_TIMESTAMP_PARITY_AUDIT001_END */
+  /* CGWEB113_FIX2_HISTORICAL_LOCAL_FILENAME_REPAIR001_START */
+
+  const C113_FIX2_TIME_ZONE = "Europe/Paris";
+  const C113_FIX2_PREVIEW_MAX = 25;
+  const C113_FIX2_APPLY_MAX = 10;
+  const C113_FIX2_APPLY_TOKEN = "APPLY_LEGACY_UTC_NAMES";
+
+  function c113Fix2Role(row) {
+    return c113Text(row?.role || row?.fit_role).toUpperCase();
+  }
+
+  function c113Fix2CurrentName(row) {
+    return c113Text(row?.file_name || row?.original_name || row?.name);
+  }
+
+  async function c113Fix2ActivityStartMs(uid, row) {
+    const activityId = c113Text(row?.activity_id);
+
+    if (activityId) {
+      const snap = await db.doc(`${ROOT}/${uid}/activities/${activityId}`).get();
+      if (snap.exists) {
+        const value = c113Finite(snap.data()?.start_time_ms);
+        if (value != null && value > 0) {
+          return {activity_id: activityId, start_time_ms: value, source: "ACTIVITY"};
+        }
+      }
+    }
+
+    const metadataStart = c113Finite(row?.start_time_ms);
+    if (metadataStart != null && metadataStart > 0) {
+      return {
+        activity_id: activityId || null,
+        start_time_ms: metadataStart,
+        source: "FILE_METADATA"
+      };
+    }
+
+    return {activity_id: activityId || null, start_time_ms: null, source: "NONE"};
+  }
+
+  async function c113Fix2InspectFile(uid, docId, row, index) {
+    const role = c113Fix2Role(row);
+    const currentName = c113Fix2CurrentName(row);
+    const timeInfo = await c113Fix2ActivityStartMs(uid, row);
+    const startMs = timeInfo.start_time_ms;
+
+    const base = {
+      file_doc_id: docId,
+      activity_id: timeInfo.activity_id,
+      role: role || null,
+      current_name: currentName || null,
+      start_time_ms: startMs,
+      start_time_source: timeInfo.source,
+      time_zone: C113_FIX2_TIME_ZONE,
+      repairable: false
+    };
+
+    if (role !== "CANONICAL") return {...base, status: "SKIP_NOT_CANONICAL"};
+    if (!currentName) return {...base, status: "SKIP_NAME_MISSING"};
+
+    const nameInfo = c113CanonicalNameInfo(currentName);
+    if (!nameInfo.canonical_pattern) {
+      return {...base, status: "SKIP_NONCANONICAL_NAME"};
+    }
+
+    if (startMs == null || startMs <= 0) {
+      return {...base, status: "BLOCK_START_TIME_MISSING"};
+    }
+
+    const expectedName = canonicalFitFileName(startMs, nameInfo.code);
+    const expectedPrefix = expectedName.replace(/_[A-Z0-9]{1,4}\.fit$/i, "");
+    const utcPrefix = c113UtcCanonicalPrefix(startMs);
+
+    const withNames = {
+      ...base,
+      expected_local_name: expectedName,
+      legacy_utc_prefix: utcPrefix,
+      local_prefix: expectedPrefix
+    };
+
+    if (currentName === expectedName) return {...withNames, status: "ALREADY_LOCAL"};
+
+    if (!utcPrefix || nameInfo.prefix !== utcPrefix) {
+      return {...withNames, status: "BLOCK_OTHER_NAME_MISMATCH"};
+    }
+
+    /*
+     * METADATA_ONLY_RENAME001
+     * Le chemin Storage est basé sur le hash, pas sur le nom humain.
+     * Aucun déplacement/copie/suppression Storage n'est nécessaire.
+     */
+    const candidateRow = {__doc_id: docId, ...row};
+    const resolved = c096ResolvePreferred([candidateRow], index);
+    const resolveStatus = c113Text(resolved?.status || "NO_LINKED_FILE");
+
+    if (!resolveStatus.startsWith("RESOLVED_")) {
+      return {
+        ...withNames,
+        status: "BLOCK_STORAGE_NOT_RESOLVED",
+        resolve_status: resolveStatus,
+        resolve_method: resolved?.method || "NONE"
+      };
+    }
+
+    const storagePath =
+      c113Text(resolved?.object_name) ||
+      c113StoragePath(uid, row, docId, startMs);
+
+    if (!storagePath) {
+      return {...withNames, status: "BLOCK_STORAGE_PATH_UNKNOWN"};
+    }
+
+    let fitStartMs = null;
+    try {
+      const object = index.bucket.file(storagePath);
+      const [exists] = await object.exists();
+      if (!exists) {
+        return {
+          ...withNames,
+          status: "BLOCK_STORAGE_OBJECT_MISSING",
+          storage_path: storagePath
+        };
+      }
+
+      const [buffer] = await object.download();
+      fitStartMs = await fitStartTimeMsFromBuffer(buffer);
+    } catch (error) {
+      return {
+        ...withNames,
+        status: "BLOCK_FIT_READ_ERROR",
+        error: c113Text(error?.message || error).slice(0, 220),
+        storage_path: storagePath
+      };
+    }
+
+    if (fitStartMs == null) {
+      return {
+        ...withNames,
+        status: "BLOCK_INTERNAL_TIME_UNVERIFIED",
+        storage_path: storagePath
+      };
+    }
+
+    const deltaMs = fitStartMs - startMs;
+    if (Math.abs(deltaMs) > 1000) {
+      return {
+        ...withNames,
+        status: "BLOCK_INTERNAL_TIMESTAMP_MISMATCH",
+        fit_start_ms: fitStartMs,
+        internal_delta_ms: deltaMs,
+        storage_path: storagePath
+      };
+    }
+
+    return {
+      ...withNames,
+      status: "LEGACY_UTC_FILENAME",
+      repairable: true,
+      fit_start_ms: fitStartMs,
+      internal_delta_ms: deltaMs,
+      storage_path: storagePath,
+      resolve_status: resolveStatus,
+      resolve_method: resolved?.method || "NONE"
+    };
+  }
+
+  async function c113Fix2Preview(uid, rawBody) {
+    const body = rawBody && typeof rawBody === "object" ? rawBody : {};
+    const requestedLimit = Number(body.limit);
+    const limit = Math.max(
+      1,
+      Math.min(
+        C113_FIX2_PREVIEW_MAX,
+        Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : C113_FIX2_PREVIEW_MAX
+      )
+    );
+
+    const cursor = c113Text(body.cursor);
+    let query = files(uid).orderBy(FieldPath.documentId()).limit(limit);
+    if (cursor) query = query.startAfter(cursor);
+
+    const [snap, index] = await Promise.all([query.get(), c096StorageIndex()]);
+    const rows = [];
+
+    for (const docSnap of snap.docs) {
+      rows.push(await c113Fix2InspectFile(uid, docSnap.id, docSnap.data() || {}, index));
+    }
+
+    const summary = rows.reduce(
+      (acc, row) => {
+        const status = c113Text(row?.status || "UNKNOWN");
+        acc[status] = Number(acc[status] || 0) + 1;
+        if (row?.repairable === true) acc.repairable = Number(acc.repairable || 0) + 1;
+        return acc;
+      },
+      {scanned: rows.length, repairable: 0}
+    );
+
+    const last = snap.docs.length ? snap.docs[snap.docs.length - 1].id : null;
+
+    return {
+      ok: true,
+      version: "CGWEB113_FIX2",
+      mode: "DRY_RUN",
+      time_zone: C113_FIX2_TIME_ZONE,
+      cursor: cursor || null,
+      next_cursor: last,
+      done: snap.size < limit,
+      limit,
+      summary,
+      rows
+    };
+  }
+
+  async function c113Fix2ApplyOne(uid, rawItem, index) {
+    const item = rawItem && typeof rawItem === "object" ? rawItem : {};
+    const fileDocId = c113Text(item.file_doc_id);
+    const requestedFrom = c113Text(item.from_name);
+    const requestedTo = c113Text(item.to_name);
+
+    if (!fileDocId || !requestedFrom || !requestedTo) {
+      return {ok: false, file_doc_id: fileDocId || null, status: "INVALID_REQUEST"};
+    }
+
+    const ref = files(uid).doc(fileDocId);
+    const snap = await ref.get();
+
+    if (!snap.exists) {
+      return {ok: false, file_doc_id: fileDocId, status: "FILE_METADATA_MISSING"};
+    }
+
+    const audit = await c113Fix2InspectFile(uid, fileDocId, snap.data() || {}, index);
+
+    /*
+     * INTERNAL_TIMESTAMP_GUARD001
+     * L'écriture est impossible sans lecture du FIT et parité temporelle <= 1 s.
+     */
+    if (
+      audit?.repairable !== true ||
+      audit?.status !== "LEGACY_UTC_FILENAME" ||
+      Math.abs(Number(audit?.internal_delta_ms)) > 1000
+    ) {
+      return {
+        ok: false,
+        file_doc_id: fileDocId,
+        activity_id: audit?.activity_id || null,
+        status: "GUARD_REJECTED",
+        audit_status: audit?.status || null,
+        internal_delta_ms: audit?.internal_delta_ms ?? null
+      };
+    }
+
+    if (audit.current_name !== requestedFrom || audit.expected_local_name !== requestedTo) {
+      return {
+        ok: false,
+        file_doc_id: fileDocId,
+        activity_id: audit.activity_id || null,
+        status: "REQUEST_STALE",
+        current_name: audit.current_name,
+        expected_local_name: audit.expected_local_name
+      };
+    }
+
+    const repairedAt = Date.now();
+
+    await db.runTransaction(async tx => {
+      const current = await tx.get(ref);
+      if (!current.exists) throw new Error("FILE_METADATA_MISSING_DURING_TRANSACTION");
+
+      const latest = current.data() || {};
+      if (
+        c113Fix2Role(latest) !== "CANONICAL" ||
+        c113Fix2CurrentName(latest) !== requestedFrom
+      ) {
+        throw new Error("FILE_METADATA_CHANGED_DURING_REPAIR");
+      }
+
+      /*
+       * METADATA_ONLY_RENAME001
+       * Le contenu FIT, le hash, l'objet Storage et tous les timestamps restent inchangés.
+       */
+      tx.set(
+        ref,
+        {
+          file_name: requestedTo,
+          filename_timezone: C113_FIX2_TIME_ZONE,
+          filename_repair_version: "CGWEB113_FIX2",
+          filename_repaired_at_ms: repairedAt,
+          filename_repaired_from: requestedFrom
+        },
+        {merge: true}
+      );
+    });
+
+    /*
+     * POST_REPAIR_REAUDIT001
+     */
+    const after = audit.activity_id
+      ? await c113AuditOne(uid, audit.activity_id)
+      : null;
+
+    const verified = Boolean(
+      after &&
+      after.internal_timestamp_ok === true &&
+      after.local_filename_ok === true
+    );
+
+    return {
+      ok: verified,
+      file_doc_id: fileDocId,
+      activity_id: audit.activity_id || null,
+      status: verified ? "REPAIRED_AND_VERIFIED" : "REPAIRED_REAUDIT_FAILED",
+      from_name: requestedFrom,
+      to_name: requestedTo,
+      internal_delta_ms: after?.internal_delta_ms ?? audit.internal_delta_ms ?? null,
+      reaudit_status: after?.status || null,
+      storage_path: audit.storage_path || null
+    };
+  }
+
+  async function c113Fix2Apply(uid, rawBody) {
+    const body = rawBody && typeof rawBody === "object" ? rawBody : {};
+
+    if (c113Text(body.confirm) !== C113_FIX2_APPLY_TOKEN) {
+      throw Object.assign(new Error("Confirmation CGWEB113 FIX2 absente."), {status: 400});
+    }
+
+    const items = (Array.isArray(body.items) ? body.items : []).slice(0, C113_FIX2_APPLY_MAX);
+    if (!items.length) {
+      return {ok: true, version: "CGWEB113_FIX2", applied: 0, rows: []};
+    }
+
+    const index = await c096StorageIndex();
+    const rows = [];
+
+    for (const item of items) {
+      try {
+        rows.push(await c113Fix2ApplyOne(uid, item, index));
+      } catch (error) {
+        rows.push({
+          ok: false,
+          file_doc_id: c113Text(item?.file_doc_id) || null,
+          status: "APPLY_ERROR",
+          error: c113Text(error?.message || error).slice(0, 240)
+        });
+      }
+    }
+
+    return {
+      ok: rows.every(row => row?.ok === true),
+      version: "CGWEB113_FIX2",
+      applied: rows.filter(row => row?.status === "REPAIRED_AND_VERIFIED").length,
+      rows
+    };
+  }
+
+  /* CGWEB113_FIX2_HISTORICAL_LOCAL_FILENAME_REPAIR001_END */
+
 
   /* CGWEB112_FIRST_DISPLAY_FIT_ENSURE_BACKEND_END */
 
@@ -11265,6 +11623,26 @@ async function c099GlobalDirectoryQuery(
         const decoded = await requireUser(req);
         const uid = decoded.uid;
         const action = String(req.query.action || "health").trim();
+
+        if (action === "fit_filename_repair_preview") {
+          if (req.method !== "POST") {
+            return res.status(405).json({ok:false, version:"CGWEB113_FIX2", error:"POST requis."});
+          }
+          const body = req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)
+            ? req.body
+            : {};
+          return res.json(await c113Fix2Preview(uid, body));
+        }
+
+        if (action === "fit_filename_repair_apply") {
+          if (req.method !== "POST") {
+            return res.status(405).json({ok:false, version:"CGWEB113_FIX2", error:"POST requis."});
+          }
+          const body = req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)
+            ? req.body
+            : {};
+          return res.json(await c113Fix2Apply(uid, body));
+        }
 
         if (action === "fit_timestamp_parity_audit") {
           if (req.method !== "POST") {
