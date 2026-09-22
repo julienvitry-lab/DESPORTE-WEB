@@ -1030,7 +1030,7 @@ function uxPageConfig() {
     activities: {
       title: "Activités",
       eyebrow: "",
-      subs: [["directory","Répertoire"],["trash","Corbeille"]]
+      subs: [["directory","Activités"]]
     },
     analysis: {
       title: "Analyse",
@@ -1051,6 +1051,7 @@ function uxPageConfig() {
         ["equipment-map","Matériel auto"],
         ["maps","Cartes"],
         ["files","Fichiers"],
+        ["trash","Corbeille"],
         ["manual","Ajout manuel"],
         ["import","Import"],
         ["sync","Synchronisation"],
@@ -1099,8 +1100,11 @@ function renderUxSecondaryNav(page, activeSub) {
   if (!ui.uxSecondaryNav) return;
   const subs = config?.subs || [];
   ui.uxSecondaryNav.innerHTML = "";
-  ui.uxSecondaryNav.classList.toggle("hidden", !subs.length);
-  if (!subs.length) return;
+  const hideSecondary =
+    !subs.length ||
+    page === "activities";
+  ui.uxSecondaryNav.classList.toggle("hidden", hideSecondary);
+  if (hideSecondary) return;
   const inner = document.createElement("div");
   inner.className = "ux-secondary-nav-inner";
   subs.forEach(([key,label]) => {
@@ -1258,6 +1262,9 @@ function navigateUx(page, subpage = null, options = {}) {
     } else if (sub === "equipment-map") {
       setUxSectionVisibility([ui.equipmentMappingSection]);
       renderEquipmentMappingPanel();
+    } else if (sub === "trash") {
+      setUxSectionVisibility([ui.trashSection]);
+      void loadTrashActivities();
     } else if (sub === "files") {
       setUxSectionVisibility([ui.webFilesSection]);
       void renderWebFileVault();
@@ -4512,7 +4519,7 @@ function renderTrash() {
     const main = document.createElement("div");
     main.className = "trash-card-main";
     const title = document.createElement("strong");
-    title.textContent = activity.custom_title || sportName(activity.sport);
+    title.textContent = cgweb115CanonicalActivityTitle(activity);
     const meta = document.createElement("span");
     meta.textContent = `${formatDate(activity.start_time_ms)} · ${sportName(activity.sport)} · ${formatDistance(activity.distance_m)}`;
     const deleted = document.createElement("span");
@@ -4633,7 +4640,7 @@ async function trashActivityFromWeb(activity) {
   if (!key) return;
 
   const confirmed = window.confirm(
-    `Mettre « ${activity.custom_title || sportName(activity.sport)} » à la corbeille ?\n\n` +
+    `Mettre « ${cgweb115CanonicalActivityTitle(activity)} » à la corbeille ?\n\n` +
     "L'activité disparaîtra des trois répertoires et des statistiques, mais restera restaurable. " +
     "Le tracé, les repères liés et le fichier FIT local ne sont pas supprimés."
   );
@@ -4685,7 +4692,7 @@ async function restoreActivityFromWeb(activity) {
   if (!key) return;
 
   const confirmed = window.confirm(
-    `Restaurer « ${activity.custom_title || sportName(activity.sport)} » ?\n\n` +
+    `Restaurer « ${cgweb115CanonicalActivityTitle(activity)} » ?\n\n` +
     "L'activité redeviendra active sur Web, téléphone et tablette."
   );
   if (!confirmed) return;
@@ -9764,10 +9771,9 @@ function renderDetail(activity) {
     button.disabled = nextDisabled;
   });
 
-  const title = activity.custom_title || sportName(activity.sport);
-  const hasCustomTitle = Boolean(String(activity.custom_title || "").trim());
-  ui.detailTitle.textContent = hasCustomTitle ? activity.custom_title : "";
-  ui.detailTitle.classList.toggle("hidden", !hasCustomTitle);
+  const title = cgweb115CanonicalActivityTitle(activity);
+  ui.detailTitle.textContent = title;
+  ui.detailTitle.classList.add("hidden");
   ui.trashCurrentActivityButton.disabled = trashMutationRunning;
   ui.trashCurrentActivityButton.textContent =
     activity.deleted_at_ms == null ? "🗑 Mettre à la corbeille" : "↩ Restaurer";
@@ -11517,7 +11523,7 @@ function populateRouteComparisonSelect(currentActivity) {
   for (const activity of candidates) {
     const option = document.createElement('option');
     option.value = activityKey(activity);
-    option.textContent = `${formatDate(activity.start_time_ms)} · ${activity.custom_title || sportName(activity.sport)} · ${formatDistance(activity.distance_m)}`;
+    option.textContent = `${formatDate(activity.start_time_ms)} · ${cgweb115CanonicalActivityTitle(activity)} · ${formatDistance(activity.distance_m)}`;
     ui.routeComparisonSelect.appendChild(option);
   }
   ui.routeComparisonButton.disabled = candidates.length === 0;
@@ -12927,6 +12933,73 @@ function renderPerformance(activity) {
   addDetailItem(ui.detailPerformanceGrid, "Difficulté", scoreText(activity.difficulty_score));
 }
 
+/* CGWEB115 · CANONICAL_ACTIVITY_TITLE001 */
+function cgweb115CanonicalActivityTitle(activity) {
+  const ms = Number(activity?.start_time_ms);
+
+  let sportLabel = "Sport";
+  try {
+    sportLabel =
+      String(
+        sportName(activity?.sport) ||
+        activity?.sport ||
+        "Sport"
+      ).trim() || "Sport";
+  } catch (_) {
+    sportLabel =
+      String(activity?.sport || "Sport").trim() ||
+      "Sport";
+  }
+
+  const sportToken =
+    sportLabel
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^A-Za-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") ||
+    "Sport";
+
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return String(
+      activity?.custom_title ||
+      sportLabel ||
+      "Activite"
+    );
+  }
+
+  const parts = {};
+  const formatter =
+    new Intl.DateTimeFormat("fr-FR", {
+      timeZone: "Europe/Paris",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23"
+    });
+
+  for (const part of formatter.formatToParts(new Date(ms))) {
+    if (part.type !== "literal") {
+      parts[part.type] = part.value;
+    }
+  }
+
+  const year = parts.year || "0000";
+  const month = parts.month || "00";
+  const day = parts.day || "00";
+  const hour = parts.hour || "00";
+  const minute = parts.minute || "00";
+  const second = parts.second || "00";
+
+  return (
+    `${year}_${month}_${day}_` +
+    `${hour}_${minute}_${second}_` +
+    `(${sportToken})`
+  );
+}
+
 function renderPersonal(activity) {
   ui.detailPersonalGrid.innerHTML = "";
   ui.detailLandmarks.innerHTML = "";
@@ -12951,7 +13024,7 @@ function renderPersonal(activity) {
     numberOrZero(activity.equipment_manual) === 1 ? "Manuelle" : "Automatique"
   );
   addDetailItem(ui.detailPersonalGrid, "Confidentialité", activity.privacy || "—");
-  addDetailItem(ui.detailPersonalGrid, "Titre personnalisé", activity.custom_title || "—", "wide");
+  addDetailItem(ui.detailPersonalGrid, "Titre personnalisé", cgweb115CanonicalActivityTitle(activity), "wide");
   addDetailItem(ui.detailPersonalGrid, "Description", activity.description || "—", "wide");
   addDetailItem(ui.detailPersonalGrid, "Note personnelle", activity.personal_note || "—", "full");
 
@@ -16345,7 +16418,7 @@ function webDerivedFileEntries() {
         key:`derived:${activityKey(activity)}`,
         activity,
         parent,
-        file_name:`${activity.custom_title || sportName(activity.sport)}.fit`,
+        file_name:`${cgweb115CanonicalActivityTitle(activity)}.fit`,
         file_size_bytes:null,
         sha256:null,
         imported_at_ms:numberOrZero(activity.split_created_at_ms),
@@ -17373,7 +17446,7 @@ function webFileOriginalCard(entry) {
   const linked=entry.linkedActivities || [];
   const date=webFileEntryDate(entry);
   const names=linked.slice(0,3).map((activity)=>
-    `${formatDate(activity.start_time_ms)} · ${activity.custom_title || sportName(activity.sport)}`
+    `${formatDate(activity.start_time_ms)} · ${cgweb115CanonicalActivityTitle(activity)}`
   ).join("<br>");
 
   const card=document.createElement("article");
@@ -21772,7 +21845,7 @@ async function persistActivityEdits(activity, title, description, note, generati
 
       if (currentDetailId === key) {
         ui.detailTitle.textContent = title || sportName(activity.sport);
-        document.title = `${title || sportName(activity.sport)} · SPORT Web`;
+        document.title = `${cgweb115CanonicalActivityTitle(activity)} · SPORT Web`;
         renderPersonal(activity);
       }
 
@@ -24430,7 +24503,7 @@ function web072Fix9FindToolbar() {
     const text = web072Fix9Text(candidate);
 
     if (
-      /Répertoire/i.test(text) &&
+      /(?:Répertoire|Activités)/i.test(text) &&
       /Mettre à la corbeille/i.test(text) &&
       /Activité précédente/i.test(text) &&
       /Activité suivante/i.test(text)
@@ -24450,7 +24523,7 @@ function web072Fix9FindToolbar() {
     const text = web072Fix9Text(node);
 
     if (
-      /Répertoire/i.test(text) &&
+      /(?:Répertoire|Activités)/i.test(text) &&
       /Activité précédente/i.test(text) &&
       /Activité suivante/i.test(text)
     ) {
@@ -24780,7 +24853,7 @@ function web072Fix11FindToolbar() {
     const text = web072Fix11Text(candidate);
 
     if (
-      /Répertoire/i.test(text) &&
+      /(?:Répertoire|Activités)/i.test(text) &&
       /Ajout manuel/i.test(text) &&
       /Mettre à la corbeille/i.test(text) &&
       /Activité précédente/i.test(text) &&
@@ -24791,7 +24864,7 @@ function web072Fix11FindToolbar() {
           .some((child) => {
             const childText = web072Fix11Text(child);
             return (
-              /Répertoire/i.test(childText) &&
+              /(?:Répertoire|Activités)/i.test(childText) &&
               /Ajout manuel/i.test(childText) &&
               /Mettre à la corbeille/i.test(childText) &&
               /Activité précédente/i.test(childText) &&
@@ -25292,7 +25365,7 @@ function web072Fix12BMatchesToolbar(el) {
   const text = web072Fix12BText(el);
 
   return (
-    /Répertoire/i.test(text) &&
+    /(?:Répertoire|Activités)/i.test(text) &&
     /Ajout manuel/i.test(text) &&
     /Mettre à la corbeille/i.test(text) &&
     /Activité précédente/i.test(text) &&
@@ -25926,7 +25999,7 @@ function web072Fix13MatchesToolbar(el) {
   const text = web072Fix13Text(el);
 
   return (
-    /Répertoire/i.test(text) &&
+    /(?:Répertoire|Activités)/i.test(text) &&
     /Ajout manuel/i.test(text) &&
     /Mettre à la corbeille/i.test(text) &&
     /Activité précédente/i.test(text) &&
@@ -26636,7 +26709,7 @@ function cgweb089OrganizeFiles() {
     '<div>' +
       '<p class="eyebrow">CGWEB089 · FILES_REORGANIZE001 / DIRECTORY_CLEANUP001</p>' +
       '<h2>Fichiers</h2>' +
-      '<p class="muted">Chaque fonction possède son propre sous-sous-onglet. Le Répertoire des activités reste exclusivement dans Activités.</p>' +
+      '<p class="muted">Chaque fonction possède son propre sous-sous-onglet. Les activités restent accessibles directement dans l’onglet Activités.</p>' +
     '</div>' +
     '<span class="pill ok">Interface nettoyée</span>';
 
@@ -34098,10 +34171,6 @@ const CGWEB111_DISCLOSURES=[
     title:"Analyse performance et terrain"
   },
   {
-    selector:"#detailView .detail-edit-panel",
-    title:"Édition réversible de l’activité"
-  },
-  {
     selector:"#cgweb084RevisionSection",
     title:"Historique des modifications"
   },
@@ -34322,7 +34391,6 @@ const CGWEB111_FIX3_ORDER=[
   {kind:"target",selector:"#routeAnalysis",title:"Ascensions et descentes"},
   {kind:"target",selector:"#detailView .route-km-analysis-card",title:"Analyse par kilomètre"},
   {kind:"target",selector:"#performanceTerrainAnalysis",title:"Analyse performance et terrain"},
-  {kind:"summary",title:"Édition réversible de l’activité"},
   {kind:"summary",title:"Historique des modifications"},
   {kind:"summary",title:"Modifier le fichier FIT"},
   {kind:"join",title:"Joindre des activités du même jour"}
@@ -34353,15 +34421,18 @@ function cgweb111Fix3EnsureStack(){
   let stack=document.getElementById("cgweb111Fix3BottomStack");
   if(stack)return stack;
 
-  const edit=cgweb111Fix3FindBySummary("Édition réversible de l’activité");
-  if(!edit?.parentElement)return null;
+  const anchor=
+    cgweb111Fix3FindBySummary("Historique des modifications")||
+    cgweb111Fix3FindBySummary("Modifier le fichier FIT")||
+    cgweb111Fix3FromTarget("#routeAnalysis");
+  if(!anchor?.parentElement)return null;
 
   stack=document.createElement("div");
   stack.id="cgweb111Fix3BottomStack";
   stack.className="cgweb111-fix3-bottom-stack";
 
-  /* Le menu Édition est déjà hors du cadre Carte/profil : ancre de sortie. */
-  edit.parentElement.insertBefore(stack,edit);
+  /* CGWEB115 : ancrage sur le premier bloc inférieur encore conservé. */
+  anchor.parentElement.insertBefore(stack,anchor);
   return stack;
 }
 
@@ -34491,3 +34562,75 @@ function cgweb111Fix3Install(){
 cgweb111Fix3Install();
 
 /* CGWEB111_FIX3_BOTTOM_DETAIL_STACK_END */
+
+
+/* CGWEB115_UI_SIMPLIFICATION001_START */
+
+function cgweb115ApplyUiSimplification() {
+  const backCatalog =
+    document.getElementById("backToCatalogButton");
+  const backDetail =
+    document.getElementById("backFromDetailButton");
+
+  if (backCatalog) {
+    backCatalog.textContent =
+      "← Activités";
+  }
+
+  if (backDetail) {
+    backDetail.textContent =
+      "← Activités";
+  }
+
+  const directoryTab =
+    document.getElementById("directoryTab");
+
+  if (directoryTab) {
+    directoryTab.textContent =
+      "Activités";
+  }
+
+  const mapStatus =
+    document.getElementById("mapStatus");
+
+  if (mapStatus) {
+    mapStatus.textContent = "";
+    mapStatus.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+  }
+
+  /*
+   * Le DOM de l'ancien éditeur est conservé uniquement pour ne pas casser
+   * les références historiques du code, mais il n'est plus rendu ni
+   * transformé en menu déroulant.
+   */
+  const editor =
+    document.querySelector(
+      "#detailView .detail-edit-panel"
+    );
+
+  if (editor) {
+    editor.hidden = true;
+    editor.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+  }
+}
+
+window.CGWEB115 = Object.freeze({
+  version:
+    "CGWEB115",
+  canonicalTitle:
+    cgweb115CanonicalActivityTitle,
+  apply:
+    cgweb115ApplyUiSimplification
+});
+
+queueMicrotask(
+  cgweb115ApplyUiSimplification
+);
+
+/* CGWEB115_UI_SIMPLIFICATION001_END */

@@ -6326,6 +6326,32 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
 }
 </style>
 
+
+  <style id="cgweb115UiSimplification">
+    /* CGWEB115 · ACTIVITIES_FLATTEN001 */
+    body[data-ux-page="activities"] #uxSecondaryNav,
+    #activitySubnav {
+      display: none !important;
+    }
+
+    /* CGWEB115 · DETAIL_CHROME_CLEANUP001 + WEB_POINTS_BADGE_REMOVE001 */
+    #detailMapSection .map-heading,
+    #mapStatus {
+      display: none !important;
+    }
+
+    /* CGWEB115 · REVERSIBLE_EDITOR_REMOVE001 */
+    #detailView .detail-edit-panel,
+    #detailView details.cgweb111-detail-disclosure > .detail-edit-panel {
+      display: none !important;
+    }
+
+    /* CGWEB115 · ANALYSIS_TITLE_CLEANUP001 */
+    body[data-ux-page="analysis"] #uxHeroTitle {
+      display: none !important;
+    }
+  </style>
+
 </head>
 <body>
   <header class="topbar">
@@ -8414,7 +8440,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
           <div class="panel-title-row">
             <div>
               <p class="eyebrow">WEB031 · ACTIVITÉS</p>
-              <h2>Répertoire</h2>
+              <h2>Activités</h2>
               <p id="loadedLabel" class="muted">20 activités récentes par défaut.</p>
             </div>
             <div class="panel-actions">
@@ -8525,7 +8551,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
       <!-- Héritage WEB031 · WEBUX001 -->
       <section id="detailView" class="hidden">
         <div class="detail-toolbar">
-          <button id="backToCatalogButton" class="secondary">← Répertoire</button>
+          <button id="backToCatalogButton" class="secondary">← Activités</button>
           <div class="detail-secondary-actions">
             <button id="splitActivityButton" class="secondary" type="button">✂ Découper</button>
             <button id="trashCurrentActivityButton" class="secondary trash-detail-button" type="button">🗑 Corbeille</button>
@@ -9002,7 +9028,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB114-ORIGINAL-TIME-RESTORE001"></script>
+<script type="module" src="./app.js?v=CGWEB115-UI-SIMPLIFICATION001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
