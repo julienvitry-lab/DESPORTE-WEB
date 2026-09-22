@@ -12951,13 +12951,27 @@ function cgweb115CanonicalActivityTitle(activity) {
       "Sport";
   }
 
-  const sportToken =
-    sportLabel
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^A-Za-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "") ||
-    "Sport";
+  /* CGWEB116_STRICT_CVHT001 */
+  const sport =
+    Number(activity?.sport || 0);
+
+  const subSport =
+    Number(
+      activity?.sub_sport ??
+      activity?.subSport ??
+      0
+    );
+
+  const sportCode =
+    sport === 1 && [1, 21].includes(subSport)
+      ? "T"
+      : sport === 1
+        ? "C"
+        : sport === 2 && [5, 6, 58].includes(subSport)
+          ? "H"
+          : sport === 2
+            ? "V"
+            : "C";
 
   if (!Number.isFinite(ms) || ms <= 0) {
     return String(
@@ -12996,7 +13010,7 @@ function cgweb115CanonicalActivityTitle(activity) {
   return (
     `${year}_${month}_${day}_` +
     `${hour}_${minute}_${second}_` +
-    `(${sportToken})`
+    `${sportCode}`
   );
 }
 
@@ -26532,6 +26546,18 @@ window.SPORT_WEB_BRIDGE = {
 
 const CGWEB089_FILE_TAB_STORAGE = "sport_web_files_subsubtab";
 
+/*
+ * CGWEB116 · FILES_MINIMAL001
+ *
+ * L'interface quotidienne ne montre plus les outils de migration,
+ * rattrapage et diagnostic historiques.
+ *
+ * Les panneaux restent dans le DOM et le code reste disponible :
+ * aucune capacité technique n'est détruite par cette passe.
+ */
+const CGWEB116_VISIBLE_FILE_TABS =
+  new Set(["export", "drive"]);
+
 function cgweb089Text(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
@@ -26646,11 +26672,30 @@ function cgweb089KnownTopLevel(root) {
 
 function cgweb089ActivateFileTab(root, key, remember = true) {
   const tabs = [...root.querySelectorAll(".cgweb089-file-tab")];
-  const panes = [...root.querySelectorAll(".cgweb089-file-pane")];
-  const available = new Set(panes.map((pane) => pane.dataset.filePane));
-  const wanted = available.has(key)
-    ? key
-    : (available.has("local") ? "local" : panes[0]?.dataset.filePane);
+  const allPanes = [...root.querySelectorAll(".cgweb089-file-pane")];
+  const panes =
+    allPanes.filter(
+      (pane) =>
+        CGWEB116_VISIBLE_FILE_TABS.has(
+          pane.dataset.filePane
+        )
+    );
+
+  const available =
+    new Set(
+      panes.map(
+        (pane) => pane.dataset.filePane
+      )
+    );
+
+  const wanted =
+    available.has(key)
+      ? key
+      : (
+          available.has("export")
+            ? "export"
+            : panes[0]?.dataset.filePane
+        );
 
   for (const tab of tabs) {
     const active = tab.dataset.fileTab === wanted;
@@ -26659,10 +26704,18 @@ function cgweb089ActivateFileTab(root, key, remember = true) {
     tab.tabIndex = active ? 0 : -1;
   }
 
-  for (const pane of panes) pane.hidden = pane.dataset.filePane !== wanted;
+  for (const pane of allPanes) {
+    pane.hidden =
+      pane.dataset.filePane !== wanted;
+  }
 
   if (remember && wanted) {
-    try { sessionStorage.setItem(CGWEB089_FILE_TAB_STORAGE, wanted); } catch (_) {}
+    try {
+      sessionStorage.setItem(
+        CGWEB089_FILE_TAB_STORAGE,
+        wanted
+      );
+    } catch (_) {}
   }
 
   cgweb089RemoveDirectoryCopies();
@@ -26707,11 +26760,9 @@ function cgweb089OrganizeFiles() {
   shellHead.className = "cgweb089-files-shell-head";
   shellHead.innerHTML =
     '<div>' +
-      '<p class="eyebrow">CGWEB089 · FILES_REORGANIZE001 / DIRECTORY_CLEANUP001</p>' +
       '<h2>Fichiers</h2>' +
-      '<p class="muted">Chaque fonction possède son propre sous-sous-onglet. Les activités restent accessibles directement dans l’onglet Activités.</p>' +
-    '</div>' +
-    '<span class="pill ok">Interface nettoyée</span>';
+      '<p class="muted">Exports et sauvegarde.</p>' +
+    '</div>';
 
   const tabs = document.createElement("div");
   tabs.id = "cgweb089FileTabs";
@@ -26759,6 +26810,19 @@ function cgweb089OrganizeFiles() {
   for (const pane of panes) {
     host.appendChild(pane);
 
+    const visible =
+      CGWEB116_VISIBLE_FILE_TABS.has(
+        pane.dataset.filePane
+      );
+
+    pane.dataset.cgweb116Visible =
+      visible ? "1" : "0";
+
+    if (!visible) {
+      pane.hidden = true;
+      continue;
+    }
+
     const button = document.createElement("button");
     button.type = "button";
     button.className = "cgweb089-file-tab secondary compact";
@@ -26790,7 +26854,7 @@ function cgweb089OrganizeFiles() {
 
   let saved = null;
   try { saved = sessionStorage.getItem(CGWEB089_FILE_TAB_STORAGE); } catch (_) {}
-  cgweb089ActivateFileTab(root, saved || "local", false);
+  cgweb089ActivateFileTab(root, saved || "export", false);
 }
 
 function cgweb089InitFilesUi() {

@@ -536,15 +536,22 @@ function canonicalFitFileName(
 /* CGWEB113_FIT_LOCAL_TIME_CANONICAL_NAME001_END */
 
 function sportFileCode(sport, subSport) {
+  /* CGWEB116 · STRICT_CVHT001
+   * Codes autorisés exclusivement :
+   * C = course à pied
+   * V = vélo
+   * H = vélo intérieur / home trainer
+   * T = tapis de course / virtual run
+   */
   const s = Number(sport || 0);
   const sub = Number(subSport || 0);
 
-  if (s === 1 && sub === 1) return "T";
+  if (s === 1 && [1, 21].includes(sub)) return "T";
   if (s === 1) return "C";
   if (s === 2 && [5, 6, 58].includes(sub)) return "H";
   if (s === 2) return "V";
-  if (s === 11) return "M";
 
+  /* Le contrat SPORT Web n'autorise aucun cinquième code. */
   return "C";
 }
 
