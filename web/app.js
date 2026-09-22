@@ -6714,6 +6714,464 @@ window.CGWEB113_FIX2_APPLY_LAST = async function(confirm) {
 
 /* CGWEB113_FIX2_FILENAME_REPAIR_CONSOLE_END */
 
+/* CGWEB113_FIX3_MASS_SAFE_SWEEP001_START */
+
+const CGWEB113_FIX3_STORAGE_KEY =
+  "cgweb113_fix3_mass_sweep_v1";
+const CGWEB113_FIX3_CONFIRM =
+  "APPLY_ALL_LEGACY_UTC_NAMES";
+const CGWEB113_FIX3_ALLOWED_STATUSES =
+  new Set([
+    "ALREADY_LOCAL",
+    "LEGACY_UTC_FILENAME",
+    "SKIP_NOT_CANONICAL",
+    "SKIP_NONBASE_CANONICAL_CODE"
+  ]);
+
+let cgweb113Fix3StopRequested = false;
+
+function cgweb113Fix3Sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function cgweb113Fix3BlankStats() {
+  return {
+    pages_verified: 0,
+    scanned: 0,
+    repaired: 0,
+    already_local: 0,
+    skipped_not_canonical: 0,
+    skipped_nonbase_canonical_code: 0
+  };
+}
+
+function cgweb113Fix3ReadState() {
+  try {
+    const raw = localStorage.getItem(CGWEB113_FIX3_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function cgweb113Fix3WriteState(state) {
+  const stamped = {
+    ...state,
+    updated_at: new Date().toISOString()
+  };
+  localStorage.setItem(
+    CGWEB113_FIX3_STORAGE_KEY,
+    JSON.stringify(stamped)
+  );
+  window.CGWEB113_FIX3_LAST_STATE = stamped;
+  return stamped;
+}
+
+function cgweb113Fix3StatusRows(rows) {
+  const counts = {};
+  for (const row of (Array.isArray(rows) ? rows : [])) {
+    const status = String(row?.status || "UNKNOWN");
+    counts[status] = Number(counts[status] || 0) + 1;
+  }
+  return counts;
+}
+
+function cgweb113Fix3GuardPage(preview) {
+  const rows = Array.isArray(preview?.rows) ? preview.rows : [];
+  const anomalies = [];
+
+  for (const row of rows) {
+    const status = String(row?.status || "UNKNOWN");
+
+    if (!CGWEB113_FIX3_ALLOWED_STATUSES.has(status)) {
+      anomalies.push({
+        reason: "UNEXPECTED_STATUS",
+        file_doc_id: row?.file_doc_id,
+        activity_id: row?.activity_id,
+        status,
+        current_name: row?.current_name,
+        delta_ms: row?.internal_delta_ms
+      });
+      continue;
+    }
+
+    if (row?.repairable === true) {
+      const delta = Number(row?.internal_delta_ms);
+      if (
+        status !== "LEGACY_UTC_FILENAME" ||
+        String(row?.role || "") !== "CANONICAL" ||
+        !Number.isFinite(delta) ||
+        Math.abs(delta) > 1000
+      ) {
+        anomalies.push({
+          reason: "REPAIRABLE_GUARD_FAILED",
+          file_doc_id: row?.file_doc_id,
+          activity_id: row?.activity_id,
+          status,
+          role: row?.role,
+          current_name: row?.current_name,
+          expected_local_name: row?.expected_local_name,
+          delta_ms: row?.internal_delta_ms
+        });
+      }
+    }
+  }
+  return anomalies;
+}
+
+function cgweb113Fix3AddPreviewStats(stats, preview) {
+  const rows = Array.isArray(preview?.rows) ? preview.rows : [];
+  const next = {...stats};
+  next.scanned += rows.length;
+
+  for (const row of rows) {
+    switch (String(row?.status || "")) {
+      case "ALREADY_LOCAL":
+        next.already_local += 1;
+        break;
+      case "SKIP_NOT_CANONICAL":
+        next.skipped_not_canonical += 1;
+        break;
+      case "SKIP_NONBASE_CANONICAL_CODE":
+        next.skipped_nonbase_canonical_code += 1;
+        break;
+      default:
+        break;
+    }
+  }
+  return next;
+}
+
+async function cgweb113Fix3ApplyCandidates(api, candidates) {
+  let repaired = 0;
+
+  for (let i = 0; i < candidates.length; i += 10) {
+    if (cgweb113Fix3StopRequested) {
+      throw new Error("STOP_REQUESTED");
+    }
+
+    const chunk = candidates.slice(i, i + 10).map(row => ({
+      file_doc_id: row.file_doc_id,
+      activity_id: row.activity_id,
+      from_name: row.current_name,
+      to_name: row.expected_local_name
+    }));
+
+    const result = await api.applyFilenameRepair(
+      chunk,
+      "APPLY_LEGACY_UTC_NAMES"
+    );
+
+    const resultRows = Array.isArray(result?.rows) ? result.rows : [];
+    const bad = resultRows.filter(row =>
+      row?.ok !== true ||
+      row?.status !== "REPAIRED_AND_VERIFIED" ||
+      Math.abs(Number(row?.internal_delta_ms)) > 1000 ||
+      String(row?.reaudit_status || "") !== "OK"
+    );
+
+    if (resultRows.length !== chunk.length || bad.length) {
+      const error = new Error("APPLY_VERIFICATION_FAILED");
+      error.cgweb113Rows = resultRows;
+      throw error;
+    }
+
+    repaired += resultRows.length;
+    console.log("CGWEB113 FIX3 · lot appliqué", {
+      repaired: resultRows.length,
+      total_repaired_page: repaired
+    });
+
+    await cgweb113Fix3Sleep(150);
+  }
+
+  return repaired;
+}
+
+window.CGWEB113_FIX3_STATUS = function() {
+  const state = cgweb113Fix3ReadState();
+  if (!state) {
+    console.log("CGWEB113 FIX3 : aucun état enregistré.");
+    return null;
+  }
+
+  console.table([{
+    status: state.status,
+    pages_verified: state.stats?.pages_verified || 0,
+    scanned: state.stats?.scanned || 0,
+    repaired: state.stats?.repaired || 0,
+    already_local: state.stats?.already_local || 0,
+    skipped_original: state.stats?.skipped_not_canonical || 0,
+    skipped_other_canonical:
+      state.stats?.skipped_nonbase_canonical_code || 0,
+    cursor: state.cursor || "(début)"
+  }]);
+  return state;
+};
+
+window.CGWEB113_FIX3_REQUEST_STOP = function() {
+  cgweb113Fix3StopRequested = true;
+  console.warn(
+    "CGWEB113 FIX3 : arrêt demandé. Le traitement s'arrêtera avant la prochaine écriture."
+  );
+};
+
+window.CGWEB113_FIX3_RESET = function(confirm) {
+  if (confirm !== "RESET_CGWEB113_FIX3_STATE") {
+    throw new Error(
+      'Confirmation requise : CGWEB113_FIX3_RESET("RESET_CGWEB113_FIX3_STATE")'
+    );
+  }
+  localStorage.removeItem(CGWEB113_FIX3_STORAGE_KEY);
+  window.CGWEB113_FIX3_LAST_STATE = null;
+  console.log("CGWEB113 FIX3 : état local réinitialisé.");
+  return true;
+};
+
+window.CGWEB113_FIX3_MASS_SWEEP = async function(confirm) {
+  if (confirm !== CGWEB113_FIX3_CONFIRM) {
+    throw new Error(
+      'Confirmation requise : CGWEB113_FIX3_MASS_SWEEP("APPLY_ALL_LEGACY_UTC_NAMES")'
+    );
+  }
+
+  const api = window.SPORT_FIT_TIMESTAMP_AUDIT;
+  if (
+    !api ||
+    typeof api.previewFilenameRepair !== "function" ||
+    typeof api.applyFilenameRepair !== "function"
+  ) {
+    throw new Error("CGWEB113 FIX3 : API FIX2 indisponible.");
+  }
+
+  cgweb113Fix3StopRequested = false;
+
+  const previous = cgweb113Fix3ReadState();
+  const resumable =
+    previous &&
+    ["RUNNING","ERROR","STOPPED"].includes(previous.status);
+
+  let cursor = resumable ? (previous.cursor || null) : null;
+  let stats = resumable
+    ? {...cgweb113Fix3BlankStats(), ...(previous.stats || {})}
+    : cgweb113Fix3BlankStats();
+  let pageNumber = resumable ? Number(previous.page_number || 0) : 0;
+
+  let state = cgweb113Fix3WriteState({
+    version: "CGWEB113_FIX3",
+    status: "RUNNING",
+    cursor,
+    page_number: pageNumber,
+    stats,
+    started_at: resumable
+      ? previous.started_at
+      : new Date().toISOString(),
+    last_error: null,
+    anomalies: []
+  });
+
+  console.log("CGWEB113 FIX3 · traitement de masse démarré", {
+    resume_from_cursor: cursor,
+    stats
+  });
+
+  try {
+    while (true) {
+      if (cgweb113Fix3StopRequested) {
+        state = cgweb113Fix3WriteState({
+          ...state,
+          status: "STOPPED",
+          cursor,
+          stats,
+          page_number: pageNumber
+        });
+        console.warn("CGWEB113 FIX3 : arrêté à la demande de l'utilisateur.");
+        return state;
+      }
+
+      const pageCursor = cursor;
+      const preview = await api.previewFilenameRepair({
+        cursor: pageCursor,
+        limit: 25
+      });
+
+      if (!preview?.ok) {
+        throw new Error("PREVIEW_NOT_OK");
+      }
+
+      const rows = Array.isArray(preview?.rows) ? preview.rows : [];
+
+      if (!rows.length) {
+        state = cgweb113Fix3WriteState({
+          ...state,
+          status: "COMPLETE",
+          cursor: pageCursor,
+          page_number: pageNumber,
+          stats,
+          completed_at: new Date().toISOString()
+        });
+        console.log("CGWEB113 FIX3 · catalogue terminé.");
+        window.CGWEB113_FIX3_STATUS();
+        return state;
+      }
+
+      const anomalies = cgweb113Fix3GuardPage(preview);
+      if (anomalies.length) {
+        state = cgweb113Fix3WriteState({
+          ...state,
+          status: "BLOCKED",
+          cursor: pageCursor,
+          page_number: pageNumber + 1,
+          stats,
+          anomalies
+        });
+        console.error(
+          "CGWEB113 FIX3 · ARRÊT DE SÉCURITÉ : anomalie rencontrée. Aucun fichier de cette page n'a été modifié.",
+          anomalies
+        );
+        console.table(anomalies);
+        return state;
+      }
+
+      const candidates = rows.filter(row =>
+        row?.repairable === true &&
+        row?.status === "LEGACY_UTC_FILENAME"
+      );
+
+      const pageCounts = cgweb113Fix3StatusRows(rows);
+
+      console.log("CGWEB113 FIX3 · page " + (pageNumber + 1), {
+        cursor: pageCursor,
+        scanned: rows.length,
+        repairable: candidates.length,
+        statuses: pageCounts
+      });
+
+      const repaired = await cgweb113Fix3ApplyCandidates(
+        api,
+        candidates
+      );
+
+      const verify = await api.previewFilenameRepair({
+        cursor: pageCursor,
+        limit: 25
+      });
+
+      const verifyRows = Array.isArray(verify?.rows) ? verify.rows : [];
+      const verifyAnomalies = cgweb113Fix3GuardPage(verify);
+      const remainingRepairable = verifyRows.filter(row =>
+        row?.repairable === true ||
+        row?.status === "LEGACY_UTC_FILENAME"
+      );
+
+      if (verifyAnomalies.length || remainingRepairable.length) {
+        const error = new Error("PAGE_VERIFY_FAILED");
+        error.cgweb113Anomalies = [
+          ...verifyAnomalies,
+          ...remainingRepairable.map(row => ({
+            reason: "REMAINING_REPAIRABLE_AFTER_PAGE_APPLY",
+            file_doc_id: row?.file_doc_id,
+            activity_id: row?.activity_id,
+            status: row?.status,
+            current_name: row?.current_name
+          }))
+        ];
+        throw error;
+      }
+
+      stats = cgweb113Fix3AddPreviewStats(stats, preview);
+      stats.repaired += repaired;
+      stats.pages_verified += 1;
+      pageNumber += 1;
+
+      cursor = preview?.next_cursor || null;
+
+      state = cgweb113Fix3WriteState({
+        ...state,
+        status: "RUNNING",
+        cursor,
+        page_number: pageNumber,
+        stats,
+        last_page: {
+          scanned: rows.length,
+          repaired,
+          statuses: pageCounts,
+          verified: true
+        }
+      });
+
+      console.log("CGWEB113 FIX3 · progression", {
+        pages_verified: stats.pages_verified,
+        scanned: stats.scanned,
+        repaired: stats.repaired,
+        next_cursor: cursor,
+        done: preview?.done === true
+      });
+
+      if (preview?.done === true) {
+        state = cgweb113Fix3WriteState({
+          ...state,
+          status: "COMPLETE",
+          cursor,
+          page_number: pageNumber,
+          stats,
+          completed_at: new Date().toISOString()
+        });
+        console.log("CGWEB113 FIX3 · TRAITEMENT TERMINÉ");
+        window.CGWEB113_FIX3_STATUS();
+        return state;
+      }
+
+      if (!cursor || cursor === pageCursor) {
+        throw new Error("CURSOR_DID_NOT_ADVANCE");
+      }
+
+      await cgweb113Fix3Sleep(200);
+    }
+  } catch (error) {
+    if (String(error?.message || "") === "STOP_REQUESTED") {
+      state = cgweb113Fix3WriteState({
+        ...state,
+        status: "STOPPED",
+        cursor,
+        page_number: pageNumber,
+        stats
+      });
+      return state;
+    }
+
+    const details =
+      error?.cgweb113Anomalies ||
+      error?.cgweb113Rows ||
+      [];
+
+    state = cgweb113Fix3WriteState({
+      ...state,
+      status: "ERROR",
+      cursor,
+      page_number: pageNumber,
+      stats,
+      last_error: String(error?.message || error),
+      anomalies: Array.isArray(details) ? details : []
+    });
+
+    console.error(
+      "CGWEB113 FIX3 · interrompu. Relancer la même commande reprendra depuis la dernière page validée.",
+      error
+    );
+
+    if (Array.isArray(details) && details.length) {
+      console.table(details);
+    }
+
+    return state;
+  }
+};
+
+/* CGWEB113_FIX3_MASS_SAFE_SWEEP001_END */
+
+
+
 /* CGWEB113_VISIBLE_PARITY_AUDIT_START */
 
 async function cgweb113AuditVisibleFits() {
