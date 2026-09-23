@@ -6352,6 +6352,284 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
     }
   </style>
 
+
+<!-- CGWEB118_UI_START -->
+<style id="cgweb118Ui">
+
+:root{
+  --cgweb118-gap:2mm;
+}
+
+footer{
+  display:none!important;
+}
+
+body[data-ux-page="analysis"] main,
+body[data-ux-page="equipment"] main{
+  margin-top:var(--cgweb118-gap)!important;
+}
+
+body[data-ux-page="analysis"] #catalogView>.hero,
+body[data-ux-page="equipment"] #catalogView>.hero{
+  display:none!important;
+}
+
+body[data-ux-page="analysis"] #catalogView>.panel:not(.hidden),
+body[data-ux-page="equipment"] #catalogView>.panel:not(.hidden){
+  margin-top:0!important;
+}
+
+#uxSecondaryNav .ux-secondary-nav-inner{
+  display:flex!important;
+  align-items:center!important;
+  width:min(1500px,98vw)!important;
+  margin:0 auto!important;
+}
+
+#refreshButton.cgweb118-subnav-refresh{
+  margin-left:auto!important;
+  min-height:36px!important;
+  padding:6px 14px!important;
+  border-radius:12px!important;
+  flex:0 0 auto!important;
+}
+
+#personalSyncSection>.panel-title-row{
+  display:none!important;
+}
+
+#personalSyncSection .personal-sync-columns{
+  grid-template-columns:minmax(0,1fr)!important;
+  gap:12px!important;
+}
+
+#personalSyncSection
+.cgweb118-goal-card
+.personal-card-heading
+.eyebrow,
+
+#personalSyncSection
+.cgweb118-goal-card
+#goalSportSelect,
+
+#personalSyncSection
+.cgweb118-goal-card
+>.goal-editor-grid,
+
+#personalSyncSection
+.cgweb118-goal-card
+#goalProgress{
+  display:none!important;
+}
+
+#personalSyncSection
+.cgweb118-weight-card
+>.personal-card-heading{
+  display:none!important;
+}
+
+.cgweb118-objectives-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+
+.cgweb118-objective-group{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  min-width:0;
+  border:1px solid rgba(167,255,42,.20);
+  border-radius:14px;
+  padding:12px;
+}
+
+.cgweb118-objective-group h4{
+  grid-column:1/-1;
+  margin:0;
+  font-size:1rem;
+}
+
+.cgweb118-objective-group label{
+  min-width:0;
+}
+
+.cgweb118-weight-layout{
+  display:grid;
+  grid-template-columns:minmax(320px,.8fr) minmax(430px,1.2fr);
+  gap:14px;
+  align-items:start;
+}
+
+.cgweb118-weight-left{
+  min-width:0;
+}
+
+.cgweb118-weight-chart-card{
+  min-width:0;
+  border:1px solid rgba(167,255,42,.18);
+  border-radius:14px;
+  padding:12px;
+}
+
+.cgweb118-weight-chart-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-bottom:6px;
+}
+
+.cgweb118-weight-chart-head h4{
+  margin:0;
+}
+
+.cgweb118-weight-chart{
+  min-height:260px;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+}
+
+.cgweb118-weight-chart svg{
+  width:100%;
+  height:auto;
+  max-height:300px;
+  overflow:visible;
+}
+
+.cgweb118-chart-grid{
+  stroke:rgba(255,255,255,.10);
+  stroke-width:1;
+}
+
+.cgweb118-chart-axis{
+  fill:rgba(255,255,255,.62);
+  font-size:11px;
+}
+
+.cgweb118-chart-line{
+  fill:none;
+  stroke:var(--accent,#a7ff2a);
+  stroke-width:3;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.cgweb118-chart-point{
+  fill:var(--accent,#a7ff2a);
+}
+
+body[data-ux-page="equipment"]
+#equipmentManagerSection
+.equipment-manager-card{
+  grid-template-columns:minmax(0,1fr)!important;
+  gap:10px!important;
+}
+
+body[data-ux-page="equipment"]
+#equipmentManagerSection
+.equipment-manager-usage{
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  width:100%!important;
+}
+
+body[data-ux-page="equipment"]
+#equipmentManagerSection
+.equipment-manager-card-actions{
+  justify-content:flex-start!important;
+}
+
+#authState,
+#logoutButton{
+  min-width:112px!important;
+  height:42px!important;
+  min-height:42px!important;
+  padding:0 16px!important;
+  border-radius:999px!important;
+  align-items:center!important;
+  justify-content:center!important;
+  box-sizing:border-box!important;
+  font-weight:600!important;
+  line-height:1!important;
+}
+
+#authState:not(.hidden),
+#logoutButton:not(.hidden){
+  display:inline-flex!important;
+}
+
+#authState.hidden,
+#logoutButton.hidden{
+  display:none!important;
+}
+
+#logoutButton{
+  background:#8f2020!important;
+  border:1px solid #d24a4a!important;
+  color:#fff!important;
+}
+
+#logoutButton:hover{
+  background:#a62929!important;
+}
+
+.topbar{
+  gap:12px;
+}
+
+#messageBox.cgweb118-top-message{
+  flex:1 1 320px;
+  width:auto!important;
+  max-width:min(760px,52vw);
+  margin:0 14px!important;
+  padding:8px 12px!important;
+  border-radius:12px!important;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  text-align:center;
+}
+
+#messageBox.cgweb118-top-message.hidden{
+  display:none!important;
+}
+
+body[data-ux-page="activities"]
+#activityDirectorySection{
+  padding-top:2mm!important;
+}
+
+@media(max-width:900px){
+  .cgweb118-objectives-grid,
+  .cgweb118-weight-layout{
+    grid-template-columns:1fr;
+  }
+
+  #messageBox.cgweb118-top-message{
+    max-width:44vw;
+  }
+}
+
+@media(max-width:700px){
+  .cgweb118-objective-group{
+    grid-template-columns:1fr;
+  }
+
+  body[data-ux-page="equipment"]
+  #equipmentManagerSection
+  .equipment-manager-usage{
+    grid-template-columns:1fr!important;
+  }
+
+  #messageBox.cgweb118-top-message{
+    display:none!important;
+  }
+}
+
+</style>
+<!-- CGWEB118_UI_END -->
+
 </head>
 <body>
   <header class="topbar">
@@ -9028,7 +9306,7 @@ body[data-ux-page="activities"][data-ux-subpage="directory"] #cgweb083MeasuredAc
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB117-FIX1-PHASE2"></script>
+<script type="module" src="./app.js?v=CGWEB118"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

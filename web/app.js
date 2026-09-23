@@ -35863,3 +35863,563 @@ window.CGWEB117_FIX1_PHASE2_VALIDATE =
   cgweb117Fix1Phase2Validate;
 
 /* CGWEB117_FIX1_PHASE2_VALIDATION001_END */
+
+/* CGWEB118_APP_START */
+
+const cgweb118UxPageConfigBase = uxPageConfig;
+
+uxPageConfig = function cgweb118UxPageConfig() {
+  const config = cgweb118UxPageConfigBase();
+
+  if (config?.equipment) {
+    config.equipment = {
+      ...config.equipment,
+      subs: [
+        ["management", "Gestion du matériel"],
+        ["equipment-map", "Correspondances automatiques"]
+      ]
+    };
+  }
+
+  if (config?.more) {
+    config.more = {
+      ...config.more,
+      subs: [
+        ["files", "Fichiers"],
+        ["import", "Import"],
+        ["manual", "Ajout manuel"],
+        ["trash", "Corbeille"],
+        ["appearance", "Apparence"],
+        ["sync", "Synchronisation"],
+        ["health-sync", "Santé Sync"],
+        ["strava", "Strava"],
+        ["landmarks-advanced", "Repères avancés"],
+        ["maps", "Cartes"]
+      ]
+    };
+  }
+
+  return config;
+};
+
+function cgweb118CurrentPage() {
+  return String(document.body?.dataset?.uxPage || "").trim();
+}
+
+function cgweb118CurrentSubpage() {
+  return String(document.body?.dataset?.uxSubpage || "").trim();
+}
+
+function cgweb118PlaceRefresh(page = cgweb118CurrentPage()) {
+  const button = document.getElementById("refreshButton");
+  const heroActions = document.querySelector("#catalogView > .hero .hero-actions");
+  const subnavInner = document.querySelector("#uxSecondaryNav .ux-secondary-nav-inner");
+
+  if (!button) return;
+
+  if (["analysis", "equipment"].includes(page) && subnavInner) {
+    button.classList.add("cgweb118-subnav-refresh");
+    if (button.parentElement !== subnavInner) subnavInner.appendChild(button);
+    return;
+  }
+
+  button.classList.remove("cgweb118-subnav-refresh");
+
+  if (heroActions && button.parentElement !== heroActions) {
+    heroActions.appendChild(button);
+  }
+}
+
+const cgweb118RenderUxSecondaryNavBase = renderUxSecondaryNav;
+
+renderUxSecondaryNav = function cgweb118RenderUxSecondaryNav(page, activeSub) {
+  const result = cgweb118RenderUxSecondaryNavBase.apply(this, arguments);
+  cgweb118PlaceRefresh(page);
+  return result;
+};
+
+const cgweb118NavigateUxBase = navigateUx;
+
+navigateUx = function cgweb118NavigateUx(page, sub, ...rest) {
+  const result = cgweb118NavigateUxBase.call(this, page, sub, ...rest);
+
+  if (page === "equipment") {
+    if (sub === "equipment-map") {
+      setUxSectionVisibility([ui.equipmentMappingSection]);
+      renderEquipmentMapping();
+    } else {
+      setUxSectionVisibility([ui.equipmentManagerSection]);
+      renderEquipmentManager();
+    }
+  }
+
+  queueMicrotask(() => cgweb118PlaceRefresh(page));
+  return result;
+};
+
+function cgweb118NormalizeNavigation() {
+  const page = cgweb118CurrentPage();
+  if (!page) return;
+
+  const config = uxPageConfig();
+  const subs = Array.isArray(config?.[page]?.subs) ? config[page].subs : [];
+  const allowed = new Set(subs.map(([key]) => String(key)));
+  let sub = cgweb118CurrentSubpage();
+
+  if (page === "equipment" && !allowed.has(sub)) sub = "management";
+  if (page === "more" && !allowed.has(sub)) sub = "files";
+
+  if (sub && sub !== cgweb118CurrentSubpage()) {
+    navigateUx(page, sub);
+    return;
+  }
+
+  renderUxSecondaryNav(page, sub);
+  cgweb118PlaceRefresh(page);
+}
+
+function cgweb118MountTopMessage() {
+  const topbar = document.querySelector(".topbar");
+  const authActions = document.querySelector(".topbar .auth-actions");
+  const message = document.getElementById("messageBox");
+
+  if (!topbar || !authActions || !message) return false;
+
+  if (message.parentElement !== topbar) {
+    topbar.insertBefore(message, authActions);
+  }
+
+  message.classList.add("cgweb118-top-message");
+
+  if (message.dataset.cgweb118Mounted !== "1") {
+    const initial = String(message.textContent || "").trim();
+
+    if (/WEB018|SYNCHEALTH008|Contrat UI unique actif/i.test(initial)) {
+      message.classList.add("hidden");
+    }
+
+    message.dataset.cgweb118Mounted = "1";
+  }
+
+  return true;
+}
+
+const cgweb118SetMessageBase = setMessage;
+
+setMessage = function cgweb118SetMessage(...args) {
+  const result = cgweb118SetMessageBase.apply(this, args);
+  cgweb118MountTopMessage();
+  return result;
+};
+
+let cgweb118BikeGoalTimer = 0;
+
+function cgweb118GoalNumber(value) {
+  const number = Number(value);
+  return (Number.isFinite(number) && number >= 0) ? number : 0;
+}
+
+function cgweb118RefreshBikeGoals() {
+  const distance = document.getElementById("cgweb118BikeDistance");
+  const ascent = document.getElementById("cgweb118BikeAscent");
+
+  if (!distance || !ascent) return;
+
+  const row = sportGoals.get("2") || sportGoals.get(2) || {};
+
+  if (document.activeElement !== distance) {
+    distance.value = cgweb118GoalNumber(row.annual_distance_km);
+  }
+
+  if (document.activeElement !== ascent) {
+    ascent.value = cgweb118GoalNumber(row.annual_ascent_m);
+  }
+}
+
+async function cgweb118PersistBikeGoals() {
+  const distance = document.getElementById("cgweb118BikeDistance");
+  const ascent = document.getElementById("cgweb118BikeAscent");
+
+  if (!distance || !ascent) return;
+
+  if (!currentUser) {
+    if (ui.goalSaveStatus) ui.goalSaveStatus.textContent = "Connexion requise.";
+    return;
+  }
+
+  const current = sportGoals.get("2") || sportGoals.get(2) || {};
+
+  const row = {
+    sport: 2,
+    annual_distance_km: cgweb118GoalNumber(distance.value),
+    annual_ascent_m: cgweb118GoalNumber(ascent.value),
+    annual_duration_h: cgweb118GoalNumber(current.annual_duration_h),
+    target_name: String(current.target_name || "").trim(),
+    target_date: String(current.target_date || "").trim(),
+    prep_distance_90_km: cgweb118GoalNumber(current.prep_distance_90_km),
+    prep_ascent_90_m: cgweb118GoalNumber(current.prep_ascent_90_m),
+    updated_at_ms: Date.now()
+  };
+
+  try {
+    await commitWebMutation({
+      table: SPORT_WEB_SCHEMA.tables.sportGoals,
+      rowKey: "2",
+      operation: "UPSERT",
+      row,
+      materializedCollection: SPORT_WEB_SCHEMA.materialized.sportGoals,
+      materializedData: row
+    });
+
+    sportGoals.set("2", {...row, __docId:"2"});
+
+    if (ui.goalSaveStatus) ui.goalSaveStatus.textContent = "Objectifs enregistrés.";
+
+    updatePersonalSyncMeta();
+  } catch (error) {
+    console.error("CGWEB118 · objectifs vélo", error);
+
+    if (ui.goalSaveStatus) {
+      ui.goalSaveStatus.textContent = "Enregistrement impossible.";
+    }
+  }
+}
+
+function cgweb118MountGoals() {
+  const distance = document.getElementById("goalDistanceInput");
+  const ascent = document.getElementById("goalAscentInput");
+  const card = distance?.closest(".personal-sync-card");
+
+  if (!distance || !ascent || !card) return false;
+
+  card.classList.add("cgweb118-goal-card");
+  selectedGoalSport = 1;
+
+  if (ui.goalSportSelect) {
+    ui.goalSportSelect.value = "1";
+    ui.goalSportSelect.hidden = true;
+  }
+
+  if (document.getElementById("cgweb118GoalsGrid")) {
+    cgweb118RefreshBikeGoals();
+    return true;
+  }
+
+  const oldGrid = card.querySelector(".goal-editor-grid");
+  const runDistanceLabel = distance.closest("label");
+  const runAscentLabel = ascent.closest("label");
+
+  if (!oldGrid || !runDistanceLabel || !runAscentLabel) return false;
+
+  const grid = document.createElement("div");
+  grid.id = "cgweb118GoalsGrid";
+  grid.className = "cgweb118-objectives-grid";
+
+  const run = document.createElement("section");
+  run.className = "cgweb118-objective-group";
+
+  const runTitle = document.createElement("h4");
+  runTitle.textContent = "Course à pied";
+
+  run.append(runTitle, runDistanceLabel, runAscentLabel);
+
+  const bike = document.createElement("section");
+  bike.className = "cgweb118-objective-group";
+
+  bike.innerHTML = `
+    <h4>Vélo</h4>
+    <label>
+      Distance annuelle (km)
+      <input id="cgweb118BikeDistance" type="number" min="0" step="0.1" inputmode="decimal">
+    </label>
+    <label>
+      D+ annuel (m)
+      <input id="cgweb118BikeAscent" type="number" min="0" step="1" inputmode="numeric">
+    </label>
+  `;
+
+  grid.append(run, bike);
+  oldGrid.insertAdjacentElement("beforebegin", grid);
+
+  for (const input of [
+    document.getElementById("cgweb118BikeDistance"),
+    document.getElementById("cgweb118BikeAscent")
+  ]) {
+    input?.addEventListener("input", () => {
+      clearTimeout(cgweb118BikeGoalTimer);
+
+      if (ui.goalSaveStatus) {
+        ui.goalSaveStatus.textContent = "Enregistrement…";
+      }
+
+      cgweb118BikeGoalTimer = setTimeout(
+        () => void cgweb118PersistBikeGoals(),
+        700
+      );
+    });
+  }
+
+  cgweb118RefreshBikeGoals();
+  return true;
+}
+
+const cgweb118PopulateGoalEditorBase = populateGoalEditor;
+
+populateGoalEditor = function cgweb118PopulateGoalEditor(...args) {
+  selectedGoalSport = 1;
+
+  if (ui.goalSportSelect) {
+    ui.goalSportSelect.value = "1";
+  }
+
+  const result = cgweb118PopulateGoalEditorBase.apply(this, args);
+  cgweb118RefreshBikeGoals();
+  return result;
+};
+
+function cgweb118MountWeight() {
+  const history = document.getElementById("weightHistory");
+  const dateInput = document.getElementById("weightDateInput");
+  const editor = dateInput?.closest(".weight-editor-row");
+  const card = history?.closest(".personal-sync-card");
+
+  if (!history || !editor || !card) return false;
+
+  card.classList.add("cgweb118-weight-card");
+
+  if (document.getElementById("cgweb118WeightLayout")) return true;
+
+  const autosave = document.getElementById("weightSaveStatus")?.closest(".autosave-row");
+
+  const layout = document.createElement("div");
+  layout.id = "cgweb118WeightLayout";
+  layout.className = "cgweb118-weight-layout";
+
+  const left = document.createElement("div");
+  left.className = "cgweb118-weight-left";
+
+  const chart = document.createElement("section");
+  chart.className = "cgweb118-weight-chart-card";
+
+  chart.innerHTML = `
+    <div class="cgweb118-weight-chart-head">
+      <h4>Évolution du poids</h4>
+      <span id="cgweb118WeightChartMeta" class="muted"></span>
+    </div>
+    <div id="cgweb118WeightChart" class="cgweb118-weight-chart"></div>
+  `;
+
+  left.append(editor);
+
+  if (autosave) left.append(autosave);
+
+  left.append(history);
+  layout.append(left, chart);
+  card.append(layout);
+
+  return true;
+}
+
+function cgweb118WeightRows() {
+  const source = Array.isArray(journalEntries) ? journalEntries : [];
+
+  return source
+    .map(row => ({
+      date: String(row?.iso_date || "").slice(0,10),
+      kg: Number(row?.weight_kg)
+    }))
+    .filter(row =>
+      /^\d{4}-\d{2}-\d{2}$/.test(row.date) &&
+      Number.isFinite(row.kg) &&
+      row.kg > 0
+    )
+    .sort((a,b) => a.date.localeCompare(b.date));
+}
+
+function cgweb118FormatKg(value) {
+  return Number(value).toLocaleString(
+    "fr-FR",
+    {
+      minimumFractionDigits:1,
+      maximumFractionDigits:2
+    }
+  );
+}
+
+function cgweb118ShortDate(value) {
+  const parts = String(value || "").split("-");
+  if (parts.length !== 3) return String(value || "");
+  return parts[2] + "/" + parts[1] + "/" + parts[0];
+}
+
+function cgweb118RenderWeightChart() {
+  const host = document.getElementById("cgweb118WeightChart");
+  const meta = document.getElementById("cgweb118WeightChartMeta");
+
+  if (!host) return;
+
+  const rows = cgweb118WeightRows();
+
+  if (!rows.length) {
+    host.innerHTML = '<p class="muted">Aucune mesure de poids.</p>';
+    if (meta) meta.textContent = "";
+    return;
+  }
+
+  const values = rows.map(row => row.kg);
+  const current = rows[rows.length - 1].kg;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  if (meta) {
+    meta.textContent =
+      cgweb118FormatKg(current) +
+      " kg · min " +
+      cgweb118FormatKg(min) +
+      " · max " +
+      cgweb118FormatKg(max);
+  }
+
+  const width = 680;
+  const height = 280;
+  const margin = {left:52,right:18,top:18,bottom:38};
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const padding = Math.max(.5, (max - min) * .12);
+  const yMin = min - padding;
+  const yMax = max + padding;
+  const yRange = Math.max(.1, yMax - yMin);
+  const firstMs = Date.parse(rows[0].date + "T00:00:00");
+  const lastMs = Date.parse(rows[rows.length - 1].date + "T00:00:00");
+  const timeRange = Math.max(1, lastMs - firstMs);
+
+  const x = (row,index) => {
+    if (rows.length === 1) return margin.left + plotWidth / 2;
+
+    const ms = Date.parse(row.date + "T00:00:00");
+
+    if (!Number.isFinite(ms)) {
+      return margin.left + plotWidth * index / Math.max(1, rows.length - 1);
+    }
+
+    return margin.left + plotWidth * (ms - firstMs) / timeRange;
+  };
+
+  const y = kg =>
+    margin.top +
+    plotHeight *
+    (1 - (kg - yMin) / yRange);
+
+  const points = rows
+    .map((row,index) =>
+      x(row,index).toFixed(1) + "," + y(row.kg).toFixed(1)
+    )
+    .join(" ");
+
+  const grid = [];
+
+  for (let i = 0; i < 5; i += 1) {
+    const ratio = i / 4;
+    const yy = margin.top + plotHeight * ratio;
+    const value = yMax - yRange * ratio;
+
+    grid.push(`
+      <line class="cgweb118-chart-grid"
+        x1="${margin.left}"
+        y1="${yy.toFixed(1)}"
+        x2="${(margin.left + plotWidth).toFixed(1)}"
+        y2="${yy.toFixed(1)}"
+      />
+      <text class="cgweb118-chart-axis"
+        x="${margin.left - 8}"
+        y="${(yy + 4).toFixed(1)}"
+        text-anchor="end"
+      >${cgweb118FormatKg(value)}</text>
+    `);
+  }
+
+  const circles = rows
+    .map((row,index) => `
+      <circle class="cgweb118-chart-point"
+        cx="${x(row,index).toFixed(1)}"
+        cy="${y(row.kg).toFixed(1)}"
+        r="3.5">
+        <title>${cgweb118ShortDate(row.date)} · ${cgweb118FormatKg(row.kg)} kg</title>
+      </circle>
+    `)
+    .join("");
+
+  host.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution du poids">
+      ${grid.join("")}
+      <polyline class="cgweb118-chart-line" points="${points}" />
+      ${circles}
+      <text class="cgweb118-chart-axis"
+        x="${margin.left}"
+        y="${height - 10}"
+        text-anchor="start"
+      >${cgweb118ShortDate(rows[0].date)}</text>
+      <text class="cgweb118-chart-axis"
+        x="${margin.left + plotWidth}"
+        y="${height - 10}"
+        text-anchor="end"
+      >${cgweb118ShortDate(rows[rows.length - 1].date)}</text>
+    </svg>
+  `;
+}
+
+const cgweb118RenderWeightHistoryBase = renderWeightHistory;
+
+renderWeightHistory = function cgweb118RenderWeightHistory(...args) {
+  const result = cgweb118RenderWeightHistoryBase.apply(this, args);
+  queueMicrotask(cgweb118RenderWeightChart);
+  return result;
+};
+
+const cgweb118LoadPersonalSyncBase = loadPersonalSync;
+
+loadPersonalSync = async function cgweb118LoadPersonalSync(...args) {
+  const result = await cgweb118LoadPersonalSyncBase.apply(this, args);
+
+  cgweb118MountGoals();
+  selectedGoalSport = 1;
+
+  if (ui.goalSportSelect) ui.goalSportSelect.value = "1";
+
+  populateGoalEditor();
+
+  cgweb118MountWeight();
+  cgweb118RenderWeightChart();
+
+  return result;
+};
+
+function cgweb118Apply() {
+  cgweb118MountTopMessage();
+  cgweb118MountGoals();
+  cgweb118MountWeight();
+  cgweb118RefreshBikeGoals();
+  cgweb118RenderWeightChart();
+  cgweb118NormalizeNavigation();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb118Apply,
+    {once:true}
+  );
+} else {
+  queueMicrotask(cgweb118Apply);
+}
+
+setTimeout(cgweb118Apply, 250);
+setTimeout(cgweb118Apply, 1200);
+
+window.CGWEB118 = Object.freeze({
+  version:"CGWEB118",
+  apply:cgweb118Apply,
+  renderWeightChart:cgweb118RenderWeightChart
+});
+
+/* CGWEB118_APP_END */
