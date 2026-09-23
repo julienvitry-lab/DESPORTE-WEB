@@ -36983,3 +36983,643 @@ window.CGWEB118_FIX1 = Object.freeze({
 });
 
 /* CGWEB118_FIX1_COMPACT_UI002_END */
+
+/* CGWEB118_FIX2_START
+ * FILTERBAR_COMPACT001
+ * OBJECTIVES_WIDEN001
+ * EQUIPMENT_ROW_LAYOUT001
+ * EXPORT_RENAME001
+ * HOME_TOGGLE_EQUALIZE001
+ * SPACING_UNIFORM001
+ */
+
+const cgweb118Fix2UxPageConfigBase = uxPageConfig;
+
+uxPageConfig = function cgweb118Fix2UxPageConfig() {
+  const config = cgweb118Fix2UxPageConfigBase();
+
+  if (config?.more?.subs) {
+    config.more = {
+      ...config.more,
+      subs: config.more.subs.map(([key, label]) =>
+        String(key) === "files"
+          ? [key, "Export"]
+          : [key, label]
+      )
+    };
+  }
+
+  return config;
+};
+
+function cgweb118Fix2InstallStyles() {
+  if (document.getElementById("cgweb118Fix2Ui")) return;
+
+  const style = document.createElement("style");
+  style.id = "cgweb118Fix2Ui";
+
+  style.textContent = `
+/* =========================================================
+   CGWEB118 FIX2
+   ========================================================= */
+
+/* ---------- 1. Activités : filtres compacts ---------- */
+
+#activityDirectorySection
+.activity-filters-disclosure{
+  margin:2mm 0!important;
+  padding:2mm!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure[open]{
+  display:flex!important;
+  align-items:flex-start!important;
+  gap:2mm!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure[open]
+> summary{
+  flex:0 0 18px!important;
+  width:18px!important;
+  min-width:18px!important;
+  height:40px!important;
+  padding:0!important;
+  margin:0!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure[open]
+> .filters{
+  flex:1 1 auto!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-items:flex-end!important;
+  gap:7px!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter]{
+  flex:0 0 auto!important;
+  min-width:0!important;
+  margin:0!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter="year"]{
+  width:92px!important;
+  order:10!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter="date"]{
+  width:142px!important;
+  order:20!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter="sport"]{
+  width:94px!important;
+  order:30!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter="fit"]{
+  width:107px!important;
+  order:40!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter="landmark"]{
+  width:82px!important;
+  order:50!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter="order"]{
+  width:145px!important;
+  order:60!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter="equipment"]{
+  width:220px!important;
+  order:70!important;
+  margin-left:auto!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter="search"]{
+  display:none!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter]
+> input,
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+[data-cgweb118fix2-filter]
+> select{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+
+#activityDirectorySection
+.activity-filters-disclosure
+.filters
+.cgweb118fix2-filter-meta{
+  flex:1 0 100%!important;
+  order:100!important;
+  margin-top:2mm!important;
+}
+
+
+/* ---------- 2. Analyse : objectifs plus grands ---------- */
+
+#cgweb118GoalsGrid{
+  width:100%!important;
+  max-width:none!important;
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:10px!important;
+}
+
+#cgweb118GoalsGrid
+.cgweb118-objective-group{
+  width:100%!important;
+  max-width:none!important;
+  box-sizing:border-box!important;
+  grid-template-columns:minmax(120px,.72fr) minmax(150px,1fr) minmax(150px,1fr)!important;
+  gap:10px!important;
+  padding:2mm!important;
+  align-items:end!important;
+}
+
+#cgweb118GoalsGrid
+.cgweb118-objective-group h4{
+  grid-column:auto!important;
+  margin:0 5px 9px 0!important;
+  font-size:1.18rem!important;
+  line-height:1.15!important;
+  white-space:nowrap!important;
+}
+
+#cgweb118GoalsGrid
+.cgweb118-objective-group label{
+  width:auto!important;
+  min-width:0!important;
+  max-width:none!important;
+  font-size:.92rem!important;
+}
+
+#cgweb118GoalsGrid
+.cgweb118-objective-group label > span{
+  font-size:.92rem!important;
+}
+
+#cgweb118GoalsGrid
+.cgweb118-objective-group input{
+  width:100%!important;
+  min-height:46px!important;
+  font-size:1.08rem!important;
+  padding:9px 12px!important;
+}
+
+
+/* ---------- 3. Matériel : une vraie ligne par matériel ---------- */
+
+#equipmentManagerList{
+  gap:8px!important;
+}
+
+#equipmentManagerList
+.equipment-manager-card{
+  display:grid!important;
+  grid-template-columns:minmax(190px,1.05fr)
+                        repeat(3,minmax(145px,.92fr))
+                        auto!important;
+  align-items:center!important;
+  gap:8px!important;
+  padding:2mm!important;
+  min-height:0!important;
+}
+
+#equipmentManagerList
+.equipment-manager-main{
+  min-width:0!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  gap:2px!important;
+}
+
+#equipmentManagerList
+.equipment-manager-main > strong{
+  font-size:1.08rem!important;
+  line-height:1.15!important;
+}
+
+#equipmentManagerList
+.equipment-manager-main > span{
+  font-size:.78rem!important;
+  line-height:1.1!important;
+}
+
+#equipmentManagerList
+.equipment-manager-usage{
+  display:contents!important;
+}
+
+#equipmentManagerList
+.equipment-manager-usage > div{
+  min-height:0!important;
+  padding:7px 10px!important;
+  margin:0!important;
+}
+
+#equipmentManagerList
+.equipment-manager-usage > div strong{
+  font-size:1.05rem!important;
+  line-height:1.15!important;
+}
+
+#equipmentManagerList
+.equipment-manager-usage > div span{
+  font-size:.78rem!important;
+}
+
+#equipmentManagerList
+.equipment-manager-card-actions{
+  display:flex!important;
+  flex-wrap:nowrap!important;
+  align-items:center!important;
+  gap:6px!important;
+  margin:0!important;
+  white-space:nowrap!important;
+}
+
+#equipmentManagerList
+.equipment-manager-card-actions button{
+  margin:0!important;
+  min-height:38px!important;
+}
+
+
+/* ---------- 4. Export ---------- */
+
+#webFilesSection
+.cgweb118fix2-files-heading-hidden{
+  display:none!important;
+}
+
+#webFilesSection
+details.cgweb118fix2-audit-details{
+  margin-top:2mm!important;
+}
+
+#webFilesSection
+details.cgweb118fix2-audit-details > summary{
+  margin-top:0!important;
+  padding-top:0!important;
+}
+
+
+/* ---------- 5. Accueil : boutons égaux ---------- */
+
+#dashboardRunningButton,
+#dashboardCyclingButton{
+  width:150px!important;
+  min-width:150px!important;
+  max-width:150px!important;
+  justify-content:center!important;
+}
+
+
+/* ---------- 6. Espacement 2 mm ---------- */
+
+body[data-ux-page="analysis"]
+#personalSyncSection,
+
+body[data-ux-page="equipment"]
+#equipmentManagerSection,
+
+body[data-ux-page="equipment"]
+#equipmentMappingSection,
+
+body[data-ux-page="more"]
+#webFilesSection{
+  padding:2mm!important;
+}
+
+#webDashboardSection
+.web055-card:not(:has(.web055-period-rows)){
+  padding:2mm!important;
+}
+
+
+/* ---------- Responsive ---------- */
+
+@media(max-width:1100px){
+  #equipmentManagerList
+  .equipment-manager-card{
+    grid-template-columns:minmax(180px,1fr)
+                          repeat(3,minmax(120px,.8fr))!important;
+  }
+
+  #equipmentManagerList
+  .equipment-manager-card-actions{
+    grid-column:1/-1!important;
+  }
+}
+
+@media(max-width:900px){
+  #cgweb118GoalsGrid{
+    grid-template-columns:1fr!important;
+  }
+
+  #activityDirectorySection
+  .activity-filters-disclosure[open]
+  > .filters{
+    flex-wrap:wrap!important;
+  }
+
+  #activityDirectorySection
+  .activity-filters-disclosure
+  .filters
+  [data-cgweb118fix2-filter="equipment"]{
+    margin-left:0!important;
+  }
+}
+
+@media(max-width:760px){
+  #equipmentManagerList
+  .equipment-manager-card{
+    grid-template-columns:1fr!important;
+  }
+
+  #equipmentManagerList
+  .equipment-manager-usage{
+    display:grid!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+
+  #equipmentManagerList
+  .equipment-manager-card-actions{
+    grid-column:auto!important;
+    flex-wrap:wrap!important;
+  }
+
+  #cgweb118GoalsGrid
+  .cgweb118-objective-group{
+    grid-template-columns:1fr 1fr!important;
+  }
+
+  #cgweb118GoalsGrid
+  .cgweb118-objective-group h4{
+    grid-column:1/-1!important;
+    margin-bottom:0!important;
+  }
+}
+`;
+
+  document.head.appendChild(style);
+}
+
+function cgweb118Fix2NormalizeText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+function cgweb118Fix2MarkActivityFilters() {
+  const disclosure =
+    document.querySelector(
+      "#activityDirectorySection .activity-filters-disclosure"
+    );
+
+  const filters =
+    disclosure?.querySelector(".filters");
+
+  if (!filters) return;
+
+  const map = [
+    [/^année\b/i, "year"],
+    [/^date\b/i, "date"],
+    [/^sport\b/i, "sport"],
+    [/^matériel\b/i, "equipment"],
+    [/^fit\b/i, "fit"],
+    [/^repère\b/i, "landmark"],
+    [/^recherche\b/i, "search"],
+    [/^ordre\b/i, "order"]
+  ];
+
+  const candidates =
+    [...filters.querySelectorAll("label, .field")]
+      .filter(node =>
+        node.querySelector("input,select")
+      );
+
+  for (const node of candidates) {
+    const text =
+      String(
+        node.querySelector("span")?.textContent ||
+        node.textContent ||
+        ""
+      ).trim();
+
+    for (const [pattern, key] of map) {
+      if (!pattern.test(text)) continue;
+
+      node.dataset.cgweb118fix2Filter = key;
+
+      if (key === "search") {
+        const input =
+          node.querySelector("input");
+        if (input) input.value = "";
+      }
+
+      break;
+    }
+  }
+
+  for (const child of [...filters.children]) {
+    if (
+      child.dataset?.cgweb118fix2Filter ||
+      child.matches?.("label, .field")
+    ) {
+      continue;
+    }
+
+    child.classList.add(
+      "cgweb118fix2-filter-meta"
+    );
+  }
+}
+
+function cgweb118Fix2CleanFilesHeading() {
+  const root =
+    document.getElementById(
+      "webFilesSection"
+    );
+
+  if (!root) return;
+
+  for (
+    const node of
+    root.querySelectorAll(
+      "h1,h2,h3,p,.muted"
+    )
+  ) {
+    const text =
+      cgweb118Fix2NormalizeText(
+        node.textContent
+      );
+
+    if (
+      text === "fichiers" ||
+      text === "exports et sauvegarde." ||
+      text === "exports et sauvegarde"
+    ) {
+      node.classList.add(
+        "cgweb118fix2-files-heading-hidden"
+      );
+    }
+  }
+
+  for (
+    const details of
+    root.querySelectorAll("details")
+  ) {
+    const summary =
+      details.querySelector(
+        ":scope > summary"
+      );
+
+    const text =
+      cgweb118Fix2NormalizeText(
+        summary?.textContent
+      );
+
+    if (
+      text.includes(
+        "audit des doublons d’activités"
+      ) ||
+      text.includes(
+        "audit des doublons d'activités"
+      )
+    ) {
+      details.classList.add(
+        "cgweb118fix2-audit-details"
+      );
+    }
+  }
+}
+
+function cgweb118Fix2RenameFilesTab() {
+  const nav =
+    document.querySelector(
+      "#uxSecondaryNav .ux-secondary-nav-inner"
+    );
+
+  if (!nav) return;
+
+  for (
+    const node of
+    nav.querySelectorAll(
+      "button,a,[role='tab']"
+    )
+  ) {
+    if (
+      cgweb118Fix2NormalizeText(
+        node.textContent
+      ) === "fichiers"
+    ) {
+      node.textContent = "Export";
+    }
+  }
+}
+
+function cgweb118Fix2Refresh() {
+  cgweb118Fix2InstallStyles();
+  cgweb118Fix2MarkActivityFilters();
+  cgweb118Fix2CleanFilesHeading();
+  cgweb118Fix2RenameFilesTab();
+}
+
+let cgweb118Fix2Scheduled = false;
+
+function cgweb118Fix2Schedule() {
+  if (cgweb118Fix2Scheduled) return;
+
+  cgweb118Fix2Scheduled = true;
+
+  requestAnimationFrame(() => {
+    cgweb118Fix2Scheduled = false;
+    cgweb118Fix2Refresh();
+  });
+}
+
+const cgweb118Fix2Observer =
+  new MutationObserver(
+    cgweb118Fix2Schedule
+  );
+
+if (document.body) {
+  cgweb118Fix2Observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+}
+
+window.addEventListener(
+  "resize",
+  cgweb118Fix2Schedule,
+  { passive: true }
+);
+
+cgweb118Fix2Refresh();
+
+window.CGWEB118_FIX2 =
+  Object.freeze({
+    version:
+      "CGWEB118 FIX2",
+    refresh:
+      cgweb118Fix2Refresh
+  });
+
+/* CGWEB118_FIX2_END */
