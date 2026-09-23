@@ -34698,3 +34698,660 @@ queueMicrotask(
 );
 
 /* CGWEB115_UI_SIMPLIFICATION001_END */
+
+/* CGWEB117_INDOOR_AUDIT001_START
+ *
+ * Audit uniquement.
+ * Aucune écriture Firestore / Storage.
+ * Aucune modification de web071IsIndoorActivity().
+ */
+
+function cgweb117IndoorReasonCodes(activity) {
+  const reasons = [];
+  const sport = Number(activity?.sport) || 0;
+  const subSport = Number(
+    activity?.sub_sport ??
+    activity?.subSport ??
+    0
+  ) || 0;
+
+  if (
+    activity?.indoor === true ||
+    activity?.is_indoor === true
+  ) {
+    reasons.push("FLAG_INDOOR");
+  }
+
+  if (
+    activity?.trainer === true ||
+    activity?.is_trainer === true
+  ) {
+    reasons.push("FLAG_TRAINER");
+  }
+
+  if (
+    activity?.virtual === true ||
+    activity?.is_virtual === true
+  ) {
+    reasons.push("FLAG_VIRTUAL");
+  }
+
+  let profile = "";
+  let meta = "";
+
+  try {
+    profile = String(
+      equipmentProfileKeyFromActivityWeb058(activity) || ""
+    ).trim().toUpperCase();
+  } catch (_) {}
+
+  try {
+    meta = String(
+      equipmentProfileMetadataWeb058(activity) || ""
+    ).toUpperCase();
+  } catch (_) {}
+
+  if (profile === "HOME_TRAINER") {
+    profile = "TRAINER";
+  }
+
+  if (
+    ["TRAINER", "TREADMILL", "KINOMAP"].includes(profile)
+  ) {
+    reasons.push(`PROFILE_${profile}`);
+  }
+
+  const mappingId = String(
+    activity?.equipment_mapping_id || ""
+  ).trim();
+
+  if (
+    mappingId &&
+    Array.isArray(equipmentMappingRows)
+  ) {
+    const rule = equipmentMappingRows.find(
+      (row) =>
+        String(row?.__docId || "").trim() === mappingId
+    );
+
+    let key = String(
+      rule?.profile_key || ""
+    ).trim().toUpperCase();
+
+    if (key === "HOME_TRAINER") {
+      key = "TRAINER";
+    }
+
+    if (
+      ["TRAINER", "TREADMILL", "KINOMAP"].includes(key)
+    ) {
+      reasons.push(`MAPPING_${key}`);
+    }
+  }
+
+  const equipment = String(
+    activity?.equipment_name || ""
+  ).trim();
+
+  if (
+    equipment &&
+    Array.isArray(equipmentMappingRows)
+  ) {
+    const keys = [
+      ...new Set(
+        equipmentMappingRows
+          .filter(
+            (row) =>
+              row?.enabled !== false &&
+              String(row?.equipment_name || "").trim() === equipment &&
+              String(row?.profile_key || "").trim()
+          )
+          .map((row) => {
+            const raw = String(
+              row.profile_key
+            ).trim().toUpperCase();
+
+            return raw === "HOME_TRAINER"
+              ? "TRAINER"
+              : raw;
+          })
+      )
+    ];
+
+    if (
+      keys.length === 1 &&
+      ["TRAINER", "TREADMILL", "KINOMAP"].includes(keys[0])
+    ) {
+      reasons.push(`EQUIPMENT_UNIQUE_${keys[0]}`);
+    }
+  }
+
+  if (
+    sport === 1 &&
+    [1, 21, 45].includes(subSport)
+  ) {
+    reasons.push(`SUBSPORT_${subSport}`);
+  }
+
+  if (
+    sport === 2 &&
+    [5, 6, 58].includes(subSport)
+  ) {
+    reasons.push(`SUBSPORT_${subSport}`);
+  }
+
+  if (
+    sport === 1 &&
+    /TREADMILL|TAPIS|INDOOR|VIRTUALRUN|VIRTUAL RUN|KINOMAP/.test(meta)
+  ) {
+    reasons.push("META_INDOOR_RUN");
+  }
+
+  if (
+    sport === 2 &&
+    /HOME.?TRAINER|\bTRAINER\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE|KINOMAP|ROUVY|BKOO?L/.test(meta)
+  ) {
+    reasons.push("META_INDOOR_BIKE");
+  }
+
+  return [...new Set(reasons)];
+}
+
+function cgweb117OutdoorSignals(activity) {
+  const signals = [];
+  const sport = Number(activity?.sport) || 0;
+  const subSport = Number(
+    activity?.sub_sport ??
+    activity?.subSport ??
+    0
+  ) || 0;
+
+  const gpsCount =
+    Number(activity?.gps_point_count) || 0;
+
+  if (gpsCount >= 2) {
+    signals.push("GPS_POINTS");
+  }
+
+  if (
+    sport === 1 &&
+    [2, 3, 4].includes(subSport)
+  ) {
+    signals.push(`OUTDOOR_SUBSPORT_${subSport}`);
+  }
+
+  if (
+    sport === 2 &&
+    [
+      2, 7, 8, 9, 10, 11, 12, 13,
+      29, 35, 36, 46, 47, 48, 49
+    ].includes(subSport)
+  ) {
+    signals.push(`OUTDOOR_SUBSPORT_${subSport}`);
+  }
+
+  let profile = "";
+
+  try {
+    profile = String(
+      equipmentProfileKeyFromActivityWeb058(activity) || ""
+    ).trim().toUpperCase();
+  } catch (_) {}
+
+  if (
+    ["RUN", "TRAIL", "BIKE", "MTB"].includes(profile)
+  ) {
+    signals.push(`PROFILE_${profile}`);
+  }
+
+  return [...new Set(signals)];
+}
+
+function cgweb117SimpleDate(ms) {
+  const value = Number(ms);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return "";
+  }
+
+  try {
+    return new Intl.DateTimeFormat(
+      "fr-FR",
+      {
+        timeZone: "Europe/Paris",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      }
+    ).format(new Date(value));
+  } catch (_) {
+    return "";
+  }
+}
+
+async function cgweb117MapLimit(items, worker, concurrency = 8) {
+  const rows = new Array(items.length);
+  let next = 0;
+
+  async function runner() {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+
+      rows[index] =
+        await worker(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      {
+        length:
+          Math.min(
+            concurrency,
+            Math.max(1, items.length)
+          )
+      },
+      runner
+    )
+  );
+
+  return rows;
+}
+
+async function cgweb117RoutePointCount(activity) {
+  try {
+    if (
+      typeof loadGlobalRoute !== "function"
+    ) {
+      return null;
+    }
+
+    const route =
+      await loadGlobalRoute(activity);
+
+    if (
+      !route ||
+      !Array.isArray(route.points)
+    ) {
+      return 0;
+    }
+
+    return route.points.length;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function cgweb117IndoorAudit(options = {}) {
+  const includeRoutes =
+    options?.includeRoutes !== false;
+
+  const startedAt =
+    new Date().toISOString();
+
+  if (
+    typeof loadAllActivities === "function" &&
+    moreActivities === true
+  ) {
+    console.log(
+      "CGWEB117 · chargement de toutes les activités avant audit…"
+    );
+
+    await loadAllActivities();
+  }
+
+  const source =
+    Array.isArray(activities)
+      ? activities.filter(
+          (activity) =>
+            activity &&
+            activity.deleted_at_ms == null &&
+            [1, 2].includes(
+              Number(activity.sport)
+            )
+        )
+      : [];
+
+  const baseRows =
+    source.map((activity) => {
+      const indoorReasons =
+        cgweb117IndoorReasonCodes(activity);
+
+      const outdoorSignals =
+        cgweb117OutdoorSignals(activity);
+
+      const currentIndoor =
+        web071IsIndoorActivity(activity) === true;
+
+      const explicitIndoor =
+        indoorReasons.some(
+          (reason) =>
+            reason.startsWith("FLAG_")
+        );
+
+      const virtualIndoor =
+        indoorReasons.some(
+          (reason) =>
+            /KINOMAP|VIRTUAL|ZWIFT|ROUVY|BKOO?L/.test(reason)
+        );
+
+      return {
+        activity,
+        activity_id:
+          activityKey(activity),
+        date:
+          cgweb117SimpleDate(
+            activity.start_time_ms
+          ),
+        sport:
+          Number(activity.sport) || 0,
+        sub_sport:
+          Number(
+            activity?.sub_sport ??
+            activity?.subSport ??
+            0
+          ) || 0,
+        equipment:
+          String(
+            activity?.equipment_name || ""
+          ),
+        import_source:
+          String(
+            activity?.import_source || ""
+          ),
+        import_profile:
+          String(
+            activity?.import_profile || ""
+          ),
+        gps_point_count:
+          Number(
+            activity?.gps_point_count
+          ) || 0,
+        current_indoor:
+          currentIndoor,
+        indoor_reasons:
+          indoorReasons,
+        outdoor_signals:
+          outdoorSignals,
+        explicit_indoor:
+          explicitIndoor,
+        virtual_indoor:
+          virtualIndoor,
+        route_points:
+          null
+      };
+    });
+
+  /*
+   * Candidats à contrôler en profondeur :
+   * l'UI les marque indoor ALORS qu'un signal outdoor existe.
+   */
+  const candidates =
+    baseRows.filter(
+      (row) =>
+        row.current_indoor &&
+        row.outdoor_signals.length > 0
+    );
+
+  if (
+    includeRoutes &&
+    candidates.length
+  ) {
+    console.log(
+      `CGWEB117 · ${candidates.length} candidat(s) contradictoire(s) : contrôle des traces…`
+    );
+
+    const routeCounts =
+      await cgweb117MapLimit(
+        candidates,
+        (row) =>
+          cgweb117RoutePointCount(
+            row.activity
+          ),
+        8
+      );
+
+    candidates.forEach(
+      (row, index) => {
+        row.route_points =
+          routeCounts[index];
+
+        if (
+          Number(row.route_points) >= 2 &&
+          !row.outdoor_signals.includes(
+            "ROUTE_PRESENT"
+          )
+        ) {
+          row.outdoor_signals.push(
+            "ROUTE_PRESENT"
+          );
+        }
+      }
+    );
+  }
+
+  for (const row of baseRows) {
+    row.conflict =
+      row.current_indoor &&
+      row.outdoor_signals.length > 0;
+
+    row.strong_conflict =
+      row.conflict &&
+      (
+        row.outdoor_signals.some(
+          (signal) =>
+            signal.startsWith(
+              "OUTDOOR_SUBSPORT_"
+            )
+        ) ||
+        (
+          row.outdoor_signals.includes(
+            "ROUTE_PRESENT"
+          ) &&
+          !row.explicit_indoor &&
+          !row.virtual_indoor
+        )
+      );
+  }
+
+  const suspicious =
+    baseRows.filter(
+      (row) => row.conflict
+    );
+
+  const strong =
+    baseRows.filter(
+      (row) => row.strong_conflict
+    );
+
+  const reasonCounts = {};
+
+  for (const row of baseRows) {
+    if (!row.current_indoor) continue;
+
+    for (const reason of row.indoor_reasons) {
+      reasonCounts[reason] =
+        (reasonCounts[reason] || 0) + 1;
+    }
+  }
+
+  const summary = {
+    version:
+      "CGWEB117_INDOOR_AUDIT001",
+    started_at:
+      startedAt,
+    finished_at:
+      new Date().toISOString(),
+    active_run_bike:
+      baseRows.length,
+    classified_indoor:
+      baseRows.filter(
+        (row) => row.current_indoor
+      ).length,
+    conflicting_outdoor_signal:
+      suspicious.length,
+    strong_conflicts:
+      strong.length,
+    reason_counts:
+      reasonCounts,
+    writes:
+      0
+  };
+
+  const cleanRows =
+    baseRows.map((row) => ({
+      activity_id:
+        row.activity_id,
+      date:
+        row.date,
+      sport:
+        row.sport,
+      sub_sport:
+        row.sub_sport,
+      equipment:
+        row.equipment,
+      import_source:
+        row.import_source,
+      import_profile:
+        row.import_profile,
+      gps_point_count:
+        row.gps_point_count,
+      route_points:
+        row.route_points,
+      current_indoor:
+        row.current_indoor,
+      indoor_reasons:
+        row.indoor_reasons.join("|"),
+      outdoor_signals:
+        row.outdoor_signals.join("|"),
+      conflict:
+        row.conflict,
+      strong_conflict:
+        row.strong_conflict
+    }));
+
+  const result = Object.freeze({
+    summary,
+    rows:
+      cleanRows,
+    suspicious:
+      cleanRows.filter(
+        (row) => row.conflict
+      ),
+    strong:
+      cleanRows.filter(
+        (row) => row.strong_conflict
+      )
+  });
+
+  window.CGWEB117_LAST_AUDIT =
+    result;
+
+  console.log(
+    "CGWEB117 · AUDIT TERMINÉ",
+    summary
+  );
+
+  console.table(
+    result.suspicious.slice(0, 200)
+  );
+
+  if (
+    result.suspicious.length > 200
+  ) {
+    console.log(
+      `CGWEB117 · tableau limité aux 200 premiers sur ${result.suspicious.length}.`
+    );
+  }
+
+  return result;
+}
+
+function cgweb117CsvEscape(value) {
+  const text =
+    String(value ?? "");
+
+  if (
+    /[;"\n\r]/.test(text)
+  ) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+
+  return text;
+}
+
+function cgweb117ExportCsv(
+  rows = window.CGWEB117_LAST_AUDIT?.suspicious
+) {
+  const values =
+    Array.isArray(rows)
+      ? rows
+      : [];
+
+  if (!values.length) {
+    console.warn(
+      "CGWEB117 · aucun résultat à exporter."
+    );
+    return null;
+  }
+
+  const headers =
+    Object.keys(values[0]);
+
+  const csv =
+    [
+      headers.join(";"),
+      ...values.map(
+        (row) =>
+          headers
+            .map(
+              (key) =>
+                cgweb117CsvEscape(
+                  row[key]
+                )
+            )
+            .join(";")
+      )
+    ].join("\n");
+
+  const blob =
+    new Blob(
+      ["\ufeff", csv],
+      {
+        type:
+          "text/csv;charset=utf-8"
+      }
+    );
+
+  const url =
+    URL.createObjectURL(blob);
+
+  const anchor =
+    document.createElement("a");
+
+  anchor.href = url;
+  anchor.download =
+    "CGWEB117_indoor_audit.csv";
+
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  setTimeout(
+    () => URL.revokeObjectURL(url),
+    1000
+  );
+
+  return values.length;
+}
+
+window.CGWEB117_INDOOR_AUDIT =
+  cgweb117IndoorAudit;
+
+window.CGWEB117_EXPORT_CSV =
+  cgweb117ExportCsv;
+
+/* CGWEB117_INDOOR_AUDIT001_END */
