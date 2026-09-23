@@ -35355,3 +35355,315 @@ window.CGWEB117_EXPORT_CSV =
   cgweb117ExportCsv;
 
 /* CGWEB117_INDOOR_AUDIT001_END */
+
+/* CGWEB117_FIX1_PHASE1_START
+ * PHASE 1/2 uniquement — lecture seule.
+ * Vélo avant 26/12/2019 = OUTDOOR certain.
+ * Le matériel et son mapping ne sont jamais décisifs.
+ */
+
+const CGWEB117_FIX1_BIKE_CUTOFF_MS =
+  Date.parse("2019-12-26T00:00:00+01:00");
+
+function cgweb117Fix1RawText(a) {
+  return [
+    a?.import_source,
+    a?.import_profile,
+    a?.source,
+    a?.source_type,
+    a?.source_profile,
+    a?.activity_type,
+    a?.sub_sport_name,
+    a?.subSportName
+  ]
+    .map(v => String(v || "").trim())
+    .filter(Boolean)
+    .join(" | ")
+    .toUpperCase();
+}
+
+function cgweb117Fix1IntrinsicIndoor(a) {
+  const out = [];
+  const sport = Number(a?.sport) || 0;
+  const sub = Number(a?.sub_sport ?? a?.subSport ?? 0) || 0;
+
+  if (a?.indoor === true || a?.is_indoor === true) out.push("FLAG_INDOOR");
+  if (a?.trainer === true || a?.is_trainer === true) out.push("FLAG_TRAINER");
+  if (a?.virtual === true || a?.is_virtual === true) out.push("FLAG_VIRTUAL");
+
+  if (sport === 1 && [1, 21, 45].includes(sub)) out.push(`INDOOR_SUBSPORT_${sub}`);
+  if (sport === 2 && [5, 6, 58].includes(sub)) out.push(`INDOOR_SUBSPORT_${sub}`);
+
+  const text = cgweb117Fix1RawText(a);
+  if (/KINOMAP|ZWIFT|ROUVY|BKOO?L|VIRTUAL|TREADMILL|TAPIS|HOME.?TRAINER|\bTRAINER\b/.test(text)) {
+    out.push("SOURCE_OR_PROFILE_INDOOR");
+  }
+
+  return [...new Set(out)];
+}
+
+function cgweb117Fix1OutdoorReasons(a) {
+  const out = [];
+  const sport = Number(a?.sport) || 0;
+  const sub = Number(a?.sub_sport ?? a?.subSport ?? 0) || 0;
+  const start = Number(a?.start_time_ms) || 0;
+
+  if (sport === 2 && start > 0 && start < CGWEB117_FIX1_BIKE_CUTOFF_MS) {
+    out.push("HISTORICAL_BIKE_BEFORE_2019_12_26");
+  }
+
+  if (sport === 1 && [2, 3, 4].includes(sub)) {
+    out.push(`OUTDOOR_SUBSPORT_${sub}`);
+  }
+
+  if (
+    sport === 2 &&
+    [2,7,8,9,10,11,12,13,29,35,36,46,47,48,49].includes(sub)
+  ) {
+    out.push(`OUTDOOR_SUBSPORT_${sub}`);
+  }
+
+  return [...new Set(out)];
+}
+
+function cgweb117Fix1LegacyEquipmentReasons(a) {
+  if (typeof cgweb117IndoorReasonCodes !== "function") return [];
+  return cgweb117IndoorReasonCodes(a).filter(
+    r => /^(PROFILE_|MAPPING_|EQUIPMENT_UNIQUE_|META_)/.test(String(r))
+  );
+}
+
+async function cgweb117Fix1RoutePoints(a) {
+  try {
+    if (typeof loadGlobalRoute !== "function") return null;
+    const route = await loadGlobalRoute(a);
+    return Array.isArray(route?.points) ? route.points.length : 0;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function cgweb117Fix1MapLimit(items, worker, concurrency = 8) {
+  const result = new Array(items.length);
+  let next = 0;
+
+  async function runner() {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      result[i] = await worker(items[i], i);
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, Math.max(1, items.length)) },
+      runner
+    )
+  );
+
+  return result;
+}
+
+function cgweb117Fix1Clean(row) {
+  return {
+    activity_id: row.activity_id,
+    date: row.date,
+    sport: row.sport,
+    sub_sport: row.sub_sport,
+    equipment: row.equipment,
+    import_source: row.import_source,
+    import_profile: row.import_profile,
+    route_points: row.route_points,
+    current_indoor: row.current_indoor,
+    proposed_class: row.proposed_class,
+    proposed_reason: row.proposed_reason,
+    intrinsic_indoor_reasons: row.intrinsic.join("|"),
+    outdoor_reasons: row.outdoor.join("|"),
+    legacy_equipment_reasons: row.legacy.join("|"),
+    equipment_only_current_indoor: row.equipment_only,
+    false_indoor_candidate: row.false_indoor
+  };
+}
+
+async function cgweb117Fix1Phase1Audit(options = {}) {
+  const includeRoutes = options?.includeRoutes !== false;
+  const startedAt = new Date().toISOString();
+
+  if (typeof loadAllActivities === "function" && moreActivities === true) {
+    console.log("CGWEB117 FIX1 · chargement de toutes les activités…");
+    await loadAllActivities();
+  }
+
+  const source = Array.isArray(activities)
+    ? activities.filter(a =>
+        a &&
+        a.deleted_at_ms == null &&
+        [1,2].includes(Number(a.sport))
+      )
+    : [];
+
+  const rows = source.map(a => {
+    const current = web071IsIndoorActivity(a) === true;
+    const intrinsic = cgweb117Fix1IntrinsicIndoor(a);
+    const outdoor = cgweb117Fix1OutdoorReasons(a);
+    const legacy = cgweb117Fix1LegacyEquipmentReasons(a);
+
+    let proposed_class = "AMBIGUOUS";
+    let proposed_reason = "INSUFFICIENT_INTRINSIC_EVIDENCE";
+
+    if (outdoor.includes("HISTORICAL_BIKE_BEFORE_2019_12_26")) {
+      proposed_class = "OUTDOOR";
+      proposed_reason = "HISTORICAL_CERTAINTY";
+    } else if (intrinsic.length) {
+      proposed_class = "INDOOR";
+      proposed_reason = "INTRINSIC_INDOOR_SIGNAL";
+    } else if (outdoor.some(r => r.startsWith("OUTDOOR_SUBSPORT_"))) {
+      proposed_class = "OUTDOOR";
+      proposed_reason = "OUTDOOR_SUBSPORT";
+    }
+
+    return {
+      activity: a,
+      activity_id: activityKey(a),
+      date: cgweb117SimpleDate(a.start_time_ms),
+      sport: Number(a.sport) || 0,
+      sub_sport: Number(a?.sub_sport ?? a?.subSport ?? 0) || 0,
+      equipment: String(a?.equipment_name || ""),
+      import_source: String(a?.import_source || ""),
+      import_profile: String(a?.import_profile || ""),
+      route_points: null,
+      current_indoor: current,
+      proposed_class,
+      proposed_reason,
+      intrinsic,
+      outdoor,
+      legacy,
+      equipment_only:
+        current &&
+        intrinsic.length === 0 &&
+        legacy.length > 0,
+      false_indoor: false
+    };
+  });
+
+  const routeCandidates = rows.filter(
+    row =>
+      row.current_indoor &&
+      row.proposed_class === "AMBIGUOUS" &&
+      row.intrinsic.length === 0
+  );
+
+  if (includeRoutes && routeCandidates.length) {
+    console.log(
+      `CGWEB117 FIX1 · ${routeCandidates.length} cas ambigus : contrôle ciblé des traces…`
+    );
+
+    const counts = await cgweb117Fix1MapLimit(
+      routeCandidates,
+      row => cgweb117Fix1RoutePoints(row.activity),
+      8
+    );
+
+    routeCandidates.forEach((row, i) => {
+      row.route_points = counts[i];
+
+      if (Number(row.route_points) >= 2) {
+        row.proposed_class = "OUTDOOR";
+        row.proposed_reason = "ROUTE_WITHOUT_INTRINSIC_INDOOR_SIGNAL";
+        row.outdoor.push("ROUTE_PRESENT");
+      }
+    });
+  }
+
+  rows.forEach(row => {
+    row.false_indoor =
+      row.current_indoor &&
+      row.proposed_class === "OUTDOOR";
+  });
+
+  const clean = rows.map(cgweb117Fix1Clean);
+
+  const result = Object.freeze({
+    summary: {
+      version: "CGWEB117_FIX1_PHASE1",
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+      bike_outdoor_cutoff: "2019-12-26T00:00:00+01:00",
+      active_run_bike: clean.length,
+      current_indoor: clean.filter(r => r.current_indoor).length,
+      proposed_indoor: clean.filter(r => r.proposed_class === "INDOOR").length,
+      false_indoor_candidates: clean.filter(r => r.false_indoor_candidate).length,
+      historical_bike_outdoor: clean.filter(r =>
+        r.outdoor_reasons.includes("HISTORICAL_BIKE_BEFORE_2019_12_26")
+      ).length,
+      equipment_only_current_indoor: clean.filter(r =>
+        r.equipment_only_current_indoor
+      ).length,
+      ambiguous_current_indoor: clean.filter(r =>
+        r.current_indoor && r.proposed_class === "AMBIGUOUS"
+      ).length,
+      phase_2_ready: false,
+      firestore_writes: 0,
+      storage_writes: 0
+    },
+    false_indoor: clean.filter(r => r.false_indoor_candidate),
+    historical_bike: clean.filter(r =>
+      r.outdoor_reasons.includes("HISTORICAL_BIKE_BEFORE_2019_12_26")
+    ),
+    equipment_only: clean.filter(r => r.equipment_only_current_indoor),
+    ambiguous_current_indoor: clean.filter(r =>
+      r.current_indoor && r.proposed_class === "AMBIGUOUS"
+    ),
+    proposed_indoor: clean.filter(r => r.proposed_class === "INDOOR"),
+    rows: clean
+  });
+
+  window.CGWEB117_FIX1_LAST_AUDIT = result;
+
+  console.log("CGWEB117 FIX1 · PHASE 1 TERMINÉE", result.summary);
+  console.table(result.false_indoor.slice(0, 200));
+
+  return result;
+}
+
+function cgweb117Fix1ExportCsv(bucket = "false_indoor") {
+  const audit = window.CGWEB117_FIX1_LAST_AUDIT;
+  if (!audit || !Array.isArray(audit[bucket]) || !audit[bucket].length) {
+    console.warn("CGWEB117 FIX1 · rien à exporter pour", bucket);
+    return null;
+  }
+
+  const rows = audit[bucket];
+  const headers = Object.keys(rows[0]);
+  const csv = [
+    headers.join(";"),
+    ...rows.map(row =>
+      headers.map(key => cgweb117CsvEscape(row[key])).join(";")
+    )
+  ].join("\n");
+
+  const blob = new Blob(
+    ["\ufeff", csv],
+    { type: "text/csv;charset=utf-8" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `CGWEB117_FIX1_${bucket}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  return rows.length;
+}
+
+window.CGWEB117_FIX1_PHASE1_AUDIT =
+  cgweb117Fix1Phase1Audit;
+
+window.CGWEB117_FIX1_EXPORT_CSV =
+  cgweb117Fix1ExportCsv;
+
+/* CGWEB117_FIX1_PHASE1_END */
