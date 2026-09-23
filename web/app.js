@@ -35946,7 +35946,7 @@ navigateUx = function cgweb118NavigateUx(page, sub, ...rest) {
   if (page === "equipment") {
     if (sub === "equipment-map") {
       setUxSectionVisibility([ui.equipmentMappingSection]);
-      renderEquipmentMapping();
+      renderEquipmentMappingPanel();
     } else {
       setUxSectionVisibility([ui.equipmentManagerSection]);
       renderEquipmentManager();
@@ -36376,9 +36376,9 @@ renderWeightHistory = function cgweb118RenderWeightHistory(...args) {
   return result;
 };
 
-const cgweb118LoadPersonalSyncBase = loadPersonalSync;
+const cgweb118LoadPersonalSyncBase = loadPersonalSyncData;
 
-loadPersonalSync = async function cgweb118LoadPersonalSync(...args) {
+loadPersonalSyncData = async function cgweb118LoadPersonalSyncData(...args) {
   const result = await cgweb118LoadPersonalSyncBase.apply(this, args);
 
   cgweb118MountGoals();
@@ -36423,3 +36423,563 @@ window.CGWEB118 = Object.freeze({
 });
 
 /* CGWEB118_APP_END */
+
+
+/* CGWEB118_FIX1_COMPACT_UI002_START */
+
+const cgweb118Fix1UxPageConfigBase = uxPageConfig;
+
+uxPageConfig = function cgweb118Fix1UxPageConfig() {
+  const config = cgweb118Fix1UxPageConfigBase();
+
+  if (config?.equipment) {
+    config.equipment = {
+      ...config.equipment,
+      subs: [
+        ["management", "Gestion"],
+        ["equipment-map", "Correspondances automatiques"]
+      ]
+    };
+  }
+
+  if (config?.more) {
+    config.more = {
+      ...config.more,
+      subs: (config.more.subs || []).filter(
+        ([key]) => !["health", "health-sync"].includes(String(key))
+      )
+    };
+  }
+
+  return config;
+};
+
+function cgweb118Fix1InstallStyles() {
+  if (document.getElementById("cgweb118Fix1Ui")) return;
+
+  const style = document.createElement("style");
+  style.id = "cgweb118Fix1Ui";
+  style.textContent = `
+/* --- Analyse : objectifs compacts --- */
+#personalSyncSection .personal-sync-card:has(#goalDistanceInput) > .personal-card-heading,
+#personalSyncSection .personal-sync-card:has(#weightDateInput) > .personal-card-heading{
+  display:none!important;
+}
+
+#personalSyncSection .personal-sync-card:has(#goalDistanceInput),
+#personalSyncSection .personal-sync-card:has(#weightDateInput){
+  padding:10px 14px!important;
+}
+
+#cgweb118GoalsGrid{
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-items:end!important;
+  justify-content:flex-start!important;
+  gap:10px!important;
+}
+
+#cgweb118GoalsGrid .cgweb118-objective-group{
+  flex:0 1 auto!important;
+  display:grid!important;
+  grid-template-columns:max-content 145px 145px!important;
+  align-items:end!important;
+  gap:8px!important;
+  padding:8px 10px!important;
+  min-width:0!important;
+}
+
+#cgweb118GoalsGrid .cgweb118-objective-group h4{
+  grid-column:auto!important;
+  align-self:end!important;
+  margin:0 5px 9px 0!important;
+  white-space:nowrap!important;
+}
+
+#cgweb118GoalsGrid .cgweb118-objective-group label{
+  width:145px!important;
+  min-width:145px!important;
+  max-width:145px!important;
+}
+
+#cgweb118GoalsGrid .cgweb118-objective-group input{
+  width:100%!important;
+  min-width:0!important;
+}
+
+/* --- Poids : 50/50 éditeur + graphique --- */
+#cgweb118WeightLayout{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+  gap:14px!important;
+  align-items:stretch!important;
+}
+
+#cgweb118WeightLayout > *{
+  min-width:0!important;
+}
+
+.cgweb118-weight-chart-card{
+  min-height:210px!important;
+}
+
+.cgweb118-weight-chart svg{
+  width:100%!important;
+  height:auto!important;
+  max-height:280px!important;
+}
+
+/* --- Matériel : en-tête minimal --- */
+#equipmentManagerSection > .panel-title-row > :first-child{
+  display:none!important;
+}
+
+#equipmentManagerSearch{
+  display:none!important;
+}
+
+#equipmentManagerSection > .panel-title-row{
+  display:flex!important;
+  justify-content:flex-start!important;
+  align-items:center!important;
+  margin:0 0 8px!important;
+}
+
+#equipmentManagerSection .equipment-manager-actions{
+  width:auto!important;
+  margin:0!important;
+  display:flex!important;
+  flex-direction:row!important;
+  flex-wrap:nowrap!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  gap:8px!important;
+}
+
+#equipmentManagerStatusFilter{
+  flex:0 0 190px!important;
+  width:190px!important;
+  max-width:190px!important;
+}
+
+#newEquipmentButton{
+  flex:0 0 auto!important;
+  width:auto!important;
+  white-space:nowrap!important;
+}
+
+#equipmentManagerList{
+  display:grid!important;
+  gap:8px!important;
+}
+
+#equipmentManagerList .equipment-manager-card{
+  display:grid!important;
+  grid-template-columns:minmax(190px,.85fr) minmax(430px,1.8fr) auto!important;
+  align-items:center!important;
+  gap:10px!important;
+  padding:8px 12px!important;
+  min-height:0!important;
+}
+
+#equipmentManagerList .equipment-manager-main{
+  display:flex!important;
+  align-items:center!important;
+  gap:7px!important;
+  min-width:0!important;
+  white-space:nowrap!important;
+}
+
+#equipmentManagerList .equipment-manager-main > strong,
+#equipmentManagerList .equipment-manager-main > span{
+  margin:0!important;
+  white-space:nowrap!important;
+}
+
+#equipmentManagerList .equipment-manager-usage{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(115px,1fr))!important;
+  gap:7px!important;
+  margin:0!important;
+}
+
+#equipmentManagerList .equipment-manager-usage > div{
+  min-height:0!important;
+  padding:6px 9px!important;
+}
+
+#equipmentManagerList .equipment-manager-card-actions{
+  display:flex!important;
+  flex-wrap:nowrap!important;
+  align-items:center!important;
+  gap:6px!important;
+  margin:0!important;
+  white-space:nowrap!important;
+}
+
+#equipmentManagerList .equipment-manager-card-actions button{
+  margin:0!important;
+}
+
+/* --- Correspondances automatiques : en-tête et action risquée supprimés --- */
+#equipmentMappingSection .equipment-map-header-web050 h2,
+#equipmentMappingSection .equipment-map-header-web050 p,
+#equipmentProfileApplyHistoryWeb058{
+  display:none!important;
+}
+
+#equipmentMappingSection .equipment-map-header-web050{
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+/* --- Ajout manuel compact --- */
+#webManualForm .web-manual-grid{
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-items:end!important;
+  justify-content:flex-start!important;
+  gap:8px!important;
+}
+
+#webManualForm .web-manual-grid > label{
+  flex:0 0 100px!important;
+  width:100px!important;
+  min-width:100px!important;
+  max-width:100px!important;
+}
+
+#webManualForm .web-manual-grid > label:has(#webManualSport),
+#webManualForm .web-manual-grid > label:has(#webManualDate){
+  flex-basis:150px!important;
+  width:150px!important;
+  min-width:150px!important;
+  max-width:150px!important;
+}
+
+#webManualForm .web-manual-grid > label:has(#webManualEquipment){
+  flex-basis:290px!important;
+  width:290px!important;
+  min-width:290px!important;
+  max-width:290px!important;
+}
+
+#webManualForm .web-manual-grid > label:has(#webManualTitle){
+  flex-basis:200px!important;
+  width:200px!important;
+  min-width:200px!important;
+  max-width:200px!important;
+}
+
+#webManualForm .web-manual-grid > label:has(#webManualAvgHr),
+#webManualForm .web-manual-grid > label:has(#webManualMaxHr),
+#webManualForm .web-manual-landmarks,
+#webManualForm .web-manual-notes{
+  display:none!important;
+}
+
+#webManualForm .web-manual-grid input,
+#webManualForm .web-manual-grid select{
+  width:100%!important;
+  min-width:0!important;
+}
+
+@media(max-width:1050px){
+  #equipmentManagerList .equipment-manager-card{
+    grid-template-columns:1fr!important;
+  }
+
+  #equipmentManagerList .equipment-manager-main,
+  #equipmentManagerList .equipment-manager-card-actions{
+    flex-wrap:wrap!important;
+  }
+}
+
+@media(max-width:760px){
+  #cgweb118GoalsGrid .cgweb118-objective-group{
+    grid-template-columns:1fr 1fr!important;
+    width:100%!important;
+  }
+
+  #cgweb118GoalsGrid .cgweb118-objective-group h4{
+    grid-column:1/-1!important;
+    margin-bottom:0!important;
+  }
+
+  #cgweb118GoalsGrid .cgweb118-objective-group label{
+    width:auto!important;
+    min-width:0!important;
+    max-width:none!important;
+  }
+
+  #cgweb118WeightLayout{
+    grid-template-columns:1fr!important;
+  }
+}
+`;
+
+  document.head.appendChild(style);
+}
+
+function cgweb118Fix1AlignSecondaryNav() {
+  const primary = document.querySelector("#uxPrimaryNav .ux-primary-nav-inner");
+  const secondary = document.querySelector("#uxSecondaryNav .ux-secondary-nav-inner");
+
+  if (!primary || !secondary) return;
+
+  const rect = primary.getBoundingClientRect();
+  if (!(rect.width > 0)) return;
+
+  const primaryStyle = getComputedStyle(primary);
+
+  secondary.style.setProperty("box-sizing", "border-box", "important");
+  secondary.style.setProperty("width", Math.round(rect.width) + "px", "important");
+  secondary.style.setProperty("max-width", "none", "important");
+  secondary.style.setProperty("margin-left", "auto", "important");
+  secondary.style.setProperty("margin-right", "auto", "important");
+  secondary.style.setProperty("padding-left", primaryStyle.paddingLeft, "important");
+  secondary.style.setProperty("padding-right", primaryStyle.paddingRight, "important");
+
+  requestAnimationFrame(() => {
+    const firstPrimary = primary.querySelector("button, a, [role='tab']");
+    const firstSecondary = secondary.querySelector("button, a, [role='tab']");
+
+    if (!firstPrimary || !firstSecondary) return;
+
+    const delta = firstPrimary.getBoundingClientRect().left -
+      firstSecondary.getBoundingClientRect().left;
+
+    if (Math.abs(delta) < .5) return;
+
+    const current = parseFloat(getComputedStyle(secondary).paddingLeft) || 0;
+    secondary.style.setProperty(
+      "padding-left",
+      Math.max(0, current + delta) + "px",
+      "important"
+    );
+  });
+}
+
+function cgweb118Fix1LocalDate(ms) {
+  const date = new Date(Number(ms));
+  if (Number.isNaN(date.getTime())) return "";
+
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+cgweb118WeightRows = function cgweb118Fix1WeightRows() {
+  const source = journalEntries instanceof Map
+    ? [...journalEntries.values()]
+    : Array.isArray(journalEntries)
+      ? journalEntries
+      : [];
+
+  return source
+    .map(row => {
+      const ms = Number(row?.day_start_ms ?? row?.__docId ?? 0);
+      return {
+        date: cgweb118Fix1LocalDate(ms),
+        kg: Number(row?.weight_kg)
+      };
+    })
+    .filter(row =>
+      /^\d{4}-\d{2}-\d{2}$/.test(row.date) &&
+      Number.isFinite(row.kg) &&
+      row.kg > 0
+    )
+    .sort((a,b) => a.date.localeCompare(b.date));
+};
+
+let cgweb118Fix1EquipmentDefaultApplied = false;
+
+function cgweb118Fix1PrepareEquipmentControls() {
+  const search = document.getElementById("equipmentManagerSearch");
+  const status = document.getElementById("equipmentManagerStatusFilter");
+
+  if (search) {
+    search.value = "";
+    search.hidden = true;
+  }
+
+  if (!cgweb118Fix1EquipmentDefaultApplied && status) {
+    status.value = "ACTIVE";
+    cgweb118Fix1EquipmentDefaultApplied = true;
+  }
+}
+
+function cgweb118Fix1CompactEquipmentRows() {
+  document
+    .querySelectorAll("#equipmentManagerList .equipment-manager-card")
+    .forEach(card => {
+      const meta = card.querySelector(".equipment-manager-main > span");
+      if (!meta) return;
+
+      meta.textContent = String(meta.textContent || "")
+        .replace(/\s*·\s*[\d\s\u202f.,]+\s*activité\(s\)\s*$/i, "")
+        .trim();
+    });
+}
+
+const cgweb118Fix1RenderEquipmentManagerBase = renderEquipmentManager;
+
+renderEquipmentManager = function cgweb118Fix1RenderEquipmentManager(...args) {
+  cgweb118Fix1PrepareEquipmentControls();
+  const result = cgweb118Fix1RenderEquipmentManagerBase.apply(this, args);
+  queueMicrotask(cgweb118Fix1CompactEquipmentRows);
+  return result;
+};
+
+function cgweb118Fix1CleanMapping() {
+  const button = document.getElementById("equipmentProfileApplyHistoryWeb058");
+  if (button) {
+    button.disabled = true;
+    button.remove();
+  }
+}
+
+const cgweb118Fix1RenderEquipmentMappingPanelBase = renderEquipmentMappingPanel;
+
+renderEquipmentMappingPanel = function cgweb118Fix1RenderEquipmentMappingPanel(...args) {
+  const result = cgweb118Fix1RenderEquipmentMappingPanelBase.apply(this, args);
+  queueMicrotask(cgweb118Fix1CleanMapping);
+  return result;
+};
+
+function cgweb118Fix1CompactManualForm() {
+  for (const id of ["webManualAvgHr", "webManualMaxHr"]) {
+    const input = document.getElementById(id);
+    if (!input) continue;
+    input.value = "";
+    input.closest("label")?.setAttribute("hidden", "");
+  }
+
+  const notes = document.getElementById("webManualNotes");
+  if (notes) notes.value = "";
+
+  if (typeof webManualLandmarkCounts !== "undefined") {
+    webManualLandmarkCounts = new Map();
+  }
+
+  document.querySelector("#webManualForm .web-manual-landmarks")?.setAttribute("hidden", "");
+  document.querySelector("#webManualForm .web-manual-notes")?.setAttribute("hidden", "");
+}
+
+const cgweb118Fix1NavigateUxBase = navigateUx;
+
+navigateUx = function cgweb118Fix1NavigateUx(page, sub, ...rest) {
+  let normalizedSub = sub;
+
+  if (
+    page === "more" &&
+    ["health", "health-sync"].includes(String(sub || ""))
+  ) {
+    normalizedSub = "sync";
+  }
+
+  const result = cgweb118Fix1NavigateUxBase.call(
+    this,
+    page,
+    normalizedSub,
+    ...rest
+  );
+
+  if (page === "more" && normalizedSub === "sync") {
+    setUxSectionVisibility([
+      ui.syncCenterSection,
+      ui.syncHealthSection
+    ]);
+
+    if (typeof renderSyncHealth === "function") {
+      renderSyncHealth();
+    }
+  }
+
+  if (page === "more" && normalizedSub === "manual") {
+    queueMicrotask(cgweb118Fix1CompactManualForm);
+  }
+
+  if (page === "equipment" && normalizedSub === "management") {
+    queueMicrotask(() => {
+      cgweb118Fix1PrepareEquipmentControls();
+      cgweb118Fix1CompactEquipmentRows();
+    });
+  }
+
+  if (page === "equipment" && normalizedSub === "equipment-map") {
+    queueMicrotask(cgweb118Fix1CleanMapping);
+  }
+
+  queueMicrotask(cgweb118Fix1AlignSecondaryNav);
+  return result;
+};
+
+const cgweb118Fix1NormalizeNavigationBase = cgweb118NormalizeNavigation;
+
+cgweb118NormalizeNavigation = function cgweb118Fix1NormalizeNavigation() {
+  const page = cgweb118CurrentPage();
+  const sub = cgweb118CurrentSubpage();
+
+  if (
+    page === "more" &&
+    ["health", "health-sync"].includes(sub)
+  ) {
+    navigateUx("more", "sync");
+    return;
+  }
+
+  return cgweb118Fix1NormalizeNavigationBase();
+};
+
+const cgweb118Fix1RenderSecondaryBase = renderUxSecondaryNav;
+
+renderUxSecondaryNav = function cgweb118Fix1RenderUxSecondaryNav(...args) {
+  const result = cgweb118Fix1RenderSecondaryBase.apply(this, args);
+  requestAnimationFrame(cgweb118Fix1AlignSecondaryNav);
+  return result;
+};
+
+function cgweb118Fix1Apply() {
+  cgweb118Fix1InstallStyles();
+
+  if (typeof cgweb118MountGoals === "function") {
+    cgweb118MountGoals();
+  }
+
+  if (typeof cgweb118MountWeight === "function") {
+    cgweb118MountWeight();
+  }
+
+  if (typeof cgweb118RenderWeightChart === "function") {
+    cgweb118RenderWeightChart();
+  }
+
+  cgweb118Fix1PrepareEquipmentControls();
+  cgweb118Fix1CompactEquipmentRows();
+  cgweb118Fix1CleanMapping();
+  cgweb118Fix1CompactManualForm();
+  cgweb118Fix1AlignSecondaryNav();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", cgweb118Fix1Apply, {once:true});
+} else {
+  queueMicrotask(cgweb118Fix1Apply);
+}
+
+window.addEventListener("resize", cgweb118Fix1AlignSecondaryNav, {passive:true});
+
+setTimeout(cgweb118Fix1Apply, 100);
+setTimeout(cgweb118Fix1Apply, 500);
+setTimeout(cgweb118Fix1Apply, 1500);
+
+window.CGWEB118_FIX1 = Object.freeze({
+  version:"CGWEB118-FIX1",
+  apply:cgweb118Fix1Apply,
+  align:cgweb118Fix1AlignSecondaryNav
+});
+
+/* CGWEB118_FIX1_COMPACT_UI002_END */
