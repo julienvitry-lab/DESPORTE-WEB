@@ -8676,39 +8676,102 @@ function installActivitySubSportFilterWeb054() {
 
 /* WEB071 · ICON_INDOOR001 */
 function web071IsIndoorActivity(activity) {
-  if (!activity || activity.deleted_at_ms != null) return false;
-  const sport=Number(activity.sport)||0;
-  const subSport=Number(activity.sub_sport)||0;
-
-  if (activity?.indoor===true || activity?.is_indoor===true ||
-      activity?.trainer===true || activity?.is_trainer===true ||
-      activity?.virtual===true || activity?.is_virtual===true) return true;
-
-  let profile="", meta="";
-  try { profile=String(equipmentProfileKeyFromActivityWeb058(activity)||"").trim().toUpperCase(); } catch(_) {}
-  try { meta=String(equipmentProfileMetadataWeb058(activity)||"").toUpperCase(); } catch(_) {}
-  if (profile==="HOME_TRAINER") profile="TRAINER";
-  if (["TRAINER","TREADMILL","KINOMAP"].includes(profile)) return true;
-
-  const mappingId=String(activity?.equipment_mapping_id||"").trim();
-  if (mappingId && Array.isArray(equipmentMappingRows)) {
-    const rule=equipmentMappingRows.find(r=>String(r?.__docId||"").trim()===mappingId);
-    let k=String(rule?.profile_key||"").trim().toUpperCase();
-    if(k==="HOME_TRAINER") k="TRAINER";
-    if(["TRAINER","TREADMILL","KINOMAP"].includes(k)) return true;
+  /*
+   * CGWEB117 FIX1 · PHASE 2
+   * CGWEB117_FIX1_PHASE2_CLASSIFIER001
+   *
+   * Contrat :
+   * - indoor = preuve intrinsèque à l'activité ;
+   * - le matériel, son profil courant et son mapping ne décident jamais ;
+   * - toute activité vélo antérieure au 26/12/2019 est outdoor ;
+   * - faute de preuve intrinsèque indoor, Course/Vélo est outdoor.
+   */
+  if (
+    !activity ||
+    activity.deleted_at_ms != null
+  ) {
+    return false;
   }
 
-  // Fallback sûr : matériel associé à un seul profil métier, lui-même indoor.
-  const equipment=String(activity?.equipment_name||"").trim();
-  if (equipment && Array.isArray(equipmentMappingRows)) {
-    const keys=[...new Set(equipmentMappingRows
-      .filter(r=>r?.enabled!==false && String(r?.equipment_name||"").trim()===equipment && String(r?.profile_key||"").trim())
-      .map(r=>{const k=String(r.profile_key).trim().toUpperCase();return k==="HOME_TRAINER"?"TRAINER":k;}))];
-    if(keys.length===1 && ["TRAINER","TREADMILL","KINOMAP"].includes(keys[0])) return true;
+  const sport =
+    Number(activity?.sport) || 0;
+
+  const subSport =
+    Number(
+      activity?.sub_sport ??
+      activity?.subSport ??
+      0
+    ) || 0;
+
+  const startMs =
+    Number(activity?.start_time_ms) || 0;
+
+  const bikeOutdoorCutoffMs =
+    Date.parse(
+      "2019-12-26T00:00:00+01:00"
+    );
+
+  if (
+    sport === 2 &&
+    startMs > 0 &&
+    startMs < bikeOutdoorCutoffMs
+  ) {
+    return false;
   }
 
-  if(sport===1) return [1,21,45].includes(subSport) || /TREADMILL|TAPIS|INDOOR|VIRTUALRUN|VIRTUAL RUN|KINOMAP/.test(meta);
-  if(sport===2) return [5,6,58].includes(subSport) || /HOME.?TRAINER|\bTRAINER\b|TACX|ZWIFT|INDOOR|VIRTUALRIDE|VIRTUAL RIDE|KINOMAP|ROUVY|BKOO?L/.test(meta);
+  if (
+    activity?.indoor === true ||
+    activity?.is_indoor === true ||
+    activity?.trainer === true ||
+    activity?.is_trainer === true ||
+    activity?.virtual === true ||
+    activity?.is_virtual === true
+  ) {
+    return true;
+  }
+
+  const intrinsicText =
+    [
+      activity?.import_source,
+      activity?.import_profile,
+      activity?.source,
+      activity?.source_type,
+      activity?.source_profile,
+      activity?.activity_type,
+      activity?.sub_sport_name,
+      activity?.subSportName
+    ]
+      .map(
+        (value) =>
+          String(value || "")
+            .trim()
+      )
+      .filter(Boolean)
+      .join(" | ")
+      .toUpperCase();
+
+  if (
+    /KINOMAP|ZWIFT|ROUVY|BKOO?L|VIRTUAL|TREADMILL|TAPIS|HOME.?TRAINER|\bTRAINER\b/.test(
+      intrinsicText
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    sport === 1 &&
+    [1, 21, 45].includes(subSport)
+  ) {
+    return true;
+  }
+
+  if (
+    sport === 2 &&
+    [5, 6, 58].includes(subSport)
+  ) {
+    return true;
+  }
+
   return false;
 }
 
@@ -35667,3 +35730,136 @@ window.CGWEB117_FIX1_EXPORT_CSV =
   cgweb117Fix1ExportCsv;
 
 /* CGWEB117_FIX1_PHASE1_END */
+
+/* CGWEB117_FIX1_PHASE2_VALIDATION001_START */
+
+async function cgweb117Fix1Phase2Validate() {
+  if (
+    typeof loadAllActivities === "function" &&
+    moreActivities === true
+  ) {
+    console.log(
+      "CGWEB117 FIX1 PHASE 2 · chargement de toutes les activités…"
+    );
+    await loadAllActivities();
+  }
+
+  const cutoff =
+    Date.parse(
+      "2019-12-26T00:00:00+01:00"
+    );
+
+  const rows =
+    Array.isArray(activities)
+      ? activities.filter(
+          (activity) =>
+            activity &&
+            activity.deleted_at_ms == null &&
+            [1, 2].includes(Number(activity.sport))
+        )
+      : [];
+
+  const classified =
+    rows.map((activity) => ({
+      activity_id:
+        activityKey(activity),
+      date:
+        typeof cgweb117SimpleDate === "function"
+          ? cgweb117SimpleDate(activity.start_time_ms)
+          : String(activity.start_time_ms || ""),
+      sport:
+        Number(activity.sport) || 0,
+      sub_sport:
+        Number(
+          activity?.sub_sport ??
+          activity?.subSport ??
+          0
+        ) || 0,
+      equipment:
+        String(activity?.equipment_name || ""),
+      import_source:
+        String(activity?.import_source || ""),
+      import_profile:
+        String(activity?.import_profile || ""),
+      start_time_ms:
+        Number(activity?.start_time_ms) || 0,
+      indoor:
+        web071IsIndoorActivity(activity)
+    }));
+
+  const preCutoffBikeIndoor =
+    classified.filter(
+      (row) =>
+        row.sport === 2 &&
+        row.start_time_ms > 0 &&
+        row.start_time_ms < cutoff &&
+        row.indoor
+    );
+
+  const indoor =
+    classified.filter(
+      (row) => row.indoor
+    );
+
+  const guerciottiPreCutoff =
+    classified.filter(
+      (row) =>
+        row.sport === 2 &&
+        row.start_time_ms > 0 &&
+        row.start_time_ms < cutoff &&
+        /GUERCIOTTI/i.test(row.equipment)
+    );
+
+  const summary = {
+    version:
+      "CGWEB117_FIX1_PHASE2",
+    active_run_bike:
+      classified.length,
+    classified_indoor:
+      indoor.length,
+    classified_outdoor:
+      classified.length - indoor.length,
+    pre_2019_12_26_bike_indoor:
+      preCutoffBikeIndoor.length,
+    guerciotti_pre_cutoff:
+      guerciottiPreCutoff.length,
+    expected_pre_cutoff_bike_indoor:
+      0,
+    firestore_writes:
+      0,
+    storage_writes:
+      0
+  };
+
+  const result =
+    Object.freeze({
+      summary,
+      pre_cutoff_bike_indoor:
+        preCutoffBikeIndoor,
+      indoor,
+      guerciotti_pre_cutoff:
+        guerciottiPreCutoff
+    });
+
+  window.CGWEB117_FIX1_PHASE2_LAST_VALIDATION =
+    result;
+
+  console.log(
+    "CGWEB117 FIX1 PHASE 2 · VALIDATION",
+    summary
+  );
+
+  if (preCutoffBikeIndoor.length) {
+    console.error(
+      "CGWEB117 FIX1 PHASE 2 · anomalie : vélo pré-26/12/2019 encore indoor"
+    );
+    console.table(preCutoffBikeIndoor);
+  }
+
+  return result;
+}
+
+window.CGWEB117_FIX1_PHASE2_VALIDATE =
+  cgweb117Fix1Phase2Validate;
+
+/* CGWEB117_FIX1_PHASE2_VALIDATION001_END */
