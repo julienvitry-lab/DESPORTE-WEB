@@ -39234,3 +39234,122 @@ window.CGWEB118_FIX11_STATUS = function () {
 };
 
 /* CGWEB118_FIX11_END */
+
+/* CGWEB118_FIX11_FIX1_START */
+(function () {
+  function norm(v) {
+    return String(v || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  function renameCorrespondances() {
+    for (const el of document.querySelectorAll("button,a,[role='tab']")) {
+      if (norm(el.textContent) === "correspondances automatiques") {
+        el.textContent = "Correspondances";
+        el.dataset.cgweb118Fix11Fix1Renamed = "1";
+      }
+    }
+  }
+
+  function getMetric(card, label) {
+    const text = String(card.innerText || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const patterns = {
+      Distance: /distance\s+([0-9][0-9\s.,]*\s*km)/i,
+      Temps: /temps\s+(.+?)(?=\s+d\+\s+|\s+modifier\b|\s+réserve\b|\s+archiver\b|$)/i,
+      "D+": /d\+\s+([0-9][0-9\s.,]*\s*m)/i
+    };
+
+    const m = text.match(patterns[label]);
+    return m ? m[1].trim() : "—";
+  }
+
+  function titleOf(card) {
+    const main = card.querySelector(".equipment-manager-main strong");
+    if (main?.textContent?.trim()) return main.textContent.trim();
+
+    const candidates = [...card.querySelectorAll("strong,h3,h4")]
+      .map(el => String(el.textContent || "").replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .filter(t => !/^(distance|temps|d\+)$/i.test(t));
+
+    return candidates[0] || "Matériel";
+  }
+
+  function stat(label, value) {
+    const box = document.createElement("div");
+    box.className = "cgweb118-fix11fix1-stat";
+
+    const lab = document.createElement("span");
+    lab.className = "cgweb118-fix11fix1-label";
+    lab.textContent = label;
+
+    const val = document.createElement("strong");
+    val.className = "cgweb118-fix11fix1-value";
+    val.textContent = value;
+
+    box.append(lab, val);
+    return box;
+  }
+
+  function compactCard(card) {
+    if (!card || card.dataset.cgweb118Fix11Fix1 === "1") return;
+
+    const edit = [...card.querySelectorAll("button,a")]
+      .find(el => norm(el.textContent) === "modifier");
+
+    if (!edit) return;
+
+    const row = document.createElement("div");
+    row.className = "cgweb118-fix11fix1-row";
+
+    const name = document.createElement("div");
+    name.className = "cgweb118-fix11fix1-name";
+    name.textContent = titleOf(card);
+
+    const action = document.createElement("div");
+    action.className = "cgweb118-fix11fix1-action";
+    action.appendChild(edit);
+
+    row.append(
+      name,
+      stat("Distance", getMetric(card, "Distance")),
+      stat("Temps", getMetric(card, "Temps")),
+      stat("D+", getMetric(card, "D+")),
+      action
+    );
+
+    for (const child of [...card.children]) {
+      child.style.display = "none";
+    }
+
+    card.prepend(row);
+    card.classList.add("cgweb118-fix11fix1-card");
+    card.dataset.cgweb118Fix11Fix1 = "1";
+  }
+
+  function apply() {
+    renameCorrespondances();
+    document
+      .querySelectorAll("#equipmentManagerList .equipment-manager-card")
+      .forEach(compactCard);
+  }
+
+  apply();
+  [100, 300, 700, 1500, 3000].forEach(ms => setTimeout(apply, ms));
+
+  window.CGWEB118_FIX11_FIX1_STATUS = () => ({
+    cards_compacted:
+      document.querySelectorAll(".cgweb118-fix11fix1-card").length,
+    correspondances:
+      [...document.querySelectorAll("button,a,[role='tab']")]
+        .some(el => norm(el.textContent) === "correspondances")
+  });
+})();
+/* CGWEB118_FIX11_FIX1_END */
