@@ -37954,3 +37954,175 @@ window.CGWEB118_FIX9_STATUS = function () {
 };
 
 /* CGWEB118_FIX9_END */
+
+/* CGWEB118_FIX9_FIX1_START
+   TRIANGLE_VISIBLE001 / FILTERBAR_TRUE_INLINE001
+   STATUS_TEXT_REMOVE001 / NO_ADVANCED_FILTER_TOUCH002
+*/
+
+function cgweb118Fix9Fix1Apply() {
+  const section =
+    document.getElementById("activityDirectorySection");
+
+  if (!section) return false;
+
+  let grid = section.querySelector(
+    'div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]'
+  );
+
+  if (!grid && typeof cgweb118Fix9Apply === "function") {
+    cgweb118Fix9Apply();
+    grid = section.querySelector(
+      'div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]'
+    );
+  }
+
+  if (!grid) return false;
+
+  const details = grid.parentElement;
+
+  if (!details || details.tagName !== "DETAILS") {
+    console.warn(
+      "CGWEB118 FIX9 FIX1 · parent DETAILS absent"
+    );
+    return false;
+  }
+
+  const summary =
+    details.querySelector(":scope > summary");
+
+  if (!summary) {
+    console.warn(
+      "CGWEB118 FIX9 FIX1 · SUMMARY absent"
+    );
+    return false;
+  }
+
+  summary.replaceChildren();
+  summary.setAttribute(
+    "aria-label",
+    "Afficher ou masquer les filtres"
+  );
+  summary.title = "Afficher ou masquer les filtres";
+
+  details.dataset.cgweb118Fix9Fix1 = "1";
+  summary.dataset.cgweb118Fix9Fix1Summary = "1";
+
+  const count =
+    document.getElementById("cgweb099Count");
+  const universe =
+    document.getElementById("cgweb099Universe");
+
+  if (count) {
+    count.hidden = true;
+    count.setAttribute("aria-hidden", "true");
+  }
+
+  if (universe) {
+    universe.hidden = true;
+    universe.setAttribute("aria-hidden", "true");
+  }
+
+  return true;
+}
+
+function cgweb118Fix9Fix1Boot() {
+  const delays = [0, 100, 300, 700, 1500, 3000];
+
+  for (const delay of delays) {
+    setTimeout(() => {
+      if (
+        document.querySelector(
+          '#activityDirectorySection ' +
+          'details[data-cgweb118-fix9-fix1="1"]'
+        )
+      ) {
+        return;
+      }
+
+      cgweb118Fix9Fix1Apply();
+    }, delay);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb118Fix9Fix1Boot,
+    { once: true }
+  );
+} else {
+  cgweb118Fix9Fix1Boot();
+}
+
+window.CGWEB118_FIX9_FIX1_STATUS = function () {
+  const section =
+    document.getElementById("activityDirectorySection");
+
+  const grid = section?.querySelector(
+    'div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]'
+  );
+
+  const details = grid?.parentElement || null;
+  const summary = details?.querySelector(
+    ':scope > summary[data-cgweb118-fix9-fix1-summary="1"]'
+  );
+
+  const date = grid?.querySelector(
+    '[data-cgweb118-fix9-field="date"]'
+  );
+
+  const equipment = grid?.querySelector(
+    '[data-cgweb118-fix9-field="equipment"]'
+  );
+
+  const count =
+    document.getElementById("cgweb099Count");
+  const universe =
+    document.getElementById("cgweb099Universe");
+
+  const summaryRect =
+    summary?.getBoundingClientRect?.();
+  const gridRect =
+    grid?.getBoundingClientRect?.();
+  const dateRect =
+    date?.getBoundingClientRect?.();
+  const equipmentRect =
+    equipment?.getBoundingClientRect?.();
+
+  return {
+    target_found: !!grid,
+    details_open: !!details?.open,
+    triangle_content: summary
+      ? getComputedStyle(summary, "::before").content
+      : null,
+    triangle_color: summary
+      ? getComputedStyle(summary, "::before").color
+      : null,
+    summary_y: summaryRect
+      ? Math.round(summaryRect.y)
+      : null,
+    grid_y: gridRect
+      ? Math.round(gridRect.y)
+      : null,
+    same_line_when_open:
+      !!details?.open &&
+      !!summaryRect &&
+      !!gridRect &&
+      Math.abs(summaryRect.y - gridRect.y) <= 3,
+    date_width_px: dateRect
+      ? Math.round(dateRect.width)
+      : null,
+    equipment_width_px: equipmentRect
+      ? Math.round(equipmentRect.width)
+      : null,
+    count_hidden: !!count?.hidden,
+    universe_hidden: !!universe?.hidden,
+    duplicate_status:
+      typeof window.CGWEB118_FIX7_DUP_STATUS === "function"
+        ? window.CGWEB118_FIX7_DUP_STATUS()
+        : null
+  };
+};
+
+/* CGWEB118_FIX9_FIX1_END */

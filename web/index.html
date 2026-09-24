@@ -6814,6 +6814,168 @@ div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]
 }
 </style>
 
+
+<style id="cgweb118Fix9Fix1Ui">
+#activityDirectorySection
+details[data-cgweb118-fix9-fix1="1"]{
+  display:block!important;
+  position:relative!important;
+  box-sizing:border-box!important;
+  padding:2mm!important;
+  margin:0!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix9-fix1="1"]
+> summary[data-cgweb118-fix9-fix1-summary="1"]{
+  width:20px!important;
+  min-width:20px!important;
+  height:30px!important;
+  min-height:30px!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  position:relative!important;
+  z-index:5!important;
+  list-style:none!important;
+  font-size:0!important;
+  line-height:1!important;
+  color:#fff!important;
+  opacity:1!important;
+  visibility:visible!important;
+  cursor:pointer!important;
+  background:transparent!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix9-fix1="1"]
+> summary[data-cgweb118-fix9-fix1-summary="1"]::-webkit-details-marker{
+  display:none!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix9-fix1="1"]
+> summary[data-cgweb118-fix9-fix1-summary="1"]::marker{
+  content:""!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix9-fix1="1"]
+> summary[data-cgweb118-fix9-fix1-summary="1"]::before{
+  content:"▸"!important;
+  position:absolute!important;
+  inset:0!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  width:20px!important;
+  height:100%!important;
+  color:#fff!important;
+  font-size:16px!important;
+  font-weight:700!important;
+  line-height:1!important;
+  opacity:1!important;
+  visibility:visible!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix9-fix1="1"][open]
+> summary[data-cgweb118-fix9-fix1-summary="1"]{
+  position:absolute!important;
+  left:2mm!important;
+  top:2mm!important;
+  width:20px!important;
+  height:61px!important;
+  min-height:61px!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix9-fix1="1"][open]
+> summary[data-cgweb118-fix9-fix1-summary="1"]::before{
+  content:"▾"!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix9-fix1="1"][open]
+> div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]{
+  display:grid!important;
+  position:relative!important;
+  grid-column:auto!important;
+  grid-row:auto!important;
+  margin:0 0 0 calc(20px + 2mm)!important;
+  padding:0!important;
+  width:calc(100% - 20px - 2mm)!important;
+  min-width:0!important;
+  box-sizing:border-box!important;
+  justify-content:start!important;
+  align-items:end!important;
+  grid-template-columns:
+    22mm
+    40mm
+    25mm
+    26mm
+    20mm
+    38mm
+    84mm
+    !important;
+  column-gap:2mm!important;
+  row-gap:0!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]
+[data-cgweb118-fix9-field="date"]{
+  width:40mm!important;
+  max-width:40mm!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]
+[data-cgweb118-fix9-field="equipment"]{
+  width:84mm!important;
+  max-width:84mm!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]
+[data-cgweb118-fix9-field="search"]{
+  display:none!important;
+}
+
+#cgweb099GlobalDirectory #cgweb099Count,
+#cgweb099GlobalDirectory #cgweb099Universe{
+  display:none!important;
+}
+
+#cgweb099GlobalDirectory .cgweb099-statusbar{
+  box-sizing:border-box!important;
+  margin:2mm 0 0!important;
+  padding:0!important;
+  gap:2mm!important;
+}
+
+@media(max-width:1150px){
+  #activityDirectorySection
+  details[data-cgweb118-fix9-fix1="1"][open]
+  > div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]{
+    grid-template-columns:
+      repeat(4,minmax(90px,1fr))
+      !important;
+    row-gap:2mm!important;
+  }
+
+  #activityDirectorySection
+  div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]
+  [data-cgweb118-fix9-field="date"],
+  #activityDirectorySection
+  div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]
+  [data-cgweb118-fix9-field="equipment"]{
+    width:auto!important;
+    max-width:none!important;
+  }
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -9490,7 +9652,7 @@ div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB118-FIX9"></script>
+<script type="module" src="./app.js?v=CGWEB118-FIX9-FIX1"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
