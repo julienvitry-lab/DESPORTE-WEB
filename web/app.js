@@ -38126,3 +38126,203 @@ window.CGWEB118_FIX9_FIX1_STATUS = function () {
 };
 
 /* CGWEB118_FIX9_FIX1_END */
+
+/* CGWEB118_FIX9_FIX2_START
+   TRIANGLE_REAL_NODE001 / RESET_REFRESH_REMOVE001
+   EMPTY_STATUSBAR_REMOVE001
+*/
+
+function cgweb118Fix9Fix2Apply() {
+  const section =
+    document.getElementById("activityDirectorySection");
+
+  if (!section) return false;
+
+  const grid = section.querySelector(
+    'div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]'
+  );
+
+  if (!grid) return false;
+
+  const details = grid.parentElement;
+
+  if (!details || details.tagName !== "DETAILS") {
+    return false;
+  }
+
+  const summary =
+    details.querySelector(":scope > summary");
+
+  if (!summary) return false;
+
+  /*
+   * Triangle sous forme de VRAI nœud DOM.
+   * On ne dépend plus d'un pseudo-élément CSS.
+   */
+  let triangle =
+    summary.querySelector(
+      ":scope > .cgweb118-fix9-fix2-triangle"
+    );
+
+  if (!triangle) {
+    triangle = document.createElement("span");
+    triangle.className =
+      "cgweb118-fix9-fix2-triangle";
+    triangle.setAttribute("aria-hidden", "true");
+    summary.replaceChildren(triangle);
+  }
+
+  const syncTriangle = () => {
+    triangle.textContent = details.open ? "▾" : "▸";
+  };
+
+  syncTriangle();
+
+  if (
+    details.dataset.cgweb118Fix9Fix2ToggleBound !== "1"
+  ) {
+    details.addEventListener("toggle", syncTriangle);
+    details.dataset.cgweb118Fix9Fix2ToggleBound = "1";
+  }
+
+  details.dataset.cgweb118Fix9Fix2 = "1";
+  summary.dataset.cgweb118Fix9Fix2Summary = "1";
+
+  /*
+   * Suppression stricte des deux boutons demandés,
+   * dans le répertoire global uniquement.
+   */
+  const root =
+    document.getElementById("cgweb099GlobalDirectory") ||
+    section;
+
+  const norm = (value) =>
+    String(value || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLocaleLowerCase("fr");
+
+  const removable = new Set([
+    "réinitialiser",
+    "actualiser la base"
+  ]);
+
+  let removed = 0;
+
+  for (const button of root.querySelectorAll("button")) {
+    if (removable.has(norm(button.textContent))) {
+      button.remove();
+      removed += 1;
+    }
+  }
+
+  /*
+   * Si la barre d'état ne contient plus que les deux textes
+   * déjà masqués, on supprime aussi son espace résiduel.
+   */
+  const statusbar =
+    root.querySelector(".cgweb099-statusbar");
+
+  if (statusbar) {
+    const meaningful = [...statusbar.children]
+      .filter((node) => {
+        if (node.hidden) return false;
+        if (node.getAttribute("aria-hidden") === "true") {
+          return false;
+        }
+
+        const style = getComputedStyle(node);
+        return (
+          style.display !== "none" &&
+          style.visibility !== "hidden"
+        );
+      });
+
+    if (meaningful.length === 0) {
+      statusbar.hidden = true;
+      statusbar.setAttribute("aria-hidden", "true");
+    }
+  }
+
+  details.dataset.cgweb118Fix9Fix2RemovedButtons =
+    String(removed);
+
+  return true;
+}
+
+function cgweb118Fix9Fix2Boot() {
+  const delays = [0, 100, 300, 700, 1500, 3000];
+
+  for (const delay of delays) {
+    setTimeout(() => {
+      cgweb118Fix9Fix2Apply();
+    }, delay);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb118Fix9Fix2Boot,
+    { once: true }
+  );
+} else {
+  cgweb118Fix9Fix2Boot();
+}
+
+window.CGWEB118_FIX9_FIX2_STATUS = function () {
+  const section =
+    document.getElementById("activityDirectorySection");
+
+  const grid = section?.querySelector(
+    'div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]'
+  );
+
+  const details = grid?.parentElement || null;
+  const summary = details?.querySelector(
+    ":scope > summary"
+  );
+
+  const triangle = summary?.querySelector(
+    ":scope > .cgweb118-fix9-fix2-triangle"
+  );
+
+  const root =
+    document.getElementById("cgweb099GlobalDirectory") ||
+    section;
+
+  const norm = (value) =>
+    String(value || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLocaleLowerCase("fr");
+
+  const remainingButtons = root
+    ? [...root.querySelectorAll("button")]
+        .map((b) => norm(b.textContent))
+        .filter((t) =>
+          t === "réinitialiser" ||
+          t === "actualiser la base"
+        )
+    : [];
+
+  return {
+    target_found: !!grid,
+    details_open: !!details?.open,
+    triangle_found: !!triangle,
+    triangle_text: triangle?.textContent || null,
+    triangle_color: triangle
+      ? getComputedStyle(triangle).color
+      : null,
+    reset_refresh_remaining:
+      remainingButtons.length,
+    statusbar_hidden:
+      !!root?.querySelector(".cgweb099-statusbar")?.hidden,
+    duplicate_status:
+      typeof window.CGWEB118_FIX7_DUP_STATUS === "function"
+        ? window.CGWEB118_FIX7_DUP_STATUS()
+        : null
+  };
+};
+
+/* CGWEB118_FIX9_FIX2_END */

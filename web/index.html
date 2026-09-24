@@ -6976,6 +6976,68 @@ div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]
 }
 </style>
 
+
+<style id="cgweb118Fix9Fix2Ui">
+/*
+ * CGWEB118 FIX9 FIX2
+ * Le triangle est désormais un vrai SPAN DOM.
+ * On neutralise les anciens pseudo-éléments.
+ */
+
+#activityDirectorySection
+details[data-cgweb118-fix9-fix2="1"]
+> summary::before,
+#activityDirectorySection
+details[data-cgweb118-fix9-fix2="1"]
+> summary::after{
+  content:none!important;
+  display:none!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix9-fix2="1"]
+> summary[data-cgweb118-fix9-fix2-summary="1"]{
+  overflow:visible!important;
+  opacity:1!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+  color:#fff!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix9-fix2="1"]
+> summary[data-cgweb118-fix9-fix2-summary="1"]
+> .cgweb118-fix9-fix2-triangle{
+  display:flex!important;
+  width:20px!important;
+  height:100%!important;
+  min-width:20px!important;
+  align-items:center!important;
+  justify-content:center!important;
+  color:#fff!important;
+  opacity:1!important;
+  visibility:visible!important;
+  font-family:Arial,sans-serif!important;
+  font-size:17px!important;
+  font-weight:700!important;
+  line-height:1!important;
+  text-indent:0!important;
+  letter-spacing:0!important;
+  transform:none!important;
+  filter:none!important;
+}
+
+/* Plus aucun espace pour la barre de statut devenue inutile. */
+#cgweb099GlobalDirectory
+.cgweb099-statusbar[hidden]{
+  display:none!important;
+  margin:0!important;
+  padding:0!important;
+  min-height:0!important;
+  height:0!important;
+}
+</style>
+
 </head>
 <body>
   <header class="topbar">
@@ -9652,7 +9714,7 @@ div.cgweb099-filter-grid[data-cgweb118-fix9-target="1"]
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB118-FIX9-FIX1"></script>
+<script type="module" src="./app.js?v=CGWEB118-FIX9-FIX2"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
