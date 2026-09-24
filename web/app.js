@@ -121,6 +121,40 @@ const ui = Object.fromEntries(
 let currentUser = null;
 let activities = [];
 let filteredActivities = [];
+
+/* CGWEB118 FIX7 · DIRECTORY_DEDUPE_INVARIANT001
+ *
+ * Invariant strict : une seule entrée en mémoire par activityKey().
+ * Aucune écriture Firestore / Storage.
+ */
+function cgweb118Fix7DedupeActivities(rows = activities) {
+  const byKey = new Map();
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = activityKey(row);
+    if (key == null || key === "") continue;
+    byKey.set(String(key), row);
+  }
+
+  return [...byKey.values()];
+}
+
+function cgweb118Fix7EnforceActivityInvariant() {
+  const before = Array.isArray(activities) ? activities.length : 0;
+  activities = cgweb118Fix7DedupeActivities(activities);
+  const after = activities.length;
+
+  if (after !== before) {
+    console.warn("CGWEB118 FIX7 · doublons mémoire neutralisés", {
+      before,
+      after,
+      removed: before - after
+    });
+  }
+
+  return { before, after, removed: before - after };
+}
+
 let lastActivityDoc = null;
 let moreActivities = true;
 let loading = false;
@@ -4785,9 +4819,19 @@ async function loadNextPage() {
 
     const snapshot = await getDocs(activityQuery);
 
-    snapshot.forEach((item) => {
-      activities.push({ __docId: item.id, ...item.data() });
-    });
+    /* CGWEB118 FIX7 · LOAD_PAGE_UPSERT001
+       * Un document déjà présent ne doit jamais être empilé une seconde fois.
+       */
+      const loadedByKey = new Map(
+        activities.map((row) => [String(activityKey(row)), row])
+      );
+
+      snapshot.forEach((item) => {
+        const row = { __docId: item.id, ...item.data() };
+        loadedByKey.set(String(activityKey(row)), row);
+      });
+
+      activities = [...loadedByKey.values()];
 
     if (!snapshot.empty) {
       lastActivityDoc = snapshot.docs[snapshot.docs.length - 1];
@@ -5172,6 +5216,11 @@ function applyFiltersAndRender() {
   const distanceMinKm = positiveNumber(ui.distanceFilter.value);
   const ascentMin = positiveNumber(ui.ascentFilter.value);
   const sortMode = ui.sortFilter.value;
+  /* CGWEB118 FIX7 · FILTER_PRE_RENDER_DEDUPE001
+   * Garde-fou avant rendu.
+   */
+  cgweb118Fix7EnforceActivityInvariant();
+
 
   filteredActivities = activities.filter((activity) => {
     if (activity.deleted_at_ms != null) return false;
@@ -38896,3 +38945,33 @@ window.CGWEB118_FIX5 = Object.freeze({
 });
 
 /* CGWEB118_FIX5_END */
+
+/* CGWEB118_FIX7_RUNTIME_STATUS_START */
+window.CGWEB118_FIX7_DUP_STATUS = function () {
+  const rows = Array.isArray(activities) ? activities : [];
+  const keys = rows.map((row) => String(activityKey(row)));
+  const unique = new Set(keys);
+
+  const cards = [
+    ...document.querySelectorAll("#activityList .activity-card")
+  ];
+
+  const cardKeys = cards
+    .map((node) =>
+      String(
+        node.dataset.activityKeyWeb058 ||
+        node.dataset.activityId ||
+        ""
+      )
+    )
+    .filter(Boolean);
+
+  return {
+    activities_in_memory: rows.length,
+    unique_activity_keys: unique.size,
+    duplicate_activity_keys: rows.length - unique.size,
+    cards_in_dom: cards.length,
+    unique_card_keys: new Set(cardKeys).size
+  };
+};
+/* CGWEB118_FIX7_RUNTIME_STATUS_END */
