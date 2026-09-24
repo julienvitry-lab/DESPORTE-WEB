@@ -627,142 +627,6 @@ function installInterfaceGuardWeb048() {
 // -----------------------------------------------------------------------------
 // WEB049 · WEBUI001 — contrat d'interface durable
 // -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-// CGWEB118 FIX8 · FILTERBAR_SOURCE_REWRITE001
-// Source canonique du bandeau historique Activités.
-// Aucun MutationObserver, aucune écriture Firestore/Storage.
-// -----------------------------------------------------------------------------
-function cgweb118Fix8Norm(value) {
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLocaleLowerCase("fr");
-}
-
-function cgweb118Fix8IdentifyFilter(node) {
-  if (!node) return "";
-
-  const control =
-    node.matches?.("input,select")
-      ? node
-      : node.querySelector?.("input,select");
-
-  if (!control) return "";
-
-  const text = cgweb118Fix8Norm(node.textContent);
-  const placeholder = cgweb118Fix8Norm(
-    control.getAttribute?.("placeholder")
-  );
-
-  if (text.startsWith("année")) return "year";
-  if (text.startsWith("date")) return "date";
-  if (text.startsWith("sport")) return "sport";
-  if (text.startsWith("fit")) return "fit";
-  if (text.startsWith("repère")) return "landmark";
-  if (text.startsWith("ordre")) return "order";
-  if (text.startsWith("matériel")) return "equipment";
-
-  if (
-    text.startsWith("recherche") ||
-    placeholder.includes("nom, date") ||
-    placeholder.includes("source")
-  ) {
-    return "search";
-  }
-
-  return "";
-}
-
-function cgweb118Fix8CanonicalizeFilterBar(panel, filters) {
-  if (!panel || !filters) return false;
-
-  const summary = panel.querySelector(":scope > summary");
-  if (summary) {
-    summary.replaceChildren();
-    summary.setAttribute("aria-label", "Afficher ou masquer les filtres");
-    summary.title = "Afficher ou masquer les filtres";
-  }
-
-  for (const node of [panel, filters, ...filters.children]) {
-    for (const attr of [...node.attributes]) {
-      if (/^data-cgweb118fix[345]/i.test(attr.name)) {
-        node.removeAttribute(attr.name);
-      }
-    }
-  }
-
-  const byKey = new Map();
-  const meta = [];
-
-  for (const child of [...filters.children]) {
-    const key = cgweb118Fix8IdentifyFilter(child);
-
-    delete child.dataset.cgweb118Fix8Field;
-    delete child.dataset.cgweb118Fix8Meta;
-
-    if (key) {
-      child.dataset.cgweb118Fix8Field = key;
-      byKey.set(key, child);
-    } else {
-      child.dataset.cgweb118Fix8Meta = "1";
-      meta.push(child);
-    }
-  }
-
-  const required = [
-    "year",
-    "date",
-    "sport",
-    "fit",
-    "landmark",
-    "order",
-    "equipment"
-  ];
-
-  const missing = required.filter(key => !byKey.has(key));
-  if (missing.length) {
-    console.warn(
-      "CGWEB118 FIX8 · bandeau historique incomplet",
-      { missing }
-    );
-    return false;
-  }
-
-  const search = byKey.get("search");
-  if (search) {
-    const input =
-      search.matches?.("input")
-        ? search
-        : search.querySelector?.("input");
-
-    if (input && input.value) {
-      input.value = "";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-  }
-
-  // Ordre physique :
-  // Année / Date / Sport / FIT / Repère / Ordre / Matériel.
-  for (const key of required) {
-    filters.appendChild(byKey.get(key));
-  }
-
-  if (search) {
-    filters.appendChild(search);
-  }
-
-  // Compteurs / boutons conservés sous la ligne.
-  for (const node of meta) {
-    filters.appendChild(node);
-  }
-
-  panel.dataset.cgweb118Fix8Panel = "1";
-  filters.dataset.cgweb118Fix8Fields = "1";
-
-  return true;
-}
-
 function applyWeb049UiContract() {
   // Aucun titre d'activité visible.
   if (ui.detailTitle) {
@@ -821,31 +685,18 @@ function applyWeb049UiContract() {
       header.remove();
     }
 
-    // CGWEB118 FIX8 · bandeau historique canonique.
-    // Le <details> WEB049 est une construction runtime : on le crée ici,
-    // puis on applique UNE SEULE normalisation structurelle, sans observer.
-    let filterPanel =
-      directory.querySelector(":scope > details.activity-filters-web049");
-
-    let filters =
-      filterPanel?.querySelector(":scope > .filters") ||
-      directory.querySelector(":scope > .filters");
-
-    if (filters && !filterPanel) {
-      filterPanel = document.createElement("details");
-      filterPanel.className = "activity-filters-web049";
+    // Filtres : bandeau déroulant fermé par défaut.
+    const filters = directory.querySelector(":scope > .filters");
+    if (filters && !filters.closest("details.activity-filters-web049")) {
+      const details = document.createElement("details");
+      details.className = "activity-filters-web049";
 
       const summary = document.createElement("summary");
-      summary.setAttribute("aria-label", "Afficher ou masquer les filtres");
-      summary.title = "Afficher ou masquer les filtres";
+      summary.innerHTML = '<span>Tri des activités</span><small>Recherche et filtres</small>';
 
-      filters.parentNode.insertBefore(filterPanel, filters);
-      filterPanel.append(summary, filters);
-      filterPanel.open = false;
-    }
-
-    if (filterPanel && filters) {
-      cgweb118Fix8CanonicalizeFilterBar(filterPanel, filters);
+      filters.parentNode.insertBefore(details, filters);
+      details.append(summary, filters);
+      details.open = false;
     }
 
     directory.querySelectorAll(".activity-directory-footer .muted")
@@ -37822,8 +37673,1278 @@ window.CGWEB118_FIX2 =
 
 /* CGWEB118_FIX2_END */
 
+/* CGWEB118_FIX3_START */
 
+function cgweb118Fix3Normalize(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
 
+function cgweb118Fix3IdentifyFilter(node) {
+  if (!node) return "";
+
+  const control =
+    node.matches?.("input,select")
+      ? node
+      : node.querySelector?.("input,select");
+
+  if (!control) return "";
+
+  const text =
+    cgweb118Fix3Normalize(node.textContent);
+
+  const placeholder =
+    cgweb118Fix3Normalize(
+      control.getAttribute?.("placeholder")
+    );
+
+  if (text.includes("année")) return "year";
+  if (text.startsWith("date")) return "date";
+  if (text.startsWith("sport")) return "sport";
+  if (text.startsWith("matériel")) return "equipment";
+  if (text.startsWith("fit")) return "fit";
+  if (text.startsWith("repère")) return "landmark";
+  if (text.startsWith("ordre")) return "order";
+
+  if (
+    text.startsWith("recherche") ||
+    placeholder.includes("nom, date") ||
+    placeholder.includes("source")
+  ) return "search";
+
+  return "";
+}
+
+function cgweb118Fix3ApplyFilterbar() {
+  const section =
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if (!section) return;
+
+  const filters =
+    section.querySelector(".filters");
+
+  if (!filters) return;
+
+  const disclosure =
+    filters.closest("details") ||
+    filters.parentElement;
+
+  if (!disclosure) return;
+
+  disclosure.dataset.cgweb118fix3Disclosure = "1";
+  filters.dataset.cgweb118fix3Filters = "1";
+
+  for (const child of [...filters.children]) {
+    const key = cgweb118Fix3IdentifyFilter(child);
+
+    if (key) {
+      child.dataset.cgweb118fix3Filter = key;
+      delete child.dataset.cgweb118fix3Meta;
+
+      if (key === "search") {
+        const input =
+          child.matches?.("input")
+            ? child
+            : child.querySelector?.("input");
+
+        if (input) {
+          input.value = "";
+          input.dispatchEvent(
+            new Event("input", { bubbles: true })
+          );
+        }
+      }
+    } else {
+      child.dataset.cgweb118fix3Meta = "1";
+    }
+  }
+
+  for (const control of filters.querySelectorAll("input,select")) {
+    let wrapper = control;
+
+    while (
+      wrapper.parentElement &&
+      wrapper.parentElement !== filters
+    ) {
+      wrapper = wrapper.parentElement;
+    }
+
+    if (
+      wrapper.parentElement !== filters ||
+      wrapper.dataset.cgweb118fix3Filter
+    ) {
+      continue;
+    }
+
+    const key = cgweb118Fix3IdentifyFilter(wrapper);
+
+    if (key) {
+      wrapper.dataset.cgweb118fix3Filter = key;
+      delete wrapper.dataset.cgweb118fix3Meta;
+    }
+  }
+}
+
+function cgweb118Fix3InstallStyles() {
+  if (document.getElementById("cgweb118Fix3Ui")) return;
+
+  const style = document.createElement("style");
+  style.id = "cgweb118Fix3Ui";
+  style.textContent = `
+#activityDirectorySection
+[data-cgweb118fix3-disclosure="1"]{
+  display:grid!important;
+  grid-template-columns:20px minmax(0,1fr)!important;
+  align-items:start!important;
+  column-gap:2mm!important;
+  row-gap:0!important;
+  margin:2mm 0!important;
+  padding:2mm!important;
+  box-sizing:border-box!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix3-disclosure="1"] > summary{
+  grid-column:1!important;
+  grid-row:1!important;
+  width:20px!important;
+  min-width:20px!important;
+  height:42px!important;
+  min-height:42px!important;
+  margin:0!important;
+  padding:0!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  list-style:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix3-disclosure="1"] > summary::after{
+  display:none!important;
+  content:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix3-disclosure="1"] > summary::-webkit-details-marker{
+  display:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix3-disclosure="1"] > summary::before{
+  content:"▾"!important;
+  display:block!important;
+  font-size:14px!important;
+  line-height:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix3-disclosure="1"]:not([open]) > summary::before{
+  content:"▸"!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix3-filters="1"]{
+  grid-column:2!important;
+  grid-row:1!important;
+  width:100%!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+  display:grid!important;
+  grid-template-columns:
+    92px 142px 94px 107px 82px 145px minmax(220px,1fr)
+    !important;
+  column-gap:7px!important;
+  row-gap:2mm!important;
+  align-items:end!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix3-filter]{
+  width:auto!important;
+  min-width:0!important;
+  max-width:none!important;
+  margin:0!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix3-filter="year"]{grid-column:1!important;grid-row:1!important}
+#activityDirectorySection
+[data-cgweb118fix3-filter="date"]{grid-column:2!important;grid-row:1!important}
+#activityDirectorySection
+[data-cgweb118fix3-filter="sport"]{grid-column:3!important;grid-row:1!important}
+#activityDirectorySection
+[data-cgweb118fix3-filter="fit"]{grid-column:4!important;grid-row:1!important}
+#activityDirectorySection
+[data-cgweb118fix3-filter="landmark"]{grid-column:5!important;grid-row:1!important}
+#activityDirectorySection
+[data-cgweb118fix3-filter="order"]{grid-column:6!important;grid-row:1!important}
+#activityDirectorySection
+[data-cgweb118fix3-filter="equipment"]{
+  grid-column:7!important;
+  grid-row:1!important;
+  width:100%!important;
+}
+#activityDirectorySection
+[data-cgweb118fix3-filter="search"]{display:none!important}
+
+#activityDirectorySection
+[data-cgweb118fix3-filter] input,
+#activityDirectorySection
+[data-cgweb118fix3-filter] select{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix3-meta="1"]{
+  grid-column:1/-1!important;
+  grid-row:auto!important;
+  margin-top:0!important;
+}
+
+@media(max-width:1199px){
+  #activityDirectorySection
+  [data-cgweb118fix3-filters="1"]{
+    grid-template-columns:repeat(4,minmax(100px,1fr))!important;
+  }
+
+  #activityDirectorySection
+  [data-cgweb118fix3-filter]{
+    grid-column:auto!important;
+    grid-row:auto!important;
+  }
+
+  #activityDirectorySection
+  [data-cgweb118fix3-filter="equipment"]{
+    width:auto!important;
+  }
+}
+`;
+
+  document.head.appendChild(style);
+}
+
+function cgweb118Fix3Refresh() {
+  cgweb118Fix3InstallStyles();
+  cgweb118Fix3ApplyFilterbar();
+}
+
+let cgweb118Fix3Pending = false;
+
+function cgweb118Fix3Schedule() {
+  if (cgweb118Fix3Pending) return;
+
+  cgweb118Fix3Pending = true;
+
+  requestAnimationFrame(() => {
+    cgweb118Fix3Pending = false;
+    cgweb118Fix3Refresh();
+  });
+}
+
+const cgweb118Fix3Observer =
+  new MutationObserver(cgweb118Fix3Schedule);
+
+if (document.body) {
+  cgweb118Fix3Observer.observe(
+    document.body,
+    { childList: true, subtree: true }
+  );
+}
+
+window.addEventListener(
+  "resize",
+  cgweb118Fix3Schedule,
+  { passive: true }
+);
+
+cgweb118Fix3Refresh();
+
+window.CGWEB118_FIX3 = Object.freeze({
+  version: "CGWEB118 FIX3",
+  refresh: cgweb118Fix3Refresh
+});
+
+/* CGWEB118_FIX3_END */
+
+/* CGWEB118_FIX4_START
+ *
+ * Correction de compréhension :
+ * - le bandeau à conserver/modifier est le bandeau HISTORIQUE
+ *   Année / Date / Sport / Matériel / FIT / Repère / Recherche / Ordre.
+ * - le panneau avancé Filtre 1 / Filtre 2 / Sous-sport / Source...
+ *   n'est pas souhaité dans l'interface et doit rester masqué.
+ */
+
+function cgweb118Fix4Norm(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+function cgweb118Fix4OwnText(node) {
+  if (!node) return "";
+
+  return cgweb118Fix4Norm(
+    [...node.childNodes]
+      .filter(child => child.nodeType === Node.TEXT_NODE)
+      .map(child => child.textContent || "")
+      .join(" ")
+  );
+}
+
+function cgweb118Fix4FindHistoricalFilters(section) {
+  if (!section) return null;
+
+  const groups =
+    [...section.querySelectorAll(".filters")];
+
+  let best = null;
+  let bestScore = -1;
+
+  for (const group of groups) {
+    const text =
+      cgweb118Fix4Norm(group.textContent);
+
+    const required = [
+      "année",
+      "date",
+      "sport",
+      "matériel",
+      "fit",
+      "repère",
+      "ordre"
+    ];
+
+    const score =
+      required.filter(word =>
+        text.includes(word)
+      ).length;
+
+    /*
+     * Le bandeau historique est le seul qui possède simultanément
+     * FIT + Repère + Ordre + Matériel + Année + Date + Sport.
+     */
+    if (
+      score > bestScore &&
+      text.includes("fit") &&
+      text.includes("ordre") &&
+      text.includes("matériel")
+    ) {
+      best = group;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 6 ? best : null;
+}
+
+function cgweb118Fix4FindAdvancedPanel(section, historicalFilters) {
+  if (!section) return null;
+
+  const candidates =
+    [...section.querySelectorAll(
+      "div,section,form,fieldset,article"
+    )]
+      .filter(node => {
+        const text =
+          cgweb118Fix4Norm(
+            node.textContent
+          );
+
+        return (
+          text.includes("filtre 1") &&
+          text.includes("filtre 2") &&
+          text.includes("sous-sport") &&
+          text.includes("source")
+        );
+      })
+      .filter(node =>
+        !historicalFilters ||
+        !node.contains(historicalFilters)
+      )
+      .sort((a, b) =>
+        (a.textContent || "").length -
+        (b.textContent || "").length
+      );
+
+  return candidates[0] || null;
+}
+
+function cgweb118Fix4KeyForWrapper(wrapper) {
+  if (!wrapper) return "";
+
+  const control =
+    wrapper.matches?.("input,select")
+      ? wrapper
+      : wrapper.querySelector?.(
+          "input,select"
+        );
+
+  if (!control) return "";
+
+  const text =
+    cgweb118Fix4Norm(
+      wrapper.textContent
+    );
+
+  const placeholder =
+    cgweb118Fix4Norm(
+      control.getAttribute?.(
+        "placeholder"
+      )
+    );
+
+  if (text.includes("année")) return "year";
+  if (text.startsWith("date")) return "date";
+  if (text.startsWith("sport")) return "sport";
+  if (text.startsWith("matériel")) return "equipment";
+  if (text.startsWith("fit")) return "fit";
+  if (text.startsWith("repère")) return "landmark";
+  if (text.startsWith("ordre")) return "order";
+
+  if (
+    text.startsWith("recherche") ||
+    placeholder.includes("nom, date") ||
+    placeholder.includes("source")
+  ) {
+    return "search";
+  }
+
+  return "";
+}
+
+function cgweb118Fix4ResetOldFilterMarks(section) {
+  if (!section) return;
+
+  for (
+    const node of
+    section.querySelectorAll(
+      "[data-cgweb118fix3-disclosure]," +
+      "[data-cgweb118fix3-filters]," +
+      "[data-cgweb118fix3-filter]," +
+      "[data-cgweb118fix3-meta]"
+    )
+  ) {
+    delete node.dataset.cgweb118fix3Disclosure;
+    delete node.dataset.cgweb118fix3Filters;
+    delete node.dataset.cgweb118fix3Filter;
+    delete node.dataset.cgweb118fix3Meta;
+  }
+}
+
+function cgweb118Fix4Apply() {
+  const section =
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if (!section) return;
+
+  /*
+   * FIX3 ne doit plus piloter le DOM.
+   */
+  if (
+    typeof cgweb118Fix3Observer !==
+    "undefined"
+  ) {
+    try {
+      cgweb118Fix3Observer.disconnect();
+    } catch (_) {}
+  }
+
+  const oldFix3Style =
+    document.getElementById(
+      "cgweb118Fix3Ui"
+    );
+
+  if (oldFix3Style) {
+    oldFix3Style.remove();
+  }
+
+  cgweb118Fix4ResetOldFilterMarks(
+    section
+  );
+
+  const filters =
+    cgweb118Fix4FindHistoricalFilters(
+      section
+    );
+
+  if (!filters) {
+    console.warn(
+      "CGWEB118 FIX4 · bandeau historique introuvable."
+    );
+    return;
+  }
+
+  const disclosure =
+    filters.closest("details") ||
+    filters.parentElement;
+
+  if (!disclosure) return;
+
+  disclosure.dataset.cgweb118fix4Historical =
+    "1";
+
+  filters.dataset.cgweb118fix4Filters =
+    "1";
+
+  /*
+   * Masque le panneau avancé apparu par erreur.
+   */
+  const advanced =
+    cgweb118Fix4FindAdvancedPanel(
+      section,
+      filters
+    );
+
+  if (advanced) {
+    advanced.dataset.cgweb118fix4Advanced =
+      "1";
+  }
+
+  /*
+   * Identifie les vrais wrappers du bandeau historique.
+   */
+  for (
+    const child of
+    [...filters.children]
+  ) {
+    const key =
+      cgweb118Fix4KeyForWrapper(
+        child
+      );
+
+    if (key) {
+      child.dataset.cgweb118fix4Filter =
+        key;
+
+      delete child.dataset.cgweb118fix4Meta;
+    } else {
+      child.dataset.cgweb118fix4Meta =
+        "1";
+    }
+  }
+
+  /*
+   * Fallback pour les contrôles imbriqués.
+   */
+  for (
+    const control of
+    filters.querySelectorAll(
+      "input,select"
+    )
+  ) {
+    let wrapper = control;
+
+    while (
+      wrapper.parentElement &&
+      wrapper.parentElement !== filters
+    ) {
+      wrapper = wrapper.parentElement;
+    }
+
+    if (
+      wrapper.parentElement !==
+      filters
+    ) {
+      continue;
+    }
+
+    if (
+      wrapper.dataset
+        .cgweb118fix4Filter
+    ) {
+      continue;
+    }
+
+    const key =
+      cgweb118Fix4KeyForWrapper(
+        wrapper
+      );
+
+    if (key) {
+      wrapper.dataset.cgweb118fix4Filter =
+        key;
+
+      delete wrapper.dataset.cgweb118fix4Meta;
+    }
+  }
+
+  const searchWrapper =
+    filters.querySelector(
+      '[data-cgweb118fix4-filter="search"]'
+    );
+
+  if (searchWrapper) {
+    const input =
+      searchWrapper.querySelector(
+        "input"
+      );
+
+    if (input && input.value) {
+      input.value = "";
+
+      input.dispatchEvent(
+        new Event(
+          "input",
+          { bubbles: true }
+        )
+      );
+    }
+  }
+}
+
+function cgweb118Fix4InstallStyles() {
+  if (
+    document.getElementById(
+      "cgweb118Fix4Ui"
+    )
+  ) return;
+
+  const style =
+    document.createElement(
+      "style"
+    );
+
+  style.id =
+    "cgweb118Fix4Ui";
+
+  style.textContent = `
+/* =========================================================
+   CGWEB118 FIX4
+   Seul le BANDEAU HISTORIQUE est remanié.
+   ========================================================= */
+
+/* Panneau avancé non souhaité */
+#activityDirectorySection
+[data-cgweb118fix4-advanced="1"]{
+  display:none!important;
+}
+
+/* Bandeau historique */
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]{
+  display:grid!important;
+  grid-template-columns:20px minmax(0,1fr)!important;
+  column-gap:2mm!important;
+  row-gap:0!important;
+  align-items:start!important;
+  margin:2mm 0!important;
+  padding:2mm!important;
+  box-sizing:border-box!important;
+}
+
+/* Triangle directement à gauche des champs */
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]
+> summary{
+  grid-column:1!important;
+  grid-row:1!important;
+  align-self:end!important;
+  width:20px!important;
+  min-width:20px!important;
+  height:46px!important;
+  min-height:46px!important;
+  margin:0!important;
+  padding:0!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  list-style:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]
+> summary::after{
+  display:none!important;
+  content:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]
+> summary::-webkit-details-marker{
+  display:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]
+> summary::before{
+  content:"▾"!important;
+  display:block!important;
+  font-size:14px!important;
+  line-height:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]:not([open])
+> summary::before{
+  content:"▸"!important;
+}
+
+/* Ligne de filtres */
+#activityDirectorySection
+[data-cgweb118fix4-filters="1"]{
+  grid-column:2!important;
+  grid-row:1!important;
+  width:100%!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+  display:grid!important;
+  grid-template-columns:
+    92px
+    142px
+    94px
+    107px
+    82px
+    145px
+    minmax(220px,1fr)
+    !important;
+  column-gap:7px!important;
+  row-gap:2mm!important;
+  align-items:end!important;
+  box-sizing:border-box!important;
+}
+
+/* Ordre demandé :
+   Année / Date / Sport / FIT / Repère / Ordre / Matériel */
+#activityDirectorySection
+[data-cgweb118fix4-filter="year"]{
+  grid-column:1!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="date"]{
+  grid-column:2!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="sport"]{
+  grid-column:3!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="fit"]{
+  grid-column:4!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="landmark"]{
+  grid-column:5!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="order"]{
+  grid-column:6!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="equipment"]{
+  grid-column:7!important;
+  grid-row:1!important;
+  width:100%!important;
+}
+
+/* Recherche supprimée */
+#activityDirectorySection
+[data-cgweb118fix4-filter="search"]{
+  display:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter]{
+  min-width:0!important;
+  max-width:none!important;
+  width:auto!important;
+  margin:0!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter]
+input,
+
+#activityDirectorySection
+[data-cgweb118fix4-filter]
+select{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+
+/* Compteur + boutons sous la ligne */
+#activityDirectorySection
+[data-cgweb118fix4-meta="1"]{
+  grid-column:1/-1!important;
+  grid-row:auto!important;
+  margin:0!important;
+}
+
+/* Responsive seulement si l'écran devient vraiment étroit */
+@media(max-width:1199px){
+  #activityDirectorySection
+  [data-cgweb118fix4-filters="1"]{
+    grid-template-columns:
+      repeat(4,minmax(100px,1fr))
+      !important;
+  }
+
+  #activityDirectorySection
+  [data-cgweb118fix4-filter]{
+    grid-column:auto!important;
+    grid-row:auto!important;
+  }
+
+  #activityDirectorySection
+  [data-cgweb118fix4-filter="equipment"]{
+    width:auto!important;
+  }
+}
+`;
+
+  document.head.appendChild(
+    style
+  );
+}
+
+function cgweb118Fix4Refresh() {
+  cgweb118Fix4InstallStyles();
+  cgweb118Fix4Apply();
+}
+
+let cgweb118Fix4Pending =
+  false;
+
+function cgweb118Fix4Schedule() {
+  if (cgweb118Fix4Pending) {
+    return;
+  }
+
+  cgweb118Fix4Pending = true;
+
+  requestAnimationFrame(() => {
+    cgweb118Fix4Pending = false;
+    cgweb118Fix4Refresh();
+  });
+}
+
+const cgweb118Fix4Observer =
+  new MutationObserver(
+    cgweb118Fix4Schedule
+  );
+
+if (document.body) {
+  cgweb118Fix4Observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+}
+
+window.addEventListener(
+  "resize",
+  cgweb118Fix4Schedule,
+  { passive: true }
+);
+
+cgweb118Fix4Refresh();
+
+window.CGWEB118_FIX4 =
+  Object.freeze({
+    version:
+      "CGWEB118 FIX4",
+    refresh:
+      cgweb118Fix4Refresh
+  });
+
+/* CGWEB118_FIX4_END */
+
+/* CGWEB118_FIX5_START */
+
+function cgweb118Fix5Norm(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+function cgweb118Fix5IsVisible(node) {
+  return !!(
+    node &&
+    (
+      node.offsetWidth ||
+      node.offsetHeight ||
+      node.getClientRects?.().length
+    )
+  );
+}
+
+function cgweb118Fix5FindResetButton() {
+  return [...document.querySelectorAll("button")]
+    .find(button =>
+      cgweb118Fix5IsVisible(button) &&
+      cgweb118Fix5Norm(button.textContent) === "réinitialiser"
+    ) || null;
+}
+
+function cgweb118Fix5FindPanel(resetButton) {
+  if (!resetButton) return null;
+
+  const directDetails = resetButton.closest("details");
+  if (directDetails) return directDetails;
+
+  let node = resetButton.parentElement;
+
+  while (node && node !== document.body) {
+    const text = cgweb118Fix5Norm(node.innerText);
+
+    if (
+      text.includes("année") &&
+      text.includes("date") &&
+      text.includes("sport") &&
+      text.includes("matériel") &&
+      text.includes("actualiser la base")
+    ) {
+      return node;
+    }
+
+    node = node.parentElement;
+  }
+
+  return null;
+}
+
+function cgweb118Fix5LeafLabel(panel, label) {
+  if (!panel) return null;
+
+  const wanted = cgweb118Fix5Norm(label);
+
+  const candidates =
+    [...panel.querySelectorAll("label,span,div,p,small,strong")]
+      .filter(node =>
+        cgweb118Fix5IsVisible(node) &&
+        cgweb118Fix5Norm(node.textContent) === wanted
+      )
+      .sort((a, b) =>
+        a.children.length - b.children.length ||
+        a.outerHTML.length - b.outerHTML.length
+      );
+
+  return candidates[0] || null;
+}
+
+function cgweb118Fix5FieldWrapper(panel, label) {
+  const labelNode = cgweb118Fix5LeafLabel(panel, label);
+  if (!labelNode) return null;
+
+  let node = labelNode;
+
+  while (node && node !== panel) {
+    const controls = node.querySelectorAll?.("input,select") || [];
+
+    if (
+      controls.length === 1 &&
+      node.contains(labelNode)
+    ) {
+      return node;
+    }
+
+    node = node.parentElement;
+  }
+
+  return null;
+}
+
+function cgweb118Fix5CommonParent(nodes) {
+  const valid = nodes.filter(Boolean);
+  if (!valid.length) return null;
+
+  const parent = valid[0].parentElement;
+
+  if (
+    parent &&
+    valid.every(node => node.parentElement === parent)
+  ) {
+    return parent;
+  }
+
+  return null;
+}
+
+function cgweb118Fix5StopLegacyObservers() {
+  try {
+    if (typeof cgweb118Fix3Observer !== "undefined") {
+      cgweb118Fix3Observer.disconnect();
+    }
+  } catch (_) {}
+
+  try {
+    if (typeof cgweb118Fix4Observer !== "undefined") {
+      cgweb118Fix4Observer.disconnect();
+    }
+  } catch (_) {}
+
+  document.getElementById("cgweb118Fix3Ui")?.remove();
+  document.getElementById("cgweb118Fix4Ui")?.remove();
+}
+
+function cgweb118Fix5Apply() {
+  cgweb118Fix5StopLegacyObservers();
+
+  const reset = cgweb118Fix5FindResetButton();
+  if (!reset) return;
+
+  const panel = cgweb118Fix5FindPanel(reset);
+  if (!panel) return;
+
+  const fields = {
+    year: cgweb118Fix5FieldWrapper(panel, "Année"),
+    date: cgweb118Fix5FieldWrapper(panel, "Date"),
+    sport: cgweb118Fix5FieldWrapper(panel, "Sport"),
+    fit: cgweb118Fix5FieldWrapper(panel, "FIT"),
+    landmark: cgweb118Fix5FieldWrapper(panel, "Repère"),
+    order: cgweb118Fix5FieldWrapper(panel, "Ordre"),
+    equipment: cgweb118Fix5FieldWrapper(panel, "Matériel"),
+    search: cgweb118Fix5FieldWrapper(panel, "Recherche")
+  };
+
+  const required = [
+    fields.year,
+    fields.date,
+    fields.sport,
+    fields.fit,
+    fields.landmark,
+    fields.order,
+    fields.equipment
+  ];
+
+  if (required.some(node => !node)) return;
+
+  const fieldParent =
+    cgweb118Fix5CommonParent([
+      ...required,
+      fields.search
+    ]);
+
+  if (!fieldParent) return;
+
+  panel.dataset.cgweb118fix5Panel = "1";
+  fieldParent.dataset.cgweb118fix5Fields = "1";
+
+  const ordered = [
+    ["year", fields.year],
+    ["date", fields.date],
+    ["sport", fields.sport],
+    ["fit", fields.fit],
+    ["landmark", fields.landmark],
+    ["order", fields.order],
+    ["equipment", fields.equipment]
+  ];
+
+  ordered.forEach(([key, node]) => {
+    node.dataset.cgweb118fix5Field = key;
+  });
+
+  if (fields.search) {
+    fields.search.dataset.cgweb118fix5Field = "search";
+
+    const input = fields.search.querySelector("input");
+    if (input?.value) {
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }
+
+  for (const child of [...fieldParent.children]) {
+    if (!child.dataset.cgweb118fix5Field) {
+      child.dataset.cgweb118fix5Meta = "1";
+    }
+  }
+}
+
+function cgweb118Fix5InstallStyles() {
+  if (document.getElementById("cgweb118Fix5Ui")) return;
+
+  const style = document.createElement("style");
+  style.id = "cgweb118Fix5Ui";
+  style.textContent = `
+[data-cgweb118fix5-panel="1"]{
+  display:grid!important;
+  grid-template-columns:20px minmax(0,1fr)!important;
+  column-gap:2mm!important;
+  row-gap:0!important;
+  align-items:start!important;
+  margin:2mm 0!important;
+  padding:2mm!important;
+  box-sizing:border-box!important;
+}
+
+[data-cgweb118fix5-panel="1"] > summary{
+  grid-column:1!important;
+  grid-row:1!important;
+  width:20px!important;
+  min-width:20px!important;
+  height:46px!important;
+  min-height:46px!important;
+  margin:0!important;
+  padding:0!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  list-style:none!important;
+}
+
+[data-cgweb118fix5-panel="1"] > summary::after{
+  display:none!important;
+  content:none!important;
+}
+
+[data-cgweb118fix5-panel="1"] > summary::-webkit-details-marker{
+  display:none!important;
+}
+
+[data-cgweb118fix5-panel="1"] > summary::before{
+  content:"▾"!important;
+  font-size:14px!important;
+  line-height:1!important;
+}
+
+[data-cgweb118fix5-panel="1"]:not([open]) > summary::before{
+  content:"▸"!important;
+}
+
+[data-cgweb118fix5-fields="1"]{
+  grid-column:2!important;
+  grid-row:1!important;
+  width:100%!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+  display:grid!important;
+  grid-template-columns:
+    92px
+    142px
+    94px
+    107px
+    82px
+    145px
+    minmax(240px,1fr)
+    !important;
+  column-gap:7px!important;
+  row-gap:2mm!important;
+  align-items:end!important;
+  box-sizing:border-box!important;
+}
+
+[data-cgweb118fix5-field="year"]{grid-column:1!important;grid-row:1!important}
+[data-cgweb118fix5-field="date"]{grid-column:2!important;grid-row:1!important}
+[data-cgweb118fix5-field="sport"]{grid-column:3!important;grid-row:1!important}
+[data-cgweb118fix5-field="fit"]{grid-column:4!important;grid-row:1!important}
+[data-cgweb118fix5-field="landmark"]{grid-column:5!important;grid-row:1!important}
+[data-cgweb118fix5-field="order"]{grid-column:6!important;grid-row:1!important}
+[data-cgweb118fix5-field="equipment"]{
+  grid-column:7!important;
+  grid-row:1!important;
+  width:100%!important;
+}
+
+[data-cgweb118fix5-field="search"]{
+  display:none!important;
+}
+
+[data-cgweb118fix5-field]{
+  min-width:0!important;
+  max-width:none!important;
+  margin:0!important;
+}
+
+[data-cgweb118fix5-field] input,
+[data-cgweb118fix5-field] select{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+
+[data-cgweb118fix5-meta="1"]{
+  grid-column:1/-1!important;
+  grid-row:auto!important;
+}
+
+@media(max-width:1199px){
+  [data-cgweb118fix5-fields="1"]{
+    grid-template-columns:repeat(4,minmax(100px,1fr))!important;
+  }
+
+  [data-cgweb118fix5-field]{
+    grid-column:auto!important;
+    grid-row:auto!important;
+  }
+}
+`;
+
+  document.head.appendChild(style);
+}
+
+function cgweb118Fix5Refresh() {
+  cgweb118Fix5InstallStyles();
+  cgweb118Fix5Apply();
+}
+
+let cgweb118Fix5Pending = false;
+
+function cgweb118Fix5Schedule() {
+  if (cgweb118Fix5Pending) return;
+
+  cgweb118Fix5Pending = true;
+
+  requestAnimationFrame(() => {
+    cgweb118Fix5Pending = false;
+    cgweb118Fix5Refresh();
+  });
+}
+
+const cgweb118Fix5Observer =
+  new MutationObserver(cgweb118Fix5Schedule);
+
+if (document.body) {
+  cgweb118Fix5Observer.observe(
+    document.body,
+    { childList: true, subtree: true }
+  );
+}
+
+window.addEventListener(
+  "resize",
+  cgweb118Fix5Schedule,
+  { passive: true }
+);
+
+cgweb118Fix5Refresh();
+
+window.CGWEB118_FIX5 = Object.freeze({
+  version: "CGWEB118 FIX5",
+  refresh: cgweb118Fix5Refresh
+});
+
+/* CGWEB118_FIX5_END */
 
 /* CGWEB118_FIX7_RUNTIME_STATUS_START */
 window.CGWEB118_FIX7_DUP_STATUS = function () {
@@ -37854,47 +38975,3 @@ window.CGWEB118_FIX7_DUP_STATUS = function () {
   };
 };
 /* CGWEB118_FIX7_RUNTIME_STATUS_END */
-
-/* CGWEB118_FIX8_RUNTIME_STATUS_START */
-window.CGWEB118_FIX8_STATUS = function () {
-  const panel = document.querySelector(
-    "#activityDirectorySection > details.activity-filters-web049"
-  );
-
-  const filters =
-    panel?.querySelector(":scope > .filters") || null;
-
-  const fields = filters
-    ? [...filters.children]
-        .map(node => node.dataset.cgweb118Fix8Field || "")
-        .filter(Boolean)
-    : [];
-
-  const search = filters?.querySelector(
-    '[data-cgweb118-fix8-field="search"]'
-  );
-
-  return {
-    panel_found: !!panel,
-    filters_found: !!filters,
-    open: !!panel?.open,
-    field_order: fields,
-    expected_order: [
-      "year",
-      "date",
-      "sport",
-      "fit",
-      "landmark",
-      "order",
-      "equipment",
-      "search"
-    ],
-    search_hidden: search
-      ? getComputedStyle(search).display === "none"
-      : true,
-    legacy_fix3_style: !!document.getElementById("cgweb118Fix3Ui"),
-    legacy_fix4_style: !!document.getElementById("cgweb118Fix4Ui"),
-    legacy_fix5_style: !!document.getElementById("cgweb118Fix5Ui")
-  };
-};
-/* CGWEB118_FIX8_RUNTIME_STATUS_END */
