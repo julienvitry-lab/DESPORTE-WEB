@@ -38527,3 +38527,372 @@ window.CGWEB118_FIX4 =
   });
 
 /* CGWEB118_FIX4_END */
+
+/* CGWEB118_FIX5_START */
+
+function cgweb118Fix5Norm(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+function cgweb118Fix5IsVisible(node) {
+  return !!(
+    node &&
+    (
+      node.offsetWidth ||
+      node.offsetHeight ||
+      node.getClientRects?.().length
+    )
+  );
+}
+
+function cgweb118Fix5FindResetButton() {
+  return [...document.querySelectorAll("button")]
+    .find(button =>
+      cgweb118Fix5IsVisible(button) &&
+      cgweb118Fix5Norm(button.textContent) === "réinitialiser"
+    ) || null;
+}
+
+function cgweb118Fix5FindPanel(resetButton) {
+  if (!resetButton) return null;
+
+  const directDetails = resetButton.closest("details");
+  if (directDetails) return directDetails;
+
+  let node = resetButton.parentElement;
+
+  while (node && node !== document.body) {
+    const text = cgweb118Fix5Norm(node.innerText);
+
+    if (
+      text.includes("année") &&
+      text.includes("date") &&
+      text.includes("sport") &&
+      text.includes("matériel") &&
+      text.includes("actualiser la base")
+    ) {
+      return node;
+    }
+
+    node = node.parentElement;
+  }
+
+  return null;
+}
+
+function cgweb118Fix5LeafLabel(panel, label) {
+  if (!panel) return null;
+
+  const wanted = cgweb118Fix5Norm(label);
+
+  const candidates =
+    [...panel.querySelectorAll("label,span,div,p,small,strong")]
+      .filter(node =>
+        cgweb118Fix5IsVisible(node) &&
+        cgweb118Fix5Norm(node.textContent) === wanted
+      )
+      .sort((a, b) =>
+        a.children.length - b.children.length ||
+        a.outerHTML.length - b.outerHTML.length
+      );
+
+  return candidates[0] || null;
+}
+
+function cgweb118Fix5FieldWrapper(panel, label) {
+  const labelNode = cgweb118Fix5LeafLabel(panel, label);
+  if (!labelNode) return null;
+
+  let node = labelNode;
+
+  while (node && node !== panel) {
+    const controls = node.querySelectorAll?.("input,select") || [];
+
+    if (
+      controls.length === 1 &&
+      node.contains(labelNode)
+    ) {
+      return node;
+    }
+
+    node = node.parentElement;
+  }
+
+  return null;
+}
+
+function cgweb118Fix5CommonParent(nodes) {
+  const valid = nodes.filter(Boolean);
+  if (!valid.length) return null;
+
+  const parent = valid[0].parentElement;
+
+  if (
+    parent &&
+    valid.every(node => node.parentElement === parent)
+  ) {
+    return parent;
+  }
+
+  return null;
+}
+
+function cgweb118Fix5StopLegacyObservers() {
+  try {
+    if (typeof cgweb118Fix3Observer !== "undefined") {
+      cgweb118Fix3Observer.disconnect();
+    }
+  } catch (_) {}
+
+  try {
+    if (typeof cgweb118Fix4Observer !== "undefined") {
+      cgweb118Fix4Observer.disconnect();
+    }
+  } catch (_) {}
+
+  document.getElementById("cgweb118Fix3Ui")?.remove();
+  document.getElementById("cgweb118Fix4Ui")?.remove();
+}
+
+function cgweb118Fix5Apply() {
+  cgweb118Fix5StopLegacyObservers();
+
+  const reset = cgweb118Fix5FindResetButton();
+  if (!reset) return;
+
+  const panel = cgweb118Fix5FindPanel(reset);
+  if (!panel) return;
+
+  const fields = {
+    year: cgweb118Fix5FieldWrapper(panel, "Année"),
+    date: cgweb118Fix5FieldWrapper(panel, "Date"),
+    sport: cgweb118Fix5FieldWrapper(panel, "Sport"),
+    fit: cgweb118Fix5FieldWrapper(panel, "FIT"),
+    landmark: cgweb118Fix5FieldWrapper(panel, "Repère"),
+    order: cgweb118Fix5FieldWrapper(panel, "Ordre"),
+    equipment: cgweb118Fix5FieldWrapper(panel, "Matériel"),
+    search: cgweb118Fix5FieldWrapper(panel, "Recherche")
+  };
+
+  const required = [
+    fields.year,
+    fields.date,
+    fields.sport,
+    fields.fit,
+    fields.landmark,
+    fields.order,
+    fields.equipment
+  ];
+
+  if (required.some(node => !node)) return;
+
+  const fieldParent =
+    cgweb118Fix5CommonParent([
+      ...required,
+      fields.search
+    ]);
+
+  if (!fieldParent) return;
+
+  panel.dataset.cgweb118fix5Panel = "1";
+  fieldParent.dataset.cgweb118fix5Fields = "1";
+
+  const ordered = [
+    ["year", fields.year],
+    ["date", fields.date],
+    ["sport", fields.sport],
+    ["fit", fields.fit],
+    ["landmark", fields.landmark],
+    ["order", fields.order],
+    ["equipment", fields.equipment]
+  ];
+
+  ordered.forEach(([key, node]) => {
+    node.dataset.cgweb118fix5Field = key;
+  });
+
+  if (fields.search) {
+    fields.search.dataset.cgweb118fix5Field = "search";
+
+    const input = fields.search.querySelector("input");
+    if (input?.value) {
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }
+
+  for (const child of [...fieldParent.children]) {
+    if (!child.dataset.cgweb118fix5Field) {
+      child.dataset.cgweb118fix5Meta = "1";
+    }
+  }
+}
+
+function cgweb118Fix5InstallStyles() {
+  if (document.getElementById("cgweb118Fix5Ui")) return;
+
+  const style = document.createElement("style");
+  style.id = "cgweb118Fix5Ui";
+  style.textContent = `
+[data-cgweb118fix5-panel="1"]{
+  display:grid!important;
+  grid-template-columns:20px minmax(0,1fr)!important;
+  column-gap:2mm!important;
+  row-gap:0!important;
+  align-items:start!important;
+  margin:2mm 0!important;
+  padding:2mm!important;
+  box-sizing:border-box!important;
+}
+
+[data-cgweb118fix5-panel="1"] > summary{
+  grid-column:1!important;
+  grid-row:1!important;
+  width:20px!important;
+  min-width:20px!important;
+  height:46px!important;
+  min-height:46px!important;
+  margin:0!important;
+  padding:0!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  list-style:none!important;
+}
+
+[data-cgweb118fix5-panel="1"] > summary::after{
+  display:none!important;
+  content:none!important;
+}
+
+[data-cgweb118fix5-panel="1"] > summary::-webkit-details-marker{
+  display:none!important;
+}
+
+[data-cgweb118fix5-panel="1"] > summary::before{
+  content:"▾"!important;
+  font-size:14px!important;
+  line-height:1!important;
+}
+
+[data-cgweb118fix5-panel="1"]:not([open]) > summary::before{
+  content:"▸"!important;
+}
+
+[data-cgweb118fix5-fields="1"]{
+  grid-column:2!important;
+  grid-row:1!important;
+  width:100%!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+  display:grid!important;
+  grid-template-columns:
+    92px
+    142px
+    94px
+    107px
+    82px
+    145px
+    minmax(240px,1fr)
+    !important;
+  column-gap:7px!important;
+  row-gap:2mm!important;
+  align-items:end!important;
+  box-sizing:border-box!important;
+}
+
+[data-cgweb118fix5-field="year"]{grid-column:1!important;grid-row:1!important}
+[data-cgweb118fix5-field="date"]{grid-column:2!important;grid-row:1!important}
+[data-cgweb118fix5-field="sport"]{grid-column:3!important;grid-row:1!important}
+[data-cgweb118fix5-field="fit"]{grid-column:4!important;grid-row:1!important}
+[data-cgweb118fix5-field="landmark"]{grid-column:5!important;grid-row:1!important}
+[data-cgweb118fix5-field="order"]{grid-column:6!important;grid-row:1!important}
+[data-cgweb118fix5-field="equipment"]{
+  grid-column:7!important;
+  grid-row:1!important;
+  width:100%!important;
+}
+
+[data-cgweb118fix5-field="search"]{
+  display:none!important;
+}
+
+[data-cgweb118fix5-field]{
+  min-width:0!important;
+  max-width:none!important;
+  margin:0!important;
+}
+
+[data-cgweb118fix5-field] input,
+[data-cgweb118fix5-field] select{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+
+[data-cgweb118fix5-meta="1"]{
+  grid-column:1/-1!important;
+  grid-row:auto!important;
+}
+
+@media(max-width:1199px){
+  [data-cgweb118fix5-fields="1"]{
+    grid-template-columns:repeat(4,minmax(100px,1fr))!important;
+  }
+
+  [data-cgweb118fix5-field]{
+    grid-column:auto!important;
+    grid-row:auto!important;
+  }
+}
+`;
+
+  document.head.appendChild(style);
+}
+
+function cgweb118Fix5Refresh() {
+  cgweb118Fix5InstallStyles();
+  cgweb118Fix5Apply();
+}
+
+let cgweb118Fix5Pending = false;
+
+function cgweb118Fix5Schedule() {
+  if (cgweb118Fix5Pending) return;
+
+  cgweb118Fix5Pending = true;
+
+  requestAnimationFrame(() => {
+    cgweb118Fix5Pending = false;
+    cgweb118Fix5Refresh();
+  });
+}
+
+const cgweb118Fix5Observer =
+  new MutationObserver(cgweb118Fix5Schedule);
+
+if (document.body) {
+  cgweb118Fix5Observer.observe(
+    document.body,
+    { childList: true, subtree: true }
+  );
+}
+
+window.addEventListener(
+  "resize",
+  cgweb118Fix5Schedule,
+  { passive: true }
+);
+
+cgweb118Fix5Refresh();
+
+window.CGWEB118_FIX5 = Object.freeze({
+  version: "CGWEB118 FIX5",
+  refresh: cgweb118Fix5Refresh
+});
+
+/* CGWEB118_FIX5_END */
