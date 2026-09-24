@@ -38326,3 +38326,392 @@ window.CGWEB118_FIX9_FIX2_STATUS = function () {
 };
 
 /* CGWEB118_FIX9_FIX2_END */
+
+/* CGWEB118_FIX10_START
+   OBJECTIVES_FOUR_COLUMNS001 / OBJECTIVE_LABELS_SIMPLIFY001
+   NUMBER_SPINNER_REMOVE001 / OBJECTIVES_FULL_WIDTH001
+*/
+
+function cgweb118Fix10InstallStyles() {
+  let style =
+    document.getElementById("cgweb118Fix10Ui");
+
+  if (style) return style;
+
+  style = document.createElement("style");
+  style.id = "cgweb118Fix10Ui";
+
+  style.textContent = `
+#personalSyncSection
+.personal-sync-card:has(#cgweb118GoalsGrid){
+  width:100%!important;
+  max-width:none!important;
+  box-sizing:border-box!important;
+}
+
+#cgweb118GoalsGrid{
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+  box-sizing:border-box!important;
+  display:grid!important;
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  grid-template-rows:auto auto!important;
+  column-gap:2mm!important;
+  row-gap:2mm!important;
+  align-items:end!important;
+}
+
+#cgweb118GoalsGrid
+> .cgweb118-objective-group{
+  display:contents!important;
+  width:auto!important;
+  max-width:none!important;
+  min-width:0!important;
+  padding:0!important;
+  margin:0!important;
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+
+#cgweb118GoalsGrid
+> .cgweb118-objective-group:nth-of-type(1)
+> h4{
+  grid-column:1 / span 2!important;
+  grid-row:1!important;
+}
+
+#cgweb118GoalsGrid
+> .cgweb118-objective-group:nth-of-type(2)
+> h4{
+  grid-column:3 / span 2!important;
+  grid-row:1!important;
+}
+
+#cgweb118GoalsGrid
+> .cgweb118-objective-group
+> h4{
+  width:100%!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:0 0 1mm!important;
+  font-size:1.08rem!important;
+  line-height:1.15!important;
+  white-space:nowrap!important;
+}
+
+#cgweb118GoalsGrid
+> .cgweb118-objective-group:nth-of-type(1)
+> label:nth-of-type(1){
+  grid-column:1!important;
+  grid-row:2!important;
+}
+
+#cgweb118GoalsGrid
+> .cgweb118-objective-group:nth-of-type(1)
+> label:nth-of-type(2){
+  grid-column:2!important;
+  grid-row:2!important;
+}
+
+#cgweb118GoalsGrid
+> .cgweb118-objective-group:nth-of-type(2)
+> label:nth-of-type(1){
+  grid-column:3!important;
+  grid-row:2!important;
+}
+
+#cgweb118GoalsGrid
+> .cgweb118-objective-group:nth-of-type(2)
+> label:nth-of-type(2){
+  grid-column:4!important;
+  grid-row:2!important;
+}
+
+#cgweb118GoalsGrid
+> .cgweb118-objective-group
+> label{
+  display:flex!important;
+  flex-direction:column!important;
+  gap:1mm!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:0!important;
+  font-size:.95rem!important;
+  line-height:1.1!important;
+}
+
+#cgweb118GoalsGrid
+.cgweb118-fix10-label{
+  display:block!important;
+  margin:0!important;
+  padding:0!important;
+  font:inherit!important;
+  color:inherit!important;
+}
+
+#cgweb118GoalsGrid
+input[type="number"]{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  box-sizing:border-box!important;
+  -moz-appearance:textfield!important;
+  appearance:textfield!important;
+}
+
+#cgweb118GoalsGrid
+input[type="number"]::-webkit-inner-spin-button,
+#cgweb118GoalsGrid
+input[type="number"]::-webkit-outer-spin-button{
+  -webkit-appearance:none!important;
+  appearance:none!important;
+  margin:0!important;
+}
+
+@media(max-width:700px){
+  #cgweb118GoalsGrid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    grid-template-rows:auto auto auto auto!important;
+  }
+
+  #cgweb118GoalsGrid
+  > .cgweb118-objective-group:nth-of-type(1)
+  > h4{
+    grid-column:1 / span 2!important;
+    grid-row:1!important;
+  }
+
+  #cgweb118GoalsGrid
+  > .cgweb118-objective-group:nth-of-type(1)
+  > label:nth-of-type(1){
+    grid-column:1!important;
+    grid-row:2!important;
+  }
+
+  #cgweb118GoalsGrid
+  > .cgweb118-objective-group:nth-of-type(1)
+  > label:nth-of-type(2){
+    grid-column:2!important;
+    grid-row:2!important;
+  }
+
+  #cgweb118GoalsGrid
+  > .cgweb118-objective-group:nth-of-type(2)
+  > h4{
+    grid-column:1 / span 2!important;
+    grid-row:3!important;
+  }
+
+  #cgweb118GoalsGrid
+  > .cgweb118-objective-group:nth-of-type(2)
+  > label:nth-of-type(1){
+    grid-column:1!important;
+    grid-row:4!important;
+  }
+
+  #cgweb118GoalsGrid
+  > .cgweb118-objective-group:nth-of-type(2)
+  > label:nth-of-type(2){
+    grid-column:2!important;
+    grid-row:4!important;
+  }
+}
+`;
+
+  document.head.appendChild(style);
+  return style;
+}
+
+function cgweb118Fix10SetLabel(input, text) {
+  if (!input) return false;
+
+  const label = input.closest("label");
+  if (!label) return false;
+
+  let caption =
+    label.querySelector(
+      ":scope > .cgweb118-fix10-label"
+    );
+
+  if (!caption) {
+    caption = document.createElement("span");
+    caption.className = "cgweb118-fix10-label";
+  }
+
+  caption.textContent = text;
+  label.replaceChildren(caption, input);
+
+  return true;
+}
+
+function cgweb118Fix10ApplyObjectives() {
+  cgweb118Fix10InstallStyles();
+
+  const grid =
+    document.getElementById("cgweb118GoalsGrid");
+
+  const runDistance =
+    document.getElementById("goalDistanceInput");
+
+  const runAscent =
+    document.getElementById("goalAscentInput");
+
+  const bikeDistance =
+    document.getElementById("cgweb118BikeDistance");
+
+  const bikeAscent =
+    document.getElementById("cgweb118BikeAscent");
+
+  if (
+    !grid ||
+    !runDistance ||
+    !runAscent ||
+    !bikeDistance ||
+    !bikeAscent
+  ) {
+    return false;
+  }
+
+  cgweb118Fix10SetLabel(runDistance, "Distance");
+  cgweb118Fix10SetLabel(runAscent, "D+");
+  cgweb118Fix10SetLabel(bikeDistance, "Distance");
+  cgweb118Fix10SetLabel(bikeAscent, "D+");
+
+  const inputs = [
+    runDistance,
+    runAscent,
+    bikeDistance,
+    bikeAscent
+  ];
+
+  for (const input of inputs) {
+    input.dataset.cgweb118Fix10Keyboard = "1";
+
+    if (
+      input.dataset.cgweb118Fix10WheelBound !== "1"
+    ) {
+      input.addEventListener(
+        "wheel",
+        (event) => {
+          if (document.activeElement === input) {
+            event.preventDefault();
+          }
+        },
+        { passive:false }
+      );
+
+      input.dataset.cgweb118Fix10WheelBound = "1";
+    }
+  }
+
+  grid.dataset.cgweb118Fix10 = "1";
+
+  return true;
+}
+
+const cgweb118Fix10MountGoalsBase =
+  cgweb118MountGoals;
+
+cgweb118MountGoals =
+  function cgweb118Fix10MountGoals(...args) {
+    const result =
+      cgweb118Fix10MountGoalsBase.apply(
+        this,
+        args
+      );
+
+    cgweb118Fix10ApplyObjectives();
+
+    return result;
+  };
+
+function cgweb118Fix10Boot() {
+  const delays = [0, 100, 300, 700, 1500];
+
+  for (const delay of delays) {
+    setTimeout(
+      cgweb118Fix10ApplyObjectives,
+      delay
+    );
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb118Fix10Boot,
+    { once:true }
+  );
+} else {
+  cgweb118Fix10Boot();
+}
+
+window.CGWEB118_FIX10_STATUS = function () {
+  const grid =
+    document.getElementById("cgweb118GoalsGrid");
+
+  const inputs = [
+    document.getElementById("goalDistanceInput"),
+    document.getElementById("goalAscentInput"),
+    document.getElementById("cgweb118BikeDistance"),
+    document.getElementById("cgweb118BikeAscent")
+  ];
+
+  const labels = inputs.map((input) =>
+    input
+      ?.closest("label")
+      ?.querySelector(
+        ":scope > .cgweb118-fix10-label"
+      )
+      ?.textContent || null
+  );
+
+  const rects = inputs.map((input) => {
+    const rect =
+      input?.closest("label")
+        ?.getBoundingClientRect();
+
+    return rect
+      ? {
+          x:Math.round(rect.x),
+          y:Math.round(rect.y),
+          width:Math.round(rect.width)
+        }
+      : null;
+  });
+
+  return {
+    grid_found: !!grid,
+    applied:
+      grid?.dataset.cgweb118Fix10 === "1",
+    labels,
+    expected_labels: [
+      "Distance",
+      "D+",
+      "Distance",
+      "D+"
+    ],
+    four_columns_same_row:
+      rects.every(Boolean) &&
+      Math.max(...rects.map((r) => r.y)) -
+      Math.min(...rects.map((r) => r.y)) <= 3,
+    widths_px:
+      rects.map((r) => r?.width || null),
+    keyboard_inputs:
+      inputs.filter(
+        (input) =>
+          input?.dataset.cgweb118Fix10Keyboard === "1"
+      ).length,
+    duplicate_status:
+      typeof window.CGWEB118_FIX7_DUP_STATUS ===
+      "function"
+        ? window.CGWEB118_FIX7_DUP_STATUS()
+        : null
+  };
+};
+
+/* CGWEB118_FIX10_END */
