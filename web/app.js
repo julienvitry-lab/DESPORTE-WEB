@@ -39344,6 +39344,43 @@ window.CGWEB118_FIX11_STATUS = function () {
   apply();
   [100, 300, 700, 1500, 3000].forEach(ms => setTimeout(apply, ms));
 
+/* CGWEB118_FIX11_FIX3_START */
+  const cgweb118Fix11Fix3List =
+    document.getElementById("equipmentManagerList");
+
+  if (
+    cgweb118Fix11Fix3List &&
+    !window.__CGWEB118_FIX11_FIX3_OBSERVER__
+  ) {
+    let cgweb118Fix11Fix3Scheduled = false;
+
+    const cgweb118Fix11Fix3Reapply = () => {
+      if (cgweb118Fix11Fix3Scheduled) return;
+
+      cgweb118Fix11Fix3Scheduled = true;
+
+      queueMicrotask(() => {
+        cgweb118Fix11Fix3Scheduled = false;
+        apply();
+      });
+    };
+
+    const cgweb118Fix11Fix3Observer =
+      new MutationObserver(cgweb118Fix11Fix3Reapply);
+
+    cgweb118Fix11Fix3Observer.observe(
+      cgweb118Fix11Fix3List,
+      {
+        childList: true,
+        subtree: false
+      }
+    );
+
+    window.__CGWEB118_FIX11_FIX3_OBSERVER__ =
+      cgweb118Fix11Fix3Observer;
+  }
+/* CGWEB118_FIX11_FIX3_END */
+
   window.CGWEB118_FIX11_FIX1_STATUS = () => ({
     cards_compacted:
       document.querySelectorAll(".cgweb118-fix11fix1-card").length,
