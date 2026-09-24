@@ -37925,3 +37925,605 @@ window.CGWEB118_FIX3 = Object.freeze({
 });
 
 /* CGWEB118_FIX3_END */
+
+/* CGWEB118_FIX4_START
+ *
+ * Correction de compréhension :
+ * - le bandeau à conserver/modifier est le bandeau HISTORIQUE
+ *   Année / Date / Sport / Matériel / FIT / Repère / Recherche / Ordre.
+ * - le panneau avancé Filtre 1 / Filtre 2 / Sous-sport / Source...
+ *   n'est pas souhaité dans l'interface et doit rester masqué.
+ */
+
+function cgweb118Fix4Norm(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+function cgweb118Fix4OwnText(node) {
+  if (!node) return "";
+
+  return cgweb118Fix4Norm(
+    [...node.childNodes]
+      .filter(child => child.nodeType === Node.TEXT_NODE)
+      .map(child => child.textContent || "")
+      .join(" ")
+  );
+}
+
+function cgweb118Fix4FindHistoricalFilters(section) {
+  if (!section) return null;
+
+  const groups =
+    [...section.querySelectorAll(".filters")];
+
+  let best = null;
+  let bestScore = -1;
+
+  for (const group of groups) {
+    const text =
+      cgweb118Fix4Norm(group.textContent);
+
+    const required = [
+      "année",
+      "date",
+      "sport",
+      "matériel",
+      "fit",
+      "repère",
+      "ordre"
+    ];
+
+    const score =
+      required.filter(word =>
+        text.includes(word)
+      ).length;
+
+    /*
+     * Le bandeau historique est le seul qui possède simultanément
+     * FIT + Repère + Ordre + Matériel + Année + Date + Sport.
+     */
+    if (
+      score > bestScore &&
+      text.includes("fit") &&
+      text.includes("ordre") &&
+      text.includes("matériel")
+    ) {
+      best = group;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 6 ? best : null;
+}
+
+function cgweb118Fix4FindAdvancedPanel(section, historicalFilters) {
+  if (!section) return null;
+
+  const candidates =
+    [...section.querySelectorAll(
+      "div,section,form,fieldset,article"
+    )]
+      .filter(node => {
+        const text =
+          cgweb118Fix4Norm(
+            node.textContent
+          );
+
+        return (
+          text.includes("filtre 1") &&
+          text.includes("filtre 2") &&
+          text.includes("sous-sport") &&
+          text.includes("source")
+        );
+      })
+      .filter(node =>
+        !historicalFilters ||
+        !node.contains(historicalFilters)
+      )
+      .sort((a, b) =>
+        (a.textContent || "").length -
+        (b.textContent || "").length
+      );
+
+  return candidates[0] || null;
+}
+
+function cgweb118Fix4KeyForWrapper(wrapper) {
+  if (!wrapper) return "";
+
+  const control =
+    wrapper.matches?.("input,select")
+      ? wrapper
+      : wrapper.querySelector?.(
+          "input,select"
+        );
+
+  if (!control) return "";
+
+  const text =
+    cgweb118Fix4Norm(
+      wrapper.textContent
+    );
+
+  const placeholder =
+    cgweb118Fix4Norm(
+      control.getAttribute?.(
+        "placeholder"
+      )
+    );
+
+  if (text.includes("année")) return "year";
+  if (text.startsWith("date")) return "date";
+  if (text.startsWith("sport")) return "sport";
+  if (text.startsWith("matériel")) return "equipment";
+  if (text.startsWith("fit")) return "fit";
+  if (text.startsWith("repère")) return "landmark";
+  if (text.startsWith("ordre")) return "order";
+
+  if (
+    text.startsWith("recherche") ||
+    placeholder.includes("nom, date") ||
+    placeholder.includes("source")
+  ) {
+    return "search";
+  }
+
+  return "";
+}
+
+function cgweb118Fix4ResetOldFilterMarks(section) {
+  if (!section) return;
+
+  for (
+    const node of
+    section.querySelectorAll(
+      "[data-cgweb118fix3-disclosure]," +
+      "[data-cgweb118fix3-filters]," +
+      "[data-cgweb118fix3-filter]," +
+      "[data-cgweb118fix3-meta]"
+    )
+  ) {
+    delete node.dataset.cgweb118fix3Disclosure;
+    delete node.dataset.cgweb118fix3Filters;
+    delete node.dataset.cgweb118fix3Filter;
+    delete node.dataset.cgweb118fix3Meta;
+  }
+}
+
+function cgweb118Fix4Apply() {
+  const section =
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if (!section) return;
+
+  /*
+   * FIX3 ne doit plus piloter le DOM.
+   */
+  if (
+    typeof cgweb118Fix3Observer !==
+    "undefined"
+  ) {
+    try {
+      cgweb118Fix3Observer.disconnect();
+    } catch (_) {}
+  }
+
+  const oldFix3Style =
+    document.getElementById(
+      "cgweb118Fix3Ui"
+    );
+
+  if (oldFix3Style) {
+    oldFix3Style.remove();
+  }
+
+  cgweb118Fix4ResetOldFilterMarks(
+    section
+  );
+
+  const filters =
+    cgweb118Fix4FindHistoricalFilters(
+      section
+    );
+
+  if (!filters) {
+    console.warn(
+      "CGWEB118 FIX4 · bandeau historique introuvable."
+    );
+    return;
+  }
+
+  const disclosure =
+    filters.closest("details") ||
+    filters.parentElement;
+
+  if (!disclosure) return;
+
+  disclosure.dataset.cgweb118fix4Historical =
+    "1";
+
+  filters.dataset.cgweb118fix4Filters =
+    "1";
+
+  /*
+   * Masque le panneau avancé apparu par erreur.
+   */
+  const advanced =
+    cgweb118Fix4FindAdvancedPanel(
+      section,
+      filters
+    );
+
+  if (advanced) {
+    advanced.dataset.cgweb118fix4Advanced =
+      "1";
+  }
+
+  /*
+   * Identifie les vrais wrappers du bandeau historique.
+   */
+  for (
+    const child of
+    [...filters.children]
+  ) {
+    const key =
+      cgweb118Fix4KeyForWrapper(
+        child
+      );
+
+    if (key) {
+      child.dataset.cgweb118fix4Filter =
+        key;
+
+      delete child.dataset.cgweb118fix4Meta;
+    } else {
+      child.dataset.cgweb118fix4Meta =
+        "1";
+    }
+  }
+
+  /*
+   * Fallback pour les contrôles imbriqués.
+   */
+  for (
+    const control of
+    filters.querySelectorAll(
+      "input,select"
+    )
+  ) {
+    let wrapper = control;
+
+    while (
+      wrapper.parentElement &&
+      wrapper.parentElement !== filters
+    ) {
+      wrapper = wrapper.parentElement;
+    }
+
+    if (
+      wrapper.parentElement !==
+      filters
+    ) {
+      continue;
+    }
+
+    if (
+      wrapper.dataset
+        .cgweb118fix4Filter
+    ) {
+      continue;
+    }
+
+    const key =
+      cgweb118Fix4KeyForWrapper(
+        wrapper
+      );
+
+    if (key) {
+      wrapper.dataset.cgweb118fix4Filter =
+        key;
+
+      delete wrapper.dataset.cgweb118fix4Meta;
+    }
+  }
+
+  const searchWrapper =
+    filters.querySelector(
+      '[data-cgweb118fix4-filter="search"]'
+    );
+
+  if (searchWrapper) {
+    const input =
+      searchWrapper.querySelector(
+        "input"
+      );
+
+    if (input && input.value) {
+      input.value = "";
+
+      input.dispatchEvent(
+        new Event(
+          "input",
+          { bubbles: true }
+        )
+      );
+    }
+  }
+}
+
+function cgweb118Fix4InstallStyles() {
+  if (
+    document.getElementById(
+      "cgweb118Fix4Ui"
+    )
+  ) return;
+
+  const style =
+    document.createElement(
+      "style"
+    );
+
+  style.id =
+    "cgweb118Fix4Ui";
+
+  style.textContent = `
+/* =========================================================
+   CGWEB118 FIX4
+   Seul le BANDEAU HISTORIQUE est remanié.
+   ========================================================= */
+
+/* Panneau avancé non souhaité */
+#activityDirectorySection
+[data-cgweb118fix4-advanced="1"]{
+  display:none!important;
+}
+
+/* Bandeau historique */
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]{
+  display:grid!important;
+  grid-template-columns:20px minmax(0,1fr)!important;
+  column-gap:2mm!important;
+  row-gap:0!important;
+  align-items:start!important;
+  margin:2mm 0!important;
+  padding:2mm!important;
+  box-sizing:border-box!important;
+}
+
+/* Triangle directement à gauche des champs */
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]
+> summary{
+  grid-column:1!important;
+  grid-row:1!important;
+  align-self:end!important;
+  width:20px!important;
+  min-width:20px!important;
+  height:46px!important;
+  min-height:46px!important;
+  margin:0!important;
+  padding:0!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  list-style:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]
+> summary::after{
+  display:none!important;
+  content:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]
+> summary::-webkit-details-marker{
+  display:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]
+> summary::before{
+  content:"▾"!important;
+  display:block!important;
+  font-size:14px!important;
+  line-height:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-historical="1"]:not([open])
+> summary::before{
+  content:"▸"!important;
+}
+
+/* Ligne de filtres */
+#activityDirectorySection
+[data-cgweb118fix4-filters="1"]{
+  grid-column:2!important;
+  grid-row:1!important;
+  width:100%!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+  display:grid!important;
+  grid-template-columns:
+    92px
+    142px
+    94px
+    107px
+    82px
+    145px
+    minmax(220px,1fr)
+    !important;
+  column-gap:7px!important;
+  row-gap:2mm!important;
+  align-items:end!important;
+  box-sizing:border-box!important;
+}
+
+/* Ordre demandé :
+   Année / Date / Sport / FIT / Repère / Ordre / Matériel */
+#activityDirectorySection
+[data-cgweb118fix4-filter="year"]{
+  grid-column:1!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="date"]{
+  grid-column:2!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="sport"]{
+  grid-column:3!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="fit"]{
+  grid-column:4!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="landmark"]{
+  grid-column:5!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="order"]{
+  grid-column:6!important;
+  grid-row:1!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter="equipment"]{
+  grid-column:7!important;
+  grid-row:1!important;
+  width:100%!important;
+}
+
+/* Recherche supprimée */
+#activityDirectorySection
+[data-cgweb118fix4-filter="search"]{
+  display:none!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter]{
+  min-width:0!important;
+  max-width:none!important;
+  width:auto!important;
+  margin:0!important;
+}
+
+#activityDirectorySection
+[data-cgweb118fix4-filter]
+input,
+
+#activityDirectorySection
+[data-cgweb118fix4-filter]
+select{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+
+/* Compteur + boutons sous la ligne */
+#activityDirectorySection
+[data-cgweb118fix4-meta="1"]{
+  grid-column:1/-1!important;
+  grid-row:auto!important;
+  margin:0!important;
+}
+
+/* Responsive seulement si l'écran devient vraiment étroit */
+@media(max-width:1199px){
+  #activityDirectorySection
+  [data-cgweb118fix4-filters="1"]{
+    grid-template-columns:
+      repeat(4,minmax(100px,1fr))
+      !important;
+  }
+
+  #activityDirectorySection
+  [data-cgweb118fix4-filter]{
+    grid-column:auto!important;
+    grid-row:auto!important;
+  }
+
+  #activityDirectorySection
+  [data-cgweb118fix4-filter="equipment"]{
+    width:auto!important;
+  }
+}
+`;
+
+  document.head.appendChild(
+    style
+  );
+}
+
+function cgweb118Fix4Refresh() {
+  cgweb118Fix4InstallStyles();
+  cgweb118Fix4Apply();
+}
+
+let cgweb118Fix4Pending =
+  false;
+
+function cgweb118Fix4Schedule() {
+  if (cgweb118Fix4Pending) {
+    return;
+  }
+
+  cgweb118Fix4Pending = true;
+
+  requestAnimationFrame(() => {
+    cgweb118Fix4Pending = false;
+    cgweb118Fix4Refresh();
+  });
+}
+
+const cgweb118Fix4Observer =
+  new MutationObserver(
+    cgweb118Fix4Schedule
+  );
+
+if (document.body) {
+  cgweb118Fix4Observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+}
+
+window.addEventListener(
+  "resize",
+  cgweb118Fix4Schedule,
+  { passive: true }
+);
+
+cgweb118Fix4Refresh();
+
+window.CGWEB118_FIX4 =
+  Object.freeze({
+    version:
+      "CGWEB118 FIX4",
+    refresh:
+      cgweb118Fix4Refresh
+  });
+
+/* CGWEB118_FIX4_END */
