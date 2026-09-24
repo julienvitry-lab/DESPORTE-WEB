@@ -38715,3 +38715,522 @@ window.CGWEB118_FIX10_STATUS = function () {
 };
 
 /* CGWEB118_FIX10_END */
+
+/* CGWEB118_FIX11_START
+   EQUIPMENT_TYPE_TOGGLE001 / ACTIVE_ONLY001
+   EQUIPMENT_SINGLE_ROW001 / STATUS_ACTIONS_IN_EDITOR001
+   EQUIPMENT_COMPACT001
+*/
+
+let cgweb118Fix11EquipmentType = "SHOES";
+
+function cgweb118Fix11Norm(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+function cgweb118Fix11InstallStyles() {
+  let style = document.getElementById("cgweb118Fix11Ui");
+  if (style) return style;
+
+  style = document.createElement("style");
+  style.id = "cgweb118Fix11Ui";
+
+  style.textContent = `
+/* =========================================================
+   CGWEB118 FIX11 · Gestion matériel compacte
+   ========================================================= */
+
+#equipmentManagerSearch,
+#equipmentManagerStatusFilter,
+#equipmentManagerMeta{
+  display:none!important;
+}
+
+#equipmentManagerSection .equipment-manager-actions{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  flex-wrap:nowrap!important;
+  gap:2mm!important;
+  width:100%!important;
+  margin:0 0 2mm!important;
+}
+
+#cgweb118Fix11TypeToggle{
+  display:flex!important;
+  align-items:center!important;
+  gap:2mm!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+#cgweb118Fix11TypeToggle button{
+  width:150px!important;
+  min-width:150px!important;
+  max-width:150px!important;
+  justify-content:center!important;
+}
+
+#cgweb118Fix11TypeToggle button.active{
+  background:var(--green)!important;
+  color:#071006!important;
+  border-color:var(--green)!important;
+}
+
+#equipmentManagerSection #newEquipmentButton{
+  margin:0!important;
+}
+
+#equipmentManagerList{
+  display:grid!important;
+  gap:2mm!important;
+}
+
+#equipmentManagerList .equipment-manager-card{
+  display:grid!important;
+  grid-template-columns:
+    minmax(220px,1.35fr)
+    minmax(160px,.85fr)
+    minmax(190px,1fr)
+    minmax(150px,.8fr)
+    auto!important;
+  align-items:center!important;
+  gap:2mm!important;
+  min-height:0!important;
+  padding:2mm 3mm!important;
+  margin:0!important;
+  box-sizing:border-box!important;
+}
+
+#equipmentManagerList .equipment-manager-main{
+  display:block!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+#equipmentManagerList .equipment-manager-main > strong{
+  display:block!important;
+  margin:0!important;
+  padding:0!important;
+  font-size:1rem!important;
+  line-height:1.1!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+
+/* Suppression de « Vélo · Actif » / « Chaussures · Actif » */
+#equipmentManagerList .equipment-manager-main > span{
+  display:none!important;
+}
+
+/* Les trois statistiques deviennent trois vraies colonnes du row. */
+#equipmentManagerList .equipment-manager-usage{
+  display:contents!important;
+}
+
+#equipmentManagerList .equipment-manager-usage > div{
+  display:flex!important;
+  flex-direction:row!important;
+  align-items:baseline!important;
+  justify-content:flex-start!important;
+  gap:1.5mm!important;
+  min-width:0!important;
+  min-height:0!important;
+  padding:0!important;
+  margin:0!important;
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+
+#equipmentManagerList .equipment-manager-usage > div > span{
+  order:1!important;
+  margin:0!important;
+  font-size:.76rem!important;
+  white-space:nowrap!important;
+}
+
+#equipmentManagerList .equipment-manager-usage > div > strong{
+  order:2!important;
+  margin:0!important;
+  font-size:.93rem!important;
+  line-height:1.1!important;
+  white-space:nowrap!important;
+}
+
+#equipmentManagerList .equipment-manager-card-actions{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  flex-wrap:nowrap!important;
+  gap:0!important;
+  margin:0!important;
+  padding:0!important;
+  white-space:nowrap!important;
+}
+
+#equipmentManagerList .equipment-manager-card-actions button{
+  margin:0!important;
+  min-height:34px!important;
+  padding:5px 14px!important;
+}
+
+#equipmentManagerList .equipment-manager-card[hidden]{
+  display:none!important;
+}
+
+@media(max-width:1050px){
+  #equipmentManagerList .equipment-manager-card{
+    grid-template-columns:
+      minmax(180px,1.2fr)
+      repeat(3,minmax(120px,.8fr))
+      auto!important;
+  }
+}
+
+@media(max-width:760px){
+  #cgweb118Fix11TypeToggle button{
+    width:130px!important;
+    min-width:130px!important;
+    max-width:130px!important;
+  }
+
+  #equipmentManagerList .equipment-manager-card{
+    grid-template-columns:1fr 1fr!important;
+  }
+
+  #equipmentManagerList .equipment-manager-card-actions{
+    justify-content:flex-start!important;
+  }
+}
+`;
+
+  document.head.appendChild(style);
+  return style;
+}
+
+function cgweb118Fix11UpdateToggleState() {
+  const shoes = document.getElementById("cgweb118Fix11Shoes");
+  const bike = document.getElementById("cgweb118Fix11Bike");
+
+  shoes?.classList.toggle(
+    "active",
+    cgweb118Fix11EquipmentType === "SHOES"
+  );
+
+  bike?.classList.toggle(
+    "active",
+    cgweb118Fix11EquipmentType === "BIKE"
+  );
+}
+
+function cgweb118Fix11InstallTypeToggle() {
+  cgweb118Fix11InstallStyles();
+
+  const status = document.getElementById(
+    "equipmentManagerStatusFilter"
+  );
+  const search = document.getElementById(
+    "equipmentManagerSearch"
+  );
+  const newButton = document.getElementById(
+    "newEquipmentButton"
+  );
+
+  if (!newButton) return false;
+
+  const actions = newButton.parentElement;
+  if (!actions) return false;
+
+  if (search) {
+    search.value = "";
+    search.hidden = true;
+  }
+
+  if (status) {
+    status.value = "ACTIVE";
+    status.hidden = true;
+  }
+
+  document.getElementById("equipmentManagerMeta")?.setAttribute(
+    "hidden",
+    ""
+  );
+
+  let toggle = document.getElementById(
+    "cgweb118Fix11TypeToggle"
+  );
+
+  if (!toggle) {
+    toggle = document.createElement("div");
+    toggle.id = "cgweb118Fix11TypeToggle";
+
+    const template = document.getElementById(
+      "dashboardRunningButton"
+    );
+
+    const shoes = document.createElement("button");
+    shoes.id = "cgweb118Fix11Shoes";
+    shoes.type = "button";
+    shoes.className = template?.className || "secondary";
+    shoes.textContent = "Chaussures";
+
+    const bike = document.createElement("button");
+    bike.id = "cgweb118Fix11Bike";
+    bike.type = "button";
+    bike.className = template?.className || "secondary";
+    bike.textContent = "Vélo";
+
+    shoes.addEventListener("click", () => {
+      cgweb118Fix11EquipmentType = "SHOES";
+      cgweb118Fix11UpdateToggleState();
+      cgweb118Fix11PostProcessCards();
+    });
+
+    bike.addEventListener("click", () => {
+      cgweb118Fix11EquipmentType = "BIKE";
+      cgweb118Fix11UpdateToggleState();
+      cgweb118Fix11PostProcessCards();
+    });
+
+    toggle.append(shoes, bike);
+    actions.insertBefore(toggle, newButton);
+  }
+
+  cgweb118Fix11UpdateToggleState();
+  return true;
+}
+
+function cgweb118Fix11CardType(card) {
+  if (!card) return "OTHER";
+
+  if (card.dataset.cgweb118Fix11Type) {
+    return card.dataset.cgweb118Fix11Type;
+  }
+
+  const meta = card.querySelector(
+    ".equipment-manager-main > span"
+  );
+
+  const text = cgweb118Fix11Norm(meta?.textContent);
+
+  let type = "OTHER";
+
+  if (text.startsWith("chaussures")) {
+    type = "SHOES";
+  } else if (
+    text.startsWith("vélo") ||
+    text.startsWith("velo") ||
+    text.startsWith("home trainer")
+  ) {
+    type = "BIKE";
+  }
+
+  card.dataset.cgweb118Fix11Type = type;
+  return type;
+}
+
+function cgweb118Fix11PostProcessCards() {
+  cgweb118Fix11InstallTypeToggle();
+
+  const cards = [
+    ...document.querySelectorAll(
+      "#equipmentManagerList .equipment-manager-card"
+    )
+  ];
+
+  let visible = 0;
+
+  for (const card of cards) {
+    const type = cgweb118Fix11CardType(card);
+
+    const show =
+      type === cgweb118Fix11EquipmentType;
+
+    card.hidden = !show;
+    card.setAttribute(
+      "aria-hidden",
+      show ? "false" : "true"
+    );
+
+    if (show) visible += 1;
+
+    const meta = card.querySelector(
+      ".equipment-manager-main > span"
+    );
+    if (meta) meta.hidden = true;
+
+    const actions = card.querySelector(
+      ".equipment-manager-card-actions"
+    );
+
+    if (actions) {
+      for (const button of [...actions.querySelectorAll("button")]) {
+        const text = cgweb118Fix11Norm(button.textContent);
+
+        if (
+          text === "réserve" ||
+          text === "reserve" ||
+          text === "archiver" ||
+          text === "activer"
+        ) {
+          button.remove();
+        }
+      }
+    }
+
+    const usage = card.querySelector(
+      ".equipment-manager-usage"
+    );
+
+    if (usage) {
+      for (const datum of usage.children) {
+        const label = datum.querySelector("span");
+        const value = datum.querySelector("strong");
+
+        if (label && value) {
+          datum.insertBefore(label, value);
+        }
+      }
+    }
+  }
+
+  const list = document.getElementById(
+    "equipmentManagerList"
+  );
+  if (list) {
+    list.dataset.cgweb118Fix11Visible = String(visible);
+    list.dataset.cgweb118Fix11Type =
+      cgweb118Fix11EquipmentType;
+  }
+
+  return visible;
+}
+
+/*
+ * Le renderer existant reste la source des données et conserve
+ * tous ses listeners, notamment Modifier.
+ * FIX11 force uniquement ACTIVE, puis compacte le DOM rendu.
+ */
+const cgweb118Fix11RenderEquipmentManagerBase =
+  renderEquipmentManager;
+
+renderEquipmentManager =
+  function cgweb118Fix11RenderEquipmentManager(...args) {
+    const status = document.getElementById(
+      "equipmentManagerStatusFilter"
+    );
+
+    if (status) {
+      status.value = "ACTIVE";
+    }
+
+    const result =
+      cgweb118Fix11RenderEquipmentManagerBase.apply(
+        this,
+        args
+      );
+
+    queueMicrotask(() => {
+      const currentStatus = document.getElementById(
+        "equipmentManagerStatusFilter"
+      );
+      if (currentStatus) {
+        currentStatus.value = "ACTIVE";
+      }
+
+      cgweb118Fix11PostProcessCards();
+    });
+
+    return result;
+  };
+
+function cgweb118Fix11Boot() {
+  cgweb118Fix11InstallStyles();
+  cgweb118Fix11InstallTypeToggle();
+
+  const status = document.getElementById(
+    "equipmentManagerStatusFilter"
+  );
+  if (status) status.value = "ACTIVE";
+
+  if (typeof renderEquipmentManager === "function") {
+    renderEquipmentManager();
+  }
+
+  const delays = [100, 300, 700, 1500, 3000];
+  for (const delay of delays) {
+    setTimeout(cgweb118Fix11PostProcessCards, delay);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb118Fix11Boot,
+    { once:true }
+  );
+} else {
+  cgweb118Fix11Boot();
+}
+
+window.CGWEB118_FIX11_STATUS = function () {
+  const cards = [
+    ...document.querySelectorAll(
+      "#equipmentManagerList .equipment-manager-card"
+    )
+  ];
+
+  const visibleCards = cards.filter(
+    card => !card.hidden
+  );
+
+  const unwantedActions = visibleCards.flatMap(
+    card => [
+      ...card.querySelectorAll(
+        ".equipment-manager-card-actions button"
+      )
+    ]
+      .map(button => cgweb118Fix11Norm(button.textContent))
+      .filter(text =>
+        ["réserve", "reserve", "archiver", "activer"].includes(text)
+      )
+  );
+
+  const visibleTypes = [
+    ...new Set(
+      visibleCards.map(card => cgweb118Fix11CardType(card))
+    )
+  ];
+
+  const status = document.getElementById(
+    "equipmentManagerStatusFilter"
+  );
+
+  return {
+    selected_type: cgweb118Fix11EquipmentType,
+    default_type_expected: "SHOES",
+    toggle_found:
+      !!document.getElementById("cgweb118Fix11TypeToggle"),
+    status_filter_value: status?.value || null,
+    status_filter_hidden:
+      status ? getComputedStyle(status).display === "none" : false,
+    visible_cards: visibleCards.length,
+    visible_types: visibleTypes,
+    reserve_archive_buttons_remaining:
+      unwantedActions.length,
+    editor_status_available:
+      !!document.getElementById("equipmentStatusInput"),
+    duplicate_status:
+      typeof window.CGWEB118_FIX7_DUP_STATUS === "function"
+        ? window.CGWEB118_FIX7_DUP_STATUS()
+        : null
+  };
+};
+
+/* CGWEB118_FIX11_END */
