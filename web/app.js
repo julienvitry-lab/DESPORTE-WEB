@@ -825,23 +825,11 @@ function applyWeb049UiContract() {
     // Le <details> WEB049 est une construction runtime : on le crée ici,
     // puis on applique UNE SEULE normalisation structurelle, sans observer.
     let filterPanel =
-      directory.querySelector(":scope > details.activity-filters-web049") ||
-      directory.querySelector(":scope > details.activity-filters-disclosure");
+      directory.querySelector(":scope > details.activity-filters-web049");
 
     let filters =
       filterPanel?.querySelector(":scope > .filters") ||
       directory.querySelector(":scope > .filters");
-
-    /*
-     * CGWEB118 FIX8 FIX1
-     * Le DOM réel contient déjà :
-     * details.activity-filters-disclosure.cgweb099-legacy-hidden
-     * On adopte ce wrapper au lieu d'en chercher/créer un autre.
-     */
-    if (filterPanel) {
-      filterPanel.classList.add("activity-filters-web049");
-      filterPanel.classList.remove("cgweb099-legacy-hidden");
-    }
 
     if (filters && !filterPanel) {
       filterPanel = document.createElement("details");
@@ -37869,13 +37857,9 @@ window.CGWEB118_FIX7_DUP_STATUS = function () {
 
 /* CGWEB118_FIX8_RUNTIME_STATUS_START */
 window.CGWEB118_FIX8_STATUS = function () {
-  const panel =
-    document.querySelector(
-      "#activityDirectorySection > details.activity-filters-web049"
-    ) ||
-    document.querySelector(
-      "#activityDirectorySection > details.activity-filters-disclosure"
-    );
+  const panel = document.querySelector(
+    "#activityDirectorySection > details.activity-filters-web049"
+  );
 
   const filters =
     panel?.querySelector(":scope > .filters") || null;
