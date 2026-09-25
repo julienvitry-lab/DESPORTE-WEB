@@ -38953,8 +38953,8 @@ function cgweb118Fix11InstallTypeToggle() {
   }
 
   if (status) {
-    status.value = "ACTIVE";
-    status.hidden = true;
+    status.hidden = false;
+    status.removeAttribute("hidden");
   }
 
   document.getElementById("equipmentManagerMeta")?.setAttribute(
@@ -39127,7 +39127,9 @@ renderEquipmentManager =
     );
 
     if (status) {
-      status.value = "ACTIVE";
+      status.value =
+        window.__CGWEB118_FIX12_STATUS_VALUE__ ??
+        "ACTIVE";
     }
 
     const result =
@@ -39137,14 +39139,14 @@ renderEquipmentManager =
       );
 
     queueMicrotask(() => {
-      const currentStatus = document.getElementById(
-        "equipmentManagerStatusFilter"
-      );
-      if (currentStatus) {
-        currentStatus.value = "ACTIVE";
-      }
-
       cgweb118Fix11PostProcessCards();
+
+      if (
+        typeof cgweb118Fix12SyncEquipmentRows ===
+        "function"
+      ) {
+        cgweb118Fix12SyncEquipmentRows();
+      }
     });
 
     return result;
@@ -39390,3 +39392,564 @@ window.CGWEB118_FIX11_STATUS = function () {
   });
 })();
 /* CGWEB118_FIX11_FIX1_END */
+
+/* CGWEB118_FIX12_START
+   EQUIPMENT_STATS_INSTANT001
+   EQUIPMENT_STATUS_FILTER_RESTORE001
+   ACTIVITY_TRIANGLE_STABLE001
+*/
+
+window.__CGWEB118_FIX12_STATUS_VALUE__ =
+  window.__CGWEB118_FIX12_STATUS_VALUE__ ?? "ACTIVE";
+
+function cgweb118Fix12Norm(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+/* =========================================================
+   MATÉRIEL · statut visible + statistiques immédiates
+   ========================================================= */
+
+function cgweb118Fix12InstallRuntimeStyle() {
+  let style = document.getElementById("cgweb118Fix12Ui");
+  if (style) return style;
+
+  style = document.createElement("style");
+  style.id = "cgweb118Fix12Ui";
+
+  style.textContent = `
+#equipmentManagerSection #equipmentManagerStatusFilter{
+  display:block!important;
+  visibility:visible!important;
+  flex:0 0 165px!important;
+  width:165px!important;
+  max-width:165px!important;
+  min-width:165px!important;
+  margin:0!important;
+}
+
+#equipmentManagerSection .equipment-manager-actions{
+  align-items:center!important;
+  gap:2mm!important;
+}
+
+/* Activités : triangle | 2 mm | grille */
+#activityDirectorySection
+details[data-cgweb118-fix12-activity-filter="1"]{
+  display:grid!important;
+  grid-template-columns:max-content minmax(0,1fr)!important;
+  grid-template-rows:auto!important;
+  align-items:center!important;
+  column-gap:2mm!important;
+  padding:2mm!important;
+  position:relative!important;
+  box-sizing:border-box!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix12-activity-filter="1"] > summary{
+  grid-column:1!important;
+  grid-row:1!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  position:static!important;
+  inset:auto!important;
+  transform:none!important;
+  width:max-content!important;
+  min-width:1em!important;
+  max-width:none!important;
+  height:auto!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  list-style:none!important;
+  cursor:pointer!important;
+  z-index:5!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix12-activity-filter="1"] > summary::before,
+#activityDirectorySection
+details[data-cgweb118-fix12-activity-filter="1"] > summary::after{
+  content:none!important;
+  display:none!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix12-activity-filter="1"]
+> summary::-webkit-details-marker{
+  display:none!important;
+}
+
+#activityDirectorySection .cgweb118-fix12-triangle{
+  display:inline-block!important;
+  position:static!important;
+  margin:0!important;
+  padding:0!important;
+  width:auto!important;
+  min-width:0!important;
+  color:#fff!important;
+  font-family:Arial,sans-serif!important;
+  font-size:17px!important;
+  font-weight:700!important;
+  line-height:1!important;
+  visibility:visible!important;
+  opacity:1!important;
+  transform:none!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix12-activity-filter="1"]
+> div.cgweb099-filter-grid{
+  grid-column:2!important;
+  grid-row:1!important;
+  width:100%!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+#activityDirectorySection
+details[data-cgweb118-fix12-activity-filter="1"]:not([open])
+> div.cgweb099-filter-grid{
+  display:none!important;
+}
+`;
+
+  document.head.appendChild(style);
+  return style;
+}
+
+function cgweb118Fix12ReadEquipmentMetric(card, wantedLabel) {
+  const wanted = cgweb118Fix12Norm(wantedLabel);
+  const usage = card?.querySelector(
+    ":scope > .equipment-manager-usage"
+  );
+
+  if (!usage) return "";
+
+  for (const datum of usage.children) {
+    const label = cgweb118Fix12Norm(
+      datum.querySelector("span")?.textContent
+    );
+
+    if (label !== wanted) continue;
+
+    return String(
+      datum.querySelector("strong")?.textContent || ""
+    ).trim();
+  }
+
+  return "";
+}
+
+function cgweb118Fix12SyncEquipmentCard(card) {
+  const row = card?.querySelector(
+    ":scope > .cgweb118-fix11fix1-row"
+  );
+
+  if (!row) return false;
+
+  let changed = false;
+
+  for (const stat of row.querySelectorAll(
+    ".cgweb118-fix11fix1-stat"
+  )) {
+    const label = stat.querySelector(
+      ".cgweb118-fix11fix1-label"
+    );
+
+    const value = stat.querySelector(
+      ".cgweb118-fix11fix1-value"
+    );
+
+    if (!label || !value) continue;
+
+    const fresh = cgweb118Fix12ReadEquipmentMetric(
+      card,
+      label.textContent
+    );
+
+    if (
+      fresh &&
+      fresh !== "—" &&
+      value.textContent !== fresh
+    ) {
+      value.textContent = fresh;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function cgweb118Fix12SyncEquipmentRows() {
+  const list = document.getElementById(
+    "equipmentManagerList"
+  );
+
+  if (!list) return 0;
+
+  let synced = 0;
+
+  for (const card of list.querySelectorAll(
+    ".equipment-manager-card"
+  )) {
+    if (cgweb118Fix12SyncEquipmentCard(card)) {
+      synced += 1;
+    }
+  }
+
+  return synced;
+}
+
+function cgweb118Fix12PrepareEquipmentStatus() {
+  const status = document.getElementById(
+    "equipmentManagerStatusFilter"
+  );
+
+  const newButton = document.getElementById(
+    "newEquipmentButton"
+  );
+
+  const toggle = document.getElementById(
+    "cgweb118Fix11TypeToggle"
+  );
+
+  if (!status) return false;
+
+  status.hidden = false;
+  status.removeAttribute("hidden");
+  status.value =
+    window.__CGWEB118_FIX12_STATUS_VALUE__ ?? "ACTIVE";
+
+  const actions = newButton?.parentElement;
+
+  if (actions && newButton) {
+    if (status.nextElementSibling !== newButton) {
+      actions.insertBefore(status, newButton);
+    }
+
+    if (
+      toggle &&
+      toggle.parentElement === actions &&
+      toggle.nextElementSibling !== status
+    ) {
+      actions.insertBefore(toggle, status);
+    }
+  }
+
+  if (status.dataset.cgweb118Fix12Bound !== "1") {
+    /*
+     * Capture : le choix est mémorisé avant les anciens listeners.
+     */
+    status.addEventListener(
+      "change",
+      () => {
+        window.__CGWEB118_FIX12_STATUS_VALUE__ =
+          status.value;
+
+        setTimeout(() => {
+          renderEquipmentManager();
+          cgweb118Fix12SyncEquipmentRows();
+        }, 0);
+      },
+      true
+    );
+
+    status.dataset.cgweb118Fix12Bound = "1";
+  }
+
+  return true;
+}
+
+let cgweb118Fix12EquipmentScheduled = false;
+
+function cgweb118Fix12ScheduleEquipmentSync() {
+  if (cgweb118Fix12EquipmentScheduled) return;
+
+  cgweb118Fix12EquipmentScheduled = true;
+
+  requestAnimationFrame(() => {
+    cgweb118Fix12EquipmentScheduled = false;
+
+    cgweb118Fix12PrepareEquipmentStatus();
+    cgweb118Fix12SyncEquipmentRows();
+  });
+}
+
+function cgweb118Fix12InstallEquipmentObserver() {
+  const list = document.getElementById(
+    "equipmentManagerList"
+  );
+
+  if (
+    !list ||
+    window.__CGWEB118_FIX12_EQUIPMENT_OBSERVER__
+  ) {
+    return !!list;
+  }
+
+  const observer = new MutationObserver(
+    cgweb118Fix12ScheduleEquipmentSync
+  );
+
+  observer.observe(list, {
+    childList: true,
+    characterData: true,
+    subtree: true
+  });
+
+  window.__CGWEB118_FIX12_EQUIPMENT_OBSERVER__ =
+    observer;
+
+  return true;
+}
+
+/* Chaussures / Vélo : rerender immédiat. */
+document.addEventListener(
+  "click",
+  (event) => {
+    const button = event.target?.closest?.(
+      "#cgweb118Fix11Shoes, #cgweb118Fix11Bike"
+    );
+
+    if (!button) return;
+
+    setTimeout(() => {
+      renderEquipmentManager();
+      cgweb118Fix12SyncEquipmentRows();
+    }, 0);
+  },
+  false
+);
+
+/* =========================================================
+   ACTIVITÉS · triangle réel, stable et tout à gauche
+   ========================================================= */
+
+function cgweb118Fix12FindActivityGrid() {
+  const section = document.getElementById(
+    "activityDirectorySection"
+  );
+
+  if (!section) return null;
+
+  return [
+    ...section.querySelectorAll(
+      "div.cgweb099-filter-grid"
+    )
+  ].find((grid) => {
+    const text = cgweb118Fix12Norm(
+      grid.textContent
+    );
+
+    return (
+      text.includes("année") &&
+      text.includes("date") &&
+      text.includes("sport") &&
+      text.includes("fit") &&
+      text.includes("repère") &&
+      text.includes("ordre")
+    );
+  }) || null;
+}
+
+function cgweb118Fix12ApplyActivityTriangle() {
+  const grid = cgweb118Fix12FindActivityGrid();
+  if (!grid) return false;
+
+  const details = grid.closest("details");
+  if (!details) return false;
+
+  const summary = details.querySelector(
+    ":scope > summary"
+  );
+
+  if (!summary) return false;
+
+  /* Le SUMMARY est physiquement juste avant la grille. */
+  if (summary.nextElementSibling !== grid) {
+    details.insertBefore(summary, grid);
+  }
+
+  details.dataset.cgweb118Fix12ActivityFilter = "1";
+
+  let triangle = summary.querySelector(
+    ":scope > .cgweb118-fix12-triangle"
+  );
+
+  if (!triangle) {
+    summary.replaceChildren();
+
+    triangle = document.createElement("span");
+    triangle.className = "cgweb118-fix12-triangle";
+    triangle.setAttribute("aria-hidden", "true");
+    summary.appendChild(triangle);
+  }
+
+  const wanted = details.open ? "▾" : "▸";
+  if (triangle.textContent !== wanted) {
+    triangle.textContent = wanted;
+  }
+
+  if (
+    details.dataset.cgweb118Fix12ToggleBound !== "1"
+  ) {
+    details.addEventListener("toggle", () => {
+      const node = summary.querySelector(
+        ":scope > .cgweb118-fix12-triangle"
+      );
+
+      if (node) {
+        const next = details.open ? "▾" : "▸";
+        if (node.textContent !== next) {
+          node.textContent = next;
+        }
+      }
+    });
+
+    details.dataset.cgweb118Fix12ToggleBound = "1";
+  }
+
+  return true;
+}
+
+/* Les anciens timers FIX9 FIX2 utilisent désormais la cible stable. */
+cgweb118Fix9Fix2Apply =
+  cgweb118Fix12ApplyActivityTriangle;
+
+function cgweb118Fix12InstallActivityObserver() {
+  const section = document.getElementById(
+    "activityDirectorySection"
+  );
+
+  if (
+    !section ||
+    window.__CGWEB118_FIX12_ACTIVITY_OBSERVER__
+  ) {
+    return !!section;
+  }
+
+  let scheduled = false;
+
+  const observer = new MutationObserver(() => {
+    if (scheduled) return;
+
+    scheduled = true;
+
+    queueMicrotask(() => {
+      scheduled = false;
+      cgweb118Fix12ApplyActivityTriangle();
+    });
+  });
+
+  observer.observe(section, {
+    childList: true,
+    subtree: true
+  });
+
+  window.__CGWEB118_FIX12_ACTIVITY_OBSERVER__ =
+    observer;
+
+  return true;
+}
+
+/* =========================================================
+   BOOT
+   ========================================================= */
+
+function cgweb118Fix12Boot() {
+  cgweb118Fix12InstallRuntimeStyle();
+
+  window.__CGWEB118_FIX12_STATUS_VALUE__ =
+    "ACTIVE";
+
+  cgweb118Fix12PrepareEquipmentStatus();
+  cgweb118Fix12InstallEquipmentObserver();
+
+  cgweb118Fix12ApplyActivityTriangle();
+  cgweb118Fix12InstallActivityObserver();
+
+  for (const delay of [
+    0, 50, 150, 400, 1000, 2500
+  ]) {
+    setTimeout(() => {
+      cgweb118Fix12PrepareEquipmentStatus();
+      cgweb118Fix12SyncEquipmentRows();
+      cgweb118Fix12ApplyActivityTriangle();
+    }, delay);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb118Fix12Boot,
+    { once: true }
+  );
+} else {
+  cgweb118Fix12Boot();
+}
+
+window.CGWEB118_FIX12_STATUS = function () {
+  const status = document.getElementById(
+    "equipmentManagerStatusFilter"
+  );
+
+  const grid = cgweb118Fix12FindActivityGrid();
+  const details = grid?.closest("details") || null;
+
+  const triangle = details?.querySelector(
+    ":scope > summary > .cgweb118-fix12-triangle"
+  ) || null;
+
+  const visibleCards = [
+    ...document.querySelectorAll(
+      "#equipmentManagerList .equipment-manager-card:not([hidden])"
+    )
+  ];
+
+  const dashStats = visibleCards.reduce(
+    (sum, card) =>
+      sum +
+      [...card.querySelectorAll(
+        ".cgweb118-fix11fix1-value"
+      )].filter(
+        node =>
+          String(node.textContent).trim() === "—"
+      ).length,
+    0
+  );
+
+  return {
+    equipment_status_value:
+      status?.value || null,
+    equipment_status_visible:
+      !!status &&
+      getComputedStyle(status).display !== "none",
+    equipment_visible_cards:
+      visibleCards.length,
+    equipment_visible_dash_stats:
+      dashStats,
+    activity_grid_found:
+      !!grid,
+    activity_triangle_found:
+      !!triangle,
+    activity_triangle_text:
+      triangle?.textContent || null,
+    activity_triangle_left:
+      triangle
+        ? Math.round(
+            triangle.getBoundingClientRect().left
+          )
+        : null
+  };
+};
+
+/* CGWEB118_FIX12_END */
