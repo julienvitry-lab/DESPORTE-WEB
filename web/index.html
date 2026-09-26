@@ -7109,6 +7109,200 @@ details[data-cgweb118-fix9-fix2="1"]
 <!-- CGWEB118_FIX11_FIX1_STYLE_END -->
 
 <style id="cgweb118Fix11Fix2Ui">#equipmentManagerList .cgweb118-fix11fix1-card>:not(.cgweb118-fix11fix1-row){display:none!important}#equipmentManagerList .cgweb118-fix11fix1-card{min-height:0!important;height:auto!important;padding-top:6px!important;padding-bottom:6px!important}#equipmentManagerList .cgweb118-fix11fix1-row{margin:0!important}</style>
+
+<!-- CGWEB119_STYLE_START -->
+<style id="cgweb119FinalUi">
+
+/* =========================================================
+   BANDEAU TRI · GEOMETRIE FINALE
+   ========================================================= */
+
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb119-target="1"]{
+  grid-template-columns:
+    27mm
+    40mm
+    25mm
+    26mm
+    20mm
+    38mm
+    104mm
+    !important;
+
+  column-gap:2mm!important;
+  row-gap:0!important;
+  width:max-content!important;
+  max-width:100%!important;
+  align-items:end!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb119-target="1"]
+[data-cgweb119-year="1"]{
+  width:27mm!important;
+  min-width:27mm!important;
+  max-width:27mm!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb119-target="1"]
+[data-cgweb119-equipment="1"]{
+  width:104mm!important;
+  min-width:104mm!important;
+  max-width:104mm!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb119-target="1"]
+[data-cgweb119-year="1"] > select,
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb119-target="1"]
+[data-cgweb119-equipment="1"] > select{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+
+/* Triangle définitivement dans la première colonne. */
+#activityDirectorySection
+details[data-cgweb119-activity-filter="1"]{
+  display:grid!important;
+  grid-template-columns:max-content minmax(0,1fr)!important;
+  grid-template-rows:auto!important;
+  align-items:center!important;
+  column-gap:2mm!important;
+  padding:2mm!important;
+}
+
+#activityDirectorySection
+details[data-cgweb119-activity-filter="1"]
+> summary{
+  grid-column:1!important;
+  grid-row:1!important;
+  position:static!important;
+  inset:auto!important;
+  transform:none!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  width:max-content!important;
+  min-width:1em!important;
+  margin:0!important;
+  padding:0!important;
+  visibility:visible!important;
+  opacity:1!important;
+}
+
+#activityDirectorySection
+details[data-cgweb119-activity-filter="1"]
+> div.cgweb099-filter-grid{
+  grid-column:2!important;
+  grid-row:1!important;
+  margin:0!important;
+}
+
+/* =========================================================
+   DETAIL · AUCUNE PILE STICKY RESIDUELLE
+   ========================================================= */
+
+#detailView,
+#detailView .detail-sticky-stack{
+  --web047-toolbar-top:auto!important;
+  --web047-hero-top:auto!important;
+}
+
+#detailView > .detail-sticky-stack{
+  position:static!important;
+  top:auto!important;
+  display:contents!important;
+  height:auto!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  background:none!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+
+#detailView > .detail-toolbar,
+#detailView .detail-toolbar-web047,
+#detailView .detail-sticky-stack .detail-toolbar{
+  position:static!important;
+  top:auto!important;
+  inset:auto!important;
+  transform:none!important;
+  margin:0 0 2mm!important;
+  z-index:auto!important;
+}
+
+/*
+ * La ligne clonée garde les styles calculés du répertoire.
+ * Ces règles ne corrigent que son ancrage dans le détail.
+ */
+#detailView .cgweb119-detail-directory-row{
+  position:static!important;
+  top:auto!important;
+  inset:auto!important;
+  transform:none!important;
+  margin:0 0 2mm!important;
+  max-width:100%!important;
+  box-sizing:border-box!important;
+}
+
+/* Les contrôles restent disponibles sous la ligne commune. */
+#detailView > .detail-hero-two-lines,
+#detailView .detail-hero-web047,
+#detailView .detail-hero-web048,
+#detailView .detail-hero-web049{
+  position:static!important;
+  top:auto!important;
+  inset:auto!important;
+  transform:none!important;
+  height:auto!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+
+/* Ancien bandeau stats : remplacé par la copie exacte du répertoire. */
+#detailView
+.detail-hero-two-lines
+> .detail-summary-row{
+  display:none!important;
+  height:0!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:hidden!important;
+}
+
+#detailView
+.detail-hero-two-lines
+> .detail-controls-row{
+  position:static!important;
+  top:auto!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+/* Les éléments visuels de la copie ne déclenchent aucune action. */
+#detailView
+.cgweb119-detail-directory-row
+button,
+#detailView
+.cgweb119-detail-directory-row
+a{
+  pointer-events:none!important;
+}
+
+</style>
+<!-- CGWEB119_STYLE_END -->
+
 </head>
 <body>
   <header class="topbar">
@@ -9785,7 +9979,7 @@ details[data-cgweb118-fix9-fix2="1"]
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB118-FIX12"></script>
+<script type="module" src="./app.js?v=CGWEB119"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
