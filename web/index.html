@@ -7925,6 +7925,258 @@ div.cgweb099-filter-grid[data-cgweb120="1"]
 <!-- CGWEB120_FIX4_STYLE_END -->
 
 
+
+
+<!-- CGWEB120_FIX5_STYLE_START -->
+<style id="cgweb120Fix5Ui">
+
+/* =========================================================
+   A. BANDEAU HISTORIQUE : INTERDIT DE RENDU
+   ========================================================= */
+
+#detailView
+.detail-summary-row,
+#detailView
+.detail-hero-two-lines
+> .detail-summary-row,
+#detailView
+#detailHeroMetrics{
+  display:none!important;
+  visibility:hidden!important;
+  height:0!important;
+  min-height:0!important;
+  max-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  overflow:hidden!important;
+}
+
+
+/* =========================================================
+   B. ANCIENS BANDEAUX CGWEB120
+   ========================================================= */
+
+#detailView
+.cgweb120-fix2fix1-detail-header-scope,
+#detailView
+.cgweb120-fix3-detail-header-scope,
+#detailView
+.cgweb120-fix4-detail-header-scope{
+  display:none!important;
+}
+
+
+/* =========================================================
+   C. BANDEAU TEXTE EXACT
+   ========================================================= */
+
+#detailView
+.cgweb120-fix5-detail-header-scope{
+  display:block!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  margin:0 0 2mm!important;
+  padding:0!important;
+  position:static!important;
+  transform:none!important;
+  box-sizing:border-box!important;
+}
+
+#detailView
+.cgweb120-fix5-header-row{
+  display:grid!important;
+
+  grid-template-columns:
+    58px
+    minmax(116px,.72fr)
+    minmax(86px,.54fr)
+    minmax(108px,.64fr)
+    minmax(78px,.48fr)
+    minmax(118px,.70fr)
+    minmax(250px,1.42fr)
+    minmax(96px,.58fr)
+    minmax(82px,.50fr)
+    42px
+    !important;
+
+  gap:8px!important;
+  align-items:center!important;
+
+  width:100%!important;
+  min-height:34px!important;
+
+  margin:0!important;
+  padding:2px 12px!important;
+
+  border-top:
+    1px solid
+    rgba(182,255,59,.22)!important;
+
+  border-bottom:
+    1px solid
+    rgba(182,255,59,.22)!important;
+
+  border-left:0!important;
+  border-right:0!important;
+
+  border-radius:0!important;
+  background:transparent!important;
+
+  box-sizing:border-box!important;
+  pointer-events:none!important;
+}
+
+#detailView
+.cgweb120-fix5-header-cell{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+
+  min-width:0!important;
+
+  margin:0!important;
+  padding:0!important;
+
+  color:var(--muted)!important;
+  background:transparent!important;
+  border:0!important;
+
+  font-size:14px!important;
+  font-weight:600!important;
+  line-height:1!important;
+
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+
+
+/* =========================================================
+   D. LIGNE DETAIL :
+      EXACTEMENT LA MEME GRILLE
+   ========================================================= */
+
+#detailView
+.cgweb120-fix1-detail-list-scope
+.activity-card{
+  display:grid!important;
+
+  grid-template-columns:
+    58px
+    minmax(116px,.72fr)
+    minmax(86px,.54fr)
+    minmax(108px,.64fr)
+    minmax(78px,.48fr)
+    minmax(118px,.70fr)
+    minmax(250px,1.42fr)
+    minmax(96px,.58fr)
+    minmax(82px,.50fr)
+    42px
+    !important;
+
+  gap:8px!important;
+
+  box-sizing:border-box!important;
+}
+
+#detailView
+.cgweb120-fix1-detail-list-scope{
+  margin:0 0 2mm!important;
+}
+
+
+/* =========================================================
+   E. ANNEE / DATE :
+      PREMIER ET DEUXIEME LABEL DU VRAI GRID
+   ========================================================= */
+
+#activityDirectorySection
+div.cgweb099-filter-grid{
+  column-gap:1mm!important;
+  row-gap:0!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid
+> label:nth-child(1){
+  width:27mm!important;
+  min-width:27mm!important;
+  max-width:27mm!important;
+
+  margin:0!important;
+
+  left:auto!important;
+  right:auto!important;
+  transform:none!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid
+> label:nth-child(2){
+  width:40mm!important;
+  min-width:40mm!important;
+  max-width:40mm!important;
+
+  margin:0!important;
+
+  left:auto!important;
+  right:auto!important;
+  transform:none!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid
+> label:nth-child(1)
+:is(select,input){
+  width:27mm!important;
+  min-width:27mm!important;
+  max-width:27mm!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid
+> label:nth-child(2)
+:is(select,input){
+  width:40mm!important;
+  min-width:40mm!important;
+  max-width:40mm!important;
+}
+
+
+/* =========================================================
+   F. RESPONSIVE DETAIL
+   ========================================================= */
+
+@media (max-width:1100px){
+
+  #detailView
+  .cgweb120-fix5-header-row,
+
+  #detailView
+  .cgweb120-fix1-detail-list-scope
+  .activity-card{
+
+    grid-template-columns:
+      58px
+      minmax(108px,.9fr)
+      80px
+      96px
+      74px
+      minmax(110px,.9fr)
+      minmax(210px,1.4fr)
+      86px
+      74px
+      38px
+      !important;
+  }
+}
+
+</style>
+<!-- CGWEB120_FIX5_STYLE_END -->
+
+
 </head>
 <body>
   <header class="topbar">
@@ -10139,7 +10391,7 @@ div.cgweb099-filter-grid[data-cgweb120="1"]
         <!-- Héritage WEB032 · WEBUX002 -->
         <!-- Héritage WEB033 · WEBUX003 -->
         <article class="detail-hero detail-hero-two-lines panel">
-          <div class="detail-summary-row">
+          <div class="detail-summary-row" data-cgweb120-fix5-hidden="1" hidden aria-hidden="true" style="display:none!important;visibility:hidden!important;height:0!important;min-height:0!important;max-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;">
             <span id="detailSportLine" class="summary-chip summary-chip-sport">ACTIVITÉ</span>
             <h1 id="detailTitle" class="hidden">Activité</h1>
             <span id="detailDateLine" class="summary-chip summary-chip-date"></span>
@@ -10601,7 +10853,7 @@ div.cgweb099-filter-grid[data-cgweb120="1"]
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB120-FIX4"></script>
+<script type="module" src="./app.js?v=CGWEB120-FIX5-HARDLOCK001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

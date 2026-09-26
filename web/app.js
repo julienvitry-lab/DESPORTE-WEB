@@ -42520,3 +42520,539 @@ window.CGWEB120_FIX4_STATUS =
   };
 
 /* CGWEB120_FIX4_END */
+
+/* CGWEB120_FIX5_START
+   HARD_DETAIL_REMOVE001
+   EXACT_HEADER_GRID001
+   HEADER_ROW_GAP_2MM001
+   YEAR_DATE_HARD_GAP_1MM001
+   NO_DYNAMIC_HEADER_SEARCH001
+*/
+
+const cgweb120Fix5BaseRenderDetailRow =
+  cgweb120RenderDetailRow;
+
+
+/* ---------------------------------------------------------
+   1. Bandeau historique : verrouillage DOM
+   --------------------------------------------------------- */
+
+function cgweb120Fix5KillHistoricalStrip() {
+  const summary =
+    document.querySelector(
+      "#detailView .detail-summary-row"
+    );
+
+  if (!summary) return false;
+
+  summary.hidden = true;
+  summary.setAttribute(
+    "aria-hidden",
+    "true"
+  );
+
+  summary.style.setProperty(
+    "display",
+    "none",
+    "important"
+  );
+
+  summary.style.setProperty(
+    "visibility",
+    "hidden",
+    "important"
+  );
+
+  summary.style.setProperty(
+    "height",
+    "0",
+    "important"
+  );
+
+  summary.style.setProperty(
+    "min-height",
+    "0",
+    "important"
+  );
+
+  summary.style.setProperty(
+    "max-height",
+    "0",
+    "important"
+  );
+
+  summary.style.setProperty(
+    "margin",
+    "0",
+    "important"
+  );
+
+  summary.style.setProperty(
+    "padding",
+    "0",
+    "important"
+  );
+
+  summary.style.setProperty(
+    "border",
+    "0",
+    "important"
+  );
+
+  summary.style.setProperty(
+    "overflow",
+    "hidden",
+    "important"
+  );
+
+  return true;
+}
+
+
+/* ---------------------------------------------------------
+   2. Suppression de TOUS les anciens bandeaux injectés
+   --------------------------------------------------------- */
+
+function cgweb120Fix5RemoveLegacyHeaders() {
+  const detail =
+    document.getElementById(
+      "detailView"
+    );
+
+  if (!detail) return;
+
+  detail
+    .querySelectorAll(
+      ".cgweb120-fix2fix1-detail-header-scope," +
+      ".cgweb120-fix3-detail-header-scope," +
+      ".cgweb120-fix4-detail-header-scope," +
+      ".cgweb120-fix5-detail-header-scope"
+    )
+    .forEach(
+      (node) => node.remove()
+    );
+}
+
+
+/* ---------------------------------------------------------
+   3. Bandeau déterministe
+      Aucun scan du Répertoire.
+      Aucun calcul de style.
+      Même grille que la ligne activité.
+   --------------------------------------------------------- */
+
+function cgweb120Fix5InstallExactHeader() {
+  const detail =
+    document.getElementById(
+      "detailView"
+    );
+
+  if (!detail) return false;
+
+  const rowHost =
+    detail.querySelector(
+      ".cgweb120-fix1-detail-list-scope"
+    );
+
+  const row =
+    rowHost?.querySelector(
+      ".activity-card"
+    );
+
+  if (!rowHost || !row) {
+    return false;
+  }
+
+  const host =
+    document.createElement("div");
+
+  host.className =
+    "cgweb120-fix5-detail-header-scope";
+
+  host.style.setProperty(
+    "margin-bottom",
+    "2mm",
+    "important"
+  );
+
+  const header =
+    document.createElement("div");
+
+  header.className =
+    "cgweb120-fix5-header-row";
+
+  const labels = [
+    "",
+    "Date",
+    "Heure",
+    "Distance",
+    "D+",
+    "Temps",
+    "Matériel",
+    "Repères",
+    "Charge",
+    ""
+  ];
+
+  for (const label of labels) {
+    const cell =
+      document.createElement("div");
+
+    cell.className =
+      "cgweb120-fix5-header-cell";
+
+    cell.textContent = label;
+
+    header.appendChild(cell);
+  }
+
+  host.appendChild(header);
+
+  rowHost.insertAdjacentElement(
+    "beforebegin",
+    host
+  );
+
+  return true;
+}
+
+
+/* ---------------------------------------------------------
+   4. Année / Date :
+      on agit DIRECTEMENT sur les deux premiers LABEL
+      du vrai cgweb099-filter-grid.
+   --------------------------------------------------------- */
+
+function cgweb120Fix5ForceFilterGap() {
+  const grid =
+    document.querySelector(
+      "#activityDirectorySection " +
+      "div.cgweb099-filter-grid"
+    );
+
+  if (!grid) return false;
+
+  const labels =
+    [...grid.children].filter(
+      (node) =>
+        node.tagName === "LABEL"
+    );
+
+  if (labels.length < 2) {
+    return false;
+  }
+
+  const year = labels[0];
+  const date = labels[1];
+
+  /*
+   * Ordre réel :
+   * Année / Date / Sport / FIT / Repère / Ordre / Matériel
+   */
+  grid.style.setProperty(
+    "grid-template-columns",
+    "27mm 40mm 25mm 26mm 20mm 38mm 104mm",
+    "important"
+  );
+
+  grid.style.setProperty(
+    "column-gap",
+    "1mm",
+    "important"
+  );
+
+  grid.style.setProperty(
+    "row-gap",
+    "0",
+    "important"
+  );
+
+  for (const node of [year, date]) {
+    node.style.setProperty(
+      "position",
+      "relative",
+      "important"
+    );
+
+    node.style.setProperty(
+      "left",
+      "auto",
+      "important"
+    );
+
+    node.style.setProperty(
+      "right",
+      "auto",
+      "important"
+    );
+
+    node.style.setProperty(
+      "transform",
+      "none",
+      "important"
+    );
+
+    node.style.setProperty(
+      "margin-left",
+      "0",
+      "important"
+    );
+
+    node.style.setProperty(
+      "margin-right",
+      "0",
+      "important"
+    );
+
+    node.style.setProperty(
+      "min-width",
+      "0",
+      "important"
+    );
+
+    node.style.setProperty(
+      "max-width",
+      "none",
+      "important"
+    );
+  }
+
+  year.style.setProperty(
+    "width",
+    "27mm",
+    "important"
+  );
+
+  year.style.setProperty(
+    "min-width",
+    "27mm",
+    "important"
+  );
+
+  year.style.setProperty(
+    "max-width",
+    "27mm",
+    "important"
+  );
+
+  date.style.setProperty(
+    "width",
+    "40mm",
+    "important"
+  );
+
+  date.style.setProperty(
+    "min-width",
+    "40mm",
+    "important"
+  );
+
+  date.style.setProperty(
+    "max-width",
+    "40mm",
+    "important"
+  );
+
+  const yearField =
+    year.querySelector(
+      "select, input"
+    );
+
+  const dateField =
+    date.querySelector(
+      "select, input"
+    );
+
+  if (yearField) {
+    yearField.style.setProperty(
+      "width",
+      "27mm",
+      "important"
+    );
+
+    yearField.style.setProperty(
+      "min-width",
+      "27mm",
+      "important"
+    );
+
+    yearField.style.setProperty(
+      "max-width",
+      "27mm",
+      "important"
+    );
+
+    yearField.style.setProperty(
+      "box-sizing",
+      "border-box",
+      "important"
+    );
+  }
+
+  if (dateField) {
+    dateField.style.setProperty(
+      "width",
+      "40mm",
+      "important"
+    );
+
+    dateField.style.setProperty(
+      "min-width",
+      "40mm",
+      "important"
+    );
+
+    dateField.style.setProperty(
+      "max-width",
+      "40mm",
+      "important"
+    );
+
+    dateField.style.setProperty(
+      "box-sizing",
+      "border-box",
+      "important"
+    );
+  }
+
+  grid.dataset.cgweb120Fix5Gap =
+    "1";
+
+  return true;
+}
+
+
+/* ---------------------------------------------------------
+   5. Renderer final
+   --------------------------------------------------------- */
+
+function cgweb120Fix5RenderDetail() {
+  const rendered =
+    cgweb120Fix5BaseRenderDetailRow();
+
+  cgweb120Fix5KillHistoricalStrip();
+  cgweb120Fix5RemoveLegacyHeaders();
+
+  if (rendered) {
+    cgweb120Fix5InstallExactHeader();
+  }
+
+  /*
+   * Le renderer historique peut avoir rerempli
+   * detailHeroMetrics : le parent reste malgré tout masqué.
+   */
+  cgweb120Fix5KillHistoricalStrip();
+
+  return rendered;
+}
+
+
+cgweb120RenderDetailRow =
+  cgweb120Fix5RenderDetail;
+
+cgweb120Fix1RenderDetailRow =
+  cgweb120Fix5RenderDetail;
+
+
+/* ---------------------------------------------------------
+   6. Boot ponctuel
+   --------------------------------------------------------- */
+
+function cgweb120Fix5Boot() {
+  for (const delay of [
+    0,
+    50,
+    200,
+    800,
+    1600,
+    2600,
+    3800
+  ]) {
+    setTimeout(() => {
+      cgweb120Fix5ForceFilterGap();
+      cgweb120Fix5KillHistoricalStrip();
+
+      if (
+        typeof currentDetailActivity ===
+          "function" &&
+        currentDetailActivity()
+      ) {
+        cgweb120Fix5RenderDetail();
+      }
+    }, delay);
+  }
+}
+
+
+if (
+  document.readyState ===
+  "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb120Fix5Boot,
+    { once: true }
+  );
+} else {
+  cgweb120Fix5Boot();
+}
+
+
+/* ---------------------------------------------------------
+   7. Diagnostic
+   --------------------------------------------------------- */
+
+window.CGWEB120_FIX5_STATUS =
+  function () {
+
+    const detail =
+      document.getElementById(
+        "detailView"
+      );
+
+    const summary =
+      detail?.querySelector(
+        ".detail-summary-row"
+      );
+
+    const grid =
+      document.querySelector(
+        "#activityDirectorySection " +
+        "div.cgweb099-filter-grid"
+      );
+
+    return {
+      build:
+        "CGWEB120_FIX5",
+
+      historical_strip_hidden:
+        !!summary?.hidden,
+
+      historical_strip_display:
+        summary?.style?.display ||
+        "",
+
+      exact_header_present:
+        !!detail?.querySelector(
+          ".cgweb120-fix5-header-row"
+        ),
+
+      detail_row_present:
+        !!detail?.querySelector(
+          ".cgweb120-fix1-detail-list-scope " +
+          ".activity-card"
+        ),
+
+      filter_gap_lock:
+        grid?.dataset
+          ?.cgweb120Fix5Gap ||
+        "0",
+
+      filter_column_gap:
+        grid?.style
+          ?.columnGap ||
+        ""
+    };
+  };
+
+/* CGWEB120_FIX5_END */
