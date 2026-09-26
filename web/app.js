@@ -22058,7 +22058,7 @@ function rebuildEquipmentEditor(activity) {
   if (selected && !values.has(selected)) {
     const legacy = document.createElement("option");
     legacy.value = selected;
-    legacy.textContent = `${selected} · affectation historique`;
+    legacy.textContent = selected;
     legacy.disabled = true;
     legacy.selected = true;
     ui.editEquipmentSelect.appendChild(legacy);
@@ -39953,3 +39953,652 @@ window.CGWEB118_FIX12_STATUS = function () {
 };
 
 /* CGWEB118_FIX12_END */
+
+/* CGWEB120_START
+   DETAIL_ROW_LIGHT001
+   DETAIL_GAP_2MM002
+   FILTER_WIDTHS_FINAL002
+   SORT_PROXY_FIX001
+   HISTORICAL_LABEL_REMOVE002
+   FILTER_BUTTONS_REMOVE002
+   TRIANGLE_LEFT_CSS_LOCK001
+   PERFORMANCE_GUARD001
+*/
+
+function cgweb120Norm(value) {
+  return String(value || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+function cgweb120FilterGrid() {
+  const section =
+    document.getElementById("activityDirectorySection");
+
+  if (!section) return null;
+
+  return (
+    [...section.querySelectorAll("div.cgweb099-filter-grid")]
+      .find((grid) => {
+        const text = cgweb120Norm(grid.textContent);
+
+        return (
+          text.includes("année") &&
+          text.includes("date") &&
+          text.includes("sport") &&
+          text.includes("fit") &&
+          text.includes("repère") &&
+          text.includes("ordre") &&
+          text.includes("matériel")
+        );
+      }) || null
+  );
+}
+
+function cgweb120Field(grid, key, labelRx) {
+  if (!grid) return null;
+
+  const direct =
+    grid.querySelector(
+      `[data-cgweb118-fix9-field="${key}"]`
+    );
+
+  if (direct) return direct;
+
+  return (
+    [...grid.children].find((node) =>
+      labelRx.test(
+        cgweb120Norm(node.textContent)
+      )
+    ) || null
+  );
+}
+
+function cgweb120RemoveFilterButtons() {
+  const grid = cgweb120FilterGrid();
+  if (!grid) return 0;
+
+  const details = grid.closest("details");
+  const root =
+    details?.parentElement ||
+    details ||
+    grid.parentElement;
+
+  if (!root) return 0;
+
+  let removed = 0;
+
+  for (const button of root.querySelectorAll("button")) {
+    const text =
+      cgweb120Norm(button.textContent);
+
+    if (
+      text === "réinitialiser" ||
+      text === "actualiser la base"
+    ) {
+      button.remove();
+      removed += 1;
+    }
+  }
+
+  return removed;
+}
+
+function cgweb120MarkFilterBar() {
+  const grid = cgweb120FilterGrid();
+  if (!grid) return false;
+
+  grid.dataset.cgweb120 = "1";
+
+  const details = grid.closest("details");
+
+  if (details) {
+    details.dataset.cgweb120 = "1";
+
+    if (
+      typeof cgweb118Fix12ApplyActivityTriangle ===
+      "function"
+    ) {
+      cgweb118Fix12ApplyActivityTriangle();
+    }
+
+    const summary =
+      details.querySelector(":scope > summary");
+
+    if (
+      summary &&
+      summary.nextElementSibling !== grid
+    ) {
+      details.insertBefore(summary, grid);
+    }
+  }
+
+  cgweb120RemoveFilterButtons();
+  return true;
+}
+
+document.addEventListener(
+  "change",
+  (event) => {
+    const target = event.target;
+
+    if (!(target instanceof HTMLSelectElement)) {
+      return;
+    }
+
+    const grid = cgweb120FilterGrid();
+    if (!grid || !grid.contains(target)) return;
+
+    const orderField =
+      cgweb120Field(
+        grid,
+        "order",
+        /^ordre\b/
+      );
+
+    const orderSelect =
+      orderField?.querySelector("select");
+
+    if (target !== orderSelect) return;
+    if (!ui?.sortFilter) return;
+
+    const text =
+      cgweb120Norm(
+        target.selectedOptions?.[0]?.textContent ||
+        target.options?.[target.selectedIndex]?.textContent ||
+        ""
+      );
+
+    let value = null;
+
+    if (
+      /plus anciennes/.test(text) ||
+      /ancien.*récent/.test(text)
+    ) {
+      value = "date_asc";
+    } else if (
+      /plus récentes/.test(text) ||
+      /récent.*ancien/.test(text)
+    ) {
+      value = "";
+    } else if (
+      /distance/.test(text)
+    ) {
+      value = "distance_desc";
+    } else if (
+      /d\+/.test(text)
+    ) {
+      value = "ascent_desc";
+    } else if (
+      /durée|duree|temps/.test(text)
+    ) {
+      value = "duration_desc";
+    }
+
+    if (value !== null) {
+      ui.sortFilter.value = value;
+    }
+  },
+  true
+);
+
+let cgweb120LastCardClone = null;
+let cgweb120LastCardKey = "";
+
+function cgweb120CardKey(card) {
+  return String(
+    card?.dataset?.activityKeyWeb058 ||
+    card?.dataset?.activityKey ||
+    card?.dataset?.activityId ||
+    ""
+  );
+}
+
+function cgweb120RememberCard(card) {
+  if (!card) return false;
+
+  const key = cgweb120CardKey(card);
+  if (!key) return false;
+
+  cgweb120LastCardKey = key;
+  cgweb120LastCardClone =
+    card.cloneNode(true);
+
+  return true;
+}
+
+document.addEventListener(
+  "pointerdown",
+  (event) => {
+    const card =
+      event.target?.closest?.(
+        "#activityList .activity-card"
+      );
+
+    if (card) {
+      cgweb120RememberCard(card);
+    }
+  },
+  true
+);
+
+function cgweb120CurrentActivity() {
+  if (
+    typeof currentDetailActivity !== "function"
+  ) {
+    return null;
+  }
+
+  return currentDetailActivity();
+}
+
+function cgweb120CurrentKey() {
+  const activity = cgweb120CurrentActivity();
+
+  if (
+    !activity ||
+    typeof activityKey !== "function"
+  ) {
+    return "";
+  }
+
+  return String(
+    activityKey(activity) || ""
+  );
+}
+
+function cgweb120LiveDirectoryCard(key) {
+  if (!key || !ui?.activityList) return null;
+
+  return (
+    [...ui.activityList.querySelectorAll(
+      ".activity-card"
+    )].find(
+      (card) =>
+        cgweb120CardKey(card) === key
+    ) || null
+  );
+}
+
+function cgweb120StrongForLabel(root, rx) {
+  if (!root) return null;
+
+  for (const datum of root.querySelectorAll(
+    ".datum"
+  )) {
+    const label =
+      cgweb120Norm(
+        datum.querySelector("span")?.textContent
+      );
+
+    if (rx.test(label)) {
+      return datum.querySelector("strong");
+    }
+  }
+
+  return null;
+}
+
+function cgweb120PatchMutableValues(row, activity) {
+  if (!row || !activity) return;
+
+  const equipment =
+    String(
+      activity.equipment_name || ""
+    ).trim() || "—";
+
+  const equipmentStrong =
+    cgweb120StrongForLabel(
+      row,
+      /^matériel$/
+    );
+
+  if (equipmentStrong) {
+    equipmentStrong.textContent =
+      equipment;
+  }
+
+  if (
+    typeof linksForActivity === "function"
+  ) {
+    const markerText =
+      linksForActivity(activity)
+        .map((link) =>
+          String(
+            link.landmark_code || ""
+          ).trim()
+        )
+        .filter(Boolean)
+        .join(", ");
+
+    const landmarkStrong =
+      cgweb120StrongForLabel(
+        row,
+        /^repères?$/
+      );
+
+    if (landmarkStrong) {
+      landmarkStrong.textContent =
+        markerText || "—";
+    }
+  }
+}
+
+function cgweb120RenderDetailRow() {
+  const detail =
+    document.getElementById("detailView");
+
+  if (!detail) return false;
+
+  const activity =
+    cgweb120CurrentActivity();
+
+  if (!activity) {
+    detail
+      .querySelectorAll(
+        ".cgweb120-detail-row"
+      )
+      .forEach((node) => node.remove());
+
+    return false;
+  }
+
+  const key =
+    cgweb120CurrentKey();
+
+  if (!key) return false;
+
+  let source = null;
+
+  if (
+    cgweb120LastCardClone &&
+    cgweb120LastCardKey === key
+  ) {
+    source =
+      cgweb120LastCardClone;
+  } else {
+    const live =
+      cgweb120LiveDirectoryCard(key);
+
+    if (live) {
+      source =
+        live.cloneNode(true);
+    }
+  }
+
+  if (!source) return false;
+
+  const toolbar =
+    detail.querySelector(
+      ":scope > .detail-toolbar"
+    ) ||
+    detail.querySelector(
+      ".detail-toolbar-web047"
+    ) ||
+    detail.querySelector(
+      ".detail-toolbar"
+    );
+
+  if (!toolbar) return false;
+
+  const old =
+    detail.querySelector(
+      ".cgweb120-detail-row"
+    );
+
+  const row =
+    source.cloneNode(true);
+
+  row.classList.add(
+    "cgweb120-detail-row"
+  );
+
+  row
+    .querySelectorAll("[id]")
+    .forEach((node) =>
+      node.removeAttribute("id")
+    );
+
+  row.removeAttribute("id");
+
+  for (
+    const node of
+    row.querySelectorAll(
+      "button, a, input, select"
+    )
+  ) {
+    node.tabIndex = -1;
+    node.style.pointerEvents = "none";
+  }
+
+  cgweb120PatchMutableValues(
+    row,
+    activity
+  );
+
+  old?.remove();
+
+  toolbar.insertAdjacentElement(
+    "afterend",
+    row
+  );
+
+  return true;
+}
+
+let cgweb120DetailTimer = 0;
+
+function cgweb120ScheduleDetail() {
+  clearTimeout(cgweb120DetailTimer);
+
+  cgweb120DetailTimer =
+    setTimeout(
+      cgweb120RenderDetailRow,
+      0
+    );
+}
+
+function cgweb120ScheduleDetailSettled() {
+  cgweb120ScheduleDetail();
+
+  setTimeout(
+    cgweb120RenderDetailRow,
+    80
+  );
+
+  setTimeout(
+    cgweb120RenderDetailRow,
+    250
+  );
+}
+
+document.addEventListener(
+  "click",
+  (event) => {
+    const target = event.target;
+
+    if (!target?.closest) return;
+
+    if (
+      target.closest(
+        "#activityList .activity-card"
+      ) ||
+      target.closest(
+        "#previousActivityButton"
+      ) ||
+      target.closest(
+        "#nextActivityButton"
+      ) ||
+      target.closest(
+        "#previousActivityBottomButton"
+      ) ||
+      target.closest(
+        "#nextActivityBottomButton"
+      ) ||
+      target.closest(
+        "#quickLandmarkButtons button"
+      )
+    ) {
+      cgweb120ScheduleDetailSettled();
+    }
+  },
+  false
+);
+
+document.addEventListener(
+  "change",
+  (event) => {
+    const target = event.target;
+
+    if (
+      target?.id === "editEquipmentSelect" ||
+      target?.id === "addLandmarkSelect"
+    ) {
+      cgweb120ScheduleDetailSettled();
+    }
+  },
+  false
+);
+
+if (
+  typeof saveImmediateActivityFields ===
+  "function"
+) {
+  const cgweb120SaveImmediateActivityFieldsBase =
+    saveImmediateActivityFields;
+
+  saveImmediateActivityFields =
+    async function cgweb120SaveImmediateActivityFields(
+      ...args
+    ) {
+      const result =
+        await cgweb120SaveImmediateActivityFieldsBase.apply(
+          this,
+          args
+        );
+
+      cgweb120ScheduleDetailSettled();
+      return result;
+    };
+}
+
+function cgweb120CleanHistoricalLabel() {
+  const select =
+    document.getElementById(
+      "editEquipmentSelect"
+    );
+
+  if (!select) return 0;
+
+  let changed = 0;
+
+  for (const option of select.options) {
+    const before =
+      String(option.textContent || "");
+
+    const after =
+      before.replace(
+        /\s*[·\-–—]\s*affectation historique\s*$/i,
+        ""
+      );
+
+    if (after !== before) {
+      option.textContent = after;
+      changed += 1;
+    }
+  }
+
+  return changed;
+}
+
+function cgweb120Boot() {
+  cgweb120MarkFilterBar();
+  cgweb120CleanHistoricalLabel();
+
+  for (const delay of [
+    0,
+    100,
+    400,
+    1200
+  ]) {
+    setTimeout(() => {
+      cgweb120MarkFilterBar();
+      cgweb120CleanHistoricalLabel();
+    }, delay);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb120Boot,
+    { once: true }
+  );
+} else {
+  cgweb120Boot();
+}
+
+window.CGWEB120_STATUS = function () {
+  const grid =
+    cgweb120FilterGrid();
+
+  const year =
+    cgweb120Field(
+      grid,
+      "year",
+      /^année\b/
+    );
+
+  const equipment =
+    cgweb120Field(
+      grid,
+      "equipment",
+      /^matériel\b/
+    );
+
+  const details =
+    grid?.closest("details") || null;
+
+  const triangle =
+    details?.querySelector(
+      ":scope > summary .cgweb118-fix12-triangle"
+    ) || null;
+
+  return {
+    filter_grid_found: !!grid,
+    year_width_px:
+      year
+        ? Math.round(
+            year.getBoundingClientRect().width
+          )
+        : null,
+    equipment_width_px:
+      equipment
+        ? Math.round(
+            equipment.getBoundingClientRect().width
+          )
+        : null,
+    source_sort_mode:
+      ui?.sortFilter?.value || null,
+    detail_row_found:
+      !!document.querySelector(
+        "#detailView .cgweb120-detail-row"
+      ),
+    historical_suffix_visible:
+      [...(
+        document.getElementById(
+          "editEquipmentSelect"
+        )?.options || []
+      )].some((option) =>
+        /affectation historique/i.test(
+          option.textContent || ""
+        )
+      ),
+    triangle_found: !!triangle,
+    mutation_observers_added_by_cgweb120: 0
+  };
+};
+
+/* CGWEB120_END */
