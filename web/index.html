@@ -7365,6 +7365,169 @@ a{
 </style>
 <!-- CGWEB120_STYLE_END -->
 
+
+<!-- CGWEB120_FIX1_STYLE_START -->
+<style id="cgweb120Fix1Ui">
+
+/* =========================================================
+   FILTRES : tous sauf Année +0,5 mm vers la droite
+   Translation identique, non cumulative.
+   ========================================================= */
+
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="date"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="sport"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="fit"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="landmark"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="order"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="equipment"]{
+  position:relative!important;
+  left:.5mm!important;
+}
+
+/* =========================================================
+   DETAIL : ancienne ligne stats supprimée réellement
+   ========================================================= */
+
+#detailView
+.cgweb120-fix1-old-summary{
+  display:none!important;
+  height:0!important;
+  min-height:0!important;
+  max-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:hidden!important;
+}
+
+/*
+ * Neutralise la pile sticky sans créer d'espace réservé.
+ */
+#detailView
+.detail-sticky-stack{
+  display:contents!important;
+  position:static!important;
+  top:auto!important;
+  inset:auto!important;
+  height:auto!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  background:none!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+
+#detailView
+.detail-toolbar,
+#detailView
+.detail-toolbar-web047{
+  position:static!important;
+  top:auto!important;
+  inset:auto!important;
+  transform:none!important;
+  margin:0 0 2mm!important;
+  z-index:auto!important;
+}
+
+/*
+ * La vraie ligne clonée du répertoire.
+ * Son apparence vient des règles #activityList dupliquées
+ * automatiquement par le runtime.
+ */
+#detailView
+.cgweb120-fix1-detail-list-scope{
+  display:block!important;
+  width:100%!important;
+  max-width:none!important;
+  margin:0 0 2mm!important;
+  padding:0!important;
+  box-sizing:border-box!important;
+}
+
+/*
+ * Le conteneur historique ne doit plus refaire un gros bandeau.
+ * On conserve uniquement sa ligne de contrôles Matériel / Repères.
+ */
+#detailView
+.detail-hero-two-lines,
+#detailView
+.detail-hero-web047,
+#detailView
+.detail-hero-web048,
+#detailView
+.detail-hero-web049{
+  position:static!important;
+  top:auto!important;
+  inset:auto!important;
+  transform:none!important;
+  height:auto!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  gap:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+
+#detailView
+.detail-controls-row{
+  position:static!important;
+  top:auto!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+/* =========================================================
+   WEB018 : actions explicites dans Modifier
+   ========================================================= */
+
+#cgweb120Fix1EquipmentStatusActions{
+  display:flex!important;
+  align-items:center!important;
+  gap:2mm!important;
+  align-self:end!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+#cgweb120Fix1EquipmentStatusActions
+button{
+  min-height:40px!important;
+  padding:7px 13px!important;
+  white-space:nowrap!important;
+}
+
+#cgweb120Fix1EquipmentStatusActions
+button.active{
+  border-color:var(--green)!important;
+  color:var(--green)!important;
+  box-shadow:
+    inset 0 0 0 1px
+    color-mix(
+      in srgb,
+      var(--green) 45%,
+      transparent
+    )!important;
+}
+
+</style>
+<!-- CGWEB120_FIX1_STYLE_END -->
+
 </head>
 <body>
   <header class="topbar">
@@ -10041,7 +10204,7 @@ a{
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB120"></script>
+<script type="module" src="./app.js?v=CGWEB120-FIX1"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

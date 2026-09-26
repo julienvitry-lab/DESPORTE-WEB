@@ -40602,3 +40602,623 @@ window.CGWEB120_STATUS = function () {
 };
 
 /* CGWEB120_END */
+
+/* CGWEB120_FIX1_START
+   FILTER_SHIFT_05MM001
+   DETAIL_EXACT_ROW_MIRROR001
+   OLD_DETAIL_STATS_REMOVE001
+   DETAIL_GAP_2MM003
+   EQUIPMENT_STATUS_ACTIONS001
+   PERFORMANCE_GUARD002
+*/
+
+function cgweb120Fix1Norm(value) {
+  return String(value || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+/* =========================================================
+   A. DETAIL : vraie copie visuelle du répertoire
+   ========================================================= */
+
+/*
+ * On ne copie PAS les styles calculés.
+ * On duplique une seule fois les règles CSS existantes qui ciblent
+ * #activityList, en remplaçant uniquement leur portée par le host
+ * du détail. La carte clonée utilise donc les mêmes règles que
+ * la carte originale.
+ */
+
+function cgweb120Fix1MirrorRuleList(ruleList) {
+  let out = "";
+
+  for (const rule of ruleList) {
+    try {
+      if (
+        rule.type === CSSRule.STYLE_RULE &&
+        rule.selectorText &&
+        rule.selectorText.includes("#activityList")
+      ) {
+        const selector = rule.selectorText
+          .split("#activityList")
+          .join(
+            "#detailView .cgweb120-fix1-detail-list-scope"
+          );
+
+        out += `${selector}{${rule.style.cssText}}\n`;
+        continue;
+      }
+
+      if (
+        rule.type === CSSRule.MEDIA_RULE
+      ) {
+        const inner =
+          cgweb120Fix1MirrorRuleList(
+            rule.cssRules
+          );
+
+        if (inner) {
+          out +=
+            `@media ${rule.conditionText}{${inner}}\n`;
+        }
+
+        continue;
+      }
+
+      if (
+        typeof CSSSupportsRule !== "undefined" &&
+        rule instanceof CSSSupportsRule
+      ) {
+        const inner =
+          cgweb120Fix1MirrorRuleList(
+            rule.cssRules
+          );
+
+        if (inner) {
+          out +=
+            `@supports ${rule.conditionText}{${inner}}\n`;
+        }
+      }
+    } catch (_) {
+      // Une règle illisible est simplement ignorée.
+    }
+  }
+
+  return out;
+}
+
+function cgweb120Fix1InstallMirroredActivityStyles() {
+  const existing =
+    document.getElementById(
+      "cgweb120Fix1ActivityMirrorStyles"
+    );
+
+  if (existing) return existing;
+
+  let css = "";
+
+  for (const sheet of document.styleSheets) {
+    try {
+      if (!sheet.cssRules) continue;
+
+      css +=
+        cgweb120Fix1MirrorRuleList(
+          sheet.cssRules
+        );
+    } catch (_) {
+      // Feuille cross-origin : aucune lecture.
+    }
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "cgweb120Fix1ActivityMirrorStyles";
+
+  style.textContent = css;
+
+  document.head.appendChild(style);
+  return style;
+}
+
+function cgweb120Fix1HideOldDetailStats() {
+  const detail =
+    document.getElementById("detailView");
+
+  if (!detail) return false;
+
+  const metrics =
+    document.getElementById(
+      "detailHeroMetrics"
+    );
+
+  const summary =
+    metrics?.closest(
+      ".detail-summary-row"
+    );
+
+  if (!summary) return false;
+
+  summary.classList.add(
+    "cgweb120-fix1-old-summary"
+  );
+
+  return true;
+}
+
+function cgweb120Fix1StrongForLabel(
+  root,
+  rx
+) {
+  if (!root) return null;
+
+  for (const datum of root.querySelectorAll(
+    ".datum"
+  )) {
+    const label =
+      cgweb120Fix1Norm(
+        datum.querySelector("span")?.textContent
+      );
+
+    if (rx.test(label)) {
+      return datum.querySelector("strong");
+    }
+  }
+
+  return null;
+}
+
+function cgweb120Fix1PatchMutableValues(
+  row,
+  activity
+) {
+  if (!row || !activity) return;
+
+  const equipmentStrong =
+    cgweb120Fix1StrongForLabel(
+      row,
+      /^matériel$/
+    );
+
+  if (equipmentStrong) {
+    equipmentStrong.textContent =
+      String(
+        activity.equipment_name || ""
+      ).trim() || "—";
+  }
+
+  if (
+    typeof linksForActivity === "function"
+  ) {
+    const markers =
+      linksForActivity(activity)
+        .map((link) =>
+          String(
+            link.landmark_code || ""
+          ).trim()
+        )
+        .filter(Boolean)
+        .join(", ");
+
+    const landmarkStrong =
+      cgweb120Fix1StrongForLabel(
+        row,
+        /^repères?$/
+      );
+
+    if (landmarkStrong) {
+      landmarkStrong.textContent =
+        markers || "—";
+    }
+  }
+}
+
+function cgweb120Fix1RenderDetailRow() {
+  const detail =
+    document.getElementById("detailView");
+
+  if (!detail) return false;
+
+  cgweb120Fix1InstallMirroredActivityStyles();
+  cgweb120Fix1HideOldDetailStats();
+
+  const activity =
+    typeof currentDetailActivity === "function"
+      ? currentDetailActivity()
+      : null;
+
+  if (!activity) {
+    detail
+      .querySelectorAll(
+        ".cgweb120-fix1-detail-list-scope"
+      )
+      .forEach((node) => node.remove());
+
+    return false;
+  }
+
+  const key =
+    typeof activityKey === "function"
+      ? String(activityKey(activity) || "")
+      : "";
+
+  if (!key) return false;
+
+  let source = null;
+
+  /*
+   * CGWEB120 mémorise déjà uniquement la carte cliquée.
+   * On réutilise cette copie légère.
+   */
+  if (
+    cgweb120LastCardClone &&
+    cgweb120LastCardKey === key
+  ) {
+    source =
+      cgweb120LastCardClone;
+  }
+
+  if (!source && ui?.activityList) {
+    const live = [
+      ...ui.activityList.querySelectorAll(
+        ".activity-card"
+      )
+    ].find(
+      (card) =>
+        String(
+          card.dataset.activityKeyWeb058 ||
+          card.dataset.activityKey ||
+          card.dataset.activityId ||
+          ""
+        ) === key
+    );
+
+    if (live) {
+      source = live.cloneNode(true);
+    }
+  }
+
+  if (!source) return false;
+
+  const toolbar =
+    detail.querySelector(
+      ":scope > .detail-toolbar"
+    ) ||
+    detail.querySelector(
+      ".detail-toolbar-web047"
+    ) ||
+    detail.querySelector(
+      ".detail-toolbar"
+    );
+
+  if (!toolbar) return false;
+
+  const oldHost =
+    detail.querySelector(
+      ".cgweb120-fix1-detail-list-scope"
+    );
+
+  const host =
+    document.createElement("div");
+
+  host.className =
+    "cgweb120-fix1-detail-list-scope";
+
+  const row =
+    source.cloneNode(true);
+
+  row.classList.remove(
+    "cgweb120-detail-row"
+  );
+
+  row
+    .querySelectorAll("[id]")
+    .forEach((node) =>
+      node.removeAttribute("id")
+    );
+
+  row.removeAttribute("id");
+
+  /*
+   * La copie est uniquement informative.
+   */
+  for (
+    const node of
+    row.querySelectorAll(
+      "button, a, input, select"
+    )
+  ) {
+    node.tabIndex = -1;
+    node.style.pointerEvents = "none";
+  }
+
+  cgweb120Fix1PatchMutableValues(
+    row,
+    activity
+  );
+
+  host.appendChild(row);
+
+  oldHost?.remove();
+
+  /*
+   * Ordre physique voulu :
+   * navigation
+   * 2 mm
+   * vraie ligne du répertoire
+   * contrôles Matériel / Repères
+   */
+  toolbar.insertAdjacentElement(
+    "afterend",
+    host
+  );
+
+  /*
+   * Retire l'ancienne copie manuelle CGWEB120.
+   */
+  detail
+    .querySelectorAll(
+      ".cgweb120-detail-row"
+    )
+    .forEach((node) => node.remove());
+
+  return true;
+}
+
+/*
+ * Les anciens appels CGWEB120 utilisent désormais le renderer FIX1.
+ * Aucun observer ajouté.
+ */
+cgweb120RenderDetailRow =
+  cgweb120Fix1RenderDetailRow;
+
+
+/* =========================================================
+   B. WEB018 : Réserve / Archiver depuis Modifier
+   ========================================================= */
+
+/*
+ * L'éditeur historique possède déjà equipmentStatusInput et
+ * le listener change -> saveEquipmentEditorImmediate().
+ * Ces boutons pilotent donc ce mécanisme existant sans ajouter
+ * aucune écriture Firestore nouvelle.
+ */
+
+function cgweb120Fix1UpdateStatusButtons() {
+  const select =
+    document.getElementById(
+      "equipmentStatusInput"
+    );
+
+  const actions =
+    document.getElementById(
+      "cgweb120Fix1EquipmentStatusActions"
+    );
+
+  if (!select || !actions) return;
+
+  for (const button of actions.querySelectorAll(
+    "button[data-status]"
+  )) {
+    const active =
+      button.dataset.status ===
+      select.value;
+
+    button.classList.toggle(
+      "active",
+      active
+    );
+
+    button.setAttribute(
+      "aria-pressed",
+      active ? "true" : "false"
+    );
+  }
+}
+
+function cgweb120Fix1InstallEquipmentStatusActions() {
+  const select =
+    document.getElementById(
+      "equipmentStatusInput"
+    );
+
+  if (!select) return false;
+
+  /*
+   * Les trois valeurs WEB009 doivent rester disponibles.
+   */
+  const required = [
+    ["ACTIVE", "Actif"],
+    ["STORED", "En réserve"],
+    ["RETIRED", "Retiré / archivé"]
+  ];
+
+  for (const [value, label] of required) {
+    if (
+      ![...select.options].some(
+        (option) =>
+          option.value === value
+      )
+    ) {
+      select.add(
+        new Option(label, value)
+      );
+    }
+  }
+
+  let actions =
+    document.getElementById(
+      "cgweb120Fix1EquipmentStatusActions"
+    );
+
+  if (!actions) {
+    actions =
+      document.createElement("div");
+
+    actions.id =
+      "cgweb120Fix1EquipmentStatusActions";
+
+    actions.className =
+      "cgweb120-fix1-equipment-status-actions";
+
+    const defs = [
+      ["ACTIVE", "Actif"],
+      ["STORED", "Réserve"],
+      ["RETIRED", "Archiver"]
+    ];
+
+    for (const [status, label] of defs) {
+      const button =
+        document.createElement("button");
+
+      button.type = "button";
+      button.dataset.status = status;
+      button.textContent = label;
+
+      button.addEventListener(
+        "click",
+        () => {
+          if (select.value === status) {
+            cgweb120Fix1UpdateStatusButtons();
+            return;
+          }
+
+          select.value = status;
+
+          /*
+           * Déclenche le listener natif WEB009 :
+           * saveEquipmentEditorImmediate().
+           */
+          select.dispatchEvent(
+            new Event(
+              "change",
+              { bubbles: true }
+            )
+          );
+
+          cgweb120Fix1UpdateStatusButtons();
+        }
+      );
+
+      actions.appendChild(button);
+    }
+
+    const label =
+      select.closest("label");
+
+    if (label) {
+      label.insertAdjacentElement(
+        "afterend",
+        actions
+      );
+    } else {
+      select.insertAdjacentElement(
+        "afterend",
+        actions
+      );
+    }
+
+    select.addEventListener(
+      "change",
+      cgweb120Fix1UpdateStatusButtons
+    );
+  }
+
+  cgweb120Fix1UpdateStatusButtons();
+  return true;
+}
+
+
+/* =========================================================
+   C. BOOT PONCTUEL
+   ========================================================= */
+
+function cgweb120Fix1Boot() {
+  cgweb120Fix1InstallMirroredActivityStyles();
+  cgweb120Fix1InstallEquipmentStatusActions();
+
+  /*
+   * Quelques reprises ponctuelles uniquement pour les panneaux
+   * rendus après authentification. Aucun MutationObserver.
+   */
+  for (const delay of [
+    0,
+    100,
+    400,
+    1200,
+    2500
+  ]) {
+    setTimeout(() => {
+      cgweb120Fix1InstallEquipmentStatusActions();
+
+      if (
+        typeof currentDetailActivity === "function" &&
+        currentDetailActivity()
+      ) {
+        cgweb120Fix1RenderDetailRow();
+      }
+    }, delay);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb120Fix1Boot,
+    { once: true }
+  );
+} else {
+  cgweb120Fix1Boot();
+}
+
+window.CGWEB120_FIX1_STATUS = function () {
+  const detail =
+    document.getElementById("detailView");
+
+  const statusSelect =
+    document.getElementById(
+      "equipmentStatusInput"
+    );
+
+  const statusButtons =
+    document.getElementById(
+      "cgweb120Fix1EquipmentStatusActions"
+    );
+
+  return {
+    exact_detail_row_found:
+      !!detail?.querySelector(
+        ".cgweb120-fix1-detail-list-scope .activity-card"
+      ),
+    old_detail_stats_hidden:
+      !!detail?.querySelector(
+        ".cgweb120-fix1-old-summary"
+      ),
+    old_manual_detail_row_remaining:
+      detail?.querySelectorAll(
+        ".cgweb120-detail-row"
+      ).length || 0,
+    equipment_status_select_found:
+      !!statusSelect,
+    equipment_status_values:
+      statusSelect
+        ? [...statusSelect.options].map(
+            (option) => option.value
+          )
+        : [],
+    equipment_status_buttons_found:
+      statusButtons
+        ? statusButtons.querySelectorAll(
+            "button[data-status]"
+          ).length
+        : 0,
+    mutation_observers_added_by_fix1: 0,
+    get_computed_style_calls_added_by_fix1: 0
+  };
+};
+
+/* CGWEB120_FIX1_END */
