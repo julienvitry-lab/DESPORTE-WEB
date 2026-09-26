@@ -44339,3 +44339,669 @@ window.CGWEB120_FIX8_STATUS =
   };
 
 /* CGWEB120_FIX8_END */
+
+/* CGWEB120_FIX9_START
+   AUTOROUTE_DIRECT_STREAM001
+   FIT_BINARY_ROUTE001
+   DETAIL_CARTO_AUTO001
+   PROFILE_AUTO001
+   SIGNED_URL_BYPASS002
+*/
+
+
+/* ================================================================
+   1. NOM DU FIT RETOURNE PAR LE STREAM DIRECT
+   ================================================================ */
+
+function cgweb120Fix9DispositionName(
+  value,
+  fallback
+) {
+  const text =
+    String(value || "");
+
+  const encoded =
+    text.match(
+      /filename\*=UTF-8''([^;]+)/i
+    );
+
+  if (encoded?.[1]) {
+    try {
+      return decodeURIComponent(
+        encoded[1].trim()
+      );
+    } catch (_) {}
+  }
+
+  const normal =
+    text.match(
+      /filename="?([^";]+)"?/i
+    );
+
+  return (
+    normal?.[1]?.trim() ||
+    fallback
+  );
+}
+
+
+/* ================================================================
+   2. LECTURE DIRECTE DU FIT CLOUD
+
+   CGWEB107 a remplacé les signed URLs par
+   directory_fit_direct_download.
+
+   FIX9 utilise exactement ce même endpoint, mais au lieu de
+   provoquer un téléchargement navigateur, on récupère le Blob
+   afin de le décoder immédiatement.
+   ================================================================ */
+
+async function cgweb120Fix9FetchDirectFit(
+  activity
+) {
+  if (
+    !currentUser ||
+    !activity
+  ) {
+    return null;
+  }
+
+  if (
+    typeof VAULT_URL ===
+      "undefined" ||
+    !VAULT_URL
+  ) {
+    console.warn(
+      "CGWEB120 FIX9 · VAULT_URL absent"
+    );
+
+    return null;
+  }
+
+  const ids =
+    typeof cgweb120Fix8ActivityKeys ===
+      "function"
+      ? cgweb120Fix8ActivityKeys(
+          activity
+        )
+      : [
+          activity?.__docId,
+          activity?.id,
+          (
+            typeof activityKey ===
+              "function"
+              ? activityKey(activity)
+              : null
+          )
+        ]
+          .filter(Boolean)
+          .map(String);
+
+  if (!ids.length) {
+    return null;
+  }
+
+  const token =
+    await currentUser.getIdToken();
+
+  for (const id of ids) {
+    try {
+      const url =
+        new URL(VAULT_URL);
+
+      url.searchParams.set(
+        "action",
+        "directory_fit_direct_download"
+      );
+
+      const response =
+        await fetch(
+          url.toString(),
+          {
+            method: "POST",
+
+            headers: {
+              Authorization:
+                "Bearer " + token,
+
+              "Content-Type":
+                "application/json"
+            },
+
+            body:
+              JSON.stringify({
+                activity_id:
+                  String(id)
+              }),
+
+            cache: "no-store"
+          }
+        );
+
+      if (!response.ok) {
+        let detail = "";
+
+        try {
+          detail =
+            await response.text();
+        } catch (_) {}
+
+        console.info(
+          "CGWEB120 FIX9 · FIT direct non résolu",
+          id,
+          response.status,
+          detail.slice(0, 300)
+        );
+
+        continue;
+      }
+
+      const blob =
+        await response.blob();
+
+      if (
+        !blob ||
+        blob.size < 32
+      ) {
+        console.warn(
+          "CGWEB120 FIX9 · FIT direct vide",
+          id
+        );
+
+        continue;
+      }
+
+      const fileName =
+        cgweb120Fix9DispositionName(
+          response.headers.get(
+            "Content-Disposition"
+          ),
+          "activity_" +
+            String(id) +
+            ".fit"
+        );
+
+      return {
+        ok: true,
+        activity_id:
+          String(id),
+        blob,
+        file_name:
+          fileName,
+        size_bytes:
+          blob.size,
+        role:
+          response.headers.get(
+            "X-Sport-Fit-Role"
+          ) || "",
+        method:
+          response.headers.get(
+            "X-Sport-Fit-Resolve-Method"
+          ) || "",
+        service:
+          response.headers.get(
+            "X-Sport-Download-Service"
+          ) ||
+          "FIT_DIRECT_DOWNLOAD001"
+      };
+    } catch (error) {
+      console.warn(
+        "CGWEB120 FIX9 · lecture FIT direct",
+        id,
+        error
+      );
+    }
+  }
+
+  return null;
+}
+
+
+/* ================================================================
+   3. FIT -> activity_routes
+   ================================================================ */
+
+async function cgweb120Fix9RecoverFromDirectFit(
+  activity
+) {
+  if (
+    !activity ||
+    !currentUser
+  ) {
+    return false;
+  }
+
+  if (
+    typeof cgweb120Fix8RouteAlreadyExists ===
+      "function" &&
+    await cgweb120Fix8RouteAlreadyExists(
+      activity
+    )
+  ) {
+    return true;
+  }
+
+  if (ui?.mapStatus) {
+    ui.mapStatus.textContent =
+      "Recherche du FIT Cloud…";
+
+    ui.mapStatus.className =
+      "pill neutral";
+  }
+
+  const fit =
+    await cgweb120Fix9FetchDirectFit(
+      activity
+    );
+
+  if (!fit?.blob) {
+    return false;
+  }
+
+  if (ui?.mapStatus) {
+    ui.mapStatus.textContent =
+      "FIT trouvé · reconstruction automatique du tracé…";
+
+    ui.mapStatus.className =
+      "pill neutral";
+  }
+
+  try {
+    const buffer =
+      await fit.blob.arrayBuffer();
+
+    const parsed =
+      decodeFitActivity(
+        buffer,
+        fit.file_name
+      );
+
+    const raw =
+      buildWebImportRoute(
+        parsed
+      );
+
+    const normalized =
+      normalizeRoute(
+        raw
+      );
+
+    if (
+      !normalized ||
+      normalized.points.length < 2
+    ) {
+      console.warn(
+        "CGWEB120 FIX9 · FIT présent mais sans GPS exploitable",
+        fit.activity_id
+      );
+
+      return false;
+    }
+
+    /*
+     * On conserve le nombre réel de points GPS connu
+     * dans le résumé de l'activité.
+     *
+     * buildWebImportRoute peut volontairement réduire
+     * le nombre de points affichés sur le Web.
+     */
+    raw.source_point_count =
+      Math.max(
+        Number(
+          raw.source_point_count
+        ) || 0,
+
+        Number(
+          activity?.gps_point_count
+        ) || 0,
+
+        normalized.points.length
+      );
+
+    raw.route_format =
+      "CGWEB120-FIX9-DIRECT-FIT";
+
+    raw.__cgweb120_autoroute =
+      "AUTOROUTE_DIRECT_STREAM001";
+
+    raw.__cgweb120_fit_role =
+      fit.role || "";
+
+    raw.__cgweb120_fit_method =
+      fit.method || "";
+
+    raw.__cgweb120_fit_service =
+      fit.service || "";
+
+    raw.__cgweb120_fit_size_bytes =
+      fit.size_bytes || 0;
+
+    raw.__cgweb120_rebuilt_at_ms =
+      Date.now();
+
+    if (
+      typeof persistRecoveredSplitRoute !==
+        "function"
+    ) {
+      throw new Error(
+        "persistRecoveredSplitRoute absent"
+      );
+    }
+
+    await persistRecoveredSplitRoute(
+      activity,
+      raw
+    );
+
+    /*
+     * Invalidation du cache cartographique :
+     * la route qui était absente quelques millisecondes
+     * auparavant doit être relue immédiatement.
+     */
+    try {
+      if (
+        typeof globalMapRouteCache !==
+          "undefined"
+      ) {
+        const keys =
+          typeof cgweb120Fix8ActivityKeys ===
+            "function"
+            ? cgweb120Fix8ActivityKeys(
+                activity
+              )
+            : [];
+
+        for (const key of keys) {
+          globalMapRouteCache.delete(
+            key
+          );
+        }
+      }
+    } catch (_) {}
+
+    const created =
+      typeof cgweb120Fix8RouteAlreadyExists ===
+        "function"
+        ? await cgweb120Fix8RouteAlreadyExists(
+            activity
+          )
+        : true;
+
+    if (!created) {
+      throw new Error(
+        "activity_routes non matérialisé après reconstruction"
+      );
+    }
+
+    console.info(
+      "CGWEB120 FIX9 · tracé reconstruit automatiquement",
+      {
+        activity:
+          typeof activityKey ===
+            "function"
+            ? activityKey(activity)
+            : fit.activity_id,
+
+        fit:
+          fit.file_name,
+
+        fit_bytes:
+          fit.size_bytes,
+
+        route_points:
+          normalized.points.length,
+
+        source_points:
+          raw.source_point_count
+      }
+    );
+
+    return true;
+
+  } catch (error) {
+    console.error(
+      "CGWEB120 FIX9 · décodage FIT / activity_routes",
+      error
+    );
+
+    return false;
+  }
+}
+
+
+/* ================================================================
+   4. CORRECTION DE FIX8
+
+   FIX8 utilisait encore :
+       SPORT_DIRECTORY_FIT.resolve() -> signed URL
+
+   alors que CGWEB107 utilise désormais :
+       directory_fit_direct_download -> stream direct
+
+   On remplace uniquement ce dernier maillon.
+   ================================================================ */
+
+try {
+  if (
+    typeof cgweb120Fix8RecoverFromCloudFit ===
+      "function"
+  ) {
+    cgweb120Fix8RecoverFromCloudFit =
+      cgweb120Fix9RecoverFromDirectFit;
+  }
+} catch (error) {
+  console.warn(
+    "CGWEB120 FIX9 · remplacement recovery",
+    error
+  );
+}
+
+
+/* ================================================================
+   5. CARTE + PROFIL TOUJOURS VISIBLES DANS LE DETAIL
+   ================================================================ */
+
+function cgweb120Fix9ExposeCartography() {
+  const detail =
+    document.getElementById(
+      "detailView"
+    );
+
+  const section =
+    document.getElementById(
+      "detailMapSection"
+    );
+
+  if (
+    !detail ||
+    !section ||
+    !detail.contains(section)
+  ) {
+    return false;
+  }
+
+  section.hidden = false;
+
+  section.classList.remove(
+    "hidden"
+  );
+
+  section.style.removeProperty(
+    "display"
+  );
+
+  /*
+   * Une carte Leaflet éventuellement créée pendant
+   * le montage DOM doit reprendre immédiatement
+   * ses dimensions réelles.
+   */
+  window.setTimeout(
+    () => {
+      try {
+        if (activityMapInstance) {
+          activityMapInstance
+            .invalidateSize(false);
+
+          if (
+            typeof recenterActivityMap ===
+              "function"
+          ) {
+            recenterActivityMap();
+          }
+        }
+      } catch (_) {}
+    },
+    80
+  );
+
+  return true;
+}
+
+
+/* ================================================================
+   6. AU PREMIER AFFICHAGE DU DETAIL
+
+   renderDetail déclenche déjà renderCartography.
+   FIX9 ne crée donc PAS un deuxième moteur concurrent :
+   il garantit seulement que la rubrique carte/profil
+   reste exposée dès le rendu.
+   ================================================================ */
+
+const cgweb120Fix9BaseRenderDetail =
+  renderDetail;
+
+
+renderDetail =
+  function cgweb120Fix9RenderDetail(
+    ...args
+  ) {
+    const result =
+      cgweb120Fix9BaseRenderDetail
+        .apply(
+          this,
+          args
+        );
+
+    const expose = () => {
+      requestAnimationFrame(
+        cgweb120Fix9ExposeCartography
+      );
+
+      setTimeout(
+        cgweb120Fix9ExposeCartography,
+        80
+      );
+
+      setTimeout(
+        cgweb120Fix9ExposeCartography,
+        300
+      );
+    };
+
+    if (
+      result &&
+      typeof result.then ===
+        "function"
+    ) {
+      result.finally(expose);
+    } else {
+      expose();
+    }
+
+    return result;
+  };
+
+
+/* Cas d'un détail déjà ouvert au rechargement du navigateur. */
+function cgweb120Fix9Boot() {
+  cgweb120Fix9ExposeCartography();
+
+  setTimeout(
+    cgweb120Fix9ExposeCartography,
+    300
+  );
+
+  setTimeout(
+    cgweb120Fix9ExposeCartography,
+    1000
+  );
+}
+
+
+if (
+  document.readyState ===
+    "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb120Fix9Boot,
+    { once: true }
+  );
+} else {
+  cgweb120Fix9Boot();
+}
+
+
+/* ================================================================
+   7. DIAGNOSTIC
+   ================================================================ */
+
+window.CGWEB120_FIX9_STATUS =
+  async function () {
+    const activity =
+      typeof currentDetailActivity ===
+        "function"
+        ? currentDetailActivity()
+        : null;
+
+    const section =
+      document.getElementById(
+        "detailMapSection"
+      );
+
+    return {
+      build:
+        "CGWEB120_FIX9",
+
+      activity_id:
+        activity &&
+        typeof activityKey ===
+          "function"
+          ? String(
+              activityKey(activity)
+            )
+          : "",
+
+      gps_point_count:
+        Number(
+          activity?.gps_point_count
+        ) || 0,
+
+      detail_map_visible:
+        !!section &&
+        !section.hidden &&
+        getComputedStyle(section)
+          .display !== "none",
+
+      activity_route_present:
+        activity &&
+        typeof cgweb120Fix8RouteAlreadyExists ===
+          "function"
+          ? await cgweb120Fix8RouteAlreadyExists(
+              activity
+            )
+          : false,
+
+      direct_fit_backend:
+        typeof VAULT_URL !==
+          "undefined",
+
+      direct_fit_api:
+        typeof window
+          .SPORT_DIRECTORY_FIT
+          ?.directDownload ===
+          "function"
+    };
+  };
+
+/* CGWEB120_FIX9_END */
