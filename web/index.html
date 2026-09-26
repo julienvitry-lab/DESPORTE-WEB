@@ -7528,6 +7528,215 @@ button.active{
 </style>
 <!-- CGWEB120_FIX1_STYLE_END -->
 
+
+
+<!-- CGWEB120_FIX2_FIX1_STYLE_START -->
+<style id="cgweb120Fix2Fix1Ui">
+
+/* =========================================================
+   A. FILTRES
+   Groupe hors Année : +0,5 mm.
+   Aucun changement de largeur.
+   ========================================================= */
+
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="date"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="sport"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="fit"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="landmark"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="order"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="equipment"]{
+  left:auto!important;
+  transform:translateX(.5mm)!important;
+}
+
+
+/* =========================================================
+   B. ANCIEN BANDEAU STATS
+   ========================================================= */
+
+#detailView
+.cgweb120-fix2fix1-old-stats{
+  display:none!important;
+  visibility:hidden!important;
+  height:0!important;
+  min-height:0!important;
+  max-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  overflow:hidden!important;
+}
+
+
+/* =========================================================
+   C. PILE DU DETAIL
+   ========================================================= */
+
+#detailView
+.detail-sticky-stack{
+  display:contents!important;
+  position:static!important;
+  top:auto!important;
+  inset:auto!important;
+  transform:none!important;
+  height:auto!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  gap:0!important;
+}
+
+
+/*
+ * Navigation -> bandeau de titres : exactement 2 mm.
+ */
+#detailView
+.detail-toolbar,
+#detailView
+.detail-toolbar-web047{
+  position:static!important;
+  top:auto!important;
+  inset:auto!important;
+  transform:none!important;
+  margin:0 0 2mm!important;
+  z-index:auto!important;
+}
+
+
+/* =========================================================
+   D. BANDEAU TITRES DU REPERTOIRE
+   ========================================================= */
+
+#detailView
+.cgweb120-fix2fix1-detail-header-scope{
+  display:block!important;
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+  box-sizing:border-box!important;
+  position:static!important;
+  inset:auto!important;
+  transform:none!important;
+  overflow:visible!important;
+}
+
+#detailView
+.cgweb120-fix2fix1-detail-header-scope
+> *{
+  width:100%!important;
+  max-width:none!important;
+  box-sizing:border-box!important;
+  position:static!important;
+  top:auto!important;
+  inset:auto!important;
+  transform:none!important;
+}
+
+
+/* =========================================================
+   E. REPLI SUR LA STRUCTURE DE LA VRAIE LIGNE
+   ========================================================= */
+
+#detailView
+.cgweb120-fix2fix1-synth-header{
+  min-height:28px!important;
+  height:auto!important;
+  padding-top:2px!important;
+  padding-bottom:2px!important;
+  margin:0!important;
+  pointer-events:none!important;
+  background:transparent!important;
+}
+
+#detailView
+.cgweb120-fix2fix1-synth-header
+.cgweb120-fix2fix1-header-cell{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-width:0!important;
+  font-weight:700!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+
+#detailView
+.cgweb120-fix2fix1-synth-header
+.cgweb120-fix2fix1-header-cell-empty{
+  color:transparent!important;
+}
+
+
+/* =========================================================
+   F. VRAIE LIGNE DU REPERTOIRE
+   ========================================================= */
+
+#detailView
+.cgweb120-fix1-detail-list-scope{
+  display:block!important;
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+  margin:0 0 2mm!important;
+  padding:0!important;
+  box-sizing:border-box!important;
+}
+
+
+/* =========================================================
+   G. CONTROLES SOUS LA LIGNE
+   ========================================================= */
+
+#detailView
+.detail-hero-two-lines,
+#detailView
+.detail-hero-web047,
+#detailView
+.detail-hero-web048,
+#detailView
+.detail-hero-web049{
+  position:static!important;
+  top:auto!important;
+  inset:auto!important;
+  transform:none!important;
+  height:auto!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  gap:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+
+#detailView
+.detail-controls-row{
+  position:static!important;
+  top:auto!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+</style>
+<!-- CGWEB120_FIX2_FIX1_STYLE_END -->
+
+
 </head>
 <body>
   <header class="topbar">
@@ -10204,7 +10413,7 @@ button.active{
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB120-FIX1"></script>
+<script type="module" src="./app.js?v=CGWEB120-FIX2-FIX1"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

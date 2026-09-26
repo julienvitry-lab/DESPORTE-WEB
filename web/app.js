@@ -41222,3 +41222,663 @@ window.CGWEB120_FIX1_STATUS = function () {
 };
 
 /* CGWEB120_FIX1_END */
+
+/* CGWEB120_FIX2_FIX1_START
+   FILTER_GROUP_SHIFT_05MM001
+   DETAIL_HEADER_MIRROR001
+   OLD_DETAIL_STATS_REMOVE002
+   DETAIL_EXACT_ROW_MIRROR002
+   DETAIL_GAP_2MM004
+   CSS_RULE_MIRROR_ONLY001
+   PERFORMANCE_GUARD003
+*/
+
+const cgweb120Fix2Fix1BaseRenderDetailRow =
+  cgweb120Fix1RenderDetailRow;
+
+let cgweb120Fix2Fix1HeaderTemplate = null;
+
+
+/* =========================================================
+   A. OUTILS
+   ========================================================= */
+
+function cgweb120Fix2Fix1Norm(value) {
+  return String(value || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+function cgweb120Fix2Fix1StripInteractive(root) {
+  if (!root) return;
+
+  root.removeAttribute?.("id");
+
+  root
+    .querySelectorAll?.("[id]")
+    .forEach((node) => {
+      node.removeAttribute("id");
+    });
+
+  root
+    .querySelectorAll?.(
+      "button, a, input, select, textarea"
+    )
+    .forEach((node) => {
+      node.tabIndex = -1;
+      node.setAttribute("aria-hidden", "true");
+      node.style.pointerEvents = "none";
+
+      if (
+        node.tagName === "INPUT" ||
+        node.tagName === "SELECT" ||
+        node.tagName === "TEXTAREA"
+      ) {
+        node.disabled = true;
+      }
+    });
+}
+
+
+/* =========================================================
+   B. MIROIR CSS
+   Lecture des règles CSS uniquement.
+   Aucun calcul de style élément par élément.
+   ========================================================= */
+
+function cgweb120Fix2Fix1MirrorRuleList(ruleList) {
+  let out = "";
+
+  for (const rule of ruleList) {
+    try {
+      if (
+        rule.type === CSSRule.STYLE_RULE &&
+        rule.selectorText
+      ) {
+        const selectors =
+          rule.selectorText.split(",");
+
+        const mirrored = [];
+
+        for (const rawSelector of selectors) {
+          const selector = rawSelector.trim();
+
+          if (!selector) continue;
+
+          if (selector.includes("#activityList")) {
+            mirrored.push(
+              selector
+                .split("#activityList")
+                .join(
+                  "#detailView " +
+                  ".cgweb120-fix2fix1-detail-header-scope"
+                )
+            );
+          }
+
+          if (
+            selector.includes(
+              "#activityDirectorySection"
+            )
+          ) {
+            mirrored.push(
+              selector
+                .split("#activityDirectorySection")
+                .join(
+                  "#detailView " +
+                  ".cgweb120-fix2fix1-detail-header-scope"
+                )
+            );
+          }
+        }
+
+        if (mirrored.length) {
+          out +=
+            `${mirrored.join(",")}` +
+            `{${rule.style.cssText}}\n`;
+        }
+
+        continue;
+      }
+
+      if (rule.type === CSSRule.MEDIA_RULE) {
+        const inner =
+          cgweb120Fix2Fix1MirrorRuleList(
+            rule.cssRules
+          );
+
+        if (inner) {
+          out +=
+            `@media ${rule.conditionText}` +
+            `{${inner}}\n`;
+        }
+
+        continue;
+      }
+
+      if (
+        typeof CSSSupportsRule !== "undefined" &&
+        rule instanceof CSSSupportsRule
+      ) {
+        const inner =
+          cgweb120Fix2Fix1MirrorRuleList(
+            rule.cssRules
+          );
+
+        if (inner) {
+          out +=
+            `@supports ${rule.conditionText}` +
+            `{${inner}}\n`;
+        }
+      }
+    } catch (_) {
+      /*
+       * Feuille ou règle inaccessible :
+       * on l'ignore sans interrompre le rendu.
+       */
+    }
+  }
+
+  return out;
+}
+
+
+function cgweb120Fix2Fix1InstallHeaderStyles() {
+  const existing =
+    document.getElementById(
+      "cgweb120Fix2Fix1MirroredHeaderStyles"
+    );
+
+  if (existing) return existing;
+
+  let css = "";
+
+  for (const sheet of document.styleSheets) {
+    try {
+      if (!sheet.cssRules) continue;
+
+      css +=
+        cgweb120Fix2Fix1MirrorRuleList(
+          sheet.cssRules
+        );
+    } catch (_) {
+      /*
+       * Feuille externe non lisible :
+       * aucune conséquence.
+       */
+    }
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "cgweb120Fix2Fix1MirroredHeaderStyles";
+
+  style.textContent = css;
+
+  document.head.appendChild(style);
+
+  return style;
+}
+
+
+/* =========================================================
+   C. RECHERCHE DU VRAI BANDEAU DE TITRES
+   ========================================================= */
+
+function cgweb120Fix2Fix1HeaderScore(node) {
+  if (!node || !node.textContent) return 0;
+
+  if (
+    node.matches?.(".activity-card") ||
+    node.querySelector?.(".activity-card")
+  ) {
+    return 0;
+  }
+
+  const text =
+    cgweb120Fix2Fix1Norm(
+      node.textContent
+    );
+
+  if (!text || text.length > 900) return 0;
+
+  const groups = [
+    ["date"],
+    ["heure"],
+    ["distance"],
+    ["d+", "dénivelé +", "denivele +"],
+    ["temps", "durée", "duree"],
+    ["matériel", "materiel"],
+    ["repère", "repères", "repere", "reperes"],
+    ["charge"]
+  ];
+
+  let score = 0;
+
+  for (const alternatives of groups) {
+    if (
+      alternatives.some(
+        (label) => text.includes(label)
+      )
+    ) {
+      score += 1;
+    }
+  }
+
+  return score;
+}
+
+
+function cgweb120Fix2Fix1FindHeaderSource() {
+  if (cgweb120Fix2Fix1HeaderTemplate) {
+    return cgweb120Fix2Fix1HeaderTemplate;
+  }
+
+  const list =
+    document.getElementById("activityList");
+
+  const section =
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  if (!list || !section) return null;
+
+  const candidates = [];
+  const seen = new Set();
+
+  function add(node) {
+    if (
+      !node ||
+      seen.has(node) ||
+      node === section ||
+      node === list
+    ) {
+      return;
+    }
+
+    seen.add(node);
+
+    if (
+      node.children &&
+      node.children.length > 24
+    ) {
+      return;
+    }
+
+    candidates.push(node);
+  }
+
+  /*
+   * D'abord les voisins directs du répertoire :
+   * c'est là que le bandeau se trouve normalement.
+   */
+  let sibling = list.previousElementSibling;
+
+  for (
+    let i = 0;
+    sibling && i < 6;
+    i += 1
+  ) {
+    add(sibling);
+    sibling = sibling.previousElementSibling;
+  }
+
+  for (
+    const node of
+    list.querySelectorAll(
+      ":scope > div, :scope > header"
+    )
+  ) {
+    add(node);
+  }
+
+  let parent = list.parentElement;
+
+  for (let depth = 0; parent && depth < 3; depth += 1) {
+    for (const child of parent.children) {
+      if (
+        child !== list &&
+        !child.contains(list)
+      ) {
+        add(child);
+      }
+    }
+
+    if (parent === section) break;
+    parent = parent.parentElement;
+  }
+
+  /*
+   * Dernier recours :
+   * recherche ponctuelle dans la section Activités.
+   * Elle n'est exécutée qu'au premier besoin.
+   */
+  for (
+    const node of
+    section.querySelectorAll(
+      "div[class*='head'], " +
+      "div[class*='column'], " +
+      "div[class*='title'], " +
+      "header"
+    )
+  ) {
+    add(node);
+  }
+
+  let best = null;
+  let bestScore = 0;
+
+  for (const node of candidates) {
+    const score =
+      cgweb120Fix2Fix1HeaderScore(node);
+
+    if (score > bestScore) {
+      best = node;
+      bestScore = score;
+    }
+  }
+
+  if (best && bestScore >= 6) {
+    cgweb120Fix2Fix1HeaderTemplate =
+      best.cloneNode(true);
+
+    return cgweb120Fix2Fix1HeaderTemplate;
+  }
+
+  return null;
+}
+
+
+/* =========================================================
+   D. REPLI : CONSTRUIT LE BANDEAU DEPUIS LA VRAIE LIGNE
+   ========================================================= */
+
+function cgweb120Fix2Fix1BuildHeaderFromRow(row) {
+  if (!row) return null;
+
+  const header =
+    row.cloneNode(true);
+
+  header.classList.add(
+    "cgweb120-fix2fix1-synth-header"
+  );
+
+  cgweb120Fix2Fix1StripInteractive(
+    header
+  );
+
+  for (const child of [...header.children]) {
+    const datum =
+      child.matches?.(".datum")
+        ? child
+        : child.querySelector?.(".datum");
+
+    if (datum) {
+      const label =
+        String(
+          datum.querySelector("span")
+            ?.textContent || ""
+        ).trim();
+
+      child.textContent = label || "";
+      child.classList.add(
+        "cgweb120-fix2fix1-header-cell"
+      );
+
+      continue;
+    }
+
+    /*
+     * Colonnes pictogramme / téléchargement :
+     * même largeur que le répertoire, titre vide.
+     */
+    child.textContent = "";
+    child.classList.add(
+      "cgweb120-fix2fix1-header-cell",
+      "cgweb120-fix2fix1-header-cell-empty"
+    );
+  }
+
+  return header;
+}
+
+
+/* =========================================================
+   E. SUPPRESSION DU VIEUX BANDEAU STATS
+   ========================================================= */
+
+function cgweb120Fix2Fix1RemoveOldStats() {
+  const detail =
+    document.getElementById("detailView");
+
+  if (!detail) return false;
+
+  const metrics =
+    detail.querySelector(
+      "#detailHeroMetrics"
+    );
+
+  const summary =
+    metrics?.closest(
+      ".detail-summary-row"
+    );
+
+  if (!summary) return false;
+
+  summary.classList.add(
+    "cgweb120-fix2fix1-old-stats"
+  );
+
+  summary.hidden = true;
+  summary.setAttribute(
+    "aria-hidden",
+    "true"
+  );
+
+  return true;
+}
+
+
+/* =========================================================
+   F. BANDEAU + VRAIE LIGNE DANS LE DETAIL
+   ========================================================= */
+
+function cgweb120Fix2Fix1RenderHeader() {
+  const detail =
+    document.getElementById("detailView");
+
+  if (!detail) return false;
+
+  const rowHost =
+    detail.querySelector(
+      ".cgweb120-fix1-detail-list-scope"
+    );
+
+  const row =
+    rowHost?.querySelector(
+      ".activity-card"
+    );
+
+  if (!rowHost || !row) return false;
+
+  detail
+    .querySelectorAll(
+      ".cgweb120-fix2fix1-detail-header-scope"
+    )
+    .forEach((node) => node.remove());
+
+  cgweb120Fix2Fix1InstallHeaderStyles();
+
+  const host =
+    document.createElement("div");
+
+  host.className =
+    "cgweb120-fix2fix1-detail-header-scope";
+
+  const source =
+    cgweb120Fix2Fix1FindHeaderSource();
+
+  let header = null;
+
+  if (source) {
+    header =
+      source.cloneNode(true);
+
+    cgweb120Fix2Fix1StripInteractive(
+      header
+    );
+  } else {
+    header =
+      cgweb120Fix2Fix1BuildHeaderFromRow(
+        row
+      );
+  }
+
+  if (!header) return false;
+
+  host.appendChild(header);
+
+  rowHost.insertAdjacentElement(
+    "beforebegin",
+    host
+  );
+
+  return true;
+}
+
+
+/* =========================================================
+   G. RENDERER FINAL
+   ========================================================= */
+
+function cgweb120Fix2Fix1RenderDetail() {
+  const rendered =
+    cgweb120Fix2Fix1BaseRenderDetailRow();
+
+  cgweb120Fix2Fix1RemoveOldStats();
+
+  if (rendered) {
+    cgweb120Fix2Fix1RenderHeader();
+  }
+
+  return rendered;
+}
+
+
+/*
+ * Tous les appels historiques passent désormais par le
+ * renderer FIX2 FIX1.
+ */
+cgweb120RenderDetailRow =
+  cgweb120Fix2Fix1RenderDetail;
+
+cgweb120Fix1RenderDetailRow =
+  cgweb120Fix2Fix1RenderDetail;
+
+
+/* =========================================================
+   H. BOOT PONCTUEL
+   Aucun observateur DOM permanent.
+   ========================================================= */
+
+function cgweb120Fix2Fix1Boot() {
+  cgweb120Fix2Fix1InstallHeaderStyles();
+
+  for (const delay of [
+    0,
+    100,
+    400,
+    1200,
+    2500
+  ]) {
+    setTimeout(() => {
+      cgweb120Fix2Fix1RemoveOldStats();
+
+      if (
+        typeof currentDetailActivity === "function" &&
+        currentDetailActivity()
+      ) {
+        cgweb120Fix2Fix1RenderDetail();
+      }
+    }, delay);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb120Fix2Fix1Boot,
+    { once: true }
+  );
+} else {
+  cgweb120Fix2Fix1Boot();
+}
+
+
+/* =========================================================
+   I. DIAGNOSTIC
+   ========================================================= */
+
+window.CGWEB120_FIX2_FIX1_STATUS =
+  function () {
+    const detail =
+      document.getElementById(
+        "detailView"
+      );
+
+    const header =
+      detail?.querySelector(
+        ".cgweb120-fix2fix1-detail-header-scope"
+      );
+
+    const row =
+      detail?.querySelector(
+        ".cgweb120-fix1-detail-list-scope " +
+        ".activity-card"
+      );
+
+    return {
+      header_mirror_found:
+        !!header,
+
+      exact_directory_row_found:
+        !!row,
+
+      old_stats_hidden:
+        !!detail?.querySelector(
+          ".cgweb120-fix2fix1-old-stats"
+        ),
+
+      duplicated_old_manual_rows:
+        detail?.querySelectorAll(
+          ".cgweb120-detail-row"
+        ).length || 0,
+
+      header_source_mode:
+        header?.querySelector(
+          ".cgweb120-fix2fix1-synth-header"
+        )
+          ? "ROW_FALLBACK"
+          : (
+              header
+                ? "DIRECTORY_HEADER"
+                : "NONE"
+            ),
+
+      permanent_dom_observers_added:
+        0,
+
+      full_directory_rescans_per_mutation:
+        0,
+
+      detail_gap_mm:
+        2
+    };
+  };
+
+/* CGWEB120_FIX2_FIX1_END */
