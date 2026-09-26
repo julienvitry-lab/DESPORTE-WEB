@@ -8258,6 +8258,80 @@ div.cgweb099-filter-grid
 <!-- CGWEB120_FIX6_STYLE_END -->
 
 
+
+
+<!-- CGWEB120_FIX7_STYLE_START -->
+<style id="cgweb120Fix7Ui">
+
+/* =========================================================
+   1. Bandeau d'actions du détail :
+      1 mm entre le haut du bandeau et les boutons
+      + 2 mm sous le bandeau
+   ========================================================= */
+
+#detailView .web059-detail-toolbar{
+  padding-top:1mm!important;
+  margin-top:0!important;
+  margin-bottom:2mm!important;
+  min-height:auto!important;
+  box-sizing:border-box!important;
+}
+
+
+/* =========================================================
+   2. Le bandeau texte doit être collé au bon endroit :
+      2 mm par rapport au bandeau du dessus
+   ========================================================= */
+
+#detailView .cgweb120-fix5-detail-header-scope{
+  margin-top:0!important;
+  margin-bottom:2mm!important;
+}
+
+
+/* =========================================================
+   3. La ligne activité suit immédiatement
+   ========================================================= */
+
+#detailView .cgweb120-fix1-detail-list-scope{
+  margin-top:0!important;
+}
+
+
+/* =========================================================
+   4. Ce qui reste des anciens conteneurs hauts ne doit plus
+      réserver de place
+   ========================================================= */
+
+#detailView #web061SingleMetricRow,
+#detailView .detail-summary-row,
+#detailView #detailHeroMetrics,
+#detailView .web061-original-hero-hidden{
+  display:none!important;
+  visibility:hidden!important;
+  height:0!important;
+  min-height:0!important;
+  max-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  overflow:hidden!important;
+  gap:0!important;
+}
+
+
+/* =========================================================
+   5. Décalage de 5 mm de certains libellés du bandeau texte
+   ========================================================= */
+
+#detailView .cgweb120-fix5-header-cell[data-cgweb120-fix7-shift="1"]{
+  transform:translateX(5mm)!important;
+}
+
+</style>
+<!-- CGWEB120_FIX7_STYLE_END -->
+
+
 </head>
 <body>
   <header class="topbar">
@@ -10934,7 +11008,7 @@ div.cgweb099-filter-grid
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB120-FIX6-WEB061-RETIRE001"></script>
+<script type="module" src="./app.js?v=CGWEB120-FIX7-TOPSPACE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

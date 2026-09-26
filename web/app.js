@@ -43104,3 +43104,250 @@ window.CGWEB120_FIX6_STATUS =
   };
 
 /* CGWEB120_FIX6_END */
+
+/* CGWEB120_FIX7_START
+   DETAIL_TOP_GAP_2MM001
+   DETAIL_TOOLBAR_TOP_PAD_1MM001
+   HEADER_LABEL_SHIFT_5MM001
+   NAVIGATION_STABILITY001
+*/
+
+function cgweb120Fix7CollapseNode(node) {
+  if (!node) return;
+
+  node.hidden = true;
+  node.setAttribute("aria-hidden", "true");
+
+  node.style.setProperty("display", "none", "important");
+  node.style.setProperty("visibility", "hidden", "important");
+  node.style.setProperty("height", "0", "important");
+  node.style.setProperty("min-height", "0", "important");
+  node.style.setProperty("max-height", "0", "important");
+  node.style.setProperty("margin", "0", "important");
+  node.style.setProperty("padding", "0", "important");
+  node.style.setProperty("border", "0", "important");
+  node.style.setProperty("overflow", "hidden", "important");
+  node.style.setProperty("gap", "0", "important");
+}
+
+
+function cgweb120Fix7FindDetailToolbar() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return null;
+
+  const explicit =
+    detail.querySelector(".web059-detail-toolbar");
+
+  if (explicit) return explicit;
+
+  const candidates = [
+    ...detail.querySelectorAll("div, section, header")
+  ];
+
+  for (const el of candidates) {
+    const txt = (el.innerText || "").replace(/\s+/g, " ").trim();
+
+    if (
+      txt.includes("Ajout manuel") &&
+      txt.includes("Mettre à la corbeille") &&
+      txt.includes("Activité précédente")
+    ) {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+
+function cgweb120Fix7CollapseLegacyTopSpace() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return false;
+
+  const headerScope =
+    detail.querySelector(".cgweb120-fix5-detail-header-scope");
+
+  detail
+    .querySelectorAll(
+      "#web061SingleMetricRow, " +
+      ".detail-summary-row, " +
+      "#detailHeroMetrics"
+    )
+    .forEach(cgweb120Fix7CollapseNode);
+
+  if (typeof web061FindOriginalHeroRow === "function") {
+    const original = web061FindOriginalHeroRow();
+
+    if (original) {
+      cgweb120Fix7CollapseNode(original);
+
+      const directParent = original.parentElement;
+      if (directParent && directParent !== detail && directParent !== headerScope) {
+        if (
+          !directParent.querySelector(".cgweb120-fix5-detail-header-scope") &&
+          !directParent.querySelector(".cgweb120-fix1-detail-list-scope")
+        ) {
+          cgweb120Fix7CollapseNode(directParent);
+        }
+      }
+
+      const heroTwoLines = original.closest(".detail-hero-two-lines");
+      if (
+        heroTwoLines &&
+        heroTwoLines !== detail &&
+        heroTwoLines !== headerScope &&
+        !heroTwoLines.querySelector(".cgweb120-fix5-detail-header-scope") &&
+        !heroTwoLines.querySelector(".cgweb120-fix1-detail-list-scope")
+      ) {
+        cgweb120Fix7CollapseNode(heroTwoLines);
+      }
+    }
+  }
+
+  return true;
+}
+
+
+function cgweb120Fix7LockTopSpacing() {
+  const detail = document.getElementById("detailView");
+  if (!detail) return false;
+
+  const toolbar = cgweb120Fix7FindDetailToolbar();
+  const headerScope =
+    detail.querySelector(".cgweb120-fix5-detail-header-scope");
+  const rowScope =
+    detail.querySelector(".cgweb120-fix1-detail-list-scope");
+
+  if (toolbar) {
+    toolbar.style.setProperty("padding-top", "1mm", "important");
+    toolbar.style.setProperty("margin-top", "0", "important");
+    toolbar.style.setProperty("margin-bottom", "2mm", "important");
+    toolbar.style.setProperty("min-height", "auto", "important");
+    toolbar.dataset.cgweb120Fix7Toolbar = "1";
+  }
+
+  if (headerScope) {
+    headerScope.style.setProperty("margin-top", "0", "important");
+    headerScope.style.setProperty("margin-bottom", "2mm", "important");
+  }
+
+  if (rowScope) {
+    rowScope.style.setProperty("margin-top", "0", "important");
+  }
+
+  return !!(toolbar || headerScope || rowScope);
+}
+
+
+function cgweb120Fix7ShiftHeaderLabels() {
+  const headerRow =
+    document.querySelector(
+      "#detailView .cgweb120-fix5-header-row"
+    );
+
+  if (!headerRow) return false;
+
+  const wanted = new Set([
+    "Date",
+    "Heure",
+    "Distance",
+    "D+",
+    "Temps",
+    "Repères",
+    "Charge"
+  ]);
+
+  headerRow
+    .querySelectorAll(".cgweb120-fix5-header-cell")
+    .forEach((cell) => {
+      const label = (cell.textContent || "").trim();
+
+      if (wanted.has(label)) {
+        cell.dataset.cgweb120Fix7Shift = "1";
+        cell.style.setProperty(
+          "transform",
+          "translateX(5mm)",
+          "important"
+        );
+      } else {
+        cell.dataset.cgweb120Fix7Shift = "0";
+        cell.style.removeProperty("transform");
+      }
+    });
+
+  return true;
+}
+
+
+function cgweb120Fix7Apply() {
+  cgweb120Fix7CollapseLegacyTopSpace();
+  cgweb120Fix7LockTopSpacing();
+  cgweb120Fix7ShiftHeaderLabels();
+}
+
+
+function cgweb120Fix7Boot() {
+  cgweb120Fix7Apply();
+
+  for (const delay of [0, 50, 150, 400, 900, 1600, 2600, 4000]) {
+    setTimeout(cgweb120Fix7Apply, delay);
+  }
+
+  if (!window.__cgweb120Fix7ObserverInstalled) {
+    const observer = new MutationObserver(() => {
+      window.requestAnimationFrame(() => {
+        cgweb120Fix7Apply();
+      });
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true
+    });
+
+    window.__cgweb120Fix7ObserverInstalled = true;
+  }
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb120Fix7Boot,
+    { once: true }
+  );
+} else {
+  cgweb120Fix7Boot();
+}
+
+
+window.CGWEB120_FIX7_STATUS = function () {
+  const detail = document.getElementById("detailView");
+  const toolbar = cgweb120Fix7FindDetailToolbar();
+  const headerRow =
+    detail?.querySelector(".cgweb120-fix5-header-row") || null;
+
+  return {
+    build: "CGWEB120_FIX7",
+
+    toolbar_found: !!toolbar,
+    toolbar_fix7: toolbar?.dataset?.cgweb120Fix7Toolbar || "0",
+    toolbar_margin_bottom: toolbar?.style?.marginBottom || "",
+    toolbar_padding_top: toolbar?.style?.paddingTop || "",
+
+    header_scope_present: !!detail?.querySelector(".cgweb120-fix5-detail-header-scope"),
+    row_scope_present: !!detail?.querySelector(".cgweb120-fix1-detail-list-scope"),
+
+    header_shifted_labels:
+      headerRow
+        ? [...headerRow.querySelectorAll(".cgweb120-fix5-header-cell")]
+            .map((el) => ({
+              text: (el.textContent || "").trim(),
+              shifted: el.dataset.cgweb120Fix7Shift || "0"
+            }))
+        : []
+  };
+};
+
+/* CGWEB120_FIX7_END */
