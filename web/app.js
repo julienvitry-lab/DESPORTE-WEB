@@ -9739,125 +9739,73 @@ function web064ScheduleDirectDetailTop() {
 
 
 function web061RenderSingleMetricRow(activity) {
-  /* WEB071_DETAIL_INDOOR */
-  queueMicrotask(() => {
-    web071DecorateDetailIndoor(activity);
-  });
+  /*
+   * CGWEB120 FIX6
+   * WEB061_BANNER_RETIRE001
+   *
+   * L'ancien bandeau synthétique WEB061 n'est plus autorisé
+   * dans le détail d'activité.
+   */
 
-  if (!activity || !ui.detailView) return;
+  const row =
+    document.getElementById(
+      "web061SingleMetricRow"
+    );
 
-  const original = web061FindOriginalHeroRow();
-
-  if (!original) {
-    console.warn("WEB061 : bandeau métriques historique introuvable");
-    return;
+  if (row) {
+    row.remove();
   }
-
-  let row = document.getElementById("web061SingleMetricRow");
-
-  if (!row) {
-    row = document.createElement("div");
-    row.id = "web061SingleMetricRow";
-    row.className = "web061-single-metric-row";
-
-    const toolbar =
-      ui.detailView.querySelector(".web059-detail-toolbar") ||
-      ui.backToCatalogButton?.parentElement ||
-      null;
-
-    if (toolbar && toolbar !== ui.detailView) {
-      toolbar.insertAdjacentElement("afterend", row);
-    } else {
-      original.insertAdjacentElement("beforebegin", row);
-    }
-  }
-
-  row.innerHTML = "";
-
-  const iconCard = document.createElement("div");
-  iconCard.className = "web061-sport-card";
-
-  const sport = Number(activity?.sport);
-
-  const sportIcon = document.createElement("img");
-  sportIcon.className = "web066-exact-sport-icon";
-  sportIcon.alt = "";
-  sportIcon.decoding = "async";
-  sportIcon.src =
-    sport === 2
-      ? "./assets/icons/sport-bike-v1-exact.png"
-      : "./assets/icons/sport-running-c1-exact.png";
-
-  iconCard.replaceChildren(sportIcon);
-
-  const motionLabel =
-    sport === 1 ? "Allure" :
-    sport === 2 ? "Vitesse" :
-    "Allure / vitesse";
-
-  const motionValue = primarySpeedMetric(activity);
-
-  const cards = [
-    web061MetricCard(
-      "Date",
-      web061FormatDate(activity.start_time_ms),
-      null,
-      activity
-    ),
-    web061MetricCard(
-      "Heure",
-      web061FormatTime(activity.start_time_ms),
-      null,
-      activity
-    ),
-    web061MetricCard(
-      "Distance",
-      formatDistance(activity.distance_m),
-      null,
-      activity
-    ),
-    web061MetricCard(
-      "Durée",
-      formatDuration(web060MovingTimeMs(activity)),
-      null,
-      activity
-    ),
-    web061MetricCard(
-      "D+",
-      formatMeters(activity.ascent_m),
-      null,
-      activity
-    ),
-    web061MetricCard(
-      motionLabel,
-      motionValue,
-      "pace",
-      activity
-    ),
-    web061MetricCard(
-      "FC moy.",
-      formatHeartRate(activity.avg_hr),
-      "hr",
-      activity
-    )
-  ];
-
-  row.append(iconCard, ...cards);
 
   /*
-   * Le DOM historique reste présent pour ne casser aucun autre module,
-   * mais il ne participe plus du tout au layout.
+   * Le bandeau HTML historique demeure masqué.
+   * Les IDs restent présents pour compatibilité avec
+   * les anciens renderers.
    */
-  original.classList.add("web061-original-hero-hidden");
+  const original =
+    web061FindOriginalHeroRow();
 
-  row.dataset.activityKey = String(activityKey(activity) || "");
-  web064ScheduleDirectDetailTop();
-  web063ScheduleDetailToolbarOverlapFix();
+  if (original) {
+    original.classList.add(
+      "web061-original-hero-hidden"
+    );
+
+    original.hidden = true;
+
+    original.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+  }
 }
+
 
 function web061RefreshSingleMetricRow(activity) {
   window.requestAnimationFrame(() => {
-    web061RenderSingleMetricRow(activity);
+
+    const row =
+      document.getElementById(
+        "web061SingleMetricRow"
+      );
+
+    if (row) {
+      row.remove();
+    }
+
+    const original =
+      web061FindOriginalHeroRow();
+
+    if (original) {
+      original.classList.add(
+        "web061-original-hero-hidden"
+      );
+
+      original.hidden = true;
+
+      original.setAttribute(
+        "aria-hidden",
+        "true"
+      );
+    }
   });
 }
 
@@ -43056,3 +43004,103 @@ window.CGWEB120_FIX5_STATUS =
   };
 
 /* CGWEB120_FIX5_END */
+
+/* CGWEB120_FIX6_START
+   WEB061_BANNER_RETIRE001
+   DETAIL_FINAL_LAYOUT_LOCK001
+*/
+
+function cgweb120Fix6PurgeWeb061Banner() {
+
+  document
+    .querySelectorAll(
+      "#web061SingleMetricRow"
+    )
+    .forEach(
+      (node) => node.remove()
+    );
+
+  const historical =
+    document.querySelector(
+      "#detailView .detail-summary-row"
+    );
+
+  if (historical) {
+    historical.hidden = true;
+
+    historical.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+  }
+}
+
+
+function cgweb120Fix6Boot() {
+
+  cgweb120Fix6PurgeWeb061Banner();
+
+  for (const delay of [
+    0,
+    50,
+    200,
+    700,
+    1500,
+    3000
+  ]) {
+    setTimeout(
+      cgweb120Fix6PurgeWeb061Banner,
+      delay
+    );
+  }
+}
+
+
+if (
+  document.readyState ===
+  "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb120Fix6Boot,
+    { once: true }
+  );
+} else {
+  cgweb120Fix6Boot();
+}
+
+
+window.CGWEB120_FIX6_STATUS =
+  function () {
+
+    return {
+      build:
+        "CGWEB120_FIX6",
+
+      web061_banner_present:
+        !!document.getElementById(
+          "web061SingleMetricRow"
+        ),
+
+      historical_banner_visible:
+        !!document.querySelector(
+          "#detailView " +
+          ".detail-summary-row:not([hidden])"
+        ),
+
+      desired_text_header:
+        !!document.querySelector(
+          "#detailView " +
+          ".cgweb120-fix5-header-row"
+        ),
+
+      desired_activity_row:
+        !!document.querySelector(
+          "#detailView " +
+          ".cgweb120-fix1-detail-list-scope " +
+          ".activity-card"
+        )
+    };
+  };
+
+/* CGWEB120_FIX6_END */

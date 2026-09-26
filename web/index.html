@@ -8177,6 +8177,87 @@ div.cgweb099-filter-grid
 <!-- CGWEB120_FIX5_STYLE_END -->
 
 
+
+
+<!-- CGWEB120_FIX6_STYLE_START -->
+<style id="cgweb120Fix6Ui">
+
+/*
+ * WEB061 est définitivement exclu du layout.
+ */
+#detailView
+#web061SingleMetricRow,
+#web061SingleMetricRow{
+  display:none!important;
+  visibility:hidden!important;
+
+  width:0!important;
+  min-width:0!important;
+  max-width:0!important;
+
+  height:0!important;
+  min-height:0!important;
+  max-height:0!important;
+
+  margin:0!important;
+  padding:0!important;
+
+  border:0!important;
+  gap:0!important;
+
+  overflow:hidden!important;
+  pointer-events:none!important;
+}
+
+
+/*
+ * L'ancien HTML historique reste également hors layout.
+ */
+#detailView
+.detail-summary-row{
+  display:none!important;
+  visibility:hidden!important;
+
+  height:0!important;
+  min-height:0!important;
+  max-height:0!important;
+
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+
+  overflow:hidden!important;
+}
+
+
+/*
+ * Les deux éléments désirés de FIX5 restent intacts :
+ *
+ * 1. bandeau texte
+ * 2. 2 mm
+ * 3. ligne activité
+ */
+#detailView
+.cgweb120-fix5-detail-header-scope{
+  display:block!important;
+  margin:0 0 2mm!important;
+}
+
+#detailView
+.cgweb120-fix1-detail-list-scope{
+  display:block!important;
+}
+
+
+/*
+ * Aucun changement aux filtres :
+ * le gap Année / Date de FIX5 est validé.
+ */
+
+</style>
+<!-- CGWEB120_FIX6_STYLE_END -->
+
+
 </head>
 <body>
   <header class="topbar">
@@ -10853,7 +10934,7 @@ div.cgweb099-filter-grid
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB120-FIX5-HARDLOCK001"></script>
+<script type="module" src="./app.js?v=CGWEB120-FIX6-WEB061-RETIRE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
