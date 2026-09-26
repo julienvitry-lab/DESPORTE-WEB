@@ -7737,6 +7737,83 @@ div.cgweb099-filter-grid[data-cgweb120="1"]
 <!-- CGWEB120_FIX2_FIX1_STYLE_END -->
 
 
+
+
+<!-- CGWEB120_FIX3_STYLE_START -->
+<style id="cgweb120Fix3Ui">
+
+/* 1. On supprime le faux bandeau précédent */
+#detailView
+.cgweb120-fix2fix1-detail-header-scope{
+  display:none!important;
+}
+
+/* 2. Nouveau bandeau = vrai bandeau du répertoire */
+#detailView
+.cgweb120-fix3-detail-header-scope{
+  display:block!important;
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+  margin:0 0 2mm!important;
+  padding:0!important;
+  box-sizing:border-box!important;
+  position:static!important;
+  inset:auto!important;
+  transform:none!important;
+  overflow:visible!important;
+}
+
+#detailView
+.cgweb120-fix3-detail-header-scope
+> *{
+  width:100%!important;
+  max-width:none!important;
+  margin:0!important;
+  box-sizing:border-box!important;
+  position:static!important;
+  inset:auto!important;
+  transform:none!important;
+}
+
+/* 3. Ligne activité sous le bandeau */
+#detailView
+.cgweb120-fix1-detail-list-scope{
+  margin:0 0 2mm!important;
+}
+
+/* 4. Filtres : on garde le décalage global,
+      mais on ajoute 1 mm entre Année et Date
+      et on annule le chevauchement du champ Date. */
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="date"]{
+  margin-left:1mm!important;
+  transform:none!important;
+}
+
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="sport"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="fit"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="landmark"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="order"],
+#activityDirectorySection
+div.cgweb099-filter-grid[data-cgweb120="1"]
+> [data-cgweb118-fix9-field="equipment"]{
+  transform:translateX(.5mm)!important;
+}
+
+</style>
+<!-- CGWEB120_FIX3_STYLE_END -->
+
+
 </head>
 <body>
   <header class="topbar">
@@ -10413,7 +10490,7 @@ div.cgweb099-filter-grid[data-cgweb120="1"]
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB120-FIX2-FIX1"></script>
+<script type="module" src="./app.js?v=CGWEB120-FIX3"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

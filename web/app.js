@@ -41882,3 +41882,317 @@ window.CGWEB120_FIX2_FIX1_STATUS =
   };
 
 /* CGWEB120_FIX2_FIX1_END */
+
+/* CGWEB120_FIX3_START
+   TRUE_DIRECTORY_HEADER001
+   REMOVE_FAKE_HEADER001
+   FILTER_GAP_1MM001
+*/
+
+const cgweb120Fix3BaseRenderDetailRow =
+  cgweb120RenderDetailRow;
+
+let cgweb120Fix3ExactHeaderTemplate = null;
+
+function cgweb120Fix3Norm(value) {
+  return String(value || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+function cgweb120Fix3StripInteractive(root) {
+  if (!root) return;
+
+  root.removeAttribute?.("id");
+
+  root
+    .querySelectorAll?.("[id]")
+    .forEach((node) => {
+      node.removeAttribute("id");
+    });
+
+  root
+    .querySelectorAll?.(
+      "button, a, input, select, textarea"
+    )
+    .forEach((node) => {
+      node.tabIndex = -1;
+      node.setAttribute("aria-hidden", "true");
+      node.style.pointerEvents = "none";
+
+      if (
+        node.tagName === "INPUT" ||
+        node.tagName === "SELECT" ||
+        node.tagName === "TEXTAREA"
+      ) {
+        node.disabled = true;
+      }
+    });
+}
+
+function cgweb120Fix3HeaderScore(node) {
+  if (!node || !node.textContent) {
+    return 0;
+  }
+
+  if (
+    node.matches?.(".activity-card") ||
+    node.querySelector?.(".activity-card")
+  ) {
+    return 0;
+  }
+
+  const text =
+    cgweb120Fix3Norm(node.textContent);
+
+  if (!text || text.length > 500) {
+    return 0;
+  }
+
+  const groups = [
+    ["date"],
+    ["heure", "départ", "depart"],
+    ["distance"],
+    ["d+"],
+    ["temps", "durée", "duree"],
+    ["matériel", "materiel"],
+    ["repères", "repères", "repere", "reperes"],
+    ["charge"]
+  ];
+
+  let score = 0;
+
+  for (const alternatives of groups) {
+    if (
+      alternatives.some(
+        (label) => text.includes(label)
+      )
+    ) {
+      score += 1;
+    }
+  }
+
+  if (
+    node.querySelector?.(
+      "button, input, select, textarea"
+    )
+  ) {
+    score -= 1;
+  }
+
+  return score;
+}
+
+function cgweb120Fix3FindExactDirectoryHeader() {
+  if (cgweb120Fix3ExactHeaderTemplate) {
+    return cgweb120Fix3ExactHeaderTemplate;
+  }
+
+  const section =
+    document.getElementById(
+      "activityDirectorySection"
+    );
+
+  const list =
+    document.getElementById("activityList");
+
+  if (!section || !list) {
+    return null;
+  }
+
+  const candidates = [];
+  const seen = new Set();
+
+  function add(node) {
+    if (!node || seen.has(node)) return;
+    seen.add(node);
+
+    if (
+      node === list ||
+      node.contains?.(list)
+    ) {
+      return;
+    }
+
+    if (
+      node.children &&
+      node.children.length > 20
+    ) {
+      return;
+    }
+
+    candidates.push(node);
+  }
+
+  let sibling = list.previousElementSibling;
+  for (let i = 0; sibling && i < 8; i += 1) {
+    add(sibling);
+    sibling = sibling.previousElementSibling;
+  }
+
+  for (
+    const node of section.querySelectorAll(
+      "header, div"
+    )
+  ) {
+    add(node);
+  }
+
+  let best = null;
+  let bestScore = 0;
+  let bestLength = 999999;
+
+  for (const node of candidates) {
+    const score =
+      cgweb120Fix3HeaderScore(node);
+
+    if (score < 7) continue;
+
+    const length =
+      cgweb120Fix3Norm(
+        node.textContent
+      ).length;
+
+    if (
+      score > bestScore ||
+      (score == bestScore &&
+        length < bestLength)
+    ) {
+      best = node;
+      bestScore = score;
+      bestLength = length;
+    }
+  }
+
+  if (!best) {
+    return null;
+  }
+
+  cgweb120Fix3ExactHeaderTemplate =
+    best.cloneNode(true);
+
+  return cgweb120Fix3ExactHeaderTemplate;
+}
+
+function cgweb120Fix3RemoveWrongHeaders() {
+  const detail =
+    document.getElementById("detailView");
+
+  if (!detail) return;
+
+  detail
+    .querySelectorAll(
+      ".cgweb120-fix2fix1-detail-header-scope," +
+      ".cgweb120-fix3-detail-header-scope"
+    )
+    .forEach((node) => node.remove());
+}
+
+function cgweb120Fix3InsertExactHeader() {
+  const detail =
+    document.getElementById("detailView");
+
+  if (!detail) return false;
+
+  const rowHost =
+    detail.querySelector(
+      ".cgweb120-fix1-detail-list-scope"
+    );
+
+  if (!rowHost) return false;
+
+  const source =
+    cgweb120Fix3FindExactDirectoryHeader();
+
+  if (!source) return false;
+
+  const host =
+    document.createElement("div");
+  host.className =
+    "cgweb120-fix3-detail-header-scope";
+
+  const clone =
+    source.cloneNode(true);
+
+  cgweb120Fix3StripInteractive(clone);
+
+  host.appendChild(clone);
+  rowHost.insertAdjacentElement(
+    "beforebegin",
+    host
+  );
+
+  return true;
+}
+
+function cgweb120Fix3RenderDetail() {
+  const rendered =
+    cgweb120Fix3BaseRenderDetailRow();
+
+  cgweb120Fix3RemoveWrongHeaders();
+
+  if (rendered) {
+    cgweb120Fix3InsertExactHeader();
+  }
+
+  return rendered;
+}
+
+cgweb120RenderDetailRow =
+  cgweb120Fix3RenderDetail;
+
+cgweb120Fix1RenderDetailRow =
+  cgweb120Fix3RenderDetail;
+
+function cgweb120Fix3Boot() {
+  for (const delay of [0, 120, 500, 1500, 2600]) {
+    setTimeout(() => {
+      if (
+        typeof currentDetailActivity ===
+          "function" &&
+        currentDetailActivity()
+      ) {
+        cgweb120Fix3RenderDetail();
+      }
+    }, delay);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb120Fix3Boot,
+    { once: true }
+  );
+} else {
+  cgweb120Fix3Boot();
+}
+
+window.CGWEB120_FIX3_STATUS =
+  function () {
+    const detail =
+      document.getElementById(
+        "detailView"
+      );
+
+    return {
+      exact_header_present:
+        !!detail?.querySelector(
+          ".cgweb120-fix3-detail-header-scope"
+        ),
+
+      fake_header_present:
+        !!detail?.querySelector(
+          ".cgweb120-fix2fix1-detail-header-scope"
+        ),
+
+      row_present:
+        !!detail?.querySelector(
+          ".cgweb120-fix1-detail-list-scope .activity-card"
+        )
+    };
+  };
+
+/* CGWEB120_FIX3_END */
