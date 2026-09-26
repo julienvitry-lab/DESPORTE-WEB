@@ -8332,6 +8332,145 @@ div.cgweb099-filter-grid
 <!-- CGWEB120_FIX7_STYLE_END -->
 
 
+
+
+<!-- CGWEB120_FIX8_STYLE_START -->
+<style id="cgweb120Fix8Ui">
+
+/* ===============================================================
+   A. LE GRAND GAP EST INTERDIT
+   =============================================================== */
+
+#detailView{
+  padding-top:0!important;
+  margin-top:0!important;
+  --sticky-detail-stack-h:0px!important;
+}
+
+
+/* Tous les anciens compensateurs de bandeau sont hors layout. */
+#detailView
+.web072-fix10-toolbar-placeholder,
+#detailView
+.web072-fix10-toolbar-anchor,
+#detailView
+.web072-fix11-toolbar-placeholder,
+#detailView
+.web072-fix12b-toolbar-placeholder,
+#detailView
+.cgweb120-fix8-toolbar-placeholder{
+  display:none!important;
+  visibility:hidden!important;
+  width:0!important;
+  height:0!important;
+  min-height:0!important;
+  max-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  overflow:hidden!important;
+}
+
+
+/* ===============================================================
+   B. BANDEAU ACTIVITE
+   =============================================================== */
+
+#detailView
+.cgweb120-fix8-toolbar{
+  position:sticky!important;
+
+  left:auto!important;
+  right:auto!important;
+
+  width:100%!important;
+  max-width:none!important;
+
+  box-sizing:border-box!important;
+
+  /* navigation principale -> bandeau = 2 mm */
+  margin-top:2mm!important;
+
+  /* bandeau -> titres = 2 mm */
+  margin-bottom:2mm!important;
+
+  /* bord supérieur -> boutons = 1 mm */
+  padding-top:1mm!important;
+
+  z-index:10000!important;
+}
+
+
+/* ===============================================================
+   C. BANDEAU TITRES -> LIGNE ACTIVITE
+   =============================================================== */
+
+#detailView
+.cgweb120-fix5-detail-header-scope{
+  margin-top:0!important;
+  margin-bottom:2mm!important;
+}
+
+
+/* ===============================================================
+   D. DÉCALAGE DUR DE 5 MM
+   Ordre exact FIX5 :
+   1 vide
+   2 Date
+   3 Heure
+   4 Distance
+   5 D+
+   6 Temps
+   7 Matériel
+   8 Repères
+   9 Charge
+   10 vide
+   =============================================================== */
+
+#detailView
+.cgweb120-fix5-header-row
+> .cgweb120-fix5-header-cell:nth-child(2),
+
+#detailView
+.cgweb120-fix5-header-row
+> .cgweb120-fix5-header-cell:nth-child(3),
+
+#detailView
+.cgweb120-fix5-header-row
+> .cgweb120-fix5-header-cell:nth-child(4),
+
+#detailView
+.cgweb120-fix5-header-row
+> .cgweb120-fix5-header-cell:nth-child(5),
+
+#detailView
+.cgweb120-fix5-header-row
+> .cgweb120-fix5-header-cell:nth-child(6),
+
+#detailView
+.cgweb120-fix5-header-row
+> .cgweb120-fix5-header-cell:nth-child(8),
+
+#detailView
+.cgweb120-fix5-header-row
+> .cgweb120-fix5-header-cell:nth-child(9){
+  transform:translateX(5mm)!important;
+}
+
+
+/*
+ * Matériel reste expressément immobile.
+ */
+#detailView
+.cgweb120-fix5-header-row
+> .cgweb120-fix5-header-cell:nth-child(7){
+  transform:none!important;
+}
+
+</style>
+<!-- CGWEB120_FIX8_STYLE_END -->
+
+
 </head>
 <body>
   <header class="topbar">
@@ -11008,7 +11147,7 @@ div.cgweb099-filter-grid
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB113-FIX2-HISTORICAL-LOCAL-NAME001"></script>
-<script type="module" src="./app.js?v=CGWEB120-FIX7-TOPSPACE001"></script>
+<script type="module" src="./app.js?v=CGWEB120-FIX8-STRUCTURAL-AUTOROUTE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>

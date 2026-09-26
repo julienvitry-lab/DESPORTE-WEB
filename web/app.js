@@ -10587,7 +10587,7 @@ async function renderCartography(activity) {
       const gpsCount = numberOrZero(activity.gps_point_count);
       showRouteUnavailable(
         `Tracé Web non publié pour cette activité${gpsCount > 1 ? ` (${formatNumber(gpsCount)} points GPS dans l’activité)` : ""}. ` +
-        "Sur le téléphone principal : Firebase · SPORT Web → « Publier les tracés Web · CARTOWEB001 »."
+        "Reconstruction automatique impossible : aucun tracé, flux Strava ou FIT exploitable n’a été trouvé."
       );
       return;
     }
@@ -43351,3 +43351,991 @@ window.CGWEB120_FIX7_STATUS = function () {
 };
 
 /* CGWEB120_FIX7_END */
+
+/* CGWEB120_FIX8_START
+   DETAIL_STRUCTURAL_RESET001
+   TOOLBAR_STICKY_FLOW001
+   TOOLBAR_NAV_GAP_2MM001
+   TOOLBAR_INNER_TOP_1MM001
+   HEADER_ROW_GAP_2MM002
+   HEADER_HARD_SHIFT_5MM001
+   AUTOROUTE_FIT_CLOUD001
+   CARTOWEB_RETIRE001
+*/
+
+
+/* ==================================================================
+   A. RESET STRUCTUREL DU DETAIL
+
+   WEB072 FIX11 / FIX12B / FIX13 ont successivement utilisé :
+   - position:fixed
+   - placeholders artificiels
+   - padding-top calculé sur les anciennes stats
+
+   FIX8 interdit définitivement cette mécanique.
+   ================================================================== */
+
+function cgweb120Fix8Detail() {
+  return document.getElementById(
+    "detailView"
+  );
+}
+
+
+function cgweb120Fix8RemoveToolbarPlaceholders() {
+  const detail =
+    cgweb120Fix8Detail();
+
+  if (!detail) return;
+
+  detail
+    .querySelectorAll(
+      ".web072-fix10-toolbar-placeholder," +
+      ".web072-fix10-toolbar-anchor," +
+      ".web072-fix11-toolbar-placeholder," +
+      ".web072-fix12b-toolbar-placeholder," +
+      ".cgweb120-fix8-toolbar-placeholder"
+    )
+    .forEach(
+      (node) => node.remove()
+    );
+}
+
+
+function cgweb120Fix8ResetDetailPadding() {
+  const detail =
+    cgweb120Fix8Detail();
+
+  if (!detail) return;
+
+  /*
+   * C'est le point essentiel de FIX8 :
+   * WEB072 FIX13 ne peut plus réserver 150/200 px
+   * en fonction d'un bandeau de stats désormais supprimé.
+   */
+  detail.style.setProperty(
+    "padding-top",
+    "0px",
+    "important"
+  );
+
+  detail.style.setProperty(
+    "margin-top",
+    "0px",
+    "important"
+  );
+
+  detail.style.setProperty(
+    "--sticky-detail-stack-h",
+    "0px",
+    "important"
+  );
+
+  document.documentElement
+    .style
+    .setProperty(
+      "--sticky-detail-stack-h",
+      "0px"
+    );
+}
+
+
+function cgweb120Fix8Toolbar() {
+  const detail =
+    cgweb120Fix8Detail();
+
+  if (!detail) return null;
+
+  try {
+    if (
+      typeof web072Fix13FindToolbar ===
+      "function"
+    ) {
+      const toolbar =
+        web072Fix13FindToolbar();
+
+      if (toolbar) return toolbar;
+    }
+  } catch (_) {}
+
+  return (
+    detail.querySelector(
+      ".web059-detail-toolbar"
+    ) ||
+    detail.querySelector(
+      ".detail-toolbar"
+    )
+  );
+}
+
+
+function cgweb120Fix8ToolbarTop() {
+  /*
+   * Écart demandé :
+   * navigation principale → bandeau activité = 2 mm.
+   */
+  let mm2 = 8;
+
+  try {
+    if (
+      typeof web072Fix13Mm2Px ===
+      "function"
+    ) {
+      mm2 =
+        web072Fix13Mm2Px();
+    }
+  } catch (_) {}
+
+  const nav =
+    document.getElementById(
+      "uxPrimaryNav"
+    ) ||
+    document.querySelector(
+      "[data-ux-primary-nav]"
+    );
+
+  if (nav) {
+    const rect =
+      nav.getBoundingClientRect();
+
+    if (
+      rect.height > 0 &&
+      rect.bottom >= 0
+    ) {
+      return Math.ceil(
+        rect.bottom + mm2
+      );
+    }
+  }
+
+  return Math.ceil(mm2);
+}
+
+
+function cgweb120Fix8ApplyToolbarFlow() {
+  const detail =
+    cgweb120Fix8Detail();
+
+  if (!detail) return false;
+
+  cgweb120Fix8RemoveToolbarPlaceholders();
+  cgweb120Fix8ResetDetailPadding();
+
+  const toolbar =
+    cgweb120Fix8Toolbar();
+
+  if (!toolbar) return false;
+
+  /*
+   * Suppression de tous les états FIXED historiques.
+   */
+  toolbar.classList.remove(
+    "web072-fix9-toolbar-sticky",
+    "web072-fix10-toolbar-fixed",
+    "web072-fix11-toolbar-fixed",
+    "web072-fix12b-toolbar-fixed"
+  );
+
+  toolbar.classList.add(
+    "web072-fix13-toolbar-fixed",
+    "cgweb120-fix8-toolbar"
+  );
+
+  /*
+   * STICKY et non FIXED :
+   *
+   * - le bandeau reste dans le flux ;
+   * - aucun placeholder ;
+   * - aucun padding-top compensatoire ;
+   * - ancrage conservé pendant le défilement.
+   */
+  toolbar.style.setProperty(
+    "position",
+    "sticky",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "top",
+    cgweb120Fix8ToolbarTop() + "px",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "left",
+    "auto",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "right",
+    "auto",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "width",
+    "100%",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "max-width",
+    "none",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "z-index",
+    "10000",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "box-sizing",
+    "border-box",
+    "important"
+  );
+
+  /*
+   * 2 mm entre navigation principale et bandeau activité
+   * au placement naturel.
+   */
+  toolbar.style.setProperty(
+    "margin-top",
+    "2mm",
+    "important"
+  );
+
+  /*
+   * 2 mm entre bandeau activité et bandeau texte.
+   */
+  toolbar.style.setProperty(
+    "margin-bottom",
+    "2mm",
+    "important"
+  );
+
+  /*
+   * 1 mm demandé entre le bord haut du bandeau
+   * et les boutons.
+   */
+  toolbar.style.setProperty(
+    "padding-top",
+    "1mm",
+    "important"
+  );
+
+  const header =
+    detail.querySelector(
+      ".cgweb120-fix5-detail-header-scope"
+    );
+
+  if (header) {
+    header.style.setProperty(
+      "margin-top",
+      "0",
+      "important"
+    );
+
+    header.style.setProperty(
+      "margin-bottom",
+      "2mm",
+      "important"
+    );
+  }
+
+  return true;
+}
+
+
+/* ==================================================================
+   B. NEUTRALISATION DES TROIS ANCIENS MOTEURS DE POSITIONNEMENT
+   ================================================================== */
+
+try {
+  if (
+    typeof web072Fix11FixToolbarImmediately ===
+    "function"
+  ) {
+    web072Fix11FixToolbarImmediately =
+      function cgweb120Fix8NoFix11Toolbar() {
+        cgweb120Fix8RemoveToolbarPlaceholders();
+        cgweb120Fix8ResetDetailPadding();
+      };
+  }
+} catch (_) {}
+
+
+try {
+  if (
+    typeof web072Fix12BFixToolbarImmediately ===
+    "function"
+  ) {
+    web072Fix12BFixToolbarImmediately =
+      function cgweb120Fix8NoFix12BToolbar() {
+        cgweb120Fix8RemoveToolbarPlaceholders();
+        cgweb120Fix8ResetDetailPadding();
+      };
+  }
+} catch (_) {}
+
+
+/*
+ * C'est le remplacement déterminant.
+ *
+ * L'ancien WEB072 FIX13 calculait :
+ *
+ * desiredStatsTop - naturalStatsTop
+ *
+ * puis l'injectait comme padding-top du détail.
+ * Les stats ayant été supprimées, ce calcul créait le grand vide.
+ */
+try {
+  if (
+    typeof web072Fix13FixToolbarAndSpacing ===
+    "function"
+  ) {
+    web072Fix13FixToolbarAndSpacing =
+      function cgweb120Fix8StableToolbar() {
+        cgweb120Fix8ApplyToolbarFlow();
+      };
+  }
+} catch (_) {}
+
+
+
+/* ==================================================================
+   C. RECONSTRUCTION AUTOMATIQUE DES CARTES
+   ================================================================== */
+
+const cgweb120Fix8RouteRecoveryPromises =
+  new Map();
+
+
+function cgweb120Fix8ActivityKeys(activity) {
+  return [
+    ...new Set(
+      [
+        activity?.id,
+        activity?.__docId,
+        (
+          typeof activityKey === "function"
+            ? activityKey(activity)
+            : null
+        )
+      ]
+        .filter(
+          (value) =>
+            value !== null &&
+            value !== undefined &&
+            String(value).trim() !== ""
+        )
+        .map(
+          (value) =>
+            String(value).trim()
+        )
+    )
+  ];
+}
+
+
+async function cgweb120Fix8RouteAlreadyExists(
+  activity
+) {
+  if (
+    !currentUser ||
+    !activity
+  ) {
+    return false;
+  }
+
+  const keys =
+    cgweb120Fix8ActivityKeys(
+      activity
+    );
+
+  for (const key of keys) {
+    try {
+      const snap =
+        await getDoc(
+          doc(
+            db,
+            ROOT,
+            currentUser.uid,
+            "activity_routes",
+            key
+          )
+        );
+
+      if (!snap.exists()) {
+        continue;
+      }
+
+      const normalized =
+        normalizeRoute(
+          snap.data()
+        );
+
+      if (
+        normalized?.points?.length >= 2
+      ) {
+        return true;
+      }
+    } catch (_) {}
+  }
+
+  return false;
+}
+
+
+async function cgweb120Fix8WaitFitResolver(
+  timeoutMs = 5000
+) {
+  const start =
+    Date.now();
+
+  while (
+    Date.now() - start <
+    timeoutMs
+  ) {
+    const api =
+      window.SPORT_DIRECTORY_FIT;
+
+    if (
+      api &&
+      typeof api.resolve ===
+        "function"
+    ) {
+      return api;
+    }
+
+    await new Promise(
+      (resolve) =>
+        setTimeout(resolve, 80)
+    );
+  }
+
+  return null;
+}
+
+
+async function cgweb120Fix8RecoverFromCloudFit(
+  activity
+) {
+  const api =
+    await cgweb120Fix8WaitFitResolver();
+
+  if (!api) {
+    return false;
+  }
+
+  const keys =
+    cgweb120Fix8ActivityKeys(
+      activity
+    );
+
+  for (const id of keys) {
+    try {
+      const resolved =
+        await api.resolve(id);
+
+      if (
+        !resolved?.ok ||
+        !resolved?.downloadable ||
+        !resolved?.url
+      ) {
+        continue;
+      }
+
+      if (ui?.mapStatus) {
+        ui.mapStatus.textContent =
+          "Reconstruction automatique du tracé depuis le FIT…";
+
+        ui.mapStatus.className =
+          "pill neutral";
+      }
+
+      /*
+       * CGWEB096 utilise déjà resolved.url pour le téléchargement.
+       * FIX8 exploite la même URL mais lit le FIT directement.
+       */
+      const response =
+        await fetch(
+          resolved.url,
+          {
+            method: "GET",
+            cache: "no-store",
+            mode: "cors"
+          }
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          "FIT Cloud HTTP " +
+          response.status
+        );
+      }
+
+      const buffer =
+        await response.arrayBuffer();
+
+      if (
+        !buffer ||
+        buffer.byteLength < 32
+      ) {
+        throw new Error(
+          "FIT Cloud vide"
+        );
+      }
+
+      const parsed =
+        decodeFitActivity(
+          buffer,
+          resolved.file_name ||
+            activity?.file_name ||
+            ("activity_" + id + ".fit")
+        );
+
+      /*
+       * buildWebImportRoute() limite déjà le tracé à
+       * un volume Web raisonnable.
+       */
+      const raw =
+        buildWebImportRoute(
+          parsed
+        );
+
+      const normalized =
+        normalizeRoute(raw);
+
+      if (
+        !normalized ||
+        normalized.points.length < 2
+      ) {
+        throw new Error(
+          "FIT sans coordonnées GPS exploitables"
+        );
+      }
+
+      raw.route_format =
+        "CGWEB120-FIX8-AUTOROUTE001";
+
+      raw.source_point_count =
+        Math.max(
+          Number(
+            raw.source_point_count
+          ) || 0,
+          Number(
+            activity?.gps_point_count
+          ) || 0,
+          normalized.points.length
+        );
+
+      raw.__cgweb120_autoroute =
+        "AUTOROUTE_FIT_CLOUD001";
+
+      raw.__cgweb120_source_role =
+        String(
+          resolved.role || ""
+        );
+
+      raw.__cgweb120_rebuilt_at_ms =
+        Date.now();
+
+      /*
+       * On réutilise le moteur de persistance déjà employé
+       * par WEBSPLIT003.
+       */
+      if (
+        typeof persistRecoveredSplitRoute !==
+        "function"
+      ) {
+        throw new Error(
+          "moteur de persistance activity_routes absent"
+        );
+      }
+
+      await persistRecoveredSplitRoute(
+        activity,
+        raw
+      );
+
+      try {
+        if (
+          typeof globalMapRouteCache !==
+            "undefined"
+        ) {
+          for (
+            const key of keys
+          ) {
+            globalMapRouteCache.delete(
+              key
+            );
+          }
+        }
+      } catch (_) {}
+
+      const created =
+        await cgweb120Fix8RouteAlreadyExists(
+          activity
+        );
+
+      if (created) {
+        console.info(
+          "CGWEB120 FIX8 · activity_routes reconstruit automatiquement",
+          {
+            activity:
+              activityKey(activity),
+            points:
+              normalized.points.length,
+            role:
+              resolved.role || ""
+          }
+        );
+
+        return true;
+      }
+    } catch (error) {
+      console.warn(
+        "CGWEB120 FIX8 · reconstruction FIT Cloud",
+        id,
+        error
+      );
+    }
+  }
+
+  return false;
+}
+
+
+async function cgweb120Fix8RecoverRoute(
+  activity
+) {
+  if (
+    await cgweb120Fix8RouteAlreadyExists(
+      activity
+    )
+  ) {
+    return true;
+  }
+
+  /*
+   * Premier secours déjà existant dans SPORT Web :
+   * - activité_routes ;
+   * - flux Strava ;
+   * - FIT du coffre local.
+   */
+  try {
+    if (
+      typeof recoverSplitRouteForActivity ===
+      "function"
+    ) {
+      const recovered =
+        await recoverSplitRouteForActivity(
+          activity
+        );
+
+      if (
+        recovered?.points?.length >= 2 &&
+        await cgweb120Fix8RouteAlreadyExists(
+          activity
+        )
+      ) {
+        return true;
+      }
+    }
+  } catch (error) {
+    console.info(
+      "CGWEB120 FIX8 · secours local/Strava non disponible",
+      error?.message || error
+    );
+  }
+
+  /*
+   * Nouveau secours :
+   * FIT Cloud déjà téléchargeable depuis le répertoire.
+   */
+  return (
+    await cgweb120Fix8RecoverFromCloudFit(
+      activity
+    )
+  );
+}
+
+
+async function cgweb120Fix8EnsureRoute(
+  activity
+) {
+  const key =
+    String(
+      (
+        typeof activityKey === "function"
+          ? activityKey(activity)
+          : ""
+      ) || ""
+    );
+
+  if (!key) {
+    return false;
+  }
+
+  if (
+    cgweb120Fix8RouteRecoveryPromises
+      .has(key)
+  ) {
+    return (
+      await cgweb120Fix8RouteRecoveryPromises
+        .get(key)
+    );
+  }
+
+  const promise =
+    cgweb120Fix8RecoverRoute(
+      activity
+    );
+
+  cgweb120Fix8RouteRecoveryPromises
+    .set(
+      key,
+      promise
+    );
+
+  try {
+    return await promise;
+  } finally {
+    cgweb120Fix8RouteRecoveryPromises
+      .delete(key);
+  }
+}
+
+
+/* ==================================================================
+   D. WRAPPER CARTOGRAPHIE
+
+   Avant le moteur historique :
+   on s'assure automatiquement que activity_routes existe.
+   ================================================================== */
+
+const cgweb120Fix8BaseRenderCartography =
+  renderCartography;
+
+
+renderCartography =
+  async function cgweb120Fix8RenderCartography(
+    activity
+  ) {
+    const requestedKey =
+      String(
+        (
+          typeof activityKey ===
+            "function"
+            ? activityKey(activity)
+            : ""
+        ) || ""
+      );
+
+    const gpsCount =
+      Number(
+        activity?.gps_point_count
+      ) || 0;
+
+    if (
+      gpsCount >= 2 &&
+      !await cgweb120Fix8RouteAlreadyExists(
+        activity
+      )
+    ) {
+      try {
+        if (ui?.mapStatus) {
+          ui.mapStatus.textContent =
+            "Recherche automatique du tracé…";
+
+          ui.mapStatus.className =
+            "pill neutral";
+        }
+
+        await cgweb120Fix8EnsureRoute(
+          activity
+        );
+      } catch (error) {
+        console.warn(
+          "CGWEB120 FIX8 AUTOROUTE",
+          error
+        );
+      }
+    }
+
+    /*
+     * L'utilisateur a pu changer d'activité pendant
+     * la reconstruction : ne jamais afficher l'ancienne.
+     */
+    try {
+      const current =
+        typeof currentDetailActivity ===
+          "function"
+          ? currentDetailActivity()
+          : null;
+
+      const currentKey =
+        String(
+          (
+            typeof activityKey ===
+              "function"
+              ? activityKey(current)
+              : ""
+          ) || ""
+        );
+
+      if (
+        requestedKey &&
+        currentKey &&
+        requestedKey !== currentKey
+      ) {
+        return;
+      }
+    } catch (_) {}
+
+    return (
+      cgweb120Fix8BaseRenderCartography(
+        activity
+      )
+    );
+  };
+
+
+
+/* ==================================================================
+   E. APPLICATION DU LAYOUT
+   ================================================================== */
+
+function cgweb120Fix8ApplyLayout() {
+  cgweb120Fix8ApplyToolbarFlow();
+}
+
+
+function cgweb120Fix8Boot() {
+  cgweb120Fix8ApplyLayout();
+
+  /*
+   * Passes courtes uniquement pour couvrir
+   * le montage différé historique du détail.
+   */
+  for (
+    const delay of
+    [0, 50, 180, 500, 1200]
+  ) {
+    setTimeout(
+      cgweb120Fix8ApplyLayout,
+      delay
+    );
+  }
+}
+
+
+if (
+  document.readyState ===
+  "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb120Fix8Boot,
+    { once: true }
+  );
+} else {
+  cgweb120Fix8Boot();
+}
+
+
+window.addEventListener(
+  "resize",
+  cgweb120Fix8ApplyLayout,
+  { passive: true }
+);
+
+
+/* ==================================================================
+   F. DIAGNOSTIC
+   ================================================================== */
+
+window.CGWEB120_FIX8_STATUS =
+  async function () {
+    const detail =
+      cgweb120Fix8Detail();
+
+    const toolbar =
+      cgweb120Fix8Toolbar();
+
+    const activity =
+      typeof currentDetailActivity ===
+        "function"
+        ? currentDetailActivity()
+        : null;
+
+    const header =
+      detail?.querySelector(
+        ".cgweb120-fix5-header-row"
+      );
+
+    return {
+      build:
+        "CGWEB120_FIX8",
+
+      detail_padding_top:
+        detail
+          ? getComputedStyle(
+              detail
+            ).paddingTop
+          : "NA",
+
+      toolbar_found:
+        !!toolbar,
+
+      toolbar_position:
+        toolbar
+          ? getComputedStyle(
+              toolbar
+            ).position
+          : "NA",
+
+      toolbar_top:
+        toolbar
+          ? getComputedStyle(
+              toolbar
+            ).top
+          : "NA",
+
+      toolbar_margin_top:
+        toolbar
+          ? getComputedStyle(
+              toolbar
+            ).marginTop
+          : "NA",
+
+      toolbar_margin_bottom:
+        toolbar
+          ? getComputedStyle(
+              toolbar
+            ).marginBottom
+          : "NA",
+
+      placeholders:
+        detail
+          ? detail.querySelectorAll(
+              "[class*='toolbar-placeholder']"
+            ).length
+          : -1,
+
+      header_present:
+        !!header,
+
+      activity_route_present:
+        activity
+          ? await cgweb120Fix8RouteAlreadyExists(
+              activity
+            )
+          : false
+    };
+  };
+
+/* CGWEB120_FIX8_END */
