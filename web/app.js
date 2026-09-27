@@ -15511,6 +15511,27 @@ async function autoSyncWebStrava(options={}) {
       for (const summary of rows.slice().reverse()) {
         const duplicate=await existingActivityForStravaAuto(summary);
         if (duplicate) {
+          try {
+            const enriched =
+              await cgweb120Fix10EnrichExistingFromStrava(
+                summary,
+                duplicate
+              );
+
+            if (enriched) {
+              console.info(
+                "CGWEB120 FIX10 · doublon Strava enrichi",
+                summary?.id
+              );
+            }
+          } catch (error) {
+            console.warn(
+              "CGWEB120 FIX10 · enrichissement doublon Strava",
+              summary?.id,
+              error
+            );
+          }
+
           skipped++;
           continue;
         }
@@ -45005,3 +45026,1003 @@ window.CGWEB120_FIX9_STATUS =
   };
 
 /* CGWEB120_FIX9_END */
+
+/* CGWEB120_FIX10_START
+   STRAVA_DUPLICATE_ENRICH001
+   ROUTE_SELF_REPAIR001
+   FIT_MODULE_BRIDGE001
+   STRAVA_LINK_BACKFILL001
+   ACTIVITY_ROUTE_BACKFILL001
+*/
+
+
+const cgweb120Fix10RepairPromises =
+  new Map();
+
+
+function cgweb120Fix10Key(activity) {
+  if (!activity) return "";
+
+  try {
+    return String(
+      activityKey(activity) || ""
+    );
+  } catch (_) {
+    return String(
+      activity?.__docId ||
+      activity?.id ||
+      ""
+    );
+  }
+}
+
+
+async function cgweb120Fix10PatchActivity(
+  activity,
+  patch
+) {
+  const key =
+    cgweb120Fix10Key(
+      activity
+    );
+
+  if (!key) {
+    throw new Error(
+      "activité sans clé"
+    );
+  }
+
+  await commitWebMutation({
+    table:
+      "activities",
+
+    rowKey:
+      key,
+
+    operation:
+      "UPSERT",
+
+    row:
+      patch,
+
+    materializedCollection:
+      "activities",
+
+    materializedData:
+      patch
+  });
+
+  Object.assign(
+    activity,
+    patch
+  );
+
+  const loaded =
+    activities.find(
+      (row) =>
+        String(
+          activityKey(row)
+        ) === key
+    );
+
+  if (
+    loaded &&
+    loaded !== activity
+  ) {
+    Object.assign(
+      loaded,
+      patch
+    );
+  }
+
+  return true;
+}
+
+
+/* ================================================================
+   STRAVA : EXTRAIRE ET PERSISTER LE TRACE D'UNE ACTIVITE EXISTANTE
+   ================================================================ */
+
+async function cgweb120Fix10EnrichFromStravaSummary(
+  activity,
+  summary
+) {
+  if (
+    !activity ||
+    !summary?.id
+  ) {
+    return false;
+  }
+
+  const stravaId =
+    String(summary.id);
+
+  const payload =
+    await webStravaFetch(
+      "activity",
+      {
+        query: {
+          id:
+            stravaId
+        }
+      }
+    );
+
+  const normalized =
+    normalizeStravaDetail(
+      payload
+    );
+
+  const recovered =
+    normalizeSplitRoute(
+      normalized?.route
+    );
+
+  if (
+    !recovered ||
+    recovered.points.length < 2
+  ) {
+    throw new Error(
+      "Strava ne fournit aucun stream GPS exploitable."
+    );
+  }
+
+  /*
+   * Une correspondance valide est confirmée par :
+   * - le moteur anti-doublon existant ;
+   * - puis la récupération réelle du détail Strava.
+   *
+   * On rattache donc enfin l'identifiant Strava à
+   * l'activité SPORT existante.
+   */
+  const patch = {
+    strava_activity_id:
+      stravaId,
+
+    strava_type:
+      summary?.type ??
+      normalized?.activity
+        ?.strava_type ??
+      activity?.strava_type ??
+      null,
+
+    strava_sport_type:
+      summary?.sport_type ??
+      normalized?.activity
+        ?.strava_sport_type ??
+      activity
+        ?.strava_sport_type ??
+      null,
+
+    strava_device_name:
+      normalized?.activity
+        ?.strava_device_name ??
+      activity
+        ?.strava_device_name ??
+      null,
+
+    cgweb120_strava_link_source:
+      "STRAVA_DUPLICATE_ENRICH001",
+
+    cgweb120_strava_linked_at_ms:
+      Date.now()
+  };
+
+  await cgweb120Fix10PatchActivity(
+    activity,
+    patch
+  );
+
+  /*
+   * Puis création / réparation du vrai activity_routes.
+   */
+  await persistRecoveredSplitRoute(
+    activity,
+    normalized.route
+  );
+
+  /*
+   * Validation réelle après écriture.
+   */
+  if (
+    typeof cgweb120Fix8RouteAlreadyExists ===
+      "function"
+  ) {
+    const exists =
+      await cgweb120Fix8RouteAlreadyExists(
+        activity
+      );
+
+    if (!exists) {
+      throw new Error(
+        "activity_routes absent après persistance Strava."
+      );
+    }
+  }
+
+  try {
+    if (
+      typeof globalMapRouteCache !==
+        "undefined"
+    ) {
+      globalMapRouteCache.delete(
+        cgweb120Fix10Key(
+          activity
+        )
+      );
+    }
+  } catch (_) {}
+
+  return true;
+}
+
+
+/* ================================================================
+   AUTO-SYNC : UN DOUBLON N'EST PLUS ABANDONNE
+   ================================================================ */
+
+async function cgweb120Fix10EnrichExistingFromStrava(
+  summary,
+  duplicate
+) {
+  const activity =
+    duplicate?.activity;
+
+  if (
+    !activity ||
+    !summary?.id
+  ) {
+    return false;
+  }
+
+  /*
+   * S'il possède déjà route + identifiant Strava,
+   * rien à faire.
+   */
+  let routeExists = false;
+
+  try {
+    routeExists =
+      typeof cgweb120Fix8RouteAlreadyExists ===
+        "function"
+        ? await cgweb120Fix8RouteAlreadyExists(
+            activity
+          )
+        : false;
+  } catch (_) {}
+
+  if (
+    routeExists &&
+    String(
+      activity
+        ?.strava_activity_id ||
+      ""
+    ) ===
+      String(summary.id)
+  ) {
+    return true;
+  }
+
+  return (
+    await cgweb120Fix10EnrichFromStravaSummary(
+      activity,
+      summary
+    )
+  );
+}
+
+
+/* ================================================================
+   RECHERCHE STRAVA AUTONOME POUR UNE ACTIVITE SPORT EXISTANTE
+
+   On utilise EXACTEMENT le moteur de correspondance anti-doublon
+   déjà présent dans SPORT Web.
+   ================================================================ */
+
+async function cgweb120Fix10FindStravaSummary(
+  activity
+) {
+  if (
+    !activity ||
+    !currentUser ||
+    !navigator.onLine
+  ) {
+    return null;
+  }
+
+  /*
+   * Cas facile : SPORT possède déjà le lien.
+   */
+  const existingId =
+    String(
+      activity
+        ?.strava_activity_id ||
+      ""
+    ).trim();
+
+  if (existingId) {
+    return {
+      id:
+        existingId,
+
+      __cgweb120_exact_link:
+        true
+    };
+  }
+
+  const startMs =
+    Number(
+      activity
+        ?.start_time_ms
+    );
+
+  /*
+   * On ne lance pas une lecture Strava gigantesque
+   * pour une vieille activité sans lien.
+   *
+   * Les réparations historiques pourront toujours utiliser
+   * FIT ou une opération de rattrapage dédiée.
+   */
+  if (
+    !Number.isFinite(startMs) ||
+    startMs <= 0 ||
+    Date.now() - startMs >
+      45 * 86400000
+  ) {
+    return null;
+  }
+
+  /*
+   * Fenêtre commençant 12 h avant l'activité.
+   * Le filtre isProbableActivityForStrava fait ensuite
+   * la vraie comparaison heure / distance / durée / sport.
+   */
+  const after =
+    Math.floor(
+      (
+        startMs -
+        12 * 3600000
+      ) /
+      1000
+    );
+
+  const payload =
+    await webStravaFetch(
+      "activities",
+      {
+        query: {
+          after
+        }
+      }
+    );
+
+  const rows =
+    Array.isArray(
+      payload?.activities
+    )
+      ? payload.activities
+      : [];
+
+  const exact =
+    rows.find(
+      (summary) =>
+        String(summary?.id || "") ===
+        existingId &&
+        existingId
+    );
+
+  if (exact) {
+    return exact;
+  }
+
+  const matches =
+    rows.filter(
+      (summary) => {
+        try {
+          return (
+            typeof isProbableActivityForStrava ===
+              "function" &&
+            isProbableActivityForStrava(
+              activity,
+              summary
+            )
+          );
+        } catch (_) {
+          return false;
+        }
+      }
+    );
+
+  /*
+   * Sécurité :
+   * on n'attache jamais automatiquement un résultat ambigu.
+   */
+  if (
+    matches.length !== 1
+  ) {
+    if (matches.length > 1) {
+      console.warn(
+        "CGWEB120 FIX10 · correspondance Strava ambiguë",
+        cgweb120Fix10Key(activity),
+        matches.map(
+          (row) => row?.id
+        )
+      );
+    }
+
+    return null;
+  }
+
+  return matches[0];
+}
+
+
+/* ================================================================
+   SELF REPAIR STRAVA
+   ================================================================ */
+
+async function cgweb120Fix10RepairRouteFromStrava(
+  activity
+) {
+  try {
+    const summary =
+      await cgweb120Fix10FindStravaSummary(
+        activity
+      );
+
+    if (!summary?.id) {
+      return false;
+    }
+
+    if (ui?.mapStatus) {
+      ui.mapStatus.textContent =
+        "Activité retrouvée dans Strava · récupération du tracé…";
+
+      ui.mapStatus.className =
+        "pill neutral";
+    }
+
+    return (
+      await cgweb120Fix10EnrichFromStravaSummary(
+        activity,
+        summary
+      )
+    );
+  } catch (error) {
+    console.warn(
+      "CGWEB120 FIX10 · réparation Strava",
+      error
+    );
+
+    return false;
+  }
+}
+
+
+/* ================================================================
+   FIT MODULE BRIDGE
+
+   Plus aucun accès direct à VAULT_URL depuis app.js.
+   app.js passe exclusivement par l'API publique fitcloud.js.
+   ================================================================ */
+
+async function cgweb120Fix10WaitFitBridge(
+  timeoutMs = 6000
+) {
+  const start =
+    Date.now();
+
+  while (
+    Date.now() - start <
+    timeoutMs
+  ) {
+    const api =
+      window
+        .SPORT_DIRECTORY_FIT;
+
+    if (
+      api &&
+      typeof api.fetchBlob ===
+        "function"
+    ) {
+      return api;
+    }
+
+    await new Promise(
+      (resolve) =>
+        setTimeout(
+          resolve,
+          80
+        )
+    );
+  }
+
+  return null;
+}
+
+
+async function cgweb120Fix10RecoverRouteFromFit(
+  activity
+) {
+  const bridge =
+    await cgweb120Fix10WaitFitBridge();
+
+  if (!bridge) {
+    console.warn(
+      "CGWEB120 FIX10 · FIT_MODULE_BRIDGE001 absent"
+    );
+
+    return false;
+  }
+
+  const ids =
+    typeof cgweb120Fix8ActivityKeys ===
+      "function"
+      ? cgweb120Fix8ActivityKeys(
+          activity
+        )
+      : [
+          activity?.__docId,
+          activity?.id,
+          cgweb120Fix10Key(
+            activity
+          )
+        ]
+          .filter(Boolean)
+          .map(String);
+
+  for (const id of ids) {
+    try {
+      if (ui?.mapStatus) {
+        ui.mapStatus.textContent =
+          "Recherche du FIT Cloud…";
+
+        ui.mapStatus.className =
+          "pill neutral";
+      }
+
+      const result =
+        await bridge.fetchBlob(
+          id
+        );
+
+      if (
+        !result?.ok ||
+        !result?.blob
+      ) {
+        continue;
+      }
+
+      if (ui?.mapStatus) {
+        ui.mapStatus.textContent =
+          "FIT trouvé · reconstruction automatique du tracé…";
+      }
+
+      const buffer =
+        await result
+          .blob
+          .arrayBuffer();
+
+      const parsed =
+        decodeFitActivity(
+          buffer,
+          result.file_name ||
+            (
+              "activity_" +
+              id +
+              ".fit"
+            )
+        );
+
+      const raw =
+        buildWebImportRoute(
+          parsed
+        );
+
+      const normalized =
+        normalizeRoute(
+          raw
+        );
+
+      if (
+        !normalized ||
+        normalized.points.length <
+          2
+      ) {
+        continue;
+      }
+
+      raw.source_point_count =
+        Math.max(
+          Number(
+            raw.source_point_count
+          ) || 0,
+
+          Number(
+            activity
+              ?.gps_point_count
+          ) || 0,
+
+          normalized.points.length
+        );
+
+      raw.route_format =
+        "CGWEB120-FIX10-FIT-BRIDGE";
+
+      raw.__cgweb120_autoroute =
+        "FIT_MODULE_BRIDGE001";
+
+      raw.__cgweb120_fit_role =
+        result.role || "";
+
+      raw.__cgweb120_fit_method =
+        result.method || "";
+
+      raw.__cgweb120_fit_size_bytes =
+        Number(
+          result.size_bytes
+        ) || 0;
+
+      await persistRecoveredSplitRoute(
+        activity,
+        raw
+      );
+
+      try {
+        if (
+          typeof globalMapRouteCache !==
+            "undefined"
+        ) {
+          globalMapRouteCache.delete(
+            cgweb120Fix10Key(
+              activity
+            )
+          );
+        }
+      } catch (_) {}
+
+      if (
+        typeof cgweb120Fix8RouteAlreadyExists ===
+          "function"
+      ) {
+        return (
+          await cgweb120Fix8RouteAlreadyExists(
+            activity
+          )
+        );
+      }
+
+      return true;
+
+    } catch (error) {
+      console.info(
+        "CGWEB120 FIX10 · FIT non exploitable",
+        id,
+        error?.message ||
+          error
+      );
+    }
+  }
+
+  return false;
+}
+
+
+/* ================================================================
+   PIPELINE UNIFIE DE REPARATION
+
+   Ordre :
+   1. activity_routes
+   2. récupération historique existante
+   3. STRAVA probable / exact
+   4. FIT Cloud via bridge officiel
+   ================================================================ */
+
+async function cgweb120Fix10RepairRoute(
+  activity
+) {
+  if (!activity) {
+    return false;
+  }
+
+  if (
+    typeof cgweb120Fix8RouteAlreadyExists ===
+      "function" &&
+    await cgweb120Fix8RouteAlreadyExists(
+      activity
+    )
+  ) {
+    return true;
+  }
+
+  /*
+   * Ancien moteur :
+   * - activity_routes
+   * - Strava si strava_activity_id déjà présent
+   * - archives FIT locales
+   */
+  try {
+    if (
+      typeof recoverSplitRouteForActivity ===
+        "function"
+    ) {
+      const recovered =
+        await recoverSplitRouteForActivity(
+          activity
+        );
+
+      if (
+        recovered?.points?.length >=
+          2
+      ) {
+        return true;
+      }
+    }
+  } catch (_) {}
+
+  /*
+   * Nouveau :
+   * si l'activité Strava existe mais n'a jamais été liée
+   * parce que l'anti-doublon l'a ignorée.
+   */
+  if (
+    await cgweb120Fix10RepairRouteFromStrava(
+      activity
+    )
+  ) {
+    return true;
+  }
+
+  /*
+   * Dernier secours :
+   * FIT Cloud via fitcloud.js.
+   */
+  return (
+    await cgweb120Fix10RecoverRouteFromFit(
+      activity
+    )
+  );
+}
+
+
+/* ================================================================
+   REMPLACEMENT DU RECOVERY FIX8
+   ================================================================ */
+
+try {
+  if (
+    typeof cgweb120Fix8RecoverRoute ===
+      "function"
+  ) {
+    cgweb120Fix8RecoverRoute =
+      cgweb120Fix10RepairRoute;
+  }
+} catch (error) {
+  console.error(
+    "CGWEB120 FIX10 · branchement route repair",
+    error
+  );
+}
+
+
+/*
+ * FIX9 utilisait VAULT_URL depuis le mauvais module.
+ * On remplace aussi explicitement son helper pour éviter
+ * toute régression si une ancienne branche l'appelle encore.
+ */
+try {
+  if (
+    typeof cgweb120Fix9RecoverFromDirectFit ===
+      "function"
+  ) {
+    cgweb120Fix9RecoverFromDirectFit =
+      cgweb120Fix10RecoverRouteFromFit;
+  }
+} catch (_) {}
+
+
+/* ================================================================
+   REPARATION A L'OUVERTURE DU DETAIL
+   ================================================================ */
+
+async function cgweb120Fix10RepairCurrentDetail() {
+  const activity =
+    typeof currentDetailActivity ===
+      "function"
+      ? currentDetailActivity()
+      : null;
+
+  if (!activity) {
+    return false;
+  }
+
+  const key =
+    cgweb120Fix10Key(
+      activity
+    );
+
+  if (!key) {
+    return false;
+  }
+
+  if (
+    cgweb120Fix10RepairPromises
+      .has(key)
+  ) {
+    return (
+      await cgweb120Fix10RepairPromises
+        .get(key)
+    );
+  }
+
+  const promise =
+    cgweb120Fix10RepairRoute(
+      activity
+    );
+
+  cgweb120Fix10RepairPromises
+    .set(
+      key,
+      promise
+    );
+
+  try {
+    const repaired =
+      await promise;
+
+    if (!repaired) {
+      return false;
+    }
+
+    /*
+     * L'activité a pu changer pendant la réparation.
+     */
+    const current =
+      typeof currentDetailActivity ===
+        "function"
+        ? currentDetailActivity()
+        : null;
+
+    if (
+      cgweb120Fix10Key(current) !==
+      key
+    ) {
+      return true;
+    }
+
+    /*
+     * La route vient d'être matérialisée :
+     * on relance immédiatement le moteur cartographique.
+     */
+    if (
+      typeof cgweb120Fix8BaseRenderCartography ===
+        "function"
+    ) {
+      await cgweb120Fix8BaseRenderCartography(
+        current
+      );
+    } else {
+      await renderCartography(
+        current
+      );
+    }
+
+    return true;
+
+  } finally {
+    cgweb120Fix10RepairPromises
+      .delete(key);
+  }
+}
+
+
+/* ================================================================
+   BOOT DETAIL
+
+   Le premier passage de renderCartography déclenche déjà FIX8.
+   Ces passes couvrent surtout le détail déjà ouvert au rechargement.
+   ================================================================ */
+
+function cgweb120Fix10Boot() {
+  for (
+    const delay of
+    [150, 600, 1600]
+  ) {
+    setTimeout(
+      () => {
+        cgweb120Fix10RepairCurrentDetail()
+          .catch(
+            (error) =>
+              console.warn(
+                "CGWEB120 FIX10 boot",
+                error
+              )
+          );
+      },
+      delay
+    );
+  }
+}
+
+
+if (
+  document.readyState ===
+    "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb120Fix10Boot,
+    { once: true }
+  );
+} else {
+  cgweb120Fix10Boot();
+}
+
+
+/* ================================================================
+   DIAGNOSTIC
+   ================================================================ */
+
+window.CGWEB120_FIX10_STATUS =
+  async function () {
+
+    const activity =
+      typeof currentDetailActivity ===
+        "function"
+        ? currentDetailActivity()
+        : null;
+
+    const api =
+      window.SPORT_DIRECTORY_FIT;
+
+    return {
+      build:
+        "CGWEB120_FIX10",
+
+      activity_id:
+        cgweb120Fix10Key(
+          activity
+        ),
+
+      strava_activity_id:
+        String(
+          activity
+            ?.strava_activity_id ||
+          ""
+        ),
+
+      gps_point_count:
+        Number(
+          activity
+            ?.gps_point_count
+        ) || 0,
+
+      route_present:
+        activity &&
+        typeof cgweb120Fix8RouteAlreadyExists ===
+          "function"
+          ? await cgweb120Fix8RouteAlreadyExists(
+              activity
+            )
+          : false,
+
+      strava_connected_state:
+        typeof webStravaConnected !==
+          "undefined"
+          ? !!webStravaConnected
+          : null,
+
+      fit_bridge_loaded:
+        !!api,
+
+      fit_fetch_blob:
+        typeof api?.fetchBlob ===
+          "function",
+
+      direct_download:
+        typeof api?.directDownload ===
+          "function"
+    };
+  };
+
+/* CGWEB120_FIX10_END */

@@ -5428,6 +5428,149 @@ function c107DispositionName(value,fallback){
   return normal?.[1]?.trim()||fallback;
 }
 
+
+
+/* CGWEB120_FIX10_FIT_BRIDGE_START
+   FIT_MODULE_BRIDGE001
+   DIRECT_BLOB_READ001
+*/
+
+async function cgweb120Fix10FetchDirectActivityBlob(
+  activityId
+) {
+  const id =
+    String(activityId || "").trim();
+
+  if (!id) {
+    throw new Error(
+      "ACTIVITY_ID_REQUIRED — activity_id absent."
+    );
+  }
+
+  const user =
+    bridge().getUser();
+
+  if (!user) {
+    throw new Error(
+      "AUTH_REQUIRED — Connexion SPORT requise."
+    );
+  }
+
+  const token =
+    await user.getIdToken();
+
+  const url =
+    new URL(VAULT_URL);
+
+  url.searchParams.set(
+    "action",
+    "directory_fit_direct_download"
+  );
+
+  const response =
+    await fetch(
+      url.toString(),
+      {
+        method: "POST",
+
+        headers: {
+          Authorization:
+            "Bearer " + token,
+
+          "Content-Type":
+            "application/json"
+        },
+
+        body:
+          JSON.stringify({
+            activity_id: id
+          }),
+
+        cache: "no-store"
+      }
+    );
+
+  if (!response.ok) {
+    const text =
+      await response.text();
+
+    let payload = null;
+
+    try {
+      payload =
+        text
+          ? JSON.parse(text)
+          : null;
+    } catch (_) {}
+
+    throw new Error(
+      (
+        payload?.status ||
+        "DIRECT_BLOB_ERROR"
+      ) +
+      " — " +
+      (
+        payload?.error ||
+        text ||
+        ("HTTP " + response.status)
+      )
+    );
+  }
+
+  const blob =
+    await response.blob();
+
+  if (
+    !blob ||
+    !blob.size
+  ) {
+    throw new Error(
+      "DIRECT_BLOB_EMPTY — FIT vide reçu."
+    );
+  }
+
+  const fileName =
+    c107DispositionName(
+      response.headers.get(
+        "Content-Disposition"
+      ),
+      "activity_" + id + ".fit"
+    );
+
+  return {
+    ok: true,
+
+    status:
+      "DIRECT_BLOB_OK",
+
+    blob,
+
+    file_name:
+      fileName,
+
+    size_bytes:
+      blob.size,
+
+    service:
+      response.headers.get(
+        "X-Sport-Download-Service"
+      ) ||
+      "FIT_DIRECT_DOWNLOAD001",
+
+    role:
+      response.headers.get(
+        "X-Sport-Fit-Role"
+      ) || "",
+
+    method:
+      response.headers.get(
+        "X-Sport-Fit-Resolve-Method"
+      ) || ""
+  };
+}
+
+/* CGWEB120_FIX10_FIT_BRIDGE_END */
+
 async function c107DirectActivityDownload(activityId){
   const id=String(activityId||"").trim();
   if(!id)throw new Error("ACTIVITY_ID_REQUIRED — activity_id absent.");
@@ -5492,7 +5635,9 @@ window.SPORT_DIRECTORY_FIT=
     resolve:
       c096ResolveDownload,
     directDownload:
-      c107DirectActivityDownload
+      c107DirectActivityDownload,
+    fetchBlob:
+      cgweb120Fix10FetchDirectActivityBlob
   });
 
 
