@@ -47112,3 +47112,1713 @@ window.CGWEB121_AUDIT_RECENT =
   cgweb121AuditRecent;
 
 /* CGWEB121_END */
+
+/* CGWEB121_FIX1_START
+   ROUTE_QUALITY_INVARIANT001
+   CORRUPT_ROUTE_REBUILD001
+   FULL_STREAM_PRESERVE001
+   PROFILE_REALITY_CHECK001
+   ROUTE_REPLACE_ATOMIC001
+*/
+
+
+const cgweb121Fix1QualityState =
+  new Map();
+
+const cgweb121Fix1RepairPromises =
+  new Map();
+
+
+/* ==================================================================
+   1. OUTILS NUMERIQUES
+   ================================================================== */
+
+function cgweb121Fix1Finite(value) {
+  const n = Number(value);
+
+  return Number.isFinite(n)
+    ? n
+    : null;
+}
+
+
+function cgweb121Fix1Haversine(
+  lat1,
+  lon1,
+  lat2,
+  lon2
+) {
+  const aLat =
+    cgweb121Fix1Finite(lat1);
+
+  const aLon =
+    cgweb121Fix1Finite(lon1);
+
+  const bLat =
+    cgweb121Fix1Finite(lat2);
+
+  const bLon =
+    cgweb121Fix1Finite(lon2);
+
+  if (
+    aLat === null ||
+    aLon === null ||
+    bLat === null ||
+    bLon === null
+  ) {
+    return 0;
+  }
+
+  const R = 6371000;
+
+  const rad =
+    Math.PI / 180;
+
+  const p1 =
+    aLat * rad;
+
+  const p2 =
+    bLat * rad;
+
+  const dLat =
+    (bLat - aLat) * rad;
+
+  const dLon =
+    (bLon - aLon) * rad;
+
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(p1) *
+    Math.cos(p2) *
+    Math.sin(dLon / 2) ** 2;
+
+  return (
+    2 *
+    R *
+    Math.atan2(
+      Math.sqrt(h),
+      Math.sqrt(
+        Math.max(
+          0,
+          1 - h
+        )
+      )
+    )
+  );
+}
+
+
+function cgweb121Fix1ActivityDistance(
+  activity
+) {
+  const candidates = [
+    activity?.distance_m,
+    activity?.total_distance_m,
+    activity?.distance,
+    activity?.distanceMeters
+  ];
+
+  for (const value of candidates) {
+    const n =
+      cgweb121Fix1Finite(
+        value
+      );
+
+    if (
+      n !== null &&
+      n > 0
+    ) {
+      return n;
+    }
+  }
+
+  return 0;
+}
+
+
+function cgweb121Fix1ActivityAscent(
+  activity
+) {
+  const candidates = [
+    activity?.total_ascent_m,
+    activity?.ascent_m,
+    activity?.total_ascent,
+    activity?.elevation_gain_m,
+    activity?.elevation_gain,
+    activity?.total_elevation_gain
+  ];
+
+  for (const value of candidates) {
+    const n =
+      cgweb121Fix1Finite(
+        value
+      );
+
+    if (
+      n !== null &&
+      n >= 0
+    ) {
+      return n;
+    }
+  }
+
+  return 0;
+}
+
+
+/* ==================================================================
+   2. NOMBRE MINIMUM DE POINTS
+
+   Une route de 2 points n'est plus acceptable pour une activité
+   annonçant plusieurs milliers de points GPS.
+
+   Les seuils restent volontairement compatibles avec une route
+   Web décimée de bonne qualité.
+   ================================================================== */
+
+function cgweb121Fix1MinimumPoints(
+  sourceCount
+) {
+  const count =
+    Math.max(
+      0,
+      Number(sourceCount) || 0
+    );
+
+  if (count >= 5000) {
+    return 50;
+  }
+
+  if (count >= 1000) {
+    return 25;
+  }
+
+  if (count >= 200) {
+    return 10;
+  }
+
+  if (count >= 20) {
+    return 5;
+  }
+
+  return 2;
+}
+
+
+/* ==================================================================
+   3. CONTROLE DE QUALITE REEL DE LA ROUTE
+   ================================================================== */
+
+function cgweb121Fix1RouteQuality(
+  activity,
+  rawRoute
+) {
+  const normalized =
+    normalizeSplitRoute(
+      rawRoute || {}
+    );
+
+  const points =
+    Array.isArray(
+      normalized?.points
+    )
+      ? normalized.points
+      : [];
+
+  const sourceCount =
+    Math.max(
+      Number(
+        activity
+          ?.gps_point_count
+      ) || 0,
+
+      Number(
+        rawRoute
+          ?.source_point_count
+      ) || 0,
+
+      Number(
+        rawRoute
+          ?.__cgweb121_source_point_count
+      ) || 0,
+
+      points.length
+    );
+
+  const minimumPoints =
+    cgweb121Fix1MinimumPoints(
+      sourceCount
+    );
+
+  const coords =
+    points.filter(
+      (point) => {
+        const lat =
+          cgweb121Fix1Finite(
+            point?.latitude
+          );
+
+        const lon =
+          cgweb121Fix1Finite(
+            point?.longitude
+          );
+
+        return (
+          lat !== null &&
+          lon !== null &&
+          Math.abs(lat) <= 90 &&
+          Math.abs(lon) <= 180 &&
+          !(
+            Math.abs(lat) < 1e-10 &&
+            Math.abs(lon) < 1e-10
+          )
+        );
+      }
+    );
+
+  const uniqueCoords =
+    new Set(
+      coords.map(
+        (point) => {
+          const lat =
+            Number(
+              point.latitude
+            ).toFixed(5);
+
+          const lon =
+            Number(
+              point.longitude
+            ).toFixed(5);
+
+          return `${lat},${lon}`;
+        }
+      )
+    );
+
+  let geometryDistance = 0;
+
+  for (
+    let index = 1;
+    index < coords.length;
+    index += 1
+  ) {
+    geometryDistance +=
+      cgweb121Fix1Haversine(
+        coords[index - 1]
+          .latitude,
+
+        coords[index - 1]
+          .longitude,
+
+        coords[index]
+          .latitude,
+
+        coords[index]
+          .longitude
+      );
+  }
+
+  const storedDistances =
+    points
+      .map(
+        (point) =>
+          cgweb121Fix1Finite(
+            point?.distanceMeters
+          )
+      )
+      .filter(
+        (value) =>
+          value !== null &&
+          value >= 0
+      );
+
+  const storedDistance =
+    storedDistances.length
+      ? Math.max(
+          ...storedDistances
+        )
+      : 0;
+
+  const altitudes =
+    points
+      .map(
+        (point) =>
+          cgweb121Fix1Finite(
+            point?.altitudeMeters
+          )
+      )
+      .filter(
+        (value) =>
+          value !== null
+      );
+
+  const altitudeMin =
+    altitudes.length
+      ? Math.min(
+          ...altitudes
+        )
+      : null;
+
+  const altitudeMax =
+    altitudes.length
+      ? Math.max(
+          ...altitudes
+        )
+      : null;
+
+  const altitudeRange =
+    (
+      altitudeMin !== null &&
+      altitudeMax !== null
+    )
+      ? altitudeMax -
+        altitudeMin
+      : 0;
+
+  const activityDistance =
+    cgweb121Fix1ActivityDistance(
+      activity
+    );
+
+  const activityAscent =
+    cgweb121Fix1ActivityAscent(
+      activity
+    );
+
+  const reasons = [];
+
+
+  /* ---------- nombre de points ---------- */
+
+  if (
+    points.length <
+    minimumPoints
+  ) {
+    reasons.push(
+      `POINT_COUNT_${points.length}_LT_${minimumPoints}`
+    );
+  }
+
+
+  /* ---------- coordonnées réelles ---------- */
+
+  if (
+    coords.length <
+    minimumPoints
+  ) {
+    reasons.push(
+      `GPS_COORD_COUNT_${coords.length}_LT_${minimumPoints}`
+    );
+  }
+
+
+  const uniqueMinimum =
+    Math.min(
+      minimumPoints,
+      10
+    );
+
+  if (
+    uniqueCoords.size <
+    uniqueMinimum
+  ) {
+    reasons.push(
+      `GPS_UNIQUE_${uniqueCoords.size}_LT_${uniqueMinimum}`
+    );
+  }
+
+
+  /* ---------- cohérence de distance ---------- */
+
+  if (
+    activityDistance >= 1000
+  ) {
+    const reconstructedDistance =
+      Math.max(
+        geometryDistance,
+        storedDistance
+      );
+
+    const minimumDistance =
+      Math.max(
+        200,
+        activityDistance * 0.20
+      );
+
+    if (
+      reconstructedDistance <
+      minimumDistance
+    ) {
+      reasons.push(
+        "DISTANCE_GEOMETRY_TOO_SHORT"
+      );
+    }
+  }
+
+
+  /* ---------- cohérence altimétrique ---------- */
+
+  if (
+    activityAscent >= 100
+  ) {
+    const minimumAltitudes =
+      Math.min(
+        minimumPoints,
+        10
+      );
+
+    if (
+      altitudes.length <
+      minimumAltitudes
+    ) {
+      reasons.push(
+        "ALTITUDE_STREAM_TOO_SHORT"
+      );
+    }
+
+    /*
+     * Une activité à plusieurs centaines de mètres D+
+     * ne peut pas avoir un profil intégralement à 0 m.
+     */
+    if (
+      altitudeRange < 5
+    ) {
+      reasons.push(
+        "ALTITUDE_RANGE_IMPLAUSIBLE"
+      );
+    }
+  }
+
+
+  const quality = {
+    ok:
+      reasons.length === 0,
+
+    reasons,
+
+    sourceCount,
+
+    minimumPoints,
+
+    pointCount:
+      points.length,
+
+    coordinateCount:
+      coords.length,
+
+    uniqueCoordinateCount:
+      uniqueCoords.size,
+
+    geometryDistanceMeters:
+      Math.round(
+        geometryDistance
+      ),
+
+    storedDistanceMeters:
+      Math.round(
+        storedDistance
+      ),
+
+    activityDistanceMeters:
+      Math.round(
+        activityDistance
+      ),
+
+    altitudeCount:
+      altitudes.length,
+
+    altitudeRangeMeters:
+      Math.round(
+        altitudeRange * 10
+      ) / 10,
+
+    activityAscentMeters:
+      Math.round(
+        activityAscent
+      )
+  };
+
+  const key =
+    typeof cgweb121Key ===
+      "function"
+      ? cgweb121Key(
+          activity
+        )
+      : "";
+
+  if (key) {
+    cgweb121Fix1QualityState.set(
+      key,
+      quality
+    );
+  }
+
+  return {
+    normalized,
+    quality
+  };
+}
+
+
+/* ==================================================================
+   4. LECTURE DETAILLEE DE activity_routes
+   ================================================================== */
+
+async function cgweb121Fix1ReadDetailed(
+  activity
+) {
+  if (
+    !currentUser ||
+    !activity
+  ) {
+    return {
+      exists: false,
+      valid: false,
+      raw: null,
+      normalized: null,
+      quality: null
+    };
+  }
+
+  const key =
+    cgweb121Key(
+      activity
+    );
+
+  if (!key) {
+    return {
+      exists: false,
+      valid: false,
+      raw: null,
+      normalized: null,
+      quality: null
+    };
+  }
+
+  try {
+    const snapshot =
+      await getDoc(
+        doc(
+          db,
+          ROOT,
+          currentUser.uid,
+          "activity_routes",
+          key
+        )
+      );
+
+    if (!snapshot.exists()) {
+      return {
+        exists: false,
+        valid: false,
+        raw: null,
+        normalized: null,
+        quality: null
+      };
+    }
+
+    const raw =
+      snapshot.data();
+
+    const checked =
+      cgweb121Fix1RouteQuality(
+        activity,
+        raw
+      );
+
+    return {
+      exists: true,
+      valid:
+        checked.quality.ok,
+      raw,
+      normalized:
+        checked.normalized,
+      quality:
+        checked.quality
+    };
+
+  } catch (error) {
+    console.warn(
+      "CGWEB121 FIX1 · lecture route",
+      key,
+      error
+    );
+
+    return {
+      exists: false,
+      valid: false,
+      raw: null,
+      normalized: null,
+      quality: {
+        ok: false,
+        reasons: [
+          "READ_ERROR"
+        ]
+      }
+    };
+  }
+}
+
+
+/* ==================================================================
+   5. NOUVELLE LECTURE CANONIQUE
+
+   CGWEB121 ne considère plus une route simplement parce qu'elle
+   possède deux points.
+   ================================================================== */
+
+cgweb121ReadRoute =
+  async function cgweb121Fix1ReadRoute(
+    activity
+  ) {
+    const result =
+      await cgweb121Fix1ReadDetailed(
+        activity
+      );
+
+    if (!result.valid) {
+      if (
+        result.exists &&
+        result.quality
+      ) {
+        console.warn(
+          "CGWEB121 FIX1 · route existante rejetée",
+          {
+            activity:
+              cgweb121Key(
+                activity
+              ),
+
+            quality:
+              result.quality
+          }
+        );
+      }
+
+      return null;
+    }
+
+    return {
+      key:
+        cgweb121Key(
+          activity
+        ),
+
+      raw:
+        result.raw,
+
+      normalized:
+        result.normalized,
+
+      points:
+        result.normalized
+          ?.points
+          ?.length || 0,
+
+      quality:
+        result.quality
+    };
+  };
+
+
+/* ==================================================================
+   6. PERSISTANCE ATOMIQUE ET VERIFIEE
+
+   Important :
+   merge:false implicite.
+
+   Une nouvelle route remplace totalement la route corrompue.
+   Aucun ancien tableau de 2 points ne peut survivre au rebuild.
+   ================================================================== */
+
+cgweb121PersistRouteStrict =
+  async function cgweb121Fix1PersistRouteStrict(
+    activity,
+    rawRoute
+  ) {
+    if (!currentUser) {
+      throw new Error(
+        "AUTH_REQUIRED"
+      );
+    }
+
+    if (
+      !activity ||
+      !rawRoute
+    ) {
+      throw new Error(
+        "ROUTE_PERSIST_INPUT_MISSING"
+      );
+    }
+
+    const key =
+      cgweb121Key(
+        activity
+      );
+
+    if (!key) {
+      throw new Error(
+        "ROUTE_ACTIVITY_KEY_MISSING"
+      );
+    }
+
+    const before =
+      cgweb121Fix1RouteQuality(
+        activity,
+        rawRoute
+      );
+
+    if (!before.quality.ok) {
+      throw new Error(
+        "ROUTE_QUALITY_REJECTED_BEFORE_WRITE: " +
+        before.quality.reasons.join(
+          ","
+        )
+      );
+    }
+
+    const version =
+      typeof WEB_SPLIT_VERSION !==
+        "undefined"
+        ? WEB_SPLIT_VERSION
+        : "WEBSPLIT";
+
+    const materialized = {
+      ...rawRoute,
+
+      route_format:
+        version +
+        "-CGWEB121-FIX1",
+
+      __sportKey:
+        key,
+
+      __updatedAtMs:
+        Date.now(),
+
+      __cgweb121:
+        "ROUTE_QUALITY_INVARIANT001",
+
+      __cgweb121_fix1:
+        "FULL_STREAM_PRESERVE001",
+
+      __cgweb121_source_point_count:
+        before.quality
+          .sourceCount,
+
+      __cgweb121_stored_point_count:
+        before.quality
+          .pointCount,
+
+      __cgweb121_geometry_distance_m:
+        before.quality
+          .geometryDistanceMeters,
+
+      __cgweb121_altitude_range_m:
+        before.quality
+          .altitudeRangeMeters
+    };
+
+    /*
+     * PAS de merge:true :
+     * le document dérivé activity_routes est remplacé.
+     *
+     * C'est essentiel pour supprimer définitivement
+     * une ancienne route corrompue.
+     */
+    await setDoc(
+      doc(
+        db,
+        ROOT,
+        currentUser.uid,
+        "activity_routes",
+        key
+      ),
+      materialized
+    );
+
+    const after =
+      await cgweb121Fix1ReadDetailed(
+        activity
+      );
+
+    if (
+      !after.exists ||
+      !after.valid
+    ) {
+      throw new Error(
+        "ROUTE_PERSIST_VERIFY_FAILED: " +
+        (
+          after
+            ?.quality
+            ?.reasons
+            ?.join(",") ||
+          "UNKNOWN"
+        )
+      );
+    }
+
+    try {
+      globalMapRouteCache.delete(
+        key
+      );
+    } catch (_) {}
+
+    console.info(
+      "CGWEB121 FIX1 · route saine matérialisée",
+      {
+        activity:
+          key,
+
+        quality:
+          after.quality
+      }
+    );
+
+    return {
+      key,
+      raw:
+        after.raw,
+      normalized:
+        after.normalized,
+      points:
+        after.normalized
+          ?.points
+          ?.length || 0,
+      quality:
+        after.quality
+    };
+  };
+
+
+/*
+ * Tous les anciens recovery passent désormais par le contrôle
+ * qualitatif FIX1.
+ */
+persistRecoveredSplitRoute =
+  cgweb121PersistRouteStrict;
+
+
+/* ==================================================================
+   7. STRAVA : STREAM COMPLET
+
+   Aucune simplification ici.
+
+   normalizeStravaDetail() reçoit les streams Strava complets et
+   produit la route brute. On la persiste telle quelle si elle
+   passe le contrôle qualité.
+   ================================================================== */
+
+async function cgweb121Fix1StravaRebuild(
+  activity
+) {
+  let stravaId =
+    String(
+      activity
+        ?.strava_activity_id ||
+      ""
+    ).trim();
+
+  let summary = null;
+
+  if (!stravaId) {
+    summary =
+      await cgweb120Fix10FindStravaSummary(
+        activity
+      );
+
+    stravaId =
+      String(
+        summary?.id || ""
+      ).trim();
+  }
+
+  if (!stravaId) {
+    return null;
+  }
+
+  cgweb121Status(
+    "Route insuffisante · récupération du stream Strava complet…"
+  );
+
+  const payload =
+    await webStravaFetch(
+      "activity",
+      {
+        query: {
+          id:
+            stravaId
+        }
+      }
+    );
+
+  const normalized =
+    normalizeStravaDetail(
+      payload
+    );
+
+  if (
+    !normalized?.route
+  ) {
+    throw new Error(
+      "STRAVA_ROUTE_MISSING"
+    );
+  }
+
+  /*
+   * Nombre réel de points dans les streams reçus.
+   */
+  const streams =
+    payload?.streams || {};
+
+  const streamLengths = [
+    streams?.latlng?.data,
+    streams?.time?.data,
+    streams?.distance?.data,
+    streams?.altitude?.data,
+    streams?.heartrate?.data,
+    streams?.velocity_smooth?.data,
+    streams?.cadence?.data,
+    streams?.moving?.data
+  ]
+    .filter(
+      Array.isArray
+    )
+    .map(
+      (values) =>
+        values.length
+    );
+
+  const fullStreamCount =
+    streamLengths.length
+      ? Math.max(
+          ...streamLengths
+        )
+      : 0;
+
+  const raw = {
+    ...normalized.route,
+
+    source_point_count:
+      Math.max(
+        Number(
+          normalized
+            ?.route
+            ?.source_point_count
+        ) || 0,
+
+        fullStreamCount,
+
+        Number(
+          activity
+            ?.gps_point_count
+        ) || 0
+      ),
+
+    __cgweb121_fix1_source:
+      "STRAVA_FULL_STREAM",
+
+    __cgweb121_fix1_strava_id:
+      stravaId,
+
+    __cgweb121_fix1_stream_count:
+      fullStreamCount,
+
+    __cgweb121_fix1_rebuilt_at_ms:
+      Date.now()
+  };
+
+  const checked =
+    cgweb121Fix1RouteQuality(
+      activity,
+      raw
+    );
+
+  if (!checked.quality.ok) {
+    throw new Error(
+      "STRAVA_STREAM_QUALITY_REJECTED: " +
+      checked.quality.reasons.join(
+        ","
+      )
+    );
+  }
+
+  /*
+   * Si le matching Strava vient d'être retrouvé,
+   * on conserve le lien sur l'activité SPORT.
+   */
+  if (
+    String(
+      activity
+        ?.strava_activity_id ||
+      ""
+    ) !== stravaId
+  ) {
+    try {
+      await cgweb120Fix10PatchActivity(
+        activity,
+        {
+          strava_activity_id:
+            stravaId,
+
+          cgweb121_strava_link_source:
+            "CGWEB121_FIX1",
+
+          cgweb121_strava_linked_at_ms:
+            Date.now()
+        }
+      );
+    } catch (error) {
+      console.warn(
+        "CGWEB121 FIX1 · liaison Strava",
+        error
+      );
+    }
+  }
+
+  return (
+    await cgweb121PersistRouteStrict(
+      activity,
+      raw
+    )
+  );
+}
+
+
+/* ==================================================================
+   8. FIT : SECOURS INDEPENDANT
+
+   On n'appelle pas le vieux recovery qui pourrait considérer
+   l'ancienne route de 2 points comme suffisante.
+
+   On lit directement le FIT via le bridge FIX10.
+   ================================================================== */
+
+async function cgweb121Fix1FitRebuild(
+  activity
+) {
+  const api =
+    window.SPORT_DIRECTORY_FIT;
+
+  if (
+    !api ||
+    typeof api.fetchBlob !==
+      "function"
+  ) {
+    return null;
+  }
+
+  const ids =
+    typeof cgweb120Fix8ActivityKeys ===
+      "function"
+      ? cgweb120Fix8ActivityKeys(
+          activity
+        )
+      : [
+          activity?.__docId,
+          activity?.id,
+          cgweb121Key(
+            activity
+          )
+        ]
+          .filter(Boolean)
+          .map(String);
+
+  for (const id of ids) {
+    try {
+      cgweb121Status(
+        "Stream Strava insuffisant · reconstruction depuis le FIT…"
+      );
+
+      const fit =
+        await api.fetchBlob(
+          id
+        );
+
+      if (
+        !fit?.ok ||
+        !fit?.blob
+      ) {
+        continue;
+      }
+
+      const buffer =
+        await fit.blob
+          .arrayBuffer();
+
+      const parsed =
+        decodeFitActivity(
+          buffer,
+          fit.file_name ||
+            `activity_${id}.fit`
+        );
+
+      const raw =
+        buildWebImportRoute(
+          parsed
+        );
+
+      if (!raw) {
+        continue;
+      }
+
+      raw.source_point_count =
+        Math.max(
+          Number(
+            raw.source_point_count
+          ) || 0,
+
+          Number(
+            activity
+              ?.gps_point_count
+          ) || 0
+        );
+
+      raw.__cgweb121_fix1_source =
+        "FIT_CLOUD";
+
+      raw.__cgweb121_fix1_fit_id =
+        String(id);
+
+      raw.__cgweb121_fix1_fit_size =
+        Number(
+          fit.size_bytes
+        ) || 0;
+
+      raw.__cgweb121_fix1_rebuilt_at_ms =
+        Date.now();
+
+      const checked =
+        cgweb121Fix1RouteQuality(
+          activity,
+          raw
+        );
+
+      if (!checked.quality.ok) {
+        console.warn(
+          "CGWEB121 FIX1 · FIT rejeté",
+          {
+            id,
+            quality:
+              checked.quality
+          }
+        );
+
+        continue;
+      }
+
+      return (
+        await cgweb121PersistRouteStrict(
+          activity,
+          raw
+        )
+      );
+
+    } catch (error) {
+      console.warn(
+        "CGWEB121 FIX1 · FIT recovery",
+        id,
+        error
+      );
+    }
+  }
+
+  return null;
+}
+
+
+/* ==================================================================
+   9. REBUILD COMPLET D'UNE ROUTE CORROMPUE
+   ================================================================== */
+
+async function cgweb121Fix1Rebuild(
+  activity,
+  reason = "AUTO"
+) {
+  const key =
+    cgweb121Key(
+      activity
+    );
+
+  if (!key) {
+    return null;
+  }
+
+  if (
+    cgweb121Fix1RepairPromises
+      .has(key)
+  ) {
+    return (
+      await cgweb121Fix1RepairPromises
+        .get(key)
+    );
+  }
+
+  const promise =
+    (async () => {
+      const before =
+        await cgweb121Fix1ReadDetailed(
+          activity
+        );
+
+      if (
+        before.exists &&
+        before.valid
+      ) {
+        return {
+          key,
+          raw:
+            before.raw,
+          normalized:
+            before.normalized,
+          points:
+            before.normalized
+              ?.points
+              ?.length || 0,
+          quality:
+            before.quality
+        };
+      }
+
+      if (
+        before.exists &&
+        !before.valid
+      ) {
+        console.warn(
+          "CGWEB121 FIX1 · ROUTE CORROMPUE",
+          {
+            activity:
+              key,
+
+            reason,
+
+            quality:
+              before.quality
+          }
+        );
+
+        cgweb121Status(
+          "Route cartographique corrompue · reconstruction automatique…",
+          "warn"
+        );
+      } else {
+        cgweb121Status(
+          "Route absente · reconstruction automatique…"
+        );
+      }
+
+
+      /* ---------- STRAVA prioritaire ---------- */
+
+      try {
+        const strava =
+          await cgweb121Fix1StravaRebuild(
+            activity
+          );
+
+        if (strava) {
+          return strava;
+        }
+      } catch (error) {
+        console.warn(
+          "CGWEB121 FIX1 · reconstruction Strava",
+          error
+        );
+      }
+
+
+      /* ---------- FIT en secours ---------- */
+
+      try {
+        const fit =
+          await cgweb121Fix1FitRebuild(
+            activity
+          );
+
+        if (fit) {
+          return fit;
+        }
+      } catch (error) {
+        console.warn(
+          "CGWEB121 FIX1 · reconstruction FIT",
+          error
+        );
+      }
+
+
+      const after =
+        await cgweb121Fix1ReadDetailed(
+          activity
+        );
+
+      cgweb121LastErrors.set(
+        key,
+        "CORRUPT_ROUTE_REBUILD_FAILED"
+      );
+
+      console.error(
+        "CGWEB121 FIX1 · aucune source saine trouvée",
+        {
+          activity:
+            key,
+
+          oldRouteQuality:
+            before.quality,
+
+          currentRouteQuality:
+            after.quality
+        }
+      );
+
+      return null;
+    })();
+
+  cgweb121Fix1RepairPromises.set(
+    key,
+    promise
+  );
+
+  try {
+    return await promise;
+  } finally {
+    cgweb121Fix1RepairPromises.delete(
+      key
+    );
+  }
+}
+
+
+/* ==================================================================
+   10. NOUVEAU REPAIR CANONIQUE
+   ================================================================== */
+
+cgweb121RepairRoute =
+  async function cgweb121Fix1RepairRoute(
+    activity,
+    reason = "AUTO"
+  ) {
+    if (!activity) {
+      return null;
+    }
+
+    const existing =
+      await cgweb121Fix1ReadDetailed(
+        activity
+      );
+
+    if (
+      existing.exists &&
+      existing.valid
+    ) {
+      return {
+        key:
+          cgweb121Key(
+            activity
+          ),
+
+        raw:
+          existing.raw,
+
+        normalized:
+          existing.normalized,
+
+        points:
+          existing.normalized
+            ?.points
+            ?.length || 0,
+
+        quality:
+          existing.quality
+      };
+    }
+
+    return (
+      await cgweb121Fix1Rebuild(
+        activity,
+        reason
+      )
+    );
+  };
+
+
+/* ==================================================================
+   11. NETTOYAGE D'UN AFFICHAGE INVALIDÉ
+   ================================================================== */
+
+function cgweb121Fix1ClearInvalidVisual() {
+  try {
+    if (
+      typeof activityMapInstance !==
+        "undefined" &&
+      activityMapInstance
+    ) {
+      activityMapInstance.remove();
+      activityMapInstance = null;
+    }
+  } catch (_) {}
+
+  if (ui?.activityMap) {
+    ui.activityMap.replaceChildren();
+  }
+
+  if (ui?.elevationProfile) {
+    ui.elevationProfile.replaceChildren();
+  }
+
+  if (ui?.profileMeta) {
+    ui.profileMeta.textContent =
+      "Reconstruction du tracé GPS en cours…";
+  }
+}
+
+
+/* ==================================================================
+   12. RENDERER QUALITATIF
+
+   Une route de mauvaise qualité n'est JAMAIS transmise à Leaflet
+   ni au profil altimétrique.
+   ================================================================== */
+
+renderCartography =
+  async function cgweb121Fix1RenderCartography(
+    activity
+  ) {
+    cgweb121ExposeMapAndProfile();
+
+    if (!activity) {
+      return;
+    }
+
+    let detailed =
+      await cgweb121Fix1ReadDetailed(
+        activity
+      );
+
+    if (
+      !detailed.valid &&
+      cgweb121GpsExpected(
+        activity
+      )
+    ) {
+      cgweb121Fix1ClearInvalidVisual();
+
+      await cgweb121Fix1Rebuild(
+        activity,
+        "DETAIL_OPEN"
+      );
+
+      detailed =
+        await cgweb121Fix1ReadDetailed(
+          activity
+        );
+    }
+
+    if (!detailed.valid) {
+      cgweb121Fix1ClearInvalidVisual();
+
+      cgweb121Status(
+        "Anomalie cartographique · aucune route de qualité suffisante.",
+        "warn"
+      );
+
+      return;
+    }
+
+    /*
+     * Seulement maintenant, après validation qualitative,
+     * le renderer Leaflet/profil historique peut consommer la route.
+     */
+    await cgweb121BaseRenderCartography(
+      activity
+    );
+
+    cgweb121ExposeMapAndProfile();
+
+    cgweb121Status(
+      "Carte et profil synchronisés.",
+      "good"
+    );
+
+    try {
+      if (
+        activityMapInstance
+      ) {
+        setTimeout(
+          () => {
+            try {
+              activityMapInstance
+                .invalidateSize(false);
+
+              if (
+                typeof recenterActivityMap ===
+                  "function"
+              ) {
+                recenterActivityMap();
+              }
+            } catch (_) {}
+          },
+          80
+        );
+      }
+    } catch (_) {}
+  };
+
+
+/* ==================================================================
+   13. REPARATION IMMEDIATE DU DETAIL COURANT
+   ================================================================== */
+
+async function cgweb121Fix1RepairCurrent() {
+  const activity =
+    typeof currentDetailActivity ===
+      "function"
+      ? currentDetailActivity()
+      : null;
+
+  if (!activity) {
+    return {
+      ok: false,
+      error:
+        "Aucune activité ouverte."
+    };
+  }
+
+  const repaired =
+    await cgweb121Fix1Rebuild(
+      activity,
+      "MANUAL_OR_BOOT"
+    );
+
+  if (repaired) {
+    await renderCartography(
+      activity
+    );
+  }
+
+  return (
+    await window
+      .CGWEB121_FIX1_STATUS()
+  );
+}
+
+
+function cgweb121Fix1Boot() {
+  for (
+    const delay of
+    [250, 900, 2200]
+  ) {
+    setTimeout(
+      () => {
+        const activity =
+          typeof currentDetailActivity ===
+            "function"
+            ? currentDetailActivity()
+            : null;
+
+        if (activity) {
+          renderCartography(
+            activity
+          ).catch(
+            (error) =>
+              console.warn(
+                "CGWEB121 FIX1 boot",
+                error
+              )
+          );
+        }
+      },
+      delay
+    );
+  }
+}
+
+
+if (
+  document.readyState ===
+    "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb121Fix1Boot,
+    {
+      once: true
+    }
+  );
+} else {
+  cgweb121Fix1Boot();
+}
+
+
+/* ==================================================================
+   14. DIAGNOSTIC
+   ================================================================== */
+
+window.CGWEB121_FIX1_STATUS =
+  async function () {
+    const activity =
+      typeof currentDetailActivity ===
+        "function"
+        ? currentDetailActivity()
+        : null;
+
+    const detailed =
+      activity
+        ? await cgweb121Fix1ReadDetailed(
+            activity
+          )
+        : null;
+
+    const key =
+      cgweb121Key(
+        activity
+      );
+
+    return {
+      build:
+        "CGWEB121_FIX1",
+
+      invariant:
+        "GPS_PRESENT => QUALITY_ROUTE_PRESENT",
+
+      activity_id:
+        key,
+
+      strava_activity_id:
+        String(
+          activity
+            ?.strava_activity_id ||
+          ""
+        ),
+
+      gps_point_count:
+        Number(
+          activity
+            ?.gps_point_count
+        ) || 0,
+
+      route_document_exists:
+        !!detailed?.exists,
+
+      route_valid:
+        !!detailed?.valid,
+
+      route_quality:
+        detailed?.quality ||
+        null,
+
+      repair_running:
+        cgweb121Fix1RepairPromises
+          .has(key),
+
+      last_error:
+        cgweb121LastErrors
+          .get(key) || ""
+    };
+  };
+
+
+window.CGWEB121_FIX1_REPAIR_CURRENT =
+  cgweb121Fix1RepairCurrent;
+
+
+/* CGWEB121_FIX1_END */
