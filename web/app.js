@@ -10587,7 +10587,7 @@ async function renderCartography(activity) {
     if (!snapshot) {
       const gpsCount = numberOrZero(activity.gps_point_count);
       showRouteUnavailable(
-        `Tracé Web non publié pour cette activité${gpsCount > 1 ? ` (${formatNumber(gpsCount)} points GPS dans l’activité)` : ""}. ` +
+        `Anomalie cartographique : activité GPS sans route matérialisée${gpsCount > 1 ? ` (${formatNumber(gpsCount)} points GPS dans l’activité)` : ""}. ` +
         "Reconstruction automatique impossible : aucun tracé, flux Strava ou FIT exploitable n’a été trouvé."
       );
       return;
@@ -11627,7 +11627,7 @@ async function compareSelectedActivity() {
   ui.routeComparisonStatus.textContent = 'Chargement du tracé de comparaison…';
   try {
     const snapshot = await getDoc(doc(db, ROOT, currentUser.uid, 'activity_routes', key));
-    if (!snapshot.exists()) throw new Error('Tracé Web non publié pour cette activité.');
+    if (!snapshot.exists()) throw new Error('Anomalie cartographique : activité GPS sans route matérialisée.');
     const route = normalizeRoute(snapshot.data());
     if (route.points.length < 2) throw new Error('Tracé de comparaison insuffisant.');
     clearRouteComparison(false);
@@ -46046,3 +46046,1069 @@ window.CGWEB120_FIX10_STATUS =
  * Aucun changement du matching Strava, du FIT, de la carte,
  * du profil ou du modèle de données.
  */
+
+/* CGWEB121_START
+   CARTO_DEFACTO001
+   ROUTE_INVARIANT001
+   MAP_PROFILE_ALWAYS_ON001
+   ROUTE_PERSIST_VERIFY001
+   RECENT_ROUTE_AUDIT001
+*/
+
+
+/* ==================================================================
+   0. ÉTAT
+   ================================================================== */
+
+const cgweb121RepairPromises =
+  new Map();
+
+const cgweb121LastErrors =
+  new Map();
+
+let cgweb121AuditRunning =
+  false;
+
+let cgweb121AuditTimer =
+  null;
+
+
+/* ==================================================================
+   1. IDENTITÉ
+   ================================================================== */
+
+function cgweb121Key(activity) {
+  if (!activity) return "";
+
+  try {
+    return String(
+      activityKey(activity) || ""
+    );
+  } catch (_) {
+    return String(
+      activity?.__docId ||
+      activity?.id ||
+      ""
+    );
+  }
+}
+
+
+function cgweb121GpsExpected(activity) {
+  if (!activity) return false;
+
+  if (
+    Number(
+      activity?.gps_point_count
+    ) > 1
+  ) {
+    return true;
+  }
+
+  if (
+    String(
+      activity?.strava_activity_id ||
+      ""
+    ).trim()
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+
+/* ==================================================================
+   2. LECTURE CANONIQUE activity_routes
+   ================================================================== */
+
+async function cgweb121ReadRoute(
+  activity
+) {
+  if (
+    !currentUser ||
+    !activity
+  ) {
+    return null;
+  }
+
+  const key =
+    cgweb121Key(
+      activity
+    );
+
+  if (!key) return null;
+
+  try {
+    const snap =
+      await getDoc(
+        doc(
+          db,
+          ROOT,
+          currentUser.uid,
+          "activity_routes",
+          key
+        )
+      );
+
+    if (!snap.exists()) {
+      return null;
+    }
+
+    const raw =
+      snap.data();
+
+    const normalized =
+      normalizeSplitRoute(
+        raw
+      );
+
+    if (
+      !normalized ||
+      normalized.points.length < 2
+    ) {
+      return null;
+    }
+
+    return {
+      key,
+      raw,
+      normalized,
+      points:
+        normalized.points.length
+    };
+
+  } catch (error) {
+    console.warn(
+      "CGWEB121 · lecture activity_routes",
+      key,
+      error
+    );
+
+    return null;
+  }
+}
+
+
+/* ==================================================================
+   3. PERSISTANCE STRICTE
+
+   L'ancien WEBSPLIT003 attrapait l'erreur et continuait.
+
+   CGWEB121 interdit cela :
+   - écriture ;
+   - relecture ;
+   - validation GPS ;
+   - erreur propagée si l'invariant n'est pas atteint.
+   ================================================================== */
+
+async function cgweb121PersistRouteStrict(
+  activity,
+  rawRoute
+) {
+  if (!currentUser) {
+    throw new Error(
+      "AUTH_REQUIRED"
+    );
+  }
+
+  if (
+    !activity ||
+    !rawRoute
+  ) {
+    throw new Error(
+      "ROUTE_PERSIST_INPUT_MISSING"
+    );
+  }
+
+  const key =
+    cgweb121Key(
+      activity
+    );
+
+  if (!key) {
+    throw new Error(
+      "ROUTE_ACTIVITY_KEY_MISSING"
+    );
+  }
+
+  const before =
+    normalizeSplitRoute(
+      rawRoute
+    );
+
+  if (
+    !before ||
+    before.points.length < 2
+  ) {
+    throw new Error(
+      "ROUTE_NOT_EXPLOITABLE_BEFORE_WRITE"
+    );
+  }
+
+  const version =
+    typeof WEB_SPLIT_VERSION !==
+      "undefined"
+      ? WEB_SPLIT_VERSION
+      : "WEBSPLIT";
+
+  const materialized = {
+    ...rawRoute,
+
+    route_format:
+      version +
+      "-CGWEB121",
+
+    __sportKey:
+      key,
+
+    __updatedAtMs:
+      Date.now(),
+
+    __cgweb121:
+      "ROUTE_INVARIANT001",
+
+    __cgweb121_point_count:
+      before.points.length
+  };
+
+  await setDoc(
+    doc(
+      db,
+      ROOT,
+      currentUser.uid,
+      "activity_routes",
+      key
+    ),
+    materialized,
+    {
+      merge: true
+    }
+  );
+
+  /*
+   * Une écriture Firebase réussie ne suffit pas :
+   * on relit le document que renderCartography consommera.
+   */
+  const verified =
+    await cgweb121ReadRoute(
+      activity
+    );
+
+  if (
+    !verified ||
+    verified.points < 2
+  ) {
+    throw new Error(
+      "ROUTE_PERSIST_VERIFY_FAILED"
+    );
+  }
+
+  try {
+    globalMapRouteCache.delete(
+      key
+    );
+  } catch (_) {}
+
+  console.info(
+    "CGWEB121 · route matérialisée",
+    {
+      activity:
+        key,
+
+      points:
+        verified.points
+    }
+  );
+
+  return verified;
+}
+
+
+/*
+ * Tous les anciens moteurs qui appellent
+ * persistRecoveredSplitRoute bénéficient désormais
+ * de la persistance vérifiée.
+ */
+persistRecoveredSplitRoute =
+  cgweb121PersistRouteStrict;
+
+
+/* ==================================================================
+   4. VISIBILITÉ DE FACTO CARTE + PROFIL
+   ================================================================== */
+
+function cgweb121ExposeMapAndProfile() {
+  const section =
+    document.getElementById(
+      "detailMapSection"
+    );
+
+  if (!section) {
+    return false;
+  }
+
+  section.hidden = false;
+
+  section.classList.remove(
+    "hidden"
+  );
+
+  section.style.setProperty(
+    "display",
+    "",
+    "important"
+  );
+
+  /*
+   * Le profil appartient à la même rubrique.
+   */
+  const profile =
+    document.getElementById(
+      "elevationProfile"
+    );
+
+  if (profile) {
+    profile.hidden = false;
+
+    profile.classList.remove(
+      "hidden"
+    );
+  }
+
+  try {
+    if (
+      activityMapInstance
+    ) {
+      requestAnimationFrame(
+        () => {
+          try {
+            activityMapInstance
+              .invalidateSize(false);
+          } catch (_) {}
+        }
+      );
+    }
+  } catch (_) {}
+
+  return true;
+}
+
+
+/* ==================================================================
+   5. MESSAGE D'ÉTAT
+   ================================================================== */
+
+function cgweb121Status(
+  text,
+  kind = "neutral"
+) {
+  if (ui?.mapStatus) {
+    ui.mapStatus.textContent =
+      text;
+
+    ui.mapStatus.className =
+      "pill " + kind;
+  }
+}
+
+
+/* ==================================================================
+   6. RÉPARATION CANONIQUE
+
+   Sources déjà construites dans SPORT :
+   - activity_routes ;
+   - Strava lié ;
+   - matching Strava FIX10 ;
+   - FIT local ;
+   - FIT Cloud bridge FIX10.
+   ================================================================== */
+
+async function cgweb121RepairRoute(
+  activity,
+  reason = "AUTO"
+) {
+  if (!activity) {
+    return null;
+  }
+
+  const key =
+    cgweb121Key(
+      activity
+    );
+
+  if (!key) {
+    return null;
+  }
+
+  const existing =
+    await cgweb121ReadRoute(
+      activity
+    );
+
+  if (existing) {
+    return existing;
+  }
+
+  if (
+    cgweb121RepairPromises
+      .has(key)
+  ) {
+    return await cgweb121RepairPromises
+      .get(key);
+  }
+
+  const promise =
+    (async () => {
+
+      cgweb121Status(
+        "Tracé GPS absent · réparation automatique…"
+      );
+
+      try {
+        /*
+         * FIX10 contient désormais le pipeline de récupération :
+         *
+         * route -> Strava -> matching doublon -> FIT.
+         *
+         * persistRecoveredSplitRoute est maintenant strict
+         * grâce au remplacement ci-dessus.
+         */
+        await cgweb120Fix10RepairRoute(
+          activity
+        );
+
+        const verified =
+          await cgweb121ReadRoute(
+            activity
+          );
+
+        if (!verified) {
+          throw new Error(
+            "ROUTE_INVARIANT_NOT_RESTORED"
+          );
+        }
+
+        cgweb121LastErrors.delete(
+          key
+        );
+
+        console.info(
+          "CGWEB121 · invariant restauré",
+          {
+            activity:
+              key,
+
+            reason,
+
+            points:
+              verified.points
+          }
+        );
+
+        return verified;
+
+      } catch (error) {
+        const message =
+          String(
+            error?.message ||
+            error
+          );
+
+        cgweb121LastErrors.set(
+          key,
+          message
+        );
+
+        console.error(
+          "CGWEB121 · invariant cartographique non restauré",
+          {
+            activity:
+              key,
+
+            reason,
+
+            gps_point_count:
+              Number(
+                activity
+                  ?.gps_point_count
+              ) || 0,
+
+            strava_activity_id:
+              String(
+                activity
+                  ?.strava_activity_id ||
+                ""
+              ),
+
+            error:
+              message
+          }
+        );
+
+        return null;
+      }
+    })();
+
+  cgweb121RepairPromises.set(
+    key,
+    promise
+  );
+
+  try {
+    return await promise;
+  } finally {
+    cgweb121RepairPromises.delete(
+      key
+    );
+  }
+}
+
+
+/* ==================================================================
+   7. RENDU DE FACTO
+
+   On appelle le renderer cartographique "bas niveau" de FIX8
+   uniquement APRÈS validation de activity_routes.
+   ================================================================== */
+
+const cgweb121BaseRenderCartography =
+  typeof cgweb120Fix8BaseRenderCartography ===
+    "function"
+    ? cgweb120Fix8BaseRenderCartography
+    : renderCartography;
+
+
+renderCartography =
+  async function cgweb121RenderCartography(
+    activity
+  ) {
+    cgweb121ExposeMapAndProfile();
+
+    if (!activity) {
+      return;
+    }
+
+    const expected =
+      cgweb121GpsExpected(
+        activity
+      );
+
+    let route =
+      await cgweb121ReadRoute(
+        activity
+      );
+
+    if (
+      !route &&
+      expected
+    ) {
+      route =
+        await cgweb121RepairRoute(
+          activity,
+          "DETAIL_OPEN"
+        );
+    }
+
+    /*
+     * Même pour une activité sans compteur GPS,
+     * le renderer historique peut encore trouver une route.
+     */
+    await cgweb121BaseRenderCartography(
+      activity
+    );
+
+    cgweb121ExposeMapAndProfile();
+
+    if (
+      route ||
+      await cgweb121ReadRoute(
+        activity
+      )
+    ) {
+      cgweb121Status(
+        "Carte et profil synchronisés.",
+        "good"
+      );
+
+      try {
+        if (
+          activityMapInstance
+        ) {
+          setTimeout(
+            () => {
+              try {
+                activityMapInstance
+                  .invalidateSize(false);
+
+                if (
+                  typeof recenterActivityMap ===
+                    "function"
+                ) {
+                  recenterActivityMap();
+                }
+              } catch (_) {}
+            },
+            50
+          );
+        }
+      } catch (_) {}
+
+      return;
+    }
+
+    if (expected) {
+      const key =
+        cgweb121Key(
+          activity
+        );
+
+      const detail =
+        cgweb121LastErrors.get(
+          key
+        ) || "sources épuisées";
+
+      cgweb121Status(
+        "Anomalie GPS · route absente malgré réparation automatique.",
+        "warn"
+      );
+
+      console.warn(
+        "CGWEB121 · activité GPS sans route",
+        {
+          activity:
+            key,
+
+          gps_point_count:
+            Number(
+              activity
+                ?.gps_point_count
+            ) || 0,
+
+          diagnostic:
+            detail
+        }
+      );
+    }
+  };
+
+
+/* ==================================================================
+   8. DÉTAIL : CARTE + PROFIL DÈS L'OUVERTURE
+   ================================================================== */
+
+const cgweb121BaseRenderDetail =
+  renderDetail;
+
+
+renderDetail =
+  function cgweb121RenderDetail(
+    ...args
+  ) {
+    cgweb121ExposeMapAndProfile();
+
+    const result =
+      cgweb121BaseRenderDetail
+        .apply(
+          this,
+          args
+        );
+
+    const after = () => {
+      cgweb121ExposeMapAndProfile();
+
+      requestAnimationFrame(
+        cgweb121ExposeMapAndProfile
+      );
+
+      setTimeout(
+        cgweb121ExposeMapAndProfile,
+        100
+      );
+
+      setTimeout(
+        cgweb121ExposeMapAndProfile,
+        400
+      );
+    };
+
+    if (
+      result &&
+      typeof result.then ===
+        "function"
+    ) {
+      result.finally(
+        after
+      );
+    } else {
+      after();
+    }
+
+    return result;
+  };
+
+
+/* ==================================================================
+   9. AUDIT AUTOMATIQUE DES ACTIVITÉS GPS RÉCENTES
+
+   Ce mécanisme répare les trous AVANT même que l'utilisateur
+   n'ouvre forcément chaque fiche.
+   ================================================================== */
+
+async function cgweb121AuditRecent(
+  maxRows = 8
+) {
+  if (
+    cgweb121AuditRunning ||
+    !currentUser ||
+    !Array.isArray(activities) ||
+    !activities.length
+  ) {
+    return {
+      checked: 0,
+      repaired: 0,
+      failed: 0
+    };
+  }
+
+  cgweb121AuditRunning = true;
+
+  let checked = 0;
+  let repaired = 0;
+  let failed = 0;
+
+  try {
+    const now =
+      Date.now();
+
+    const candidates =
+      activities
+        .filter(
+          (activity) => {
+            if (
+              !cgweb121GpsExpected(
+                activity
+              )
+            ) {
+              return false;
+            }
+
+            const start =
+              Number(
+                activity
+                  ?.start_time_ms
+              );
+
+            /*
+             * Audit permanent des 14 derniers jours.
+             * Les anciennes activités sont réparées
+             * lorsqu'on ouvre leur détail.
+             */
+            return (
+              !Number.isFinite(start) ||
+              now - start <=
+                14 * 86400000
+            );
+          }
+        )
+        .slice(
+          0,
+          Math.max(
+            1,
+            Number(maxRows) || 8
+          )
+        );
+
+    for (
+      const activity of candidates
+    ) {
+      checked += 1;
+
+      const existing =
+        await cgweb121ReadRoute(
+          activity
+        );
+
+      if (existing) {
+        continue;
+      }
+
+      const repairedRoute =
+        await cgweb121RepairRoute(
+          activity,
+          "RECENT_AUDIT"
+        );
+
+      if (repairedRoute) {
+        repaired += 1;
+      } else {
+        failed += 1;
+      }
+
+      /*
+       * Évite de marteler Strava / Firebase.
+       */
+      await new Promise(
+        (resolve) =>
+          setTimeout(
+            resolve,
+            150
+          )
+      );
+    }
+
+    return {
+      checked,
+      repaired,
+      failed
+    };
+
+  } finally {
+    cgweb121AuditRunning =
+      false;
+  }
+}
+
+
+/* ==================================================================
+   10. PLANIFICATION
+
+   - démarrage ;
+   - retour sur l'onglet ;
+   - toutes les 5 minutes.
+
+   Aucune action utilisateur.
+   ================================================================== */
+
+function cgweb121ScheduleAudit(
+  delay = 1200
+) {
+  clearTimeout(
+    cgweb121AuditTimer
+  );
+
+  cgweb121AuditTimer =
+    setTimeout(
+      () => {
+        cgweb121AuditRecent(8)
+          .then(
+            (result) => {
+              if (
+                result.repaired ||
+                result.failed
+              ) {
+                console.info(
+                  "CGWEB121 · audit récent",
+                  result
+                );
+              }
+            }
+          )
+          .catch(
+            (error) =>
+              console.warn(
+                "CGWEB121 · audit",
+                error
+              )
+          );
+      },
+      delay
+    );
+}
+
+
+function cgweb121Boot() {
+  cgweb121ExposeMapAndProfile();
+
+  cgweb121ScheduleAudit(
+    1800
+  );
+
+  setInterval(
+    () => {
+      if (
+        document.visibilityState ===
+          "visible"
+      ) {
+        cgweb121ScheduleAudit(
+          100
+        );
+      }
+    },
+    5 * 60 * 1000
+  );
+}
+
+
+document.addEventListener(
+  "visibilitychange",
+  () => {
+    if (
+      document.visibilityState ===
+        "visible"
+    ) {
+      cgweb121ExposeMapAndProfile();
+
+      cgweb121ScheduleAudit(
+        300
+      );
+    }
+  }
+);
+
+
+window.addEventListener(
+  "focus",
+  () => {
+    cgweb121ExposeMapAndProfile();
+
+    cgweb121ScheduleAudit(
+      300
+    );
+  }
+);
+
+
+if (
+  document.readyState ===
+    "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb121Boot,
+    {
+      once: true
+    }
+  );
+} else {
+  cgweb121Boot();
+}
+
+
+/* ==================================================================
+   11. DIAGNOSTIC
+   ================================================================== */
+
+window.CGWEB121_STATUS =
+  async function () {
+    const activity =
+      typeof currentDetailActivity ===
+        "function"
+        ? currentDetailActivity()
+        : null;
+
+    const route =
+      activity
+        ? await cgweb121ReadRoute(
+            activity
+          )
+        : null;
+
+    const section =
+      document.getElementById(
+        "detailMapSection"
+      );
+
+    const key =
+      cgweb121Key(
+        activity
+      );
+
+    return {
+      build:
+        "CGWEB121",
+
+      invariant:
+        "GPS_PRESENT => ACTIVITY_ROUTE_PRESENT",
+
+      activity_id:
+        key,
+
+      gps_expected:
+        cgweb121GpsExpected(
+          activity
+        ),
+
+      gps_point_count:
+        Number(
+          activity
+            ?.gps_point_count
+        ) || 0,
+
+      strava_activity_id:
+        String(
+          activity
+            ?.strava_activity_id ||
+          ""
+        ),
+
+      route_present:
+        !!route,
+
+      route_points:
+        route?.points || 0,
+
+      map_profile_visible:
+        !!section &&
+        !section.hidden &&
+        getComputedStyle(
+          section
+        ).display !== "none",
+
+      repair_running:
+        cgweb121RepairPromises
+          .has(key),
+
+      last_error:
+        cgweb121LastErrors
+          .get(key) || ""
+    };
+  };
+
+
+window.CGWEB121_REPAIR_CURRENT =
+  async function () {
+    const activity =
+      typeof currentDetailActivity ===
+        "function"
+        ? currentDetailActivity()
+        : null;
+
+    if (!activity) {
+      return {
+        ok: false,
+        error:
+          "Aucune activité ouverte."
+      };
+    }
+
+    const route =
+      await cgweb121RepairRoute(
+        activity,
+        "MANUAL_DIAGNOSTIC"
+      );
+
+    if (!route) {
+      return {
+        ok: false,
+        status:
+          await window.CGWEB121_STATUS()
+      };
+    }
+
+    await renderCartography(
+      activity
+    );
+
+    return {
+      ok: true,
+      status:
+        await window.CGWEB121_STATUS()
+    };
+  };
+
+
+window.CGWEB121_AUDIT_RECENT =
+  cgweb121AuditRecent;
+
+/* CGWEB121_END */
