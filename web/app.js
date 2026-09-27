@@ -48822,3 +48822,1069 @@ window.CGWEB121_FIX1_REPAIR_CURRENT =
 
 
 /* CGWEB121_FIX1_END */
+
+/* CGWEB121_FIX2_START
+   ROUTE_RENDER_DECIMATION001
+   FIRESTORE_INDEX_SAFE001
+   SOURCE_COUNT_PRESERVE001
+   RENDER_ROUTE_CANONICAL001
+*/
+
+
+const CGWEB121_FIX2_RENDER_CAP =
+  800;
+
+const CGWEB121_FIX2_ARRAY_VALUE_BUDGET =
+  12000;
+
+
+/*
+ * Champs réellement nécessaires au rendu et à la synchronisation
+ * carte / profil.
+ *
+ * On ne matérialise plus aveuglément tous les tableaux source.
+ */
+const CGWEB121_FIX2_ARRAY_FIELDS = [
+  "lat",
+  "lon",
+  "alt_m",
+  "distance_m",
+  "time_ms",
+  "timestamp_ms",
+  "hr_bpm",
+  "speed_mps",
+  "cadence",
+  "moving",
+  "equipment_key",
+  "gap_sec_per_km"
+];
+
+
+/* ==================================================================
+   1. COMPTEUR SOURCE
+   ================================================================== */
+
+function cgweb121Fix2MasterCount(
+  rawRoute
+) {
+  let count = 0;
+
+  for (
+    const field of
+    CGWEB121_FIX2_ARRAY_FIELDS
+  ) {
+    const values =
+      rawRoute?.[field];
+
+    if (
+      Array.isArray(values)
+    ) {
+      count =
+        Math.max(
+          count,
+          values.length
+        );
+    }
+  }
+
+  return count;
+}
+
+
+function cgweb121Fix2SourceCount(
+  activity,
+  rawRoute
+) {
+  return Math.max(
+    Number(
+      activity
+        ?.gps_point_count
+    ) || 0,
+
+    Number(
+      rawRoute
+        ?.source_point_count
+    ) || 0,
+
+    Number(
+      rawRoute
+        ?.__cgweb121_source_point_count
+    ) || 0,
+
+    Number(
+      rawRoute
+        ?.__cgweb121_fix1_stream_count
+    ) || 0,
+
+    cgweb121Fix2MasterCount(
+      rawRoute
+    )
+  );
+}
+
+
+/* ==================================================================
+   2. BUDGET DE ROUTE WEB
+
+   Limite haute volontaire :
+   800 points.
+
+   Le plafond est abaissé automatiquement si beaucoup de tableaux
+   synchronisés sont présents.
+   ================================================================== */
+
+function cgweb121Fix2TargetCount(
+  rawRoute
+) {
+  const masterCount =
+    cgweb121Fix2MasterCount(
+      rawRoute
+    );
+
+  if (masterCount <= 0) {
+    return 0;
+  }
+
+  const activeArrays =
+    CGWEB121_FIX2_ARRAY_FIELDS
+      .filter(
+        (field) =>
+          Array.isArray(
+            rawRoute?.[field]
+          ) &&
+          rawRoute[field].length > 0
+      )
+      .length;
+
+  const safeArrayCount =
+    Math.max(
+      1,
+      activeArrays
+    );
+
+  const byBudget =
+    Math.max(
+      100,
+      Math.floor(
+        CGWEB121_FIX2_ARRAY_VALUE_BUDGET /
+        safeArrayCount
+      )
+    );
+
+  return Math.min(
+    masterCount,
+    CGWEB121_FIX2_RENDER_CAP,
+    byBudget
+  );
+}
+
+
+/* ==================================================================
+   3. INDICES DE DÉCIMATION
+
+   - départ conservé ;
+   - arrivée conservée ;
+   - distribution uniforme ;
+   - minimum et maximum altimétriques conservés.
+   ================================================================== */
+
+function cgweb121Fix2RenderIndices(
+  rawRoute,
+  targetCount
+) {
+  const masterCount =
+    cgweb121Fix2MasterCount(
+      rawRoute
+    );
+
+  if (
+    masterCount <= 0 ||
+    targetCount <= 0
+  ) {
+    return [];
+  }
+
+  if (
+    targetCount >= masterCount
+  ) {
+    return Array.from(
+      {
+        length:
+          masterCount
+      },
+      (_, index) =>
+        index
+    );
+  }
+
+  const indices =
+    new Set();
+
+  indices.add(0);
+  indices.add(
+    masterCount - 1
+  );
+
+  if (targetCount > 2) {
+    for (
+      let slot = 0;
+      slot < targetCount;
+      slot += 1
+    ) {
+      const index =
+        Math.round(
+          slot *
+          (masterCount - 1) /
+          (targetCount - 1)
+        );
+
+      indices.add(index);
+    }
+  }
+
+  /*
+   * Conservation des extrema altimétriques.
+   */
+  const altitude =
+    Array.isArray(
+      rawRoute?.alt_m
+    )
+      ? rawRoute.alt_m
+      : [];
+
+  let minAltitude = Infinity;
+  let maxAltitude = -Infinity;
+  let minIndex = -1;
+  let maxIndex = -1;
+
+  for (
+    let index = 0;
+    index < altitude.length;
+    index += 1
+  ) {
+    const value =
+      Number(
+        altitude[index]
+      );
+
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+
+    if (value < minAltitude) {
+      minAltitude = value;
+      minIndex = index;
+    }
+
+    if (value > maxAltitude) {
+      maxAltitude = value;
+      maxIndex = index;
+    }
+  }
+
+  if (minIndex >= 0) {
+    indices.add(
+      Math.min(
+        masterCount - 1,
+        minIndex
+      )
+    );
+  }
+
+  if (maxIndex >= 0) {
+    indices.add(
+      Math.min(
+        masterCount - 1,
+        maxIndex
+      )
+    );
+  }
+
+  return [
+    ...indices
+  ].sort(
+    (a, b) =>
+      a - b
+  );
+}
+
+
+/* ==================================================================
+   4. ÉCHANTILLONNAGE SYNCHRONISÉ
+   ================================================================== */
+
+function cgweb121Fix2Value(
+  value
+) {
+  if (
+    value === undefined
+  ) {
+    return null;
+  }
+
+  if (
+    typeof value ===
+      "number"
+  ) {
+    return Number.isFinite(value)
+      ? value
+      : null;
+  }
+
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  /*
+   * activity_routes n'a besoin d'aucun objet complexe
+   * dans ses tableaux de rendu.
+   */
+  return null;
+}
+
+
+function cgweb121Fix2SampleArray(
+  values,
+  indices,
+  masterCount
+) {
+  if (
+    !Array.isArray(values) ||
+    !values.length
+  ) {
+    return [];
+  }
+
+  const length =
+    values.length;
+
+  return indices.map(
+    (masterIndex) => {
+      let sourceIndex =
+        masterIndex;
+
+      /*
+       * Certains streams Strava peuvent avoir un nombre
+       * de valeurs légèrement différent.
+       *
+       * On conserve leur position relative dans l'activité.
+       */
+      if (
+        length !== masterCount &&
+        masterCount > 1 &&
+        length > 1
+      ) {
+        sourceIndex =
+          Math.round(
+            masterIndex *
+            (length - 1) /
+            (masterCount - 1)
+          );
+      }
+
+      sourceIndex =
+        Math.max(
+          0,
+          Math.min(
+            length - 1,
+            sourceIndex
+          )
+        );
+
+      return cgweb121Fix2Value(
+        values[sourceIndex]
+      );
+    }
+  );
+}
+
+
+/* ==================================================================
+   5. CONSTRUCTION DE LA ROUTE CANONIQUE DE RENDU
+   ================================================================== */
+
+function cgweb121Fix2BuildRenderRoute(
+  activity,
+  rawRoute
+) {
+  const masterCount =
+    cgweb121Fix2MasterCount(
+      rawRoute
+    );
+
+  if (masterCount < 2) {
+    throw new Error(
+      "RENDER_ROUTE_SOURCE_TOO_SHORT"
+    );
+  }
+
+  const targetCount =
+    cgweb121Fix2TargetCount(
+      rawRoute
+    );
+
+  const indices =
+    cgweb121Fix2RenderIndices(
+      rawRoute,
+      targetCount
+    );
+
+  if (indices.length < 2) {
+    throw new Error(
+      "RENDER_ROUTE_INDEX_TOO_SHORT"
+    );
+  }
+
+  const sourceCount =
+    cgweb121Fix2SourceCount(
+      activity,
+      rawRoute
+    );
+
+  const rendered = {
+    route_format:
+      "CGWEB121-FIX2-RENDER",
+
+    source_route_format:
+      String(
+        rawRoute
+          ?.route_format ||
+        ""
+      ),
+
+    source_point_count:
+      sourceCount,
+
+    web_preview_point_count:
+      indices.length,
+
+    render_point_count:
+      indices.length,
+
+    __cgweb121:
+      "ROUTE_QUALITY_INVARIANT001",
+
+    __cgweb121_fix2:
+      "ROUTE_RENDER_DECIMATION001",
+
+    __cgweb121_fix2_source_point_count:
+      sourceCount,
+
+    __cgweb121_fix2_master_point_count:
+      masterCount,
+
+    __cgweb121_fix2_render_point_count:
+      indices.length,
+
+    __cgweb121_fix2_render_cap:
+      CGWEB121_FIX2_RENDER_CAP,
+
+    __cgweb121_fix2_created_at_ms:
+      Date.now()
+  };
+
+
+  /*
+   * Conservation de la provenance sans conserver
+   * les gros objets annexes.
+   */
+  const sourceLabels = [
+    "__cgweb121_fix1_source",
+    "__cgweb121_fix1_strava_id",
+    "__cgweb121_fix1_fit_id",
+    "__cgweb120_autoroute",
+    "__cgweb120_fit_role",
+    "__cgweb120_fit_method"
+  ];
+
+  for (
+    const field of sourceLabels
+  ) {
+    const value =
+      rawRoute?.[field];
+
+    if (
+      value !== undefined &&
+      value !== null &&
+      (
+        typeof value ===
+          "string" ||
+        typeof value ===
+          "number" ||
+        typeof value ===
+          "boolean"
+      )
+    ) {
+      rendered[field] =
+        value;
+    }
+  }
+
+
+  /*
+   * Tous les streams de rendu sont échantillonnés
+   * avec exactement la même grille temporelle/spatiale.
+   */
+  for (
+    const field of
+    CGWEB121_FIX2_ARRAY_FIELDS
+  ) {
+    const values =
+      rawRoute?.[field];
+
+    if (
+      !Array.isArray(values) ||
+      !values.length
+    ) {
+      continue;
+    }
+
+    rendered[field] =
+      cgweb121Fix2SampleArray(
+        values,
+        indices,
+        masterCount
+      );
+  }
+
+
+  /*
+   * Compatibilité :
+   * si timestamp_ms existe sans time_ms,
+   * normalizeSplitRoute sait déjà l'utiliser.
+   */
+
+
+  const arrayValueCount =
+    CGWEB121_FIX2_ARRAY_FIELDS
+      .reduce(
+        (
+          total,
+          field
+        ) =>
+          total +
+          (
+            Array.isArray(
+              rendered[field]
+            )
+              ? rendered[field].length
+              : 0
+          ),
+        0
+      );
+
+  rendered
+    .__cgweb121_fix2_array_value_count =
+      arrayValueCount;
+
+
+  if (
+    arrayValueCount >
+    CGWEB121_FIX2_ARRAY_VALUE_BUDGET
+  ) {
+    throw new Error(
+      "FIRESTORE_ARRAY_BUDGET_EXCEEDED: " +
+      arrayValueCount
+    );
+  }
+
+  return rendered;
+}
+
+
+/* ==================================================================
+   6. NOUVELLE PERSISTANCE
+
+   La route source complète est contrôlée.
+   Puis seulement la route Web décimée est écrite.
+   ================================================================== */
+
+cgweb121PersistRouteStrict =
+  async function cgweb121Fix2PersistRouteStrict(
+    activity,
+    rawRoute
+  ) {
+    if (!currentUser) {
+      throw new Error(
+        "AUTH_REQUIRED"
+      );
+    }
+
+    if (
+      !activity ||
+      !rawRoute
+    ) {
+      throw new Error(
+        "ROUTE_PERSIST_INPUT_MISSING"
+      );
+    }
+
+    const key =
+      cgweb121Key(
+        activity
+      );
+
+    if (!key) {
+      throw new Error(
+        "ROUTE_ACTIVITY_KEY_MISSING"
+      );
+    }
+
+
+    /* ----------------------------------------------------------
+       A. Validation de la SOURCE avant décimation
+       ---------------------------------------------------------- */
+
+    const sourceQuality =
+      cgweb121Fix1RouteQuality(
+        activity,
+        rawRoute
+      );
+
+    if (!sourceQuality.quality.ok) {
+      throw new Error(
+        "SOURCE_ROUTE_QUALITY_REJECTED: " +
+        sourceQuality
+          .quality
+          .reasons
+          .join(",")
+      );
+    }
+
+
+    /* ----------------------------------------------------------
+       B. Construction de la route de rendu
+       ---------------------------------------------------------- */
+
+    const renderRoute =
+      cgweb121Fix2BuildRenderRoute(
+        activity,
+        rawRoute
+      );
+
+
+    /* ----------------------------------------------------------
+       C. Validation APRÈS décimation
+       ---------------------------------------------------------- */
+
+    const renderQuality =
+      cgweb121Fix1RouteQuality(
+        activity,
+        renderRoute
+      );
+
+    if (!renderQuality.quality.ok) {
+      throw new Error(
+        "RENDER_ROUTE_QUALITY_REJECTED: " +
+        renderQuality
+          .quality
+          .reasons
+          .join(",")
+      );
+    }
+
+
+    /* ----------------------------------------------------------
+       D. Remplacement complet du document Firestore
+
+       Aucun ancien tableau géant ou corrompu n'est conservé.
+       ---------------------------------------------------------- */
+
+    try {
+      await setDoc(
+        doc(
+          db,
+          ROOT,
+          currentUser.uid,
+          "activity_routes",
+          key
+        ),
+        {
+          ...renderRoute,
+
+          __sportKey:
+            key,
+
+          __updatedAtMs:
+            Date.now(),
+
+          __cgweb121_fix2_source_quality:
+            "VALID",
+
+          __cgweb121_fix2_render_quality:
+            "VALID"
+        }
+      );
+    } catch (error) {
+      console.error(
+        "CGWEB121 FIX2 · écriture activity_routes",
+        {
+          activity:
+            key,
+
+          source_points:
+            renderRoute
+              .source_point_count,
+
+          render_points:
+            renderRoute
+              .render_point_count,
+
+          array_values:
+            renderRoute
+              .__cgweb121_fix2_array_value_count,
+
+          error:
+            String(
+              error?.message ||
+              error
+            )
+        }
+      );
+
+      throw error;
+    }
+
+
+    /* ----------------------------------------------------------
+       E. Relecture obligatoire
+       ---------------------------------------------------------- */
+
+    const after =
+      await cgweb121Fix1ReadDetailed(
+        activity
+      );
+
+    if (
+      !after.exists ||
+      !after.valid
+    ) {
+      throw new Error(
+        "ROUTE_RENDER_VERIFY_FAILED: " +
+        (
+          after
+            ?.quality
+            ?.reasons
+            ?.join(",") ||
+          "UNKNOWN"
+        )
+      );
+    }
+
+
+    try {
+      if (
+        typeof globalMapRouteCache !==
+          "undefined"
+      ) {
+        globalMapRouteCache.delete(
+          key
+        );
+      }
+    } catch (_) {}
+
+
+    cgweb121LastErrors.delete(
+      key
+    );
+
+
+    console.info(
+      "CGWEB121 FIX2 · route Web matérialisée",
+      {
+        activity:
+          key,
+
+        source_points:
+          renderRoute
+            .source_point_count,
+
+        render_points:
+          renderRoute
+            .render_point_count,
+
+        array_values:
+          renderRoute
+            .__cgweb121_fix2_array_value_count,
+
+        quality:
+          after.quality
+      }
+    );
+
+
+    return {
+      key,
+
+      raw:
+        after.raw,
+
+      normalized:
+        after.normalized,
+
+      points:
+        after.normalized
+          ?.points
+          ?.length || 0,
+
+      quality:
+        after.quality,
+
+      source_points:
+        renderRoute
+          .source_point_count,
+
+      render_points:
+        renderRoute
+          .render_point_count
+    };
+  };
+
+
+/*
+ * Tous les chemins historiques de récupération passent eux aussi
+ * par la persistance FIX2.
+ */
+persistRecoveredSplitRoute =
+  cgweb121PersistRouteStrict;
+
+
+/* ==================================================================
+   7. REBUILD FIX2
+
+   On conserve le moteur FIX1 :
+   Strava complet -> FIT secours.
+
+   Seule la matérialisation change :
+   source complète en mémoire, route Web décimée dans Firestore.
+   ================================================================== */
+
+async function cgweb121Fix2RepairCurrent() {
+  const activity =
+    typeof currentDetailActivity ===
+      "function"
+      ? currentDetailActivity()
+      : null;
+
+  if (!activity) {
+    return {
+      ok: false,
+      error:
+        "Aucune activité ouverte."
+    };
+  }
+
+  /*
+   * Si l'activité contient encore la vieille route de 2 points,
+   * FIX1 la rejette et reconstruit depuis la source.
+   */
+  const repaired =
+    await cgweb121Fix1Rebuild(
+      activity,
+      "CGWEB121_FIX2"
+    );
+
+  if (!repaired) {
+    return {
+      ok: false,
+      status:
+        await window
+          .CGWEB121_FIX2_STATUS()
+    };
+  }
+
+  await renderCartography(
+    activity
+  );
+
+  return {
+    ok: true,
+    status:
+      await window
+        .CGWEB121_FIX2_STATUS()
+  };
+}
+
+
+/* ==================================================================
+   8. BOOT
+
+   Une activité déjà ouverte est réparée automatiquement.
+   ================================================================== */
+
+function cgweb121Fix2Boot() {
+  for (
+    const delay of
+    [300, 1200, 3000]
+  ) {
+    setTimeout(
+      () => {
+        const activity =
+          typeof currentDetailActivity ===
+            "function"
+            ? currentDetailActivity()
+            : null;
+
+        if (!activity) {
+          return;
+        }
+
+        cgweb121Fix1ReadDetailed(
+          activity
+        )
+          .then(
+            (state) => {
+              if (!state.valid) {
+                return (
+                  cgweb121Fix2RepairCurrent()
+                );
+              }
+
+              return null;
+            }
+          )
+          .catch(
+            (error) =>
+              console.warn(
+                "CGWEB121 FIX2 boot",
+                error
+              )
+          );
+      },
+      delay
+    );
+  }
+}
+
+
+if (
+  document.readyState ===
+    "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    cgweb121Fix2Boot,
+    {
+      once: true
+    }
+  );
+} else {
+  cgweb121Fix2Boot();
+}
+
+
+/* ==================================================================
+   9. DIAGNOSTIC
+   ================================================================== */
+
+window.CGWEB121_FIX2_STATUS =
+  async function () {
+    const activity =
+      typeof currentDetailActivity ===
+        "function"
+        ? currentDetailActivity()
+        : null;
+
+    const detailed =
+      activity
+        ? await cgweb121Fix1ReadDetailed(
+            activity
+          )
+        : null;
+
+    const raw =
+      detailed?.raw || {};
+
+    const arrayValueCount =
+      CGWEB121_FIX2_ARRAY_FIELDS
+        .reduce(
+          (
+            total,
+            field
+          ) =>
+            total +
+            (
+              Array.isArray(
+                raw?.[field]
+              )
+                ? raw[field].length
+                : 0
+            ),
+          0
+        );
+
+    return {
+      build:
+        "CGWEB121_FIX2",
+
+      invariant:
+        "FULL_SOURCE => DECIMATED_VALID_RENDER_ROUTE",
+
+      activity_id:
+        cgweb121Key(
+          activity
+        ),
+
+      strava_activity_id:
+        String(
+          activity
+            ?.strava_activity_id ||
+          ""
+        ),
+
+      gps_point_count:
+        Number(
+          activity
+            ?.gps_point_count
+        ) || 0,
+
+      route_exists:
+        !!detailed?.exists,
+
+      route_valid:
+        !!detailed?.valid,
+
+      source_point_count:
+        Number(
+          raw
+            ?.source_point_count
+        ) || 0,
+
+      render_point_count:
+        Number(
+          raw
+            ?.render_point_count ||
+          raw
+            ?.web_preview_point_count
+        ) || 0,
+
+      firestore_array_values:
+        arrayValueCount,
+
+      firestore_array_budget:
+        CGWEB121_FIX2_ARRAY_VALUE_BUDGET,
+
+      route_quality:
+        detailed?.quality ||
+        null,
+
+      last_error:
+        cgweb121LastErrors
+          .get(
+            cgweb121Key(
+              activity
+            )
+          ) || ""
+    };
+  };
+
+
+window.CGWEB121_FIX2_REPAIR_CURRENT =
+  cgweb121Fix2RepairCurrent;
+
+
+/* CGWEB121_FIX2_END */
