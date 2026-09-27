@@ -21,6 +21,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   startAfter,
   Timestamp,
   where,
@@ -46026,3 +46027,22 @@ window.CGWEB120_FIX10_STATUS =
   };
 
 /* CGWEB120_FIX10_END */
+
+
+/* CGWEB120_FIX10_FIX1_SETDOC_IMPORT001
+ *
+ * ROUTE_PERSISTENCE_REPAIR001
+ *
+ * persistRecoveredSplitRoute() utilise setDoc() pour matérialiser
+ * activity_routes.
+ *
+ * setDoc était appelé mais n'était pas importé depuis
+ * firebase-firestore.js, provoquant :
+ *
+ * ReferenceError: setDoc is not defined
+ *
+ * FIX10 FIX1 ajoute l'import manquant.
+ *
+ * Aucun changement du matching Strava, du FIT, de la carte,
+ * du profil ou du modèle de données.
+ */
