@@ -50124,3 +50124,181 @@ console.info(
 );
 
 /* CGWEB121_FIX3_END */
+
+/* CGWEB121_FIX4_START
+   MAP_ROUTE_RED001
+   KM_MARKERS_DEFAULT_OFF001
+   KM_TOGGLE_ON_DEMAND001
+*/
+
+(function () {
+  const FIX4_ROUTE_COLOR = "#ff2a2a";
+  const FIX4_STYLE_ID = "cgweb121-fix4-map-style";
+
+  function cgweb121Fix4NormalizeText(value) {
+    return String(value || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  function cgweb121Fix4EnsureStyle() {
+    if (document.getElementById(FIX4_STYLE_ID)) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = FIX4_STYLE_ID;
+    style.textContent = `
+      /* Tracé rouge vif dans les cartes Leaflet */
+      .leaflet-container .leaflet-overlay-pane svg path,
+      .leaflet-container .leaflet-overlay-pane path.leaflet-interactive {
+        stroke: ${FIX4_ROUTE_COLOR} !important;
+      }
+
+      /* garde une bonne lisibilité */
+      .leaflet-container .leaflet-overlay-pane path {
+        stroke-linecap: round !important;
+        stroke-linejoin: round !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function cgweb121Fix4IsKmButton(button) {
+    const txt = cgweb121Fix4NormalizeText(button?.textContent);
+    return txt.startsWith("km");
+  }
+
+  function cgweb121Fix4IsKmButtonActive(button) {
+    if (!button) return false;
+
+    const txt = cgweb121Fix4NormalizeText(button.textContent);
+
+    if (!txt.startsWith("km")) {
+      return false;
+    }
+
+    if (txt.includes("✓")) {
+      return true;
+    }
+
+    if (button.getAttribute("aria-pressed") === "true") {
+      return true;
+    }
+
+    if (
+      button.classList.contains("active") ||
+      button.classList.contains("is-active") ||
+      button.classList.contains("selected") ||
+      button.classList.contains("on")
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function cgweb121Fix4FindKmButtons() {
+    return Array.from(document.querySelectorAll("button")).filter(
+      cgweb121Fix4IsKmButton
+    );
+  }
+
+  /*
+   * Masquage par défaut :
+   * dès qu'un nouveau bouton Km apparaît actif automatiquement,
+   * on clique UNE seule fois dessus pour le désactiver.
+   *
+   * Important :
+   * - on ne recommence pas ensuite,
+   * - donc l'utilisateur peut le réactiver manuellement.
+   */
+  function cgweb121Fix4AutoDisableKmDefault() {
+    const buttons = cgweb121Fix4FindKmButtons();
+
+    for (const button of buttons) {
+      if (button.dataset.cgweb121Fix4AutoOffDone === "1") {
+        continue;
+      }
+
+      if (!cgweb121Fix4IsKmButtonActive(button)) {
+        continue;
+      }
+
+      button.dataset.cgweb121Fix4AutoOffDone = "1";
+
+      console.info(
+        "CGWEB121 FIX4 · bornes kilométriques désactivées par défaut"
+      );
+
+      setTimeout(() => {
+        if (document.body.contains(button)) {
+          button.click();
+        }
+      }, 0);
+    }
+  }
+
+  function cgweb121Fix4Install() {
+    cgweb121Fix4EnsureStyle();
+    cgweb121Fix4AutoDisableKmDefault();
+
+    if (window.__cgweb121Fix4Installed) {
+      return;
+    }
+
+    window.__cgweb121Fix4Installed = true;
+
+    const observer = new MutationObserver(() => {
+      cgweb121Fix4EnsureStyle();
+      cgweb121Fix4AutoDisableKmDefault();
+    });
+
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true
+    });
+
+    window.__cgweb121Fix4Observer = observer;
+
+    setInterval(() => {
+      cgweb121Fix4EnsureStyle();
+      cgweb121Fix4AutoDisableKmDefault();
+    }, 1200);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", cgweb121Fix4Install, {
+      once: true
+    });
+  } else {
+    cgweb121Fix4Install();
+  }
+
+  window.CGWEB121_FIX4_STATUS = function () {
+    const buttons = cgweb121Fix4FindKmButtons();
+
+    return {
+      build: "CGWEB121_FIX4",
+      route_color: FIX4_ROUTE_COLOR,
+      route_red_default: true,
+      km_markers_default_visible: false,
+      km_button_available: buttons.length > 0,
+      km_buttons: buttons.map((button) => ({
+        text: String(button.textContent || "").trim(),
+        active: cgweb121Fix4IsKmButtonActive(button),
+        auto_off_done:
+          button.dataset.cgweb121Fix4AutoOffDone === "1"
+      }))
+    };
+  };
+
+  console.info(
+    "CGWEB121 FIX4 actif · MAP_ROUTE_RED001 · KM_MARKERS_DEFAULT_OFF001"
+  );
+})();
+
+/* CGWEB121_FIX4_END */
