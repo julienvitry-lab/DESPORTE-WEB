@@ -51412,3 +51412,372 @@ console.info(
 
 
 /* CGWEB121_FIX6_END */
+/* CGWEB121_FIX7_START
+   EQUIPMENT_USAGE_CANONICAL_MATCH001
+   ACTIVITY_EQUIPMENT_AUDIT001
+   USAGE_RECOUNT001
+*/
+
+const cgweb121Fix7State = {
+  audit: [],
+  summary: null
+};
+
+function cgweb121Fix7Norm(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+}
+
+function cgweb121Fix7EquipmentId(item) {
+  try {
+    return String(equipmentKey(item) || "").trim();
+  } catch (_) {
+    return String(item?.__docId ?? item?.id ?? "").trim();
+  }
+}
+
+function cgweb121Fix7EquipmentName(item) {
+  try {
+    return String(equipmentDisplayName(item) || "").trim();
+  } catch (_) {
+    return String(
+      item?.custom_name ??
+      item?.name ??
+      [item?.brand, item?.model].filter(Boolean).join(" ")
+    ).trim();
+  }
+}
+
+function cgweb121Fix7Catalog() {
+  const rows = Array.isArray(equipmentRows) ? equipmentRows : [];
+  const byId = new Map();
+  const byName = new Map();
+
+  for (const item of rows) {
+    const id = cgweb121Fix7EquipmentId(item);
+    const name = cgweb121Fix7Norm(cgweb121Fix7EquipmentName(item));
+
+    if (id) byId.set(id, item);
+
+    if (name) {
+      const list = byName.get(name) || [];
+      list.push(item);
+      byName.set(name, list);
+    }
+  }
+
+  return { rows, byId, byName };
+}
+
+function cgweb121Fix7Resolve(activity, catalog) {
+  const ids = [
+    activity?.equipment_id,
+    activity?.equipmentId,
+    activity?.gear_id,
+    activity?.gearId
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+
+  for (const id of ids) {
+    const item = catalog.byId.get(id);
+    if (item) return { item, method: "EXACT_ID" };
+  }
+
+  const rawName = String(activity?.equipment_name ?? "").trim();
+  const normalized = cgweb121Fix7Norm(rawName);
+
+  if (!normalized) {
+    return { item: null, method: "NO_EQUIPMENT" };
+  }
+
+  const matches = catalog.byName.get(normalized) || [];
+
+  if (matches.length === 1) {
+    return {
+      item: matches[0],
+      method: "EXACT_UNIQUE_NORMALIZED_NAME"
+    };
+  }
+
+  return {
+    item: null,
+    method: matches.length > 1 ? "AMBIGUOUS_NAME" : "UNRESOLVED_NAME"
+  };
+}
+
+function cgweb121Fix7DistanceM(activity) {
+  for (const value of [
+    activity?.distance_m,
+    activity?.total_distance_m,
+    activity?.distanceMeters
+  ]) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+
+  const km = Number(activity?.distance_km);
+  return Number.isFinite(km) && km >= 0 ? km * 1000 : 0;
+}
+
+function cgweb121Fix7DurationMs(activity) {
+  try {
+    const value = Number(web060MovingTimeMs(activity));
+    if (Number.isFinite(value) && value >= 0) return value;
+  } catch (_) {}
+
+  for (const value of [
+    activity?.timer_time_ms,
+    activity?.moving_time_ms,
+    activity?.elapsed_time_ms
+  ]) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+
+  return 0;
+}
+
+function cgweb121Fix7AscentM(activity) {
+  for (const value of [
+    activity?.total_ascent_m,
+    activity?.ascent_m,
+    activity?.elevation_gain_m,
+    activity?.total_elevation_gain
+  ]) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+
+  return 0;
+}
+
+function cgweb121Fix7ActivityId(activity, index) {
+  try {
+    const id = String(activityKey(activity) || "").trim();
+    if (id) return id;
+  } catch (_) {}
+
+  return String(
+    activity?.__docId ??
+    activity?.id ??
+    `${activity?.start_time_ms ?? "unknown"}:${index}`
+  );
+}
+
+function cgweb121Fix7Build() {
+  const catalog = cgweb121Fix7Catalog();
+  const source = Array.isArray(activities) ? activities : [];
+  const seen = new Set();
+  const totals = new Map();
+  const audit = [];
+
+  source.forEach((activity, index) => {
+    if (!activity || activity?.deleted_at_ms != null) return;
+
+    const activityId = cgweb121Fix7ActivityId(activity, index);
+    if (seen.has(activityId)) return;
+    seen.add(activityId);
+
+    const resolved = cgweb121Fix7Resolve(activity, catalog);
+    const item = resolved.item;
+
+    const row = {
+      activity_id: activityId,
+      raw_equipment_name: String(activity?.equipment_name ?? ""),
+      canonical_equipment_id: item ? cgweb121Fix7EquipmentId(item) : "",
+      canonical_equipment_name: item ? cgweb121Fix7EquipmentName(item) : "",
+      resolution: resolved.method,
+      distance_m: cgweb121Fix7DistanceM(activity),
+      duration_ms: cgweb121Fix7DurationMs(activity),
+      ascent_m: cgweb121Fix7AscentM(activity)
+    };
+
+    audit.push(row);
+    if (!item) return;
+
+    const id = cgweb121Fix7EquipmentId(item);
+    if (!id) return;
+
+    const total = totals.get(id) || {
+      activity_count: 0,
+      total_distance_m: 0,
+      total_duration_ms: 0,
+      total_ascent_m: 0
+    };
+
+    total.activity_count += 1;
+    total.total_distance_m += row.distance_m;
+    total.total_duration_ms += row.duration_ms;
+    total.total_ascent_m += row.ascent_m;
+    totals.set(id, total);
+  });
+
+  return {
+    catalog,
+    totals,
+    audit,
+    loadedActivityCount: seen.size
+  };
+}
+
+function cgweb121Fix7UsageDatum(card, label) {
+  const wanted = cgweb121Fix7Norm(label);
+  const usage = card?.querySelector(":scope > .equipment-manager-usage");
+  if (!usage) return null;
+
+  for (const datum of usage.children) {
+    const found = cgweb121Fix7Norm(
+      datum.querySelector("span")?.textContent
+    );
+    if (found === wanted) return datum;
+  }
+
+  return null;
+}
+
+function cgweb121Fix7Apply() {
+  const result = cgweb121Fix7Build();
+  const cards = [
+    ...document.querySelectorAll(
+      "#equipmentManagerList .equipment-manager-card"
+    )
+  ];
+
+  let corrected = 0;
+  let protectedPartial = 0;
+
+  for (const card of cards) {
+    const title = String(
+      card.querySelector(
+        ".equipment-manager-main > strong"
+      )?.textContent || ""
+    ).trim();
+
+    const matches = result.catalog.byName.get(
+      cgweb121Fix7Norm(title)
+    ) || [];
+
+    if (matches.length !== 1) continue;
+
+    const item = matches[0];
+    const id = cgweb121Fix7EquipmentId(item);
+    const recount = result.totals.get(id);
+    if (!recount) continue;
+
+    const persistedCount = Math.max(
+      0,
+      Math.round(Number(item?.activity_count) || 0)
+    );
+
+    if (recount.activity_count < persistedCount) {
+      protectedPartial += 1;
+      continue;
+    }
+
+    const distance = cgweb121Fix7UsageDatum(card, "Distance")
+      ?.querySelector("strong");
+    const duration = cgweb121Fix7UsageDatum(card, "Temps")
+      ?.querySelector("strong");
+    const ascent = cgweb121Fix7UsageDatum(card, "D+")
+      ?.querySelector("strong");
+
+    if (distance) {
+      distance.textContent = formatDistance(recount.total_distance_m);
+    }
+    if (duration) {
+      duration.textContent = formatDuration(recount.total_duration_ms);
+    }
+    if (ascent) {
+      ascent.textContent = formatMeters(recount.total_ascent_m);
+    }
+
+    card.dataset.cgweb121Fix7 = "CANONICAL_RECOUNT";
+    corrected += 1;
+  }
+
+  cgweb121Fix7State.audit = result.audit;
+  cgweb121Fix7State.summary = {
+    build: "CGWEB121_FIX7",
+    loaded_activity_count: result.loadedActivityCount,
+    catalog_equipment_count: result.catalog.rows.length,
+    matched_activity_count: result.audit.filter(
+      (row) => row.canonical_equipment_id
+    ).length,
+    unresolved_activity_count: result.audit.filter(
+      (row) => row.resolution === "UNRESOLVED_NAME"
+    ).length,
+    ambiguous_activity_count: result.audit.filter(
+      (row) => row.resolution === "AMBIGUOUS_NAME"
+    ).length,
+    corrected_cards: corrected,
+    protected_partial_cards: protectedPartial,
+    firestore_writes: 0
+  };
+
+  return cgweb121Fix7State.summary;
+}
+
+const cgweb121Fix7BaseRenderEquipmentManager = renderEquipmentManager;
+
+renderEquipmentManager =
+  function cgweb121Fix7RenderEquipmentManager(...args) {
+    const result = cgweb121Fix7BaseRenderEquipmentManager.apply(this, args);
+
+    queueMicrotask(() => {
+      try {
+        cgweb121Fix7Apply();
+      } catch (error) {
+        console.error("CGWEB121 FIX7 recount", error);
+      }
+    });
+
+    return result;
+  };
+
+window.CGWEB121_FIX7_RECOUNT = function () {
+  const result = cgweb121Fix7Apply();
+  console.log("CGWEB121 FIX7", result);
+  return result;
+};
+
+window.CGWEB121_FIX7_AUDIT = function (needle = "") {
+  const result = cgweb121Fix7Build();
+  const wanted = cgweb121Fix7Norm(needle);
+
+  const rows = wanted
+    ? result.audit.filter(
+        (row) =>
+          cgweb121Fix7Norm(row.raw_equipment_name).includes(wanted) ||
+          cgweb121Fix7Norm(row.canonical_equipment_name).includes(wanted) ||
+          cgweb121Fix7Norm(row.activity_id).includes(wanted)
+      )
+    : result.audit;
+
+  console.table(rows);
+  return rows;
+};
+
+window.CGWEB121_FIX7_STATUS = function () {
+  return {
+    build: "CGWEB121_FIX7",
+    canonical_match: true,
+    usage_recount: true,
+    fuzzy_matching: false,
+    firestore_writes: 0,
+    summary: cgweb121Fix7State.summary
+  };
+};
+
+queueMicrotask(() => {
+  try {
+    cgweb121Fix7Apply();
+  } catch (_) {}
+});
+
+console.info("CGWEB121 FIX7 actif");
+
+/* CGWEB121_FIX7_END */
