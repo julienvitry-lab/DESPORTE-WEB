@@ -17,6 +17,7 @@ const WEBSTRAVA_DUPLICATE_TIME_WINDOW_MS = 2 * 60 * 1000;
 // CI héritage WEB043 : const WEBSPLIT_VERSION = "WEBSPLIT002"
 const WEBSPLIT_VERSION = "WEBSPLIT003";
 const WEBSPLIT_AUTO_GAP_MS = 15 * 60 * 1000;
+const WEBSPLIT_GAP_SPLIT_ENABLED = false; // CGWEB121 FIX3 · GAP_SPLIT_PAUSE001
 const WEBSPLIT_INACTIVE_SPEED_MPS = 0.30;
 const WEBSPLIT_INACTIVE_MERGE_MS = 2 * 60 * 1000;
 const STRAVA_API_BASE = "https://www.strava.com/api/v3";
@@ -554,6 +555,24 @@ function serverFiniteNumber(value) {
 }
 
 function detectServerPauseBoundaries(route) {
+  /*
+   * CGWEB121 FIX3 · GAP_SPLIT_PAUSE001
+   *
+   * Toutes les découpes automatiques serveur basées sur
+   * les pauses / inactivités sont temporairement suspendues :
+   *
+   * - GAP temporel > 15 minutes
+   * - moving=false
+   * - vitesse faible ou nulle
+   * - plateau de distance
+   *
+   * Le moteur historique reste en place pour une éventuelle
+   * réactivation future.
+   */
+  if (!WEBSPLIT_GAP_SPLIT_ENABLED) {
+    return [];
+  }
+
   const count=serverRouteCount(route);
   const times=Array.isArray(route?.time_ms)?route.time_ms:[];
   const speeds=Array.isArray(route?.speed_mps)?route.speed_mps:[];

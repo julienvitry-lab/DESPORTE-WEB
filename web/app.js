@@ -49888,3 +49888,239 @@ window.CGWEB121_FIX2_REPAIR_CURRENT =
 
 
 /* CGWEB121_FIX2_END */
+
+/* CGWEB121_FIX3_START
+   GAP_SPLIT_PAUSE001
+   EQUIPMENT_SPLIT_ONLY001
+   NO_RETROACTIVE_MERGE001
+*/
+
+
+const cgweb121Fix3BaseDetectAutomaticSplitBoundaries =
+  detectAutomaticSplitBoundariesFromPoints;
+
+
+function cgweb121Fix3IsEquipmentBoundary(
+  boundary
+) {
+  return (
+    String(
+      boundary?.reason || ""
+    )
+      .trim()
+      .toUpperCase() ===
+    "EQUIPMENT_CHANGED"
+  );
+}
+
+
+detectAutomaticSplitBoundariesFromPoints =
+  function cgweb121Fix3EquipmentOnlyBoundaries(
+    points,
+    sessions = []
+  ) {
+    const detected =
+      cgweb121Fix3BaseDetectAutomaticSplitBoundaries(
+        points,
+        sessions
+      );
+
+    const all =
+      Array.isArray(detected)
+        ? detected
+        : [];
+
+    const kept =
+      all.filter(
+        cgweb121Fix3IsEquipmentBoundary
+      );
+
+    const ignored =
+      all.filter(
+        (boundary) =>
+          !cgweb121Fix3IsEquipmentBoundary(
+            boundary
+          )
+      );
+
+    if (ignored.length) {
+      console.info(
+        "CGWEB121 FIX3 · ruptures automatiques ignorées",
+        ignored.map(
+          (boundary) => ({
+            index:
+              boundary?.index ?? null,
+
+            reason:
+              boundary?.reason || "",
+
+            gap_ms:
+              Number(
+                boundary?.gap_ms
+              ) || 0
+          })
+        )
+      );
+    }
+
+    return kept;
+  };
+
+
+/*
+ * CGWEB121 FIX3
+ *
+ * Découpe automatique FUTURE :
+ *
+ * PAUSE_OVER_THRESHOLD      -> ignorée
+ * moving=false prolongé     -> ignoré
+ * vitesse faible prolongée  -> ignorée
+ * plateau distance          -> ignoré
+ * SPORT_CHANGED             -> ignoré
+ * SUB_SPORT_CHANGED         -> ignoré
+ * EQUIPMENT_CHANGED         -> CONSERVÉ
+ *
+ * La découpe manuelle reste disponible.
+ */
+
+
+/* ==================================================================
+   NO_RETROACTIVE_MERGE001
+
+   Aucun traitement rétroactif :
+   - aucune fusion ;
+   - aucune restauration de parent ;
+   - aucune suppression d'enfant ;
+   - aucune modification des anciennes activités WEBSPLIT.
+   ================================================================== */
+
+
+window.CGWEB121_FIX3_STATUS =
+  function () {
+    return {
+      build:
+        "CGWEB121_FIX3",
+
+      gap_split:
+        "PAUSED",
+
+      timestamp_gap_over_15m:
+        false,
+
+      inactive_signal_split:
+        false,
+
+      low_speed_split:
+        false,
+
+      distance_plateau_split:
+        false,
+
+      sport_change_auto_split:
+        false,
+
+      sub_sport_change_auto_split:
+        false,
+
+      equipment_change_auto_split:
+        true,
+
+      manual_split:
+        true,
+
+      retroactive_merge:
+        false,
+
+      policy:
+        "EQUIPMENT_SPLIT_ONLY001"
+    };
+  };
+
+
+window.CGWEB121_FIX3_TEST_CURRENT =
+  function () {
+    const route =
+      typeof splitActivityRoute !==
+        "undefined"
+        ? splitActivityRoute
+        : null;
+
+    const sessions =
+      typeof splitActivitySessions !==
+        "undefined"
+        ? splitActivitySessions
+        : [];
+
+    const points =
+      Array.isArray(
+        route?.points
+      )
+        ? route.points
+        : [];
+
+    if (!points.length) {
+      return {
+        ok: false,
+        message:
+          "Aucun tracé de découpe actuellement chargé."
+      };
+    }
+
+    const original =
+      cgweb121Fix3BaseDetectAutomaticSplitBoundaries(
+        points,
+        sessions
+      );
+
+    const active =
+      detectAutomaticSplitBoundariesFromPoints(
+        points,
+        sessions
+      );
+
+    return {
+      ok: true,
+
+      detected_before_filter:
+        original.map(
+          (boundary) => ({
+            index:
+              boundary?.index ?? null,
+
+            reason:
+              boundary?.reason || "",
+
+            gap_ms:
+              Number(
+                boundary?.gap_ms
+              ) || 0
+          })
+        ),
+
+      active_after_filter:
+        active.map(
+          (boundary) => ({
+            index:
+              boundary?.index ?? null,
+
+            reason:
+              boundary?.reason || "",
+
+            equipment_before:
+              boundary?.equipment_before ??
+              null,
+
+            equipment_after:
+              boundary?.equipment_after ??
+              null
+          })
+        )
+    };
+  };
+
+
+console.info(
+  "CGWEB121 FIX3 actif · GAP_SPLIT_PAUSE001 · EQUIPMENT_SPLIT_ONLY001"
+);
+
+/* CGWEB121_FIX3_END */
