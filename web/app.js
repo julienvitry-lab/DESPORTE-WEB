@@ -50302,3 +50302,222 @@ console.info(
 })();
 
 /* CGWEB121_FIX4_END */
+
+/* CGWEB121_FIX5_START
+   LEAFLET_ROUTE_RED_FORCE001
+   POLYLINE_STYLE_OVERRIDE001
+   KM_DEFAULT_OFF_KEEP001
+*/
+
+(function () {
+  const FIX5_ROUTE_COLOR = "#ff2a2a";
+
+  function cgweb121Fix5Log(...args) {
+    console.info("CGWEB121 FIX5 ·", ...args);
+  }
+
+  function cgweb121Fix5IsOpenPolyline(layer) {
+    if (!window.L || !layer) return false;
+    if (!(layer instanceof L.Polyline)) return false;
+    if (layer instanceof L.Polygon) return false;
+    return true;
+  }
+
+  function cgweb121Fix5ApplyRedToLayer(layer) {
+    if (!cgweb121Fix5IsOpenPolyline(layer)) {
+      return;
+    }
+
+    try {
+      if (!layer.options) {
+        layer.options = {};
+      }
+
+      layer.options.color = FIX5_ROUTE_COLOR;
+
+      if (layer.options.opacity == null) {
+        layer.options.opacity = 1;
+      }
+
+      if (typeof layer.setStyle === "function") {
+        layer.setStyle({
+          color: FIX5_ROUTE_COLOR,
+          opacity: layer.options.opacity
+        });
+      }
+
+      if (layer._path && layer._path.style) {
+        layer._path.style.stroke = FIX5_ROUTE_COLOR;
+        layer._path.style.color = FIX5_ROUTE_COLOR;
+      }
+
+      if (typeof layer.redraw === "function") {
+        layer.redraw();
+      }
+    } catch (error) {
+      console.warn("CGWEB121 FIX5 red layer warning", error);
+    }
+  }
+
+  function cgweb121Fix5PatchLeaflet() {
+    if (!window.L) {
+      return false;
+    }
+
+    if (window.__cgweb121Fix5LeafletPatched) {
+      return true;
+    }
+
+    window.__cgweb121Fix5LeafletPatched = true;
+
+    const originalPathSetStyle = L.Path.prototype.setStyle;
+    L.Path.prototype.setStyle = function (style) {
+      let nextStyle = style || {};
+
+      if (cgweb121Fix5IsOpenPolyline(this)) {
+        nextStyle = {
+          ...nextStyle,
+          color: FIX5_ROUTE_COLOR
+        };
+
+        if (nextStyle.opacity == null) {
+          nextStyle.opacity =
+            this?.options?.opacity == null
+              ? 1
+              : this.options.opacity;
+        }
+      }
+
+      const result = originalPathSetStyle.call(this, nextStyle);
+
+      if (cgweb121Fix5IsOpenPolyline(this)) {
+        try {
+          if (!this.options) {
+            this.options = {};
+          }
+          this.options.color = FIX5_ROUTE_COLOR;
+
+          if (this._path && this._path.style) {
+            this._path.style.stroke = FIX5_ROUTE_COLOR;
+            this._path.style.color = FIX5_ROUTE_COLOR;
+          }
+        } catch (e) {
+          console.warn("CGWEB121 FIX5 post-setStyle warning", e);
+        }
+      }
+
+      return result;
+    };
+
+    const originalPolylineOnAdd = L.Polyline.prototype.onAdd;
+    L.Polyline.prototype.onAdd = function (map) {
+      if (!(this instanceof L.Polygon)) {
+        if (!this.options) {
+          this.options = {};
+        }
+        this.options.color = FIX5_ROUTE_COLOR;
+      }
+
+      const result = originalPolylineOnAdd.call(this, map);
+
+      if (!(this instanceof L.Polygon)) {
+        cgweb121Fix5ApplyRedToLayer(this);
+      }
+
+      return result;
+    };
+
+    const originalGeoJsonAddData =
+      L.GeoJSON &&
+      L.GeoJSON.prototype &&
+      L.GeoJSON.prototype.addData
+        ? L.GeoJSON.prototype.addData
+        : null;
+
+    if (originalGeoJsonAddData) {
+      L.GeoJSON.prototype.addData = function (geojson) {
+        const result = originalGeoJsonAddData.call(this, geojson);
+
+        try {
+          if (typeof this.eachLayer === "function") {
+            this.eachLayer((layer) => {
+              cgweb121Fix5ApplyRedToLayer(layer);
+            });
+          }
+        } catch (e) {
+          console.warn("CGWEB121 FIX5 GeoJSON warning", e);
+        }
+
+        return result;
+      };
+    }
+
+    cgweb121Fix5Log("patch Leaflet installé");
+    return true;
+  }
+
+  function cgweb121Fix5Install() {
+    if (!cgweb121Fix5PatchLeaflet()) {
+      return false;
+    }
+
+    if (window.__cgweb121Fix5Installed) {
+      return true;
+    }
+
+    window.__cgweb121Fix5Installed = true;
+
+    cgweb121Fix5Log("tracé rouge forcé au niveau Leaflet");
+    return true;
+  }
+
+  function cgweb121Fix5Bootstrap() {
+    if (cgweb121Fix5Install()) {
+      return;
+    }
+
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+
+      if (cgweb121Fix5Install()) {
+        clearInterval(timer);
+        return;
+      }
+
+      if (attempts >= 60) {
+        clearInterval(timer);
+        console.warn(
+          "CGWEB121 FIX5 : Leaflet non disponible après attente."
+        );
+      }
+    }, 250);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener(
+      "DOMContentLoaded",
+      cgweb121Fix5Bootstrap,
+      { once: true }
+    );
+  } else {
+    cgweb121Fix5Bootstrap();
+  }
+
+  window.CGWEB121_FIX5_STATUS = function () {
+    return {
+      build: "CGWEB121_FIX5",
+      route_red_forced: true,
+      route_color: FIX5_ROUTE_COLOR,
+      leaflet_patched: !!window.__cgweb121Fix5LeafletPatched,
+      installed: !!window.__cgweb121Fix5Installed,
+      km_default_off_inherited_from_fix4: true
+    };
+  };
+
+  console.info(
+    "CGWEB121 FIX5 actif · LEAFLET_ROUTE_RED_FORCE001"
+  );
+})();
+
+/* CGWEB121_FIX5_END */
