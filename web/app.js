@@ -51673,7 +51673,48 @@ function cgweb121Fix7Apply() {
       Math.round(Number(item?.activity_count) || 0)
     );
 
-    if (recount.activity_count < persistedCount) {
+    const persistedDistanceM = Math.max(
+      0,
+      Number(item?.total_distance_m) || 0
+    );
+
+    const persistedDurationMs = Math.max(
+      0,
+      Number(item?.total_duration_ms) || 0
+    );
+
+    const persistedAscentM = Math.max(
+      0,
+      Number(item?.total_ascent_m) || 0
+    );
+
+    /*
+     * CGWEB121 FIX7 FIX1
+     * ZERO_STATS_RECOUNT_ONLY001
+     *
+     * Regle stricte :
+     * si une fiche materiel possede DEJA le moindre historique
+     * persistant, FIX7 ne la recalcule jamais.
+     *
+     * Le recount canonique n'est autorise que lorsque :
+     * activity_count = 0
+     * distance       = 0
+     * duree          = 0
+     * D+             = 0
+     *
+     * Cela protege notamment les materiels anciens dont seules
+     * certaines activites sont actuellement chargees en memoire.
+     */
+    const hasPersistedUsage =
+      persistedCount > 0 ||
+      persistedDistanceM > 0 ||
+      persistedDurationMs > 0 ||
+      persistedAscentM > 0;
+
+    if (hasPersistedUsage) {
+      card.dataset.cgweb121Fix7 =
+        "PERSISTED_EXISTING_USAGE_PRESERVED";
+
       protectedPartial += 1;
       continue;
     }
@@ -51781,3 +51822,29 @@ queueMicrotask(() => {
 console.info("CGWEB121 FIX7 actif");
 
 /* CGWEB121_FIX7_END */
+/* CGWEB121_FIX7_FIX1_START
+   ZERO_STATS_RECOUNT_ONLY001
+   EXISTING_USAGE_PRESERVE001
+   PARTIAL_HISTORY_GUARD002
+
+   Regle fonctionnelle :
+   - statistiques persistantes non nulles => toujours conservees ;
+   - fiche strictement a zero => recount canonique autorise ;
+   - aucune ecriture Firestore.
+*/
+
+window.CGWEB121_FIX7_FIX1_STATUS = function () {
+  return {
+    build: "CGWEB121_FIX7_FIX1",
+    zero_stats_recount_only: true,
+    existing_usage_preserved: true,
+    partial_history_guard: "STRICT_PERSISTED_USAGE_PRIORITY",
+    firestore_writes: 0
+  };
+};
+
+console.info(
+  "CGWEB121 FIX7 FIX1 actif · ZERO_STATS_RECOUNT_ONLY001 · EXISTING_USAGE_PRESERVE001"
+);
+
+/* CGWEB121_FIX7_FIX1_END */
