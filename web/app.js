@@ -11309,7 +11309,7 @@ function renderKilometerAnalysis(
     const note = document.createElement("p");
     note.className = "map-help route-km-data-note";
     note.textContent =
-      "GAP : série publiée lorsqu’elle existe ; sinon estimation vitesse + pente, avec le même moteur que l’Accueil. " +
+      "GAP SPORT V2 : calcul à partir de la vitesse et de la pente lissée, avec modèle trail asymétrique en descente et pondération par distance. " +
       "Les autres valeurs restent affichées dès qu’elles sont disponibles.";
     ui.routeKmAnalysisList.appendChild(note);
   }
@@ -50521,3 +50521,894 @@ console.info(
 })();
 
 /* CGWEB121_FIX5_END */
+
+/* CGWEB121_FIX6_START
+   GAP_TRAIL_V2_001
+   DESCENT_ASYMMETRIC_MODEL001
+   DISTANCE_WEIGHTED_GAP001
+   KM_BOUNDARY_CLIP001
+*/
+
+
+/* ==================================================================
+   1. MODELE DE COÛT GAP TRAIL V2
+
+   Convention :
+       ratio > 1  -> GAP plus rapide que l'allure réelle
+       ratio = 1  -> GAP = allure réelle
+       ratio < 1  -> GAP légèrement plus lent
+
+   Montée :
+       conservation du modèle énergétique historique.
+
+   Descente :
+       modèle asymétrique spécifique trail.
+
+       0 à -4 %   : bénéfice mécanique modéré
+       -4 à -8 %  : retour vers l'équivalent plat
+       -8 à -20 % : coût technique croissant
+       -20 à -30% : coût technique fort mais plafonné
+       < -30 %    : plafond strict
+
+   Cela évite l'ancien comportement où une forte descente
+   pouvait transformer artificiellement une allure de 5'/km
+   en GAP de 8'/km.
+   ================================================================== */
+
+
+function cgweb121Fix6DescentRatio(
+  gradePercent
+) {
+  const downhill =
+    Math.max(
+      0,
+      -Number(gradePercent)
+    );
+
+  if (downhill <= 4) {
+    /*
+     * 0 %  -> 1.000
+     * -4 % -> 0.970
+     *
+     * Une pente légèrement descendante permet souvent
+     * d'aller plus vite à coût physiologique inférieur.
+     */
+    return (
+      1 -
+      0.0075 * downhill
+    );
+  }
+
+  if (downhill <= 8) {
+    /*
+     * -4 % -> 0.970
+     * -8 % -> 1.000
+     */
+    return (
+      0.97 +
+      0.0075 *
+      (downhill - 4)
+    );
+  }
+
+  if (downhill <= 20) {
+    /*
+     * -8 %  -> 1.000
+     * -20 % -> 1.120
+     *
+     * La descente devient progressivement technique.
+     */
+    return (
+      1 +
+      0.01 *
+      (downhill - 8)
+    );
+  }
+
+  if (downhill <= 30) {
+    /*
+     * -20 % -> 1.120
+     * -30 % -> 1.250
+     */
+    return (
+      1.12 +
+      0.013 *
+      (downhill - 20)
+    );
+  }
+
+  /*
+   * Au-delà de -30 %, on ne laisse plus le modèle
+   * exploser : correction maximale +25 %.
+   */
+  return 1.25;
+}
+
+
+function cgweb121Fix6AdjustmentRatio(
+  gradePercent
+) {
+  let grade =
+    Number(
+      gradePercent
+    );
+
+  if (!Number.isFinite(grade)) {
+    grade = 0;
+  }
+
+  grade =
+    Math.max(
+      -35,
+      Math.min(
+        35,
+        grade
+      )
+    );
+
+
+  /* ---------- DESCENTE ---------- */
+
+  if (grade < 0) {
+    return (
+      cgweb121Fix6DescentRatio(
+        grade
+      )
+    );
+  }
+
+
+  /* ---------- PLAT / MONTÉE ---------- */
+
+  const g =
+    Math.max(
+      0,
+      Math.min(
+        0.25,
+        grade / 100
+      )
+    );
+
+  const cost =
+    155.4 * Math.pow(g, 5) -
+    30.4  * Math.pow(g, 4) -
+    43.3  * Math.pow(g, 3) +
+    46.3  * Math.pow(g, 2) +
+    19.5  * g +
+    3.6;
+
+  /*
+   * Sur le plat : ratio = 1.
+   *
+   * On conserve le moteur historique en montée,
+   * avec le même plafond de sécurité.
+   */
+  return Math.max(
+    1,
+    Math.min(
+      3,
+      cost / 3.6
+    )
+  );
+}
+
+
+/* ==================================================================
+   2. PENTE REPRESENTATIVE D'UN INTERVALLE
+   ================================================================== */
+
+function cgweb121Fix6IntervalGrade(
+  previous,
+  current,
+  dx
+) {
+  const grades = [
+    Number(
+      previous?.gradePercent
+    ),
+    Number(
+      current?.gradePercent
+    )
+  ].filter(
+    Number.isFinite
+  );
+
+  if (grades.length) {
+    return (
+      grades.reduce(
+        (a, b) =>
+          a + b,
+        0
+      ) /
+      grades.length
+    );
+  }
+
+
+  /*
+   * Fallback :
+   * pente brute uniquement si le lissage 120 m
+   * n'est exceptionnellement pas disponible.
+   */
+  const a =
+    Number(
+      previous?.altitudeMeters
+    );
+
+  const b =
+    Number(
+      current?.altitudeMeters
+    );
+
+  if (
+    Number.isFinite(a) &&
+    Number.isFinite(b) &&
+    Number.isFinite(dx) &&
+    dx >= 20
+  ) {
+    return Math.max(
+      -35,
+      Math.min(
+        35,
+        ((b - a) / dx) * 100
+      )
+    );
+  }
+
+  return 0;
+}
+
+
+/* ==================================================================
+   3. VITESSE REELLE D'UN INTERVALLE
+
+   Les pauses longues et intervalles quasi immobiles sont exclus.
+   ================================================================== */
+
+function cgweb121Fix6IntervalSpeed(
+  previous,
+  current,
+  dx
+) {
+  const t1 =
+    routePointTimeMs(
+      previous
+    );
+
+  const t2 =
+    routePointTimeMs(
+      current
+    );
+
+  if (
+    Number.isFinite(t1) &&
+    Number.isFinite(t2) &&
+    t2 > t1
+  ) {
+    const dt =
+      (t2 - t1) /
+      1000;
+
+    /*
+     * Même philosophie que l'analyse kilométrique :
+     * une pause prolongée ne devient pas artificiellement
+     * une allure de déplacement.
+     */
+    if (
+      dt > 0 &&
+      dt <= 300
+    ) {
+      const speed =
+        dx / dt;
+
+      if (
+        Number.isFinite(speed) &&
+        speed >= 0.35 &&
+        speed <= 12
+      ) {
+        return speed;
+      }
+    }
+  }
+
+
+  /*
+   * Fallback sur les vitesses publiées.
+   */
+  const speeds = [
+    routePointSpeedMps(
+      previous
+    ),
+    routePointSpeedMps(
+      current
+    )
+  ].filter(
+    (value) =>
+      Number.isFinite(value) &&
+      value >= 0.35 &&
+      value <= 12
+  );
+
+  if (!speeds.length) {
+    return null;
+  }
+
+  return (
+    speeds.reduce(
+      (a, b) =>
+        a + b,
+      0
+    ) /
+    speeds.length
+  );
+}
+
+
+/* ==================================================================
+   4. BORNAGE EXACT DES KILOMETRES
+
+   Une route Web peut être décimée.
+
+   Exemple :
+       point A = 984 m
+       point B = 1011 m
+
+   Pour le premier kilomètre, seuls 984 -> 1000 m
+   doivent peser.
+
+   Pour le deuxième, seuls 1000 -> 1011 m doivent peser.
+
+   Aucun point extérieur au kilomètre ne doit fausser le GAP.
+   ================================================================== */
+
+function cgweb121Fix6OverlapMeters(
+  d1,
+  d2,
+  startMeters,
+  endMeters
+) {
+  let left =
+    Math.min(
+      d1,
+      d2
+    );
+
+  let right =
+    Math.max(
+      d1,
+      d2
+    );
+
+  if (
+    Number.isFinite(startMeters)
+  ) {
+    left =
+      Math.max(
+        left,
+        startMeters
+      );
+  }
+
+  if (
+    Number.isFinite(endMeters)
+  ) {
+    right =
+      Math.min(
+        right,
+        endMeters
+      );
+  }
+
+  return Math.max(
+    0,
+    right - left
+  );
+}
+
+
+/* ==================================================================
+   5. MOTEUR GAP TRAIL V2
+
+   Moyenne des allures équivalentes pondérée par la DISTANCE.
+
+   Pas de moyenne arithmétique par nombre de points GPS.
+   ================================================================== */
+
+function cgweb121Fix6WeightedGap(
+  points,
+  startMeters = null,
+  endMeters = null
+) {
+  const rows =
+    Array.isArray(points)
+      ? points
+      : [];
+
+  if (rows.length < 2) {
+    return {
+      gap: null,
+      coveredMeters: 0,
+      intervalCount: 0,
+      source:
+        "NONE"
+    };
+  }
+
+  let weightedGap = 0;
+  let totalWeight = 0;
+  let intervalCount = 0;
+
+
+  for (
+    let i = 1;
+    i < rows.length;
+    i += 1
+  ) {
+    const previous =
+      rows[i - 1];
+
+    const current =
+      rows[i];
+
+    const d1 =
+      Number(
+        previous?.distanceMeters
+      );
+
+    const d2 =
+      Number(
+        current?.distanceMeters
+      );
+
+    if (
+      !Number.isFinite(d1) ||
+      !Number.isFinite(d2) ||
+      d2 <= d1
+    ) {
+      continue;
+    }
+
+    const dx =
+      d2 - d1;
+
+    /*
+     * Protection contre une discontinuité de route.
+     */
+    if (
+      dx <= 0 ||
+      dx > 1000
+    ) {
+      continue;
+    }
+
+
+    const overlap =
+      cgweb121Fix6OverlapMeters(
+        d1,
+        d2,
+        startMeters,
+        endMeters
+      );
+
+    if (overlap <= 0) {
+      continue;
+    }
+
+
+    const speed =
+      cgweb121Fix6IntervalSpeed(
+        previous,
+        current,
+        dx
+      );
+
+    if (
+      !Number.isFinite(speed) ||
+      speed <= 0
+    ) {
+      continue;
+    }
+
+
+    const grade =
+      cgweb121Fix6IntervalGrade(
+        previous,
+        current,
+        dx
+      );
+
+    const ratio =
+      cgweb121Fix6AdjustmentRatio(
+        grade
+      );
+
+    if (
+      !Number.isFinite(ratio) ||
+      ratio <= 0
+    ) {
+      continue;
+    }
+
+
+    const actualPace =
+      1000 /
+      speed;
+
+    const gap =
+      actualPace /
+      ratio;
+
+
+    /*
+     * Large plage volontairement compatible ultra.
+     * On élimine seulement les valeurs physiquement aberrantes.
+     */
+    if (
+      !Number.isFinite(gap) ||
+      gap <= 30 ||
+      gap >= 3600
+    ) {
+      continue;
+    }
+
+
+    weightedGap +=
+      gap *
+      overlap;
+
+    totalWeight +=
+      overlap;
+
+    intervalCount += 1;
+  }
+
+
+  if (
+    totalWeight > 0 &&
+    intervalCount > 0
+  ) {
+    return {
+      gap:
+        weightedGap /
+        totalWeight,
+
+      coveredMeters:
+        totalWeight,
+
+      intervalCount,
+
+      source:
+        "GAP_TRAIL_V2"
+    };
+  }
+
+
+  /* ================================================================
+     FALLBACK
+
+     Si vitesse/temps manquent totalement, on peut encore utiliser
+     une série GAP explicitement publiée.
+
+     MAIS elle est maintenant elle aussi pondérée par distance.
+     ================================================================ */
+
+  let explicitWeighted = 0;
+  let explicitWeight = 0;
+  let explicitCount = 0;
+
+  for (
+    let i = 1;
+    i < rows.length;
+    i += 1
+  ) {
+    const previous =
+      rows[i - 1];
+
+    const current =
+      rows[i];
+
+    const d1 =
+      Number(
+        previous?.distanceMeters
+      );
+
+    const d2 =
+      Number(
+        current?.distanceMeters
+      );
+
+    if (
+      !Number.isFinite(d1) ||
+      !Number.isFinite(d2) ||
+      d2 <= d1
+    ) {
+      continue;
+    }
+
+    const overlap =
+      cgweb121Fix6OverlapMeters(
+        d1,
+        d2,
+        startMeters,
+        endMeters
+      );
+
+    if (overlap <= 0) {
+      continue;
+    }
+
+    const published = [
+      routePointGapSecondsPerKm(
+        previous
+      ),
+      routePointGapSecondsPerKm(
+        current
+      )
+    ].filter(
+      Number.isFinite
+    );
+
+    if (!published.length) {
+      continue;
+    }
+
+    const average =
+      published.reduce(
+        (a, b) =>
+          a + b,
+        0
+      ) /
+      published.length;
+
+    explicitWeighted +=
+      average *
+      overlap;
+
+    explicitWeight +=
+      overlap;
+
+    explicitCount += 1;
+  }
+
+
+  return {
+    gap:
+      explicitWeight > 0
+        ? explicitWeighted /
+          explicitWeight
+        : null,
+
+    coveredMeters:
+      explicitWeight,
+
+    intervalCount:
+      explicitCount,
+
+    source:
+      explicitWeight > 0
+        ? "PUBLISHED_DISTANCE_WEIGHTED_FALLBACK"
+        : "NONE"
+  };
+}
+
+
+/* ==================================================================
+   6. MOTEUR GLOBAL ACCUEIL / ANALYSES
+
+   Le moteur partagé passe lui aussi en GAP TRAIL V2.
+   ================================================================== */
+
+const cgweb121Fix6BaseRouteAverageGap =
+  web055RouteAverageGap;
+
+
+web055RouteAverageGap =
+  function cgweb121Fix6RouteAverageGap(
+    route
+  ) {
+    const points =
+      Array.isArray(
+        route?.points
+      )
+        ? route.points
+        : [];
+
+    const result =
+      cgweb121Fix6WeightedGap(
+        points
+      );
+
+    return Number.isFinite(
+      result.gap
+    )
+      ? result.gap
+      : null;
+  };
+
+
+/* ==================================================================
+   7. ANALYSE KILOMETRE PAR KILOMETRE
+
+   On conserve exactement :
+   - l'allure calculée actuellement ;
+   - la FC actuelle.
+
+   Seul le GAP est remplacé par le moteur V2.
+
+   Le bornage du kilomètre utilise startDistanceMeters/endDistanceMeters.
+   ================================================================== */
+
+const cgweb121Fix6BaseKilometerPerformanceValues =
+  kilometerPerformanceValues;
+
+
+kilometerPerformanceValues =
+  function cgweb121Fix6KilometerPerformanceValues(
+    segment
+  ) {
+    const base =
+      cgweb121Fix6BaseKilometerPerformanceValues(
+        segment
+      );
+
+    const points =
+      Array.isArray(
+        segment?.points
+      )
+        ? segment.points
+        : [];
+
+    const startMeters =
+      Number(
+        segment?.startDistanceMeters
+      );
+
+    const endMeters =
+      Number(
+        segment?.endDistanceMeters
+      );
+
+    const result =
+      cgweb121Fix6WeightedGap(
+        points,
+
+        Number.isFinite(startMeters)
+          ? startMeters
+          : null,
+
+        Number.isFinite(endMeters)
+          ? endMeters
+          : null
+      );
+
+    return {
+      ...base,
+
+      gap:
+        Number.isFinite(
+          result.gap
+        )
+          ? result.gap
+          : null,
+
+      gapV2Source:
+        result.source,
+
+      gapV2CoverageMeters:
+        result.coveredMeters,
+
+      gapV2IntervalCount:
+        result.intervalCount
+    };
+  };
+
+
+/* ==================================================================
+   8. CACHE
+
+   Les éventuelles valeurs GAP calculées avant FIX6 dans cette session
+   doivent être abandonnées.
+   ================================================================== */
+
+try {
+  if (
+    typeof web055GapSummaryCache !==
+      "undefined" &&
+    web055GapSummaryCache &&
+    typeof web055GapSummaryCache.clear ===
+      "function"
+  ) {
+    web055GapSummaryCache.clear();
+  }
+} catch (_) {}
+
+
+/* ==================================================================
+   9. DIAGNOSTICS
+   ================================================================== */
+
+window.CGWEB121_FIX6_STATUS =
+  function () {
+    return {
+      build:
+        "CGWEB121_FIX6",
+
+      engine:
+        "GAP_TRAIL_V2_001",
+
+      ascent_model:
+        "MINETTI_LEGACY_PRESERVED",
+
+      descent_model:
+        "ASYMMETRIC_TRAIL_V2",
+
+      aggregation:
+        "DISTANCE_WEIGHTED",
+
+      kilometer_boundaries:
+        "EXACT_CLIPPED",
+
+      grade_smoothing_m:
+        120,
+
+      explicit_gap:
+        "FALLBACK_ONLY",
+
+      persistence:
+        "NONE"
+    };
+  };
+
+
+window.CGWEB121_FIX6_CURVE =
+  function () {
+    return [
+      -35,
+      -30,
+      -25,
+      -20,
+      -15,
+      -10,
+      -8,
+      -6,
+      -4,
+      -2,
+      0,
+      2,
+      5,
+      10,
+      15,
+      20,
+      25
+    ].map(
+      (grade) => {
+        const ratio =
+          cgweb121Fix6AdjustmentRatio(
+            grade
+          );
+
+        return {
+          grade_percent:
+            grade,
+
+          ratio:
+            Number(
+              ratio.toFixed(4)
+            ),
+
+          equivalent_for_6min_pace:
+            formatPaceFromSeconds(
+              360 / ratio
+            )
+        };
+      }
+    );
+  };
+
+
+console.info(
+  "CGWEB121 FIX6 actif · GAP_TRAIL_V2_001 · DESCENT_ASYMMETRIC_MODEL001 · DISTANCE_WEIGHTED_GAP001"
+);
+
+
+/* CGWEB121_FIX6_END */
