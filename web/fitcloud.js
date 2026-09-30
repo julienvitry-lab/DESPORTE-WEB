@@ -5987,3 +5987,201 @@ window.SPORT_DIRECTORY_FIT_TRUTH=
   });
 
 /* CGWEB109_FIT_TRUTH_CLIENT_END */
+/* CGWEB121_FIX8_FIT_SOURCE_RECOVERY_START
+   FIT_SOURCE_RECOVERY001
+*/
+
+function cgweb121Fix8DateKeyFromMs(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+
+  const date = new Date(ms);
+  const pad = (n) => String(n).padStart(2, "0");
+
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate())
+  ].join("-");
+}
+
+function cgweb121Fix8DateKeyFromFileName(value) {
+  const name = String(value || "").split(/[\\/]/).pop() || "";
+  const match = name.match(/^(\d{4})_(\d{2})_(\d{2})_/);
+
+  return match
+    ? [match[1], match[2], match[3]].join("-")
+    : "";
+}
+
+function cgweb121Fix8RowStartMs(row) {
+  const values = [
+    row?.start_time_ms,
+    row?.start_ms,
+    row?.session_start_time_ms
+  ];
+
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  const metadata = canonicalNameMetadata(row?.file_name || "");
+  return Number(metadata?.startMs) || null;
+}
+
+function cgweb121Fix8RowSport(row) {
+  const values = [
+    row?.sport,
+    row?.fit_sport,
+    row?.session_sport
+  ];
+
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  const metadata = canonicalNameMetadata(row?.file_name || "");
+  return Number(metadata?.sport) || null;
+}
+
+function cgweb121Fix8CandidateSummary(row, activity) {
+  const activityStart = Number(activity?.start_time_ms);
+  const rowStart = cgweb121Fix8RowStartMs(row);
+  const activitySport = Number(activity?.sport);
+  const rowSport = cgweb121Fix8RowSport(row);
+
+  const activityDate = cgweb121Fix8DateKeyFromMs(activityStart);
+  const rowDate =
+    cgweb121Fix8DateKeyFromMs(rowStart) ||
+    cgweb121Fix8DateKeyFromFileName(row?.file_name);
+
+  const deltaMs =
+    Number.isFinite(activityStart) &&
+    Number.isFinite(rowStart)
+      ? Math.abs(rowStart - activityStart)
+      : Number.POSITIVE_INFINITY;
+
+  const sportCompatible =
+    !Number.isFinite(activitySport) ||
+    activitySport <= 0 ||
+    !Number.isFinite(rowSport) ||
+    rowSport <= 0 ||
+    activitySport === rowSport;
+
+  const sameDate =
+    Boolean(activityDate) &&
+    Boolean(rowDate) &&
+    activityDate === rowDate;
+
+  const within12Hours =
+    Number.isFinite(deltaMs) &&
+    deltaMs <= 12 * 60 * 60 * 1000;
+
+  return {
+    row,
+    rowStart,
+    rowSport,
+    deltaMs,
+    sportCompatible,
+    sameDate,
+    within12Hours
+  };
+}
+
+async function cgweb121Fix8FindSourceCandidates(activity) {
+  const activityId = String(
+    activity?.id ??
+    activity?.__docId ??
+    ""
+  ).trim();
+
+  const allRows = await cgweb085aAllFitRows();
+
+  const candidates = allRows
+    .filter((row) => row && String(row.sha256 || "").trim())
+    .filter((row) => {
+      const linked = String(row?.activity_id || "").trim();
+      return !linked || linked === activityId;
+    })
+    .map((row) => cgweb121Fix8CandidateSummary(row, activity))
+    .filter((candidate) => candidate.sportCompatible)
+    .filter((candidate) => candidate.sameDate || candidate.within12Hours)
+    .sort((a, b) => {
+      if (a.sameDate !== b.sameDate) return a.sameDate ? -1 : 1;
+      return a.deltaMs - b.deltaMs;
+    });
+
+  return candidates.map((candidate) => ({
+    ...candidate.row,
+    cgweb121_fix8_delta_ms:
+      Number.isFinite(candidate.deltaMs)
+        ? candidate.deltaMs
+        : null,
+    cgweb121_fix8_same_date: candidate.sameDate === true,
+    cgweb121_fix8_recovery: true
+  }));
+}
+
+async function cgweb121Fix8CreateActiveVersionFromSource(
+  activityId,
+  sourceRow,
+  options = {}
+) {
+  const key = v081ActivityKey(activityId);
+  const parentSha = String(sourceRow?.sha256 || "").trim();
+
+  if (!key) {
+    throw new Error("Identifiant activité absent.");
+  }
+
+  if (!parentSha) {
+    throw new Error("FIT_SOURCE_RECOVERY001 : SHA source absent.");
+  }
+
+  const result = await request(
+    "version",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        activity_id: key,
+        parent_sha256: parentSha,
+        start_offset_s: Number(options.start_offset_s || 0),
+        avg_hr_override: options.avg_hr_override ?? null,
+        max_hr_override: options.max_hr_override ?? null,
+        fit_editor_mode: "FITEDITOR001",
+        activate_version: true
+      })
+    }
+  );
+
+  try {
+    await v080MaybeAutoBackupResult(result);
+  } catch (error) {
+    console.warn(
+      "CGWEB121 FIX8 · sauvegarde Drive facultative",
+      error
+    );
+  }
+
+  await v081EnsureQuickRows(true);
+
+  return result;
+}
+
+window.SPORT_FIT_SOURCE_RECOVERY = Object.freeze({
+  version: "FIT_SOURCE_RECOVERY001",
+  findCandidates: cgweb121Fix8FindSourceCandidates,
+  createActiveVersionFromSource:
+    cgweb121Fix8CreateActiveVersionFromSource
+});
+
+console.info(
+  "CGWEB121 FIX8 actif dans fitcloud.js · FIT_SOURCE_RECOVERY001"
+);
+
+/* CGWEB121_FIX8_FIT_SOURCE_RECOVERY_END */
