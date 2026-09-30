@@ -52637,3 +52637,729 @@ console.info(
 );
 
 /* CGWEB121_FIX8_APP_END */
+/* CGWEB121_FIX8_FIX1_START
+   REAL_FIT_REBUILD001
+   FIT_FIRST_TIME_SYNC001
+   ACTIVITY_FIT_SINGLE_OPERATION001
+*/
+
+const cgweb121Fix8Fix1RebuildEligible = new Map();
+
+function cgweb121Fix8Fix1GenerationRow(result, activityId) {
+  const key = String(activityId || "").trim();
+
+  return Array.isArray(result?.results)
+    ? (
+        result.results.find(
+          (row) =>
+            String(row?.activity_id || "").trim() === key
+        ) ||
+        result.results[0] ||
+        null
+      )
+    : null;
+}
+
+async function cgweb121Fix8Fix1Plan(activity) {
+  const key = cgweb121Fix8ActivityKey(activity);
+
+  if (!key) {
+    return {
+      eligible: false,
+      status: "NO_ACTIVITY_ID",
+      row: null
+    };
+  }
+
+  const api = window.SPORT_MISSING_FIT;
+
+  if (!api?.plan) {
+    return {
+      eligible: false,
+      status: "MISSING_FIT_API_UNAVAILABLE",
+      row: null
+    };
+  }
+
+  const result = await api.plan([key]);
+
+  const row =
+    Array.isArray(result?.rows)
+      ? (
+          result.rows.find(
+            (item) =>
+              String(item?.activity_id || "").trim() === key
+          ) ||
+          result.rows[0] ||
+          null
+        )
+      : null;
+
+  return {
+    eligible:
+      row?.status === "ELIGIBLE" ||
+      row?.eligible === true,
+
+    status:
+      String(row?.status || "UNKNOWN"),
+
+    row
+  };
+}
+
+async function cgweb121Fix8Fix1ApplyActivityPatch(
+  activity,
+  patch
+) {
+  if (
+    !patch ||
+    typeof patch !== "object" ||
+    Array.isArray(patch) ||
+    !Object.keys(patch).length
+  ) {
+    return;
+  }
+
+  const key =
+    cgweb121Fix8ActivityKey(activity);
+
+  if (!key) {
+    throw new Error(
+      "Identifiant activité absent lors de la synchronisation."
+    );
+  }
+
+  const materialized = {
+    ...activity,
+    ...patch
+  };
+
+  delete materialized.__docId;
+
+  await commitWebMutation({
+    table:
+      "activities",
+
+    rowKey:
+      key,
+
+    operation:
+      "UPSERT",
+
+    row:
+      materialized,
+
+    materializedCollection:
+      "activities",
+
+    materializedData:
+      materialized
+  });
+
+  Object.assign(
+    activity,
+    patch
+  );
+}
+
+async function cgweb121Fix8Fix1RebuildAndEditFit() {
+  const activity =
+    currentDetailActivity();
+
+  if (!activity) {
+    throw new Error(
+      "Activité courante introuvable."
+    );
+  }
+
+  const key =
+    cgweb121Fix8ActivityKey(
+      activity
+    );
+
+  if (!key) {
+    throw new Error(
+      "Identifiant activité absent."
+    );
+  }
+
+  const values =
+    cgweb121Fix8ReadEditorValues(
+      activity
+    );
+
+  const plan =
+    await cgweb121Fix8Fix1Plan(
+      activity
+    );
+
+  if (!plan.eligible) {
+    throw new Error(
+      "Le FIT ne peut pas être reconstruit à partir des données disponibles" +
+      (plan.status
+        ? " (" + plan.status + ")."
+        : ".")
+    );
+  }
+
+  const oldLabel =
+    new Date(
+      values.oldStart
+    ).toLocaleString("fr-FR");
+
+  const newLabel =
+    new Date(
+      values.newStart
+    ).toLocaleString("fr-FR");
+
+  const confirmation = [
+    "Aucun FIT associé n’existe actuellement.",
+    "",
+    "SPORT Web va réellement :",
+    "1. reconstruire un FIT canonique depuis l’activité ;",
+    values.offsetSeconds !== 0
+      ? "2. créer une nouvelle version FIT avec la nouvelle heure ;"
+      : "2. conserver dans le FIT l’heure actuelle de l’activité ;",
+    values.synthetic
+      ? "3. intégrer la FC synthétique demandée ;"
+      : "3. conserver les données physiologiques disponibles ;",
+    "4. associer le FIT obtenu à l’activité.",
+    "",
+    "Heure actuelle : " + oldLabel,
+    "Heure demandée : " + newLabel,
+    "",
+    "Le FIT reconstruit initial n’est jamais supprimé."
+  ].join("\n");
+
+  if (!window.confirm(confirmation)) {
+    return;
+  }
+
+  const button =
+    document.getElementById(
+      "cgweb085aApply"
+    );
+
+  const status =
+    document.getElementById(
+      "cgweb085aStatus"
+    );
+
+  if (button) {
+    button.disabled = true;
+  }
+
+  try {
+    if (status) {
+      status.textContent =
+        "REAL_FIT_REBUILD001 · reconstruction réelle du FIT…";
+    }
+
+    const missingFitApi =
+      window.SPORT_MISSING_FIT;
+
+    if (!missingFitApi?.generate) {
+      throw new Error(
+        "API MISSING_FIT_GENERATE001 indisponible."
+      );
+    }
+
+    /*
+     * IMPORTANT :
+     * on reconstruit d'abord le FIT à partir de l'activité
+     * dans son état courant.
+     *
+     * Si l'utilisateur demande ensuite un décalage d'heure,
+     * FITEDITOR001 crée une seconde version à partir de ce
+     * vrai FIT parent et applique le même décalage à tous les
+     * timestamps.
+     */
+    const generated =
+      await missingFitApi.generate(
+        [key]
+      );
+
+    const generationRow =
+      cgweb121Fix8Fix1GenerationRow(
+        generated,
+        key
+      );
+
+    const generationStatus =
+      String(
+        generationRow?.status || ""
+      );
+
+    if (
+      generationStatus !== "STORED" &&
+      generationStatus !== "ALREADY_HAS_FIT"
+    ) {
+      throw new Error(
+        "Génération FIT échouée" +
+        (
+          generationStatus
+            ? " (" +
+              generationStatus +
+              ")"
+            : ""
+        ) +
+        (
+          generationRow?.error
+            ? " : " +
+              generationRow.error
+            : "."
+        )
+      );
+    }
+
+    if (status) {
+      status.textContent =
+        "FIT canonique créé · vérification de l’association…";
+    }
+
+    await window.SPORT_FIT_EDITOR
+      ?.refresh?.();
+
+    let current =
+      window.SPORT_FIT_EDITOR
+        ?.currentRow?.(key);
+
+    if (!current) {
+      try {
+        await missingFitApi
+          ?.refreshCloud?.();
+      } catch (error) {
+        console.warn(
+          "CGWEB121 FIX8 FIX1 refreshCloud",
+          error
+        );
+      }
+
+      await window.SPORT_FIT_EDITOR
+        ?.refresh?.();
+
+      current =
+        window.SPORT_FIT_EDITOR
+          ?.currentRow?.(key);
+    }
+
+    if (!current) {
+      throw new Error(
+        "Le FIT a été généré mais son association n’est pas encore visible. Rechargez la fiche avant de recommencer."
+      );
+    }
+
+    /*
+     * Cas 1 :
+     * l'activité porte déjà la bonne heure et aucune FC
+     * synthétique n'est demandée.
+     *
+     * Le FIT généré possède donc déjà la bonne heure :
+     * aucune version supplémentaire n'est utile.
+     */
+    if (
+      values.offsetSeconds === 0 &&
+      !values.synthetic
+    ) {
+      cgweb121Fix8Fix1RebuildEligible.delete(
+        key
+      );
+
+      window.SPORT_FIT_QUICKDOWNLOAD
+        ?.invalidate?.();
+
+      rebuildDynamicFilters();
+      applyFiltersAndRender();
+      renderDetail(activity);
+      scheduleDashboardRefresh();
+
+      if (status) {
+        status.textContent =
+          "REAL_FIT_REBUILD001 OK · FIT réellement créé et associé · heure du FIT synchronisée avec l’activité.";
+      }
+
+      setMessage(
+        "FIT réellement créé et associé à l’activité.",
+        "success"
+      );
+
+      return;
+    }
+
+    /*
+     * Cas 2 :
+     * on possède désormais un vrai FIT parent.
+     * FITEDITOR001 peut donc appliquer le décalage demandé
+     * à tous les timestamps et créer une version ACTIVE.
+     */
+    await cgweb084SaveActivityRevision(
+      activity,
+      "FIT_REBUILD_EDITOR",
+      {
+        start_offset_s:
+          values.offsetSeconds,
+
+        synthetic_hr:
+          values.synthetic,
+
+        avg_hr:
+          values.synthetic
+            ? values.avgHr
+            : null,
+
+        max_hr:
+          values.synthetic
+            ? values.maxHr
+            : null,
+
+        reconstructed_parent_sha256:
+          current?.sha256 || null
+      }
+    );
+
+    if (status) {
+      status.textContent =
+        "FIT parent créé · application de la nouvelle heure à tous les timestamps…";
+    }
+
+    const editor =
+      window.SPORT_FIT_EDITOR;
+
+    if (!editor?.createActiveVersion) {
+      throw new Error(
+        "API SPORT_FIT_EDITOR absente."
+      );
+    }
+
+    const result =
+      await editor.createActiveVersion(
+        key,
+        {
+          start_offset_s:
+            values.offsetSeconds,
+
+          avg_hr_override:
+            values.synthetic
+              ? values.avgHr
+              : null,
+
+          max_hr_override:
+            values.synthetic
+              ? values.maxHr
+              : null
+        }
+      );
+
+    const patch =
+      result?.activity_patch || {};
+
+    await cgweb121Fix8Fix1ApplyActivityPatch(
+      activity,
+      patch
+    );
+
+    cgweb121Fix8Fix1RebuildEligible.delete(
+      key
+    );
+
+    window.SPORT_FIT_QUICKDOWNLOAD
+      ?.invalidate?.();
+
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+    renderDetail(activity);
+    scheduleDashboardRefresh();
+
+    if (status) {
+      status.textContent =
+        "FITEDITOR001 OK · FIT réellement reconstruit puis modifié · nouvelle version ACTIVE · activité synchronisée.";
+    }
+
+    setMessage(
+      "FIT réellement reconstruit puis modifié. Nouvelle version active créée.",
+      "success"
+    );
+  } finally {
+    if (button) {
+      button.disabled = false;
+    }
+  }
+}
+
+const cgweb121Fix8Fix1BaseRenderFitEditor =
+  cgweb085aRenderFitEditor;
+
+cgweb085aRenderFitEditor =
+  async function cgweb121Fix8Fix1RenderFitEditor(
+    activity
+  ) {
+    await cgweb121Fix8Fix1BaseRenderFitEditor(
+      activity
+    );
+
+    const key =
+      cgweb121Fix8ActivityKey(
+        activity
+      );
+
+    const fitButton =
+      document.getElementById(
+        "cgweb085aApply"
+      );
+
+    const independentButton =
+      document.getElementById(
+        "cgweb121Fix8ActivityTimeApply"
+      );
+
+    const status =
+      document.getElementById(
+        "cgweb085aStatus"
+      );
+
+    if (independentButton) {
+      independentButton.textContent =
+        "Modifier SPORT Web seulement";
+
+      independentButton.title =
+        "Modifie uniquement l’activité dans SPORT Web, sans créer ni modifier de FIT.";
+    }
+
+    const current =
+      window.SPORT_FIT_EDITOR
+        ?.currentRow?.(key);
+
+    if (current) {
+      cgweb121Fix8Fix1RebuildEligible.delete(
+        key
+      );
+
+      if (fitButton) {
+        fitButton.textContent =
+          "Créer et activer la version FIT";
+      }
+
+      return;
+    }
+
+    /*
+     * FIX8 peut avoir trouvé un FIT Cloud non lié unique.
+     * Dans ce cas son bouton est déjà activé :
+     * on garde cette voie, car elle préserve le vrai FIT source.
+     */
+    if (
+      fitButton &&
+      fitButton.disabled === false
+    ) {
+      cgweb121Fix8Fix1RebuildEligible.delete(
+        key
+      );
+
+      fitButton.textContent =
+        "Créer et activer la version FIT";
+
+      return;
+    }
+
+    try {
+      const plan =
+        await cgweb121Fix8Fix1Plan(
+          activity
+        );
+
+      if (!plan.eligible) {
+        cgweb121Fix8Fix1RebuildEligible.delete(
+          key
+        );
+
+        if (fitButton) {
+          fitButton.disabled = true;
+          fitButton.textContent =
+            "FIT non reconstructible";
+        }
+
+        if (status) {
+          status.textContent =
+            "Aucun FIT source fiable et reconstruction impossible à partir des données disponibles" +
+            (
+              plan.status
+                ? " (" +
+                  plan.status +
+                  ")."
+                : "."
+            ) +
+            " La modification « SPORT Web seulement » reste disponible séparément.";
+        }
+
+        return;
+      }
+
+      cgweb121Fix8Fix1RebuildEligible.set(
+        key,
+        true
+      );
+
+      if (fitButton) {
+        fitButton.disabled = false;
+        fitButton.textContent =
+          "Créer / corriger réellement le FIT";
+      }
+
+      if (status) {
+        status.textContent =
+          "Aucun FIT associé, mais l’activité est reconstructible. SPORT Web peut créer un vrai FIT canonique puis appliquer l’heure demandée.";
+      }
+    } catch (error) {
+      cgweb121Fix8Fix1RebuildEligible.delete(
+        key
+      );
+
+      if (fitButton) {
+        fitButton.disabled = true;
+        fitButton.textContent =
+          "Vérification FIT impossible";
+      }
+
+      if (status) {
+        status.textContent =
+          "Vérification de reconstruction FIT impossible : " +
+          (error?.message || error);
+      }
+    }
+  };
+
+const cgweb121Fix8Fix1BaseApplyFitEditor =
+  cgweb085aApplyFitEditor;
+
+cgweb085aApplyFitEditor =
+  async function cgweb121Fix8Fix1ApplyFitEditor() {
+    const activity =
+      currentDetailActivity();
+
+    if (!activity) {
+      throw new Error(
+        "Activité courante introuvable."
+      );
+    }
+
+    const key =
+      cgweb121Fix8ActivityKey(
+        activity
+      );
+
+    const current =
+      window.SPORT_FIT_EDITOR
+        ?.currentRow?.(key);
+
+    if (current) {
+      return cgweb121Fix8Fix1BaseApplyFitEditor();
+    }
+
+    if (
+      cgweb121Fix8Fix1RebuildEligible.get(
+        key
+      ) === true
+    ) {
+      return cgweb121Fix8Fix1RebuildAndEditFit();
+    }
+
+    /*
+     * Sinon on laisse FIX8 gérer son éventuelle
+     * source FIT non liée unique.
+     */
+    return cgweb121Fix8Fix1BaseApplyFitEditor();
+  };
+
+const cgweb121Fix8Fix1BaseRevisionReasonLabel =
+  cgweb084RevisionReasonLabel;
+
+cgweb084RevisionReasonLabel =
+  function cgweb121Fix8Fix1RevisionReasonLabel(
+    reason
+  ) {
+    if (
+      String(reason || "") ===
+      "FIT_REBUILD_EDITOR"
+    ) {
+      return "Reconstruction FIT + modification";
+    }
+
+    return cgweb121Fix8Fix1BaseRevisionReasonLabel(
+      reason
+    );
+  };
+
+window.CGWEB121_FIX8_FIX1_STATUS =
+  function () {
+    const activity =
+      currentDetailActivity();
+
+    const key =
+      activity
+        ? cgweb121Fix8ActivityKey(
+            activity
+          )
+        : "";
+
+    return {
+      build:
+        "CGWEB121_FIX8_FIX1",
+
+      real_fit_rebuild:
+        true,
+
+      missing_fit_api:
+        Boolean(
+          window.SPORT_MISSING_FIT
+            ?.generate
+        ),
+
+      fit_editor_api:
+        Boolean(
+          window.SPORT_FIT_EDITOR
+            ?.createActiveVersion
+        ),
+
+      current_activity_id:
+        key || null,
+
+      current_fit_linked:
+        Boolean(
+          key &&
+          window.SPORT_FIT_EDITOR
+            ?.currentRow?.(key)
+        ),
+
+      rebuild_eligible:
+        key
+          ? (
+              cgweb121Fix8Fix1RebuildEligible
+                .get(key) === true
+            )
+          : false
+    };
+  };
+
+queueMicrotask(() => {
+  try {
+    const activity =
+      currentDetailActivity();
+
+    if (activity) {
+      void cgweb085aRenderFitEditor(
+        activity
+      );
+    }
+  } catch (error) {
+    console.warn(
+      "CGWEB121 FIX8 FIX1 boot",
+      error
+    );
+  }
+});
+
+console.info(
+  "CGWEB121 FIX8 FIX1 actif · REAL_FIT_REBUILD001 / FIT_FIRST_TIME_SYNC001"
+);
+
+/* CGWEB121_FIX8_FIX1_END */
