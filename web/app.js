@@ -54922,3 +54922,627 @@ console.info(
 );
 
 /* CGWEB121_FIX8_FIX4_END */
+/* CGWEB121_FIX8_FIX5_START
+   TARGET_TIME_SINGLE_AUTHORITY001
+   ACTIVE_FIT_DOWNLOAD001
+   FIT_ACTIVITY_FILENAME_TRIPLE_SYNC001
+*/
+
+function cgweb121Fix8Fix5ActivityByKey(activityId) {
+  const key = String(activityId || "").trim();
+  const bridge = window.SPORT_WEB_BRIDGE;
+
+  if (!key || !bridge?.getActivities) return null;
+
+  const rows = Array.isArray(bridge.getActivities())
+    ? bridge.getActivities()
+    : [];
+
+  return rows.find((activity) => {
+    try {
+      return String(bridge.activityKey(activity) || "").trim() === key;
+    } catch (_) {
+      return String(
+        activity?.id ??
+        activity?.__docId ??
+        ""
+      ).trim() === key;
+    }
+  }) || null;
+}
+
+function cgweb121Fix8Fix5SportCode(activity) {
+  const sport = Number(activity?.sport || 0);
+  const sub = Number(
+    activity?.sub_sport ??
+    activity?.subSport ??
+    0
+  );
+
+  if (sport === 1 && [1, 21].includes(sub)) return "T";
+  if (sport === 1) return "C";
+  if (sport === 2 && [5, 6, 58].includes(sub)) return "H";
+  if (sport === 2) return "V";
+  return "C";
+}
+
+function cgweb121Fix8Fix5ParisParts(startMs) {
+  const date = new Date(Number(startMs));
+
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error("Date FIT invalide.");
+  }
+
+  const formatter = new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      timeZone: "Europe/Paris",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23"
+    }
+  );
+
+  const values = {};
+
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type !== "literal") {
+      values[part.type] = part.value;
+    }
+  }
+
+  return values;
+}
+
+function cgweb121Fix8Fix5CanonicalName(activity) {
+  const parts = cgweb121Fix8Fix5ParisParts(
+    activity?.start_time_ms
+  );
+
+  const code = cgweb121Fix8Fix5SportCode(activity);
+
+  return [
+    parts.year,
+    parts.month,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second
+  ].join("_") + "_" + code + ".fit";
+}
+
+async function cgweb121Fix8Fix5ResolveOrCreateSource(activity) {
+  let resolved =
+    await cgweb121Fix8Fix3ResolveSource(activity);
+
+  if (resolved?.source?.sha256) {
+    return resolved;
+  }
+
+  resolved =
+    await cgweb121Fix8Fix3GenerateParent(activity);
+
+  if (!resolved?.source?.sha256) {
+    throw new Error(
+      "Impossible d’obtenir un FIT parent réel pour cette activité."
+    );
+  }
+
+  return resolved;
+}
+
+async function cgweb121Fix8Fix5Apply() {
+  const activity = currentDetailActivity();
+
+  if (!activity) {
+    throw new Error("Activité courante introuvable.");
+  }
+
+  const key = cgweb121Fix8ActivityKey(activity);
+
+  if (!key) {
+    throw new Error("Identifiant activité absent.");
+  }
+
+  const target =
+    cgweb121Fix8Fix3ReadTarget(activity);
+
+  const activityBaseStart =
+    Number(activity?.start_time_ms);
+
+  if (!Number.isFinite(activityBaseStart)) {
+    throw new Error(
+      "Heure actuelle SPORT Web invalide."
+    );
+  }
+
+  const status =
+    document.getElementById("cgweb085aStatus");
+
+  const button =
+    document.getElementById("cgweb085aApply");
+
+  if (button) button.disabled = true;
+
+  try {
+    if (status) {
+      status.textContent =
+        "Synchronisation FIT / activité / nom de fichier…";
+    }
+
+    const resolved =
+      await cgweb121Fix8Fix5ResolveOrCreateSource(
+        activity
+      );
+
+    const source = resolved?.source;
+
+    if (!source?.sha256) {
+      throw new Error("FIT source réel introuvable.");
+    }
+
+    const sourceStart =
+      cgweb121Fix8Fix3SourceStartMs(source);
+
+    /*
+     * POINT CRITIQUE FIX5
+     * -------------------
+     * Le backend FITVERSION/FITEDITOR reconstruit la nouvelle version
+     * canonique à partir de l'activité SPORT courante, puis applique
+     * start_offset_s.
+     *
+     * L'offset envoyé au backend doit donc être calculé depuis
+     * activity.start_time_ms, et NON depuis l'ancien FIT parent.
+     *
+     * La cible saisie par l'utilisateur devient l'unique autorité.
+     */
+    const backendOffsetSeconds =
+      Math.round(
+        (
+          target.newStart -
+          activityBaseStart
+        ) / 1000
+      );
+
+    const sourceLabel =
+      Number.isFinite(sourceStart)
+        ? new Date(sourceStart).toLocaleString("fr-FR")
+        : "inconnue";
+
+    const activityLabel =
+      new Date(activityBaseStart).toLocaleString("fr-FR");
+
+    const targetLabel =
+      new Date(target.newStart).toLocaleString("fr-FR");
+
+    const confirmation = [
+      "Synchroniser réellement les 3 références sur la même heure ?",
+      "",
+      "1. FIT source conservé : " +
+        (source.file_name || source.sha256),
+      "   Heure FIT source : " + sourceLabel,
+      "",
+      "2. Heure SPORT Web actuelle : " + activityLabel,
+      "3. Heure cible unique : " + targetLabel,
+      "",
+      "Décalage canonique appliqué par le moteur FIT : " +
+        (backendOffsetSeconds >= 0 ? "+" : "") +
+        backendOffsetSeconds +
+        " s",
+      "",
+      "Après validation :",
+      "- le nouveau FIT contiendra l’heure cible ;",
+      "- SPORT Web affichera l’heure cible ;",
+      "- le téléchargement utilisera le FIT ACTIVE et un nom basé sur l’heure cible.",
+      "",
+      "Le FIT source original reste conservé."
+    ].join("\n");
+
+    if (!window.confirm(confirmation)) {
+      return;
+    }
+
+    await cgweb084SaveActivityRevision(
+      activity,
+      "FIT_TRIPLE_SYNC",
+      {
+        fit_source_sha256:
+          source.sha256,
+        fit_source_start_time_ms:
+          Number.isFinite(sourceStart)
+            ? sourceStart
+            : null,
+        activity_start_time_ms_before:
+          activityBaseStart,
+        target_start_time_ms:
+          target.newStart,
+        backend_start_offset_s:
+          backendOffsetSeconds,
+        synthetic_hr:
+          target.synthetic,
+        avg_hr:
+          target.synthetic
+            ? target.avgHr
+            : null,
+        max_hr:
+          target.synthetic
+            ? target.maxHr
+            : null
+      }
+    );
+
+    if (status) {
+      status.textContent =
+        "Création de la version FIT à l’heure cible…";
+    }
+
+    const recovery =
+      window.SPORT_FIT_SOURCE_RECOVERY;
+
+    if (
+      !recovery?.createActiveVersionFromSource
+    ) {
+      throw new Error(
+        "API de création de version FIT indisponible."
+      );
+    }
+
+    const result =
+      await recovery.createActiveVersionFromSource(
+        key,
+        source,
+        {
+          start_offset_s:
+            backendOffsetSeconds,
+          avg_hr_override:
+            target.synthetic
+              ? target.avgHr
+              : null,
+          max_hr_override:
+            target.synthetic
+              ? target.maxHr
+              : null
+        }
+      );
+
+    const versionStart =
+      Number(
+        result?.edits?.start_time_ms_version
+      );
+
+    if (
+      Number.isFinite(versionStart) &&
+      Math.abs(
+        versionStart -
+        target.newStart
+      ) > 1000
+    ) {
+      throw new Error(
+        "Contrôle FIX5 : le FIT généré n’a pas l’heure cible. " +
+        "Cible=" +
+        new Date(target.newStart).toLocaleString("fr-FR") +
+        " · FIT=" +
+        new Date(versionStart).toLocaleString("fr-FR")
+      );
+    }
+
+    const file =
+      result?.file || {};
+
+    const activeSha =
+      String(
+        file?.sha256 ||
+        result?.sha256 ||
+        ""
+      ).trim();
+
+    if (!activeSha) {
+      throw new Error(
+        "La nouvelle version FIT ne fournit aucun SHA actif."
+      );
+    }
+
+    const patch = {
+      ...(result?.activity_patch || {}),
+
+      /*
+       * La cible saisie est l'autorité finale.
+       * On l'impose explicitement pour éviter qu'un ancien
+       * start_time_ms SPORT Web survive au retour de navigation.
+       */
+      start_time_ms:
+        target.newStart,
+
+      fit_active_sha256:
+        activeSha,
+
+      fit_active_file_name:
+        file?.file_name ||
+        null,
+
+      fit_active_version_index:
+        Number(
+          file?.version_index ||
+          result?.version_index ||
+          1
+        ),
+
+      fit_time_sync_version:
+        "FIT_ACTIVITY_FILENAME_TRIPLE_SYNC001",
+
+      fit_time_sync_at_ms:
+        Date.now()
+    };
+
+    await cgweb121Fix8Fix1ApplyActivityPatch(
+      activity,
+      patch
+    );
+
+    Object.assign(activity, patch);
+
+    /*
+     * Rafraîchit les caches FIT puis l'interface.
+     */
+    window.SPORT_FIT_QUICKDOWNLOAD
+      ?.invalidate?.();
+
+    await window.SPORT_FIT_EDITOR
+      ?.refresh?.();
+
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+    renderDetail(activity);
+    scheduleDashboardRefresh();
+
+    const expectedName =
+      cgweb121Fix8Fix5CanonicalName(activity);
+
+    if (status) {
+      status.textContent =
+        "FIX5 OK · FIT ACTIVE synchronisé · SPORT Web = " +
+        new Date(target.newStart).toLocaleString("fr-FR") +
+        " · téléchargement = " +
+        expectedName;
+    }
+
+    setMessage(
+      "FIT, SPORT Web et téléchargement synchronisés sur " +
+      new Date(target.newStart).toLocaleTimeString(
+        "fr-FR",
+        {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        }
+      ) +
+      ".",
+      "success"
+    );
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+/*
+ * Remplace l'application FIX3/FIX4 :
+ * la cible saisie pilote désormais les trois références.
+ */
+cgweb085aApplyFitEditor =
+  cgweb121Fix8Fix5Apply;
+
+/*
+ * QUICK DOWNLOAD
+ * --------------
+ * L'icône du répertoire doit télécharger le FIT explicitement
+ * ACTIVE dans l'activité, et non un ancien "preferredRow" du
+ * cache rapide.
+ */
+const cgweb121Fix8Fix5OldQuickDownload =
+  window.SPORT_FIT_QUICKDOWNLOAD;
+
+if (
+  cgweb121Fix8Fix5OldQuickDownload &&
+  window.SPORT_FIT_EXPORT
+) {
+  window.SPORT_FIT_QUICKDOWNLOAD =
+    Object.freeze({
+      version:
+        "FITQUICKDOWNLOAD001+ACTIVE_FIT_DOWNLOAD001",
+
+      availability:
+        async function (activityIds) {
+          const fallback =
+            await cgweb121Fix8Fix5OldQuickDownload
+              .availability(activityIds);
+
+          const out = {
+            ...(fallback || {})
+          };
+
+          for (
+            const raw
+            of Array.isArray(activityIds)
+              ? activityIds
+              : []
+          ) {
+            const key =
+              String(raw || "").trim();
+
+            if (!key) continue;
+
+            const activity =
+              cgweb121Fix8Fix5ActivityByKey(key);
+
+            const sha =
+              String(
+                activity?.fit_active_sha256 ||
+                ""
+              ).trim();
+
+            if (!sha) continue;
+
+            out[key] = {
+              hasFit: true,
+              sha256: sha,
+              file_name:
+                activity?.fit_active_file_name ||
+                cgweb121Fix8Fix5CanonicalName(
+                  activity
+                ),
+              version_index:
+                Number(
+                  activity?.fit_active_version_index ||
+                  1
+                ),
+              root: false,
+              active: true
+            };
+          }
+
+          return out;
+        },
+
+      downloadActivity:
+        async function (activityId) {
+          const key =
+            String(activityId || "").trim();
+
+          const activity =
+            cgweb121Fix8Fix5ActivityByKey(key);
+
+          const sha =
+            String(
+              activity?.fit_active_sha256 ||
+              ""
+            ).trim();
+
+          if (!sha) {
+            return cgweb121Fix8Fix5OldQuickDownload
+              .downloadActivity(activityId);
+          }
+
+          const row = {
+            sha256: sha,
+            file_name:
+              activity?.fit_active_file_name ||
+              sha + ".fit"
+          };
+
+          const downloaded =
+            await window.SPORT_FIT_EXPORT
+              .downloadRowBlob(row);
+
+          const canonicalName =
+            cgweb121Fix8Fix5CanonicalName(
+              activity
+            );
+
+          window.SPORT_WEB_BRIDGE
+            .triggerBlobDownload(
+              downloaded.blob,
+              canonicalName
+            );
+
+          return {
+            activity_id: key,
+            sha256: sha,
+            file_name: canonicalName,
+            version_index:
+              Number(
+                activity?.fit_active_version_index ||
+                1
+              ),
+            active: true
+          };
+        },
+
+      refresh:
+        () =>
+          cgweb121Fix8Fix5OldQuickDownload
+            .refresh(),
+
+      invalidate:
+        () =>
+          cgweb121Fix8Fix5OldQuickDownload
+            .invalidate(),
+
+      preferredRow:
+        (activityId) =>
+          cgweb121Fix8Fix5OldQuickDownload
+            .preferredRow(activityId)
+    });
+
+  window.dispatchEvent(
+    new CustomEvent(
+      "sport-fit-quick-ready"
+    )
+  );
+}
+
+const cgweb121Fix8Fix5BaseRevisionReasonLabel =
+  cgweb084RevisionReasonLabel;
+
+cgweb084RevisionReasonLabel =
+  function cgweb121Fix8Fix5RevisionReasonLabel(
+    reason
+  ) {
+    if (
+      String(reason || "") ===
+      "FIT_TRIPLE_SYNC"
+    ) {
+      return "Synchronisation FIT / heure / téléchargement";
+    }
+
+    return cgweb121Fix8Fix5BaseRevisionReasonLabel(
+      reason
+    );
+  };
+
+window.CGWEB121_FIX8_FIX5_STATUS =
+  function () {
+    const activity =
+      currentDetailActivity();
+
+    return {
+      build:
+        "CGWEB121_FIX8_FIX5",
+
+      target_time_single_authority:
+        true,
+
+      active_fit_download:
+        true,
+
+      activity_id:
+        activity
+          ? cgweb121Fix8ActivityKey(activity)
+          : null,
+
+      activity_start_time_ms:
+        Number(activity?.start_time_ms) || null,
+
+      fit_active_sha256:
+        activity?.fit_active_sha256 || null,
+
+      fit_active_file_name:
+        activity?.fit_active_file_name || null,
+
+      expected_download_name:
+        activity?.start_time_ms
+          ? cgweb121Fix8Fix5CanonicalName(
+              activity
+            )
+          : null
+    };
+  };
+
+console.info(
+  "CGWEB121 FIX8 FIX5 actif · TARGET_TIME_SINGLE_AUTHORITY001 / ACTIVE_FIT_DOWNLOAD001 / FIT_ACTIVITY_FILENAME_TRIPLE_SYNC001"
+);
+
+/* CGWEB121_FIX8_FIX5_END */
