@@ -871,6 +871,167 @@ function createFitVault() {
     }));
   }
 
+
+  /* CGWEB121_FIX8_FIX8_BACKEND_START
+     SINGLE_FIT_REPLACEMENT001
+     DELETE_OLD_FIT_AFTER_VALIDATE001
+     CURRENT_FIT_ONLY001
+  */
+
+  async function v121ReplaceFitFamily(
+    uid,
+    activityId,
+    keepSha,
+    keepFileName,
+    targetStartMs
+  ) {
+    const id = String(activityId || "").trim();
+    const keep = String(keepSha || "").trim().toLowerCase();
+
+    if (!id || !/^[a-f0-9]{64}$/.test(keep)) {
+      throw Object.assign(
+        new Error("SINGLE_FIT_REPLACEMENT001 : identifiants invalides."),
+        {status: 500}
+      );
+    }
+
+    const family = await files(uid)
+      .where("activity_id", "==", id)
+      .limit(500)
+      .get();
+
+    let deletedDocs = 0;
+    let deletedObjects = 0;
+    const cleanupErrors = [];
+
+    for (const docSnap of family.docs) {
+      const row = docSnap.data() || {};
+      const rowSha = String(
+        row.sha256 || docSnap.id || ""
+      ).trim().toLowerCase();
+
+      if (rowSha === keep) continue;
+
+      const objectName = String(
+        row.object_path || ""
+      ).trim();
+
+      if (objectName) {
+        try {
+          await bucket()
+            .file(objectName)
+            .delete({ignoreNotFound: true});
+          deletedObjects += 1;
+        } catch (error) {
+          const code = Number(error?.code || 0);
+          if (code !== 404) {
+            cleanupErrors.push({
+              sha256: rowSha || null,
+              stage: "STORAGE_DELETE",
+              error: error?.message || String(error)
+            });
+            continue;
+          }
+        }
+      }
+
+      try {
+        await docSnap.ref.delete();
+        deletedDocs += 1;
+      } catch (error) {
+        cleanupErrors.push({
+          sha256: rowSha || null,
+          stage: "FIRESTORE_DELETE",
+          error: error?.message || String(error)
+        });
+      }
+    }
+
+    const currentName =
+      safeName(keepFileName || "activity.fit");
+
+    const keepRef = fileDoc(uid, keep);
+
+    await keepRef.set(
+      {
+        file_id: keep,
+        sha256: keep,
+        file_name: currentName,
+        original_name: currentName,
+        activity_id: id,
+        link_status: "LINKED_CURRENT",
+        source: "WEB_FITEDITOR_REPLACE",
+        upload_mode: "CURRENT_CANONICAL",
+        version_index: 1,
+        version_family_id: keep,
+        parent_sha256: null,
+        version_kind: "CURRENT_CANONICAL",
+        is_active_version: true,
+        active_changed_at_ms: Date.now(),
+        replaced_family_version:
+          "SINGLE_FIT_REPLACEMENT001",
+        deleted_at_ms: null,
+        last_seen_at_ms: Date.now()
+      },
+      {merge: true}
+    );
+
+    const remainingSnap = await files(uid)
+      .where("activity_id", "==", id)
+      .limit(500)
+      .get();
+
+    const remainingActive =
+      remainingSnap.docs.filter((snap) => {
+        const row = snap.data() || {};
+        return row.deleted_at_ms == null;
+      });
+
+    const cleanupOk =
+      cleanupErrors.length === 0 &&
+      remainingActive.length === 1 &&
+      String(
+        remainingActive[0]?.data()?.sha256 ||
+        remainingActive[0]?.id ||
+        ""
+      ).trim().toLowerCase() === keep;
+
+    const activityPatch = {
+      start_time_ms: Number(targetStartMs),
+      fit_active_sha256: keep,
+      fit_active_version_index: 1,
+      fit_active_file_name: currentName,
+      fit_replacement_version:
+        "SINGLE_FIT_REPLACEMENT001",
+      fit_replaced_old_count: deletedDocs,
+      fit_replaced_object_count: deletedObjects,
+      fit_replacement_remaining_count:
+        remainingActive.length,
+      fit_replacement_cleanup_ok: cleanupOk,
+      fit_replacement_cleanup_errors:
+        cleanupErrors.slice(0, 20),
+      fit_replacement_at_ms: Date.now()
+    };
+
+    await db.doc(
+      ROOT + "/" + uid + "/activities/" + id
+    ).set(
+      activityPatch,
+      {merge: true}
+    );
+
+    return {
+      ok: cleanupOk,
+      keep_sha256: keep,
+      keep_file_name: currentName,
+      deleted_docs: deletedDocs,
+      deleted_objects: deletedObjects,
+      remaining_count: remainingActive.length,
+      errors: cleanupErrors,
+      activity_patch: activityPatch
+    };
+  }
+
   async function v085aActivateVersion(
     uid,
     activityId,
@@ -941,6 +1102,53 @@ function createFitVault() {
     );
 
     await batch.commit();
+
+    if (edited?.replace_existing_fit === true) {
+      const replacement =
+        await v121ReplaceFitFamily(
+          uid,
+          activityId,
+          fileRow.sha256,
+          fileRow.file_name,
+          edited.payload.start_time_ms
+        );
+
+      patch.start_time_ms =
+        Number(edited.payload.start_time_ms);
+
+      patch.fit_active_sha256 =
+        String(fileRow.sha256 || "");
+
+      patch.fit_active_version_index = 1;
+
+      patch.fit_active_file_name =
+        replacement.keep_file_name ||
+        fileRow.file_name ||
+        null;
+
+      patch.fit_replacement_version =
+        "SINGLE_FIT_REPLACEMENT001";
+
+      patch.fit_replaced_old_count =
+        Number(replacement.deleted_docs || 0);
+
+      patch.fit_replacement_remaining_count =
+        Number(replacement.remaining_count || 0);
+
+      patch.fit_replacement_cleanup_ok =
+        replacement.ok === true;
+
+      patch.fit_replacement_at_ms =
+        Date.now();
+
+      await db.doc(
+        ROOT + "/" + uid + "/activities/" + activityId
+      ).set(
+        patch,
+        {merge: true}
+      );
+    }
+
     return patch;
   }
 
@@ -12694,6 +12902,10 @@ async function c099GlobalDirectoryQuery(
           const route = routeSnap.exists ? routeSnap.data() || {} : {};
           const prepared = v078BuildPayload(activity, route);
           const edited = v078ApplyOverrides(prepared, body);
+
+          edited.replace_existing_fit =
+            body.replace_existing_fit === true;
+
           const generated = await encodeCanonicalFit(edited.payload);
           const validation = await inspectFitBuffer(generated.buffer);
 
@@ -15243,3 +15455,5 @@ module.exports = {createFitVault};
    - le téléchargement direct privilégie le FIT ACTIVE.
 */
 /* CGWEB121_FIX8_FIX7_BACKEND_END */
+
+/* CGWEB121_FIX8_FIX8_BACKEND_END */

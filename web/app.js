@@ -55139,7 +55139,7 @@ async function cgweb121Fix8Fix5Apply() {
       "- SPORT Web affichera l’heure cible ;",
       "- le téléchargement utilisera le FIT ACTIVE et un nom basé sur l’heure cible.",
       "",
-      "Le FIT source original reste conservé."
+      "Après validation du nouveau FIT, les anciens FIT liés à cette activité seront supprimés définitivement du coffre SPORT Web."
     ].join("\n");
 
     if (!window.confirm(confirmation)) {
@@ -55275,6 +55275,14 @@ async function cgweb121Fix8Fix5Apply() {
     ) {
       throw new Error(
         "POSTCONDITION ACTIVITÉ : heure Firestore différente de la cible."
+      );
+    }
+
+    if (
+      result?.activity_patch?.fit_replacement_cleanup_ok !== true
+    ) {
+      throw new Error(
+        "POSTCONDITION REMPLACEMENT : les anciens FIT n'ont pas tous été supprimés."
       );
     }
 
@@ -55605,3 +55613,17 @@ window.CGWEB121_FIX8_FIX7_STATUS = function () {
   };
 };
 /* CGWEB121_FIX8_FIX7_FRONTEND_END */
+
+/* CGWEB121_FIX8_FIX8_FRONTEND_START
+   DELETE_OLD_FIT_AFTER_VALIDATE001
+   CURRENT_FIT_ONLY001
+*/
+window.CGWEB121_FIX8_FIX8_STATUS = function () {
+  return {
+    build: "CGWEB121_FIX8_FIX8",
+    single_fit_replacement: true,
+    delete_old_fit_after_validate: true,
+    current_fit_only: true
+  };
+};
+/* CGWEB121_FIX8_FIX8_FRONTEND_END */

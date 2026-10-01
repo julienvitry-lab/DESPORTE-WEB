@@ -6161,7 +6161,8 @@ async function cgweb121Fix8CreateActiveVersionFromSource(
         max_hr_override: options.max_hr_override ?? null,
         fit_editor_mode: "FITEDITOR001",
         activate_version: true,
-        apply_activity_changes: true
+        apply_activity_changes: true,
+        replace_existing_fit: true
       })
     }
   );
@@ -6223,3 +6224,11 @@ console.info(
 );
 
 /* CGWEB121_FIX8_FIX6_END */
+
+/* CGWEB121_FIX8_FIX8_FITCLOUD_START
+   SINGLE_FIT_REPLACEMENT001
+*/
+console.info(
+  "CGWEB121 FIX8 FIX8 actif · remplacement définitif du FIT après validation"
+);
+/* CGWEB121_FIX8_FIX8_FITCLOUD_END */
