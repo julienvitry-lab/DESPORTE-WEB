@@ -53363,3 +53363,282 @@ console.info(
 );
 
 /* CGWEB121_FIX8_FIX1_END */
+/* CGWEB121_FIX8_FIX2_START
+   LINKED_FIT_LISTALL_RECOVERY001
+   HAS_FIT_FRONTEND_RECONCILE001
+   OLD_FIT_EDITOR_UNLOCK001
+*/
+
+const cgweb121Fix8Fix2LinkedSourceByActivity = new Map();
+
+function cgweb121Fix8Fix2VersionNumber(row) {
+  const n = Number(row?.version_index || 1);
+  return Number.isFinite(n) ? n : 1;
+}
+
+function cgweb121Fix8Fix2TimeNumber(row) {
+  const values = [
+    row?.active_changed_at_ms,
+    row?.uploaded_at_ms,
+    row?.first_uploaded_at_ms,
+    row?.created_at_ms
+  ];
+
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  return 0;
+}
+
+function cgweb121Fix8Fix2ChooseLinkedRow(rows) {
+  return [...rows].sort((a, b) => {
+    const activeA = a?.is_active_version === true ? 1 : 0;
+    const activeB = b?.is_active_version === true ? 1 : 0;
+
+    if (activeA !== activeB) {
+      return activeB - activeA;
+    }
+
+    const versionA = cgweb121Fix8Fix2VersionNumber(a);
+    const versionB = cgweb121Fix8Fix2VersionNumber(b);
+
+    if (versionA !== versionB) {
+      return versionB - versionA;
+    }
+
+    return (
+      cgweb121Fix8Fix2TimeNumber(b) -
+      cgweb121Fix8Fix2TimeNumber(a)
+    );
+  })[0] || null;
+}
+
+async function cgweb121Fix8Fix2FindExplicitLinkedFit(activity) {
+  const key = cgweb121Fix8ActivityKey(activity);
+
+  if (!key) {
+    return {
+      key: "",
+      rows: [],
+      row: null
+    };
+  }
+
+  const exportApi = window.SPORT_FIT_EXPORT;
+
+  if (!exportApi?.allRows) {
+    return {
+      key,
+      rows: [],
+      row: null,
+      error: "SPORT_FIT_EXPORT.allRows indisponible"
+    };
+  }
+
+  const allRows = await exportApi.allRows();
+
+  const linkedRows = (Array.isArray(allRows) ? allRows : [])
+    .filter((row) => row && row.deleted_at_ms == null)
+    .filter(
+      (row) =>
+        String(row?.activity_id || "").trim() === key
+    );
+
+  return {
+    key,
+    rows: linkedRows,
+    row: cgweb121Fix8Fix2ChooseLinkedRow(linkedRows)
+  };
+}
+
+const cgweb121Fix8Fix2BaseRenderFitEditor =
+  cgweb085aRenderFitEditor;
+
+cgweb085aRenderFitEditor =
+  async function cgweb121Fix8Fix2RenderFitEditor(activity) {
+    await cgweb121Fix8Fix2BaseRenderFitEditor(activity);
+
+    const key = cgweb121Fix8ActivityKey(activity);
+
+    if (!key) return;
+
+    const current =
+      window.SPORT_FIT_EDITOR
+        ?.currentRow?.(key);
+
+    if (current) {
+      cgweb121Fix8Fix2LinkedSourceByActivity.delete(key);
+      return;
+    }
+
+    const fitButton =
+      document.getElementById("cgweb085aApply");
+
+    const status =
+      document.getElementById("cgweb085aStatus");
+
+    const meta =
+      document.getElementById("cgweb085aMeta");
+
+    try {
+      const found =
+        await cgweb121Fix8Fix2FindExplicitLinkedFit(activity);
+
+      const source = found?.row || null;
+
+      if (!source) {
+        cgweb121Fix8Fix2LinkedSourceByActivity.delete(key);
+        return;
+      }
+
+      cgweb121Fix8Fix2LinkedSourceByActivity.set(
+        key,
+        source
+      );
+
+      cgweb121Fix8RecoveredSourceByActivity.set(
+        key,
+        source
+      );
+
+      cgweb121Fix8Fix1RebuildEligible.delete(
+        key
+      );
+
+      if (fitButton) {
+        fitButton.disabled = false;
+        fitButton.textContent =
+          "Corriger le FIT associé";
+      }
+
+      const version =
+        cgweb121Fix8Fix2VersionNumber(source);
+
+      if (meta) {
+        meta.textContent =
+          "FIT lié retrouvé · " +
+          (source.file_name ||
+            source.sha256 ||
+            "FIT Cloud") +
+          " · v" +
+          version;
+      }
+
+      if (status) {
+        status.textContent =
+          "HAS_FIT réconcilié : un FIT est bien explicitement lié à cette activité dans le coffre complet. " +
+          "Il peut maintenant être utilisé comme source réelle pour modifier l’heure du FIT.";
+      }
+
+      console.info(
+        "CGWEB121 FIX8 FIX2 · FIT lié récupéré",
+        {
+          activity_id: key,
+          sha256: source?.sha256 || null,
+          file_name: source?.file_name || null,
+          version_index: version,
+          linked_rows: found?.rows?.length || 0
+        }
+      );
+    } catch (error) {
+      console.warn(
+        "CGWEB121 FIX8 FIX2 · récupération FIT lié",
+        error
+      );
+
+      if (
+        status &&
+        String(status.textContent || "").includes("(HAS_FIT)")
+      ) {
+        status.textContent =
+          "Le backend signale HAS_FIT, mais la récupération du FIT lié a échoué : " +
+          (error?.message || error);
+      }
+    }
+  };
+
+window.CGWEB121_FIX8_FIX2_STATUS =
+  async function () {
+    const activity =
+      currentDetailActivity();
+
+    if (!activity) {
+      return {
+        build: "CGWEB121_FIX8_FIX2",
+        activity: null
+      };
+    }
+
+    const key =
+      cgweb121Fix8ActivityKey(activity);
+
+    const current =
+      window.SPORT_FIT_EDITOR
+        ?.currentRow?.(key) || null;
+
+    const full =
+      await cgweb121Fix8Fix2FindExplicitLinkedFit(
+        activity
+      );
+
+    return {
+      build:
+        "CGWEB121_FIX8_FIX2",
+
+      activity_id:
+        key,
+
+      quick_current_fit:
+        current
+          ? {
+              sha256:
+                current.sha256 || null,
+              file_name:
+                current.file_name || null,
+              version_index:
+                current.version_index || 1
+            }
+          : null,
+
+      full_linked_count:
+        full?.rows?.length || 0,
+
+      selected_linked_fit:
+        full?.row
+          ? {
+              sha256:
+                full.row.sha256 || null,
+              file_name:
+                full.row.file_name || null,
+              version_index:
+                full.row.version_index || 1,
+              is_active_version:
+                full.row.is_active_version === true
+            }
+          : null
+    };
+  };
+
+queueMicrotask(() => {
+  try {
+    const activity =
+      currentDetailActivity();
+
+    if (activity) {
+      void cgweb085aRenderFitEditor(activity);
+    }
+  } catch (error) {
+    console.warn(
+      "CGWEB121 FIX8 FIX2 boot",
+      error
+    );
+  }
+});
+
+console.info(
+  "CGWEB121 FIX8 FIX2 actif · LINKED_FIT_LISTALL_RECOVERY001 / HAS_FIT_FRONTEND_RECONCILE001"
+);
+
+/* CGWEB121_FIX8_FIX2_END */
