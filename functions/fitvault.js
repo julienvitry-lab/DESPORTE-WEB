@@ -12858,6 +12858,18 @@ async function c099GlobalDirectoryQuery(
           }
           if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
 
+          /*
+           * CGWEB121 FIX8 FIX9 · VERSION_EDITOR_MODE_SCOPE001
+           *
+           * Le bloc "version" utilisait editorMode plus bas sans jamais
+           * le déclarer dans sa portée. En mode strict, cela provoquait
+           * un ReferenceError au runtime avant la création/activation
+           * du nouveau FIT.
+           */
+          const editorMode =
+            String(body.fit_editor_mode || "")
+              .toUpperCase() === "FITEDITOR001";
+
           const activityId = String(body.activity_id || "").trim();
           if (!activityId || activityId.includes("/")) {
             return res.status(400).json({error: "FITVERSION001 : activity_id requis."});
@@ -15457,3 +15469,9 @@ module.exports = {createFitVault};
 /* CGWEB121_FIX8_FIX7_BACKEND_END */
 
 /* CGWEB121_FIX8_FIX8_BACKEND_END */
+
+/* CGWEB121_FIX8_FIX9_BACKEND_START
+   VERSION_EDITOR_MODE_SCOPE001
+   FITEDITOR_RUNTIME_UNBLOCK001
+*/
+/* CGWEB121_FIX8_FIX9_BACKEND_END */
