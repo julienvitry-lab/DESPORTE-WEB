@@ -54495,3 +54495,430 @@ console.info(
 );
 
 /* CGWEB121_FIX8_FIX3_END */
+/* CGWEB121_FIX8_FIX4_START
+   HAS_FIT_PLAN_SHA_RECOVERY001
+   FIT_BLOB_TIME_DECODE001
+   EDITOR_UNLOCK_FROM_BACKEND001
+*/
+
+async function cgweb121Fix8Fix4PlanSource(activity) {
+  const key = cgweb121Fix8ActivityKey(activity);
+
+  if (!key) {
+    return {
+      source: null,
+      status: "NO_ACTIVITY_ID",
+      row: null
+    };
+  }
+
+  const plan =
+    await cgweb121Fix8Fix1Plan(activity);
+
+  const row = plan?.row || null;
+  const status = String(
+    plan?.status ||
+    row?.status ||
+    "UNKNOWN"
+  );
+
+  if (status !== "HAS_FIT") {
+    return {
+      source: null,
+      status,
+      row
+    };
+  }
+
+  const sha256 = String(
+    row?.sha256 ||
+    row?.file_id ||
+    ""
+  ).trim();
+
+  if (!sha256) {
+    return {
+      source: null,
+      status: "HAS_FIT_WITHOUT_SHA",
+      row
+    };
+  }
+
+  return {
+    status: "HAS_FIT",
+    row,
+    source: {
+      ...row,
+      activity_id: key,
+      sha256,
+      file_name:
+        String(
+          row?.file_name ||
+          sha256 + ".fit"
+        ),
+      cgweb121_fix8_fix4_source:
+        "MISSING_FIT_PLAN_EXACT_SHA"
+    }
+  };
+}
+
+async function cgweb121Fix8Fix4HydrateSource(source) {
+  if (!source?.sha256) {
+    return source || null;
+  }
+
+  const already =
+    cgweb121Fix8Fix3SourceStartMs(source);
+
+  if (Number.isFinite(already)) {
+    return source;
+  }
+
+  const api =
+    window.SPORT_FIT_EXPORT;
+
+  const bridge =
+    window.SPORT_WEB_BRIDGE;
+
+  if (
+    !api?.downloadRowBlob ||
+    !bridge?.decodeFitActivity
+  ) {
+    return source;
+  }
+
+  const downloaded =
+    await api.downloadRowBlob(source);
+
+  const blob =
+    downloaded?.blob;
+
+  if (!blob?.arrayBuffer) {
+    return source;
+  }
+
+  const buffer =
+    await blob.arrayBuffer();
+
+  const fileName =
+    downloaded?.fileName ||
+    source.file_name ||
+    source.sha256 + ".fit";
+
+  const decoded =
+    bridge.decodeFitActivity(
+      buffer,
+      fileName
+    );
+
+  const decodedStart =
+    Number(
+      decoded?.session?.start_time_ms
+    );
+
+  if (
+    !Number.isFinite(decodedStart) ||
+    decodedStart <= 0
+  ) {
+    throw new Error(
+      "FIT retrouvé mais heure de départ illisible dans le fichier."
+    );
+  }
+
+  return {
+    ...source,
+    start_time_ms:
+      decodedStart,
+    cgweb121_fix8_fix4_time_source:
+      "FIT_BLOB_DECODE"
+  };
+}
+
+const cgweb121Fix8Fix4BaseResolveSource =
+  cgweb121Fix8Fix3ResolveSource;
+
+cgweb121Fix8Fix3ResolveSource =
+  async function cgweb121Fix8Fix4ResolveSource(
+    activity
+  ) {
+    const base =
+      await cgweb121Fix8Fix4BaseResolveSource(
+        activity
+      );
+
+    if (base?.source) {
+      return {
+        ...base,
+        source:
+          await cgweb121Fix8Fix4HydrateSource(
+            base.source
+          )
+      };
+    }
+
+    const plan =
+      await cgweb121Fix8Fix4PlanSource(
+        activity
+      );
+
+    if (!plan?.source) {
+      return {
+        source: null,
+        mode:
+          plan?.status ||
+          base?.mode ||
+          "NONE",
+        plan_row:
+          plan?.row || null
+      };
+    }
+
+    const hydrated =
+      await cgweb121Fix8Fix4HydrateSource(
+        plan.source
+      );
+
+    const key =
+      cgweb121Fix8ActivityKey(activity);
+
+    cgweb121Fix8RecoveredSourceByActivity.set(
+      key,
+      hydrated
+    );
+
+    return {
+      source:
+        hydrated,
+      mode:
+        "HAS_FIT_PLAN_EXACT_SHA",
+      plan_row:
+        plan.row || null
+    };
+  };
+
+const cgweb121Fix8Fix4BaseRender =
+  cgweb085aRenderFitEditor;
+
+cgweb085aRenderFitEditor =
+  async function cgweb121Fix8Fix4Render(
+    activity
+  ) {
+    await cgweb121Fix8Fix4BaseRender(
+      activity
+    );
+
+    const key =
+      cgweb121Fix8ActivityKey(
+        activity
+      );
+
+    const button =
+      document.getElementById(
+        "cgweb085aApply"
+      );
+
+    const status =
+      document.getElementById(
+        "cgweb085aStatus"
+      );
+
+    const meta =
+      document.getElementById(
+        "cgweb085aMeta"
+      );
+
+    if (!button || !key) {
+      return;
+    }
+
+    try {
+      const resolved =
+        await cgweb121Fix8Fix3ResolveSource(
+          activity
+        );
+
+      const source =
+        resolved?.source;
+
+      if (!source?.sha256) {
+        if (
+          String(
+            resolved?.mode || ""
+          ) ===
+          "HAS_FIT_WITHOUT_SHA"
+        ) {
+          button.disabled = true;
+          button.textContent =
+            "FIT signalé mais référence absente";
+
+          if (status) {
+            status.textContent =
+              "Le backend signale HAS_FIT mais ne fournit aucun SHA exploitable. Aucune modification du FIT n’est lancée.";
+          }
+        }
+
+        return;
+      }
+
+      button.disabled = false;
+      button.textContent =
+        "Modifier réellement le FIT";
+
+      if (meta) {
+        meta.textContent =
+          "FIT source réel · " +
+          (
+            source.file_name ||
+            source.sha256
+          );
+      }
+
+      const startMs =
+        cgweb121Fix8Fix3SourceStartMs(
+          source
+        );
+
+      if (status) {
+        status.textContent =
+          "FIT source réel récupéré par son SHA exact" +
+          (
+            Number.isFinite(startMs)
+              ? " · départ FIT : " +
+                new Date(
+                  startMs
+                ).toLocaleString("fr-FR")
+              : ""
+          ) +
+          " · prêt pour modification.";
+      }
+
+      console.info(
+        "CGWEB121 FIX8 FIX4 · source exacte prête",
+        {
+          activity_id: key,
+          sha256:
+            source.sha256,
+          file_name:
+            source.file_name || null,
+          source_mode:
+            resolved?.mode || null,
+          start_time_ms:
+            startMs || null
+        }
+      );
+    } catch (error) {
+      button.disabled = true;
+      button.textContent =
+        "FIT à vérifier";
+
+      if (status) {
+        status.textContent =
+          "FIT retrouvé mais non exploitable : " +
+          (
+            error?.message ||
+            error
+          );
+      }
+
+      console.error(
+        "CGWEB121 FIX8 FIX4",
+        error
+      );
+    }
+  };
+
+window.CGWEB121_FIX8_FIX4_STATUS =
+  async function () {
+    const activity =
+      currentDetailActivity();
+
+    if (!activity) {
+      return {
+        build:
+          "CGWEB121_FIX8_FIX4",
+        activity:
+          null
+      };
+    }
+
+    const plan =
+      await cgweb121Fix8Fix4PlanSource(
+        activity
+      );
+
+    const resolved =
+      await cgweb121Fix8Fix3ResolveSource(
+        activity
+      ).catch(
+        (error) => ({
+          source: null,
+          mode: "ERROR",
+          error:
+            error?.message ||
+            String(error)
+        })
+      );
+
+    return {
+      build:
+        "CGWEB121_FIX8_FIX4",
+
+      activity_id:
+        cgweb121Fix8ActivityKey(
+          activity
+        ),
+
+      plan_status:
+        plan?.status || null,
+
+      plan_sha256:
+        plan?.source?.sha256 || null,
+
+      plan_file_name:
+        plan?.source?.file_name || null,
+
+      resolved_mode:
+        resolved?.mode || null,
+
+      resolved_source:
+        resolved?.source
+          ? {
+              sha256:
+                resolved.source.sha256 || null,
+              file_name:
+                resolved.source.file_name || null,
+              start_time_ms:
+                cgweb121Fix8Fix3SourceStartMs(
+                  resolved.source
+                )
+            }
+          : null,
+
+      error:
+        resolved?.error || null
+    };
+  };
+
+queueMicrotask(() => {
+  try {
+    const activity =
+      currentDetailActivity();
+
+    if (activity) {
+      void cgweb085aRenderFitEditor(
+        activity
+      );
+    }
+  } catch (error) {
+    console.warn(
+      "CGWEB121 FIX8 FIX4 boot",
+      error
+    );
+  }
+});
+
+console.info(
+  "CGWEB121 FIX8 FIX4 actif · HAS_FIT_PLAN_SHA_RECOVERY001 / FIT_BLOB_TIME_DECODE001"
+);
+
+/* CGWEB121_FIX8_FIX4_END */
