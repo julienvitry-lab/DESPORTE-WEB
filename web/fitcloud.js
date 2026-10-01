@@ -6154,7 +6154,8 @@ async function cgweb121Fix8CreateActiveVersionFromSource(
         avg_hr_override: options.avg_hr_override ?? null,
         max_hr_override: options.max_hr_override ?? null,
         fit_editor_mode: "FITEDITOR001",
-        activate_version: true
+        activate_version: true,
+        apply_activity_changes: true
       })
     }
   );
@@ -6185,3 +6186,34 @@ console.info(
 );
 
 /* CGWEB121_FIX8_FIT_SOURCE_RECOVERY_END */
+
+/* CGWEB121_FIX8_FIX6_START
+   RECOVERY_APPLY_ACTIVITY_CHANGES001
+   ACTIVE_MANIFEST_PERSIST001
+   FIT_TRIPLE_SYNC_REPAIR001
+
+   Le chemin FIT_SOURCE_RECOVERY001 appelle désormais l'endpoint
+   "version" avec apply_activity_changes=true, exactement comme
+   FITEDITOR001 natif.
+
+   Cela impose côté backend :
+   - start_time_ms activité = start_time_ms de la version FIT active ;
+   - fit_active_sha256 = SHA de la version active ;
+   - fit_active_file_name = nom canonique de la version active ;
+   - fit_active_version_index = version active.
+*/
+
+window.CGWEB121_FIX8_FIX6_STATUS = function () {
+  return {
+    build: "CGWEB121_FIX8_FIX6",
+    recovery_apply_activity_changes: true,
+    active_manifest_persist: true,
+    triple_sync_repair: true
+  };
+};
+
+console.info(
+  "CGWEB121 FIX8 FIX6 actif · RECOVERY_APPLY_ACTIVITY_CHANGES001"
+);
+
+/* CGWEB121_FIX8_FIX6_END */
