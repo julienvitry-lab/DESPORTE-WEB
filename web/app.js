@@ -56085,3 +56085,508 @@ console.info(
   "CGWEB122 actif · FIT_JOIN_REPLACE001 / DESTINATION_ACTIVITY_MERGE001 / SOURCE_DELETE_AFTER_VALIDATE001"
 );
 /* CGWEB122_FRONTEND_END */
+
+/* CGWEB122_FIX1_START */
+(function(){
+  const FIX_ID = 'cgweb122-fix1';
+  const PANEL_TITLE_TEXT = 'Joindre des activités du même jour';
+
+  function safeText(v, fallback='—') {
+    if (v === null || v === undefined) return fallback;
+    const s = String(v).trim();
+    return s ? s : fallback;
+  }
+
+  function formatNumberFr(n, digits=2) {
+    if (!Number.isFinite(n)) return null;
+    return new Intl.NumberFormat('fr-FR', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    }).format(n);
+  }
+
+  function pickNumber(obj, keys) {
+    if (!obj || typeof obj !== 'object') return null;
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === 'number' && Number.isFinite(v)) return v;
+      if (typeof v === 'string') {
+        const parsed = Number(String(v).replace(',', '.'));
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+    return null;
+  }
+
+  function pickValue(obj, keys) {
+    if (!obj || typeof obj !== 'object') return null;
+    for (const k of keys) {
+      const v = obj[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    return null;
+  }
+
+  function formatDistance(activity) {
+    const km = pickNumber(activity, [
+      'distanceKm', 'distance_km', 'km', 'distance_kilometers'
+    ]);
+    if (km !== null) return `${formatNumberFr(km, 2)} km`;
+
+    const meters = pickNumber(activity, [
+      'distance', 'distanceMeters', 'distance_m', 'meters'
+    ]);
+    if (meters !== null) return `${formatNumberFr(meters / 1000, 2)} km`;
+
+    return '—';
+  }
+
+  function formatDplus(activity) {
+    const d = pickNumber(activity, [
+      'elevationGain', 'elevation_gain', 'dPlus', 'd_plus',
+      'totalAscent', 'ascent', 'uphill', 'gain'
+    ]);
+    if (d === null) return '—';
+    return `${Math.round(d)} m`;
+  }
+
+  function formatDuration(activity) {
+    const sec = pickNumber(activity, [
+      'elapsedTime', 'elapsed_time', 'movingTime', 'moving_time',
+      'duration', 'time', 'seconds'
+    ]);
+    if (sec === null) {
+      const txt = pickValue(activity, ['durationLabel', 'timeLabel', 'elapsedLabel']);
+      return txt ? String(txt) : '—';
+    }
+
+    const s = Math.max(0, Math.round(sec));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
+    if (h > 0) return `${h} h ${String(m).padStart(2,'0')} min ${String(r).padStart(2,'0')} s`;
+    if (m > 0) return `${m} min ${String(r).padStart(2,'0')} s`;
+    return `${r} s`;
+  }
+
+  function extractTimeString(activity) {
+    const direct = pickValue(activity, [
+      'startTimeLabel', 'timeLabel', 'hourLabel', 'heureLabel'
+    ]);
+    if (direct) return String(direct);
+
+    const raw = pickValue(activity, [
+      'localStartTime', 'startTime', 'dateTime', 'start_date_local', 'start_date'
+    ]);
+    if (raw) {
+      const s = String(raw);
+      const m = s.match(/\b(\d{2}:\d{2}(?::\d{2})?)\b/);
+      if (m) return m[1];
+    }
+
+    const h = pickValue(activity, ['hour', 'time', 'startHour']);
+    if (h) return String(h);
+
+    return '—';
+  }
+
+  function extractDateString(activity) {
+    const direct = pickValue(activity, [
+      'dateLabel', 'localDateLabel', 'date'
+    ]);
+    if (direct && /\d{2}\/\d{2}\/\d{4}/.test(String(direct))) return String(direct);
+
+    const raw = pickValue(activity, [
+      'localStartTime', 'startTime', 'dateTime', 'start_date_local', 'start_date'
+    ]);
+    if (raw) {
+      const s = String(raw);
+      const m = s.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
+      if (m) return m[1];
+      const iso = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+      if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+    }
+
+    return '—';
+  }
+
+  function extractEquipment(activity) {
+    const value = pickValue(activity, [
+      'equipmentLabel', 'equipmentName', 'materialLabel', 'materialName',
+      'gearLabel', 'gearName', 'shoeLabel', 'shoeName', 'bikeLabel', 'bikeName'
+    ]);
+    return safeText(value, '—');
+  }
+
+  function extractRepere(activity) {
+    const value = pickValue(activity, [
+      'markerLabel', 'repereLabel', 'repere', 'markers', 'tagsLabel'
+    ]);
+    return safeText(value, '—');
+  }
+
+  function normalizeCandidateArray(value) {
+    if (!Array.isArray(value)) return [];
+    return value.filter(Boolean);
+  }
+
+  function discoverJoinState() {
+    const directCandidates = [
+      window.cgweb122State,
+      window.CGWEB122_STATE,
+      window.__cgweb122State,
+      window.__CGWEB122_STATE
+    ].filter(Boolean);
+
+    for (const state of directCandidates) {
+      const candidates = normalizeCandidateArray(
+        state.candidates || state.eligibleActivities || state.rows || state.items
+      );
+      const destination =
+        state.destination || state.destinationActivity || state.current || state.target || null;
+      if (destination || candidates.length) {
+        return { state, destination, candidates };
+      }
+    }
+
+    for (const key of Object.keys(window)) {
+      let value;
+      try {
+        value = window[key];
+      } catch (_) {
+        continue;
+      }
+      if (!value || typeof value !== 'object') continue;
+
+      const candidates = normalizeCandidateArray(
+        value.candidates || value.eligibleActivities || value.rows || value.items
+      );
+      const destination =
+        value.destination || value.destinationActivity || value.current || value.target || null;
+
+      if ((destination || candidates.length) && candidates.every(v => typeof v === 'object')) {
+        return { state: value, destination, candidates, key };
+      }
+    }
+
+    return null;
+  }
+
+  function ensureStyles() {
+    if (document.getElementById('cgweb122-fix1-style')) return;
+    const style = document.createElement('style');
+    style.id = 'cgweb122-fix1-style';
+    style.textContent = `
+      .cgweb122fix1-destination {
+        margin: 12px 0 14px 0;
+        border: 1px solid rgba(170, 255, 0, 0.35);
+        border-radius: 14px;
+        padding: 12px 14px;
+        background: rgba(170,255,0,0.05);
+      }
+      .cgweb122fix1-destination-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        margin-bottom: 6px;
+        color: #d8ff70;
+      }
+      .cgweb122fix1-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        align-items: center;
+      }
+      .cgweb122fix1-pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(170, 255, 0, 0.20);
+        font-size: 0.95rem;
+        line-height: 1.2;
+      }
+      .cgweb122fix1-candidates {
+        margin: 12px 0 12px 0;
+        border: 1px solid rgba(170, 255, 0, 0.18);
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      .cgweb122fix1-head,
+      .cgweb122fix1-row {
+        display: grid;
+        grid-template-columns: 56px 110px 110px 150px 110px minmax(220px, 1.5fr) 110px;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 14px;
+      }
+      .cgweb122fix1-head {
+        font-weight: 700;
+        font-size: 0.92rem;
+        opacity: 0.9;
+        background: rgba(255,255,255,0.03);
+        border-bottom: 1px solid rgba(170,255,0,0.12);
+      }
+      .cgweb122fix1-row {
+        border-bottom: 1px solid rgba(170,255,0,0.10);
+      }
+      .cgweb122fix1-row:last-child {
+        border-bottom: none;
+      }
+      .cgweb122fix1-row:hover {
+        background: rgba(255,255,255,0.025);
+      }
+      .cgweb122fix1-select {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .cgweb122fix1-select input {
+        width: 22px;
+        height: 22px;
+        cursor: pointer;
+      }
+      .cgweb122fix1-eq {
+        font-weight: 700;
+      }
+      .cgweb122fix1-empty {
+        padding: 12px 14px;
+        opacity: 0.75;
+      }
+      .cgweb122fix1-hidden-raw {
+        display: none !important;
+      }
+      @media (max-width: 1280px) {
+        .cgweb122fix1-head,
+        .cgweb122fix1-row {
+          grid-template-columns: 50px 90px 95px 130px 95px minmax(170px, 1.2fr) 90px;
+          gap: 8px;
+          font-size: 0.92rem;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function renderDestinationBanner(activity) {
+    if (!activity) return '';
+    return `
+      <div class="cgweb122fix1-destination">
+        <div class="cgweb122fix1-destination-title">Destination conservée</div>
+        <div class="cgweb122fix1-meta">
+          <span class="cgweb122fix1-pill">${safeText(extractTimeString(activity))}</span>
+          <span class="cgweb122fix1-pill">${safeText(formatDistance(activity))}</span>
+          <span class="cgweb122fix1-pill">${safeText(formatDuration(activity))}</span>
+          <span class="cgweb122fix1-pill">${safeText(formatDplus(activity))} D+</span>
+          <span class="cgweb122fix1-pill">${safeText(extractEquipment(activity))}</span>
+          <span class="cgweb122fix1-pill">${safeText(extractRepere(activity))}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCandidateTable(candidates, rawCheckboxes) {
+    if (!candidates.length || !rawCheckboxes.length) {
+      return `<div class="cgweb122fix1-empty">Aucune activité candidate recherchée.</div>`;
+    }
+
+    const head = `
+      <div class="cgweb122fix1-head">
+        <div>Sélect.</div>
+        <div>Heure</div>
+        <div>Distance</div>
+        <div>Temps</div>
+        <div>D+</div>
+        <div>Matériel</div>
+        <div>Repères</div>
+      </div>
+    `;
+
+    const rows = candidates.map((activity, idx) => {
+      const raw = rawCheckboxes[idx];
+      const checked = !!raw?.checked;
+      return `
+        <div class="cgweb122fix1-row" data-cgweb122fix1-row="${idx}">
+          <div class="cgweb122fix1-select">
+            <input type="checkbox" data-cgweb122fix1-proxy="${idx}" ${checked ? 'checked' : ''}>
+          </div>
+          <div>${safeText(extractTimeString(activity))}</div>
+          <div>${safeText(formatDistance(activity))}</div>
+          <div>${safeText(formatDuration(activity))}</div>
+          <div>${safeText(formatDplus(activity))}</div>
+          <div class="cgweb122fix1-eq">${safeText(extractEquipment(activity))}</div>
+          <div>${safeText(extractRepere(activity))}</div>
+        </div>
+      `;
+    }).join('');
+
+    return `<div class="cgweb122fix1-candidates">${head}${rows}</div>`;
+  }
+
+  function findJoinPanelRoot() {
+    const headings = Array.from(document.querySelectorAll('*')).filter(el => {
+      if (!el || !el.textContent) return false;
+      const txt = el.textContent.trim();
+      return txt === PANEL_TITLE_TEXT;
+    });
+
+    if (!headings.length) return null;
+
+    for (const h of headings) {
+      let cur = h;
+      for (let i = 0; i < 6 && cur; i++) {
+        if (cur.querySelector && cur.querySelector('button')) {
+          const txt = cur.textContent || '';
+          if (txt.includes('Rechercher les activités analogues') || txt.includes('Préparer la fusion')) {
+            return cur;
+          }
+        }
+        cur = cur.parentElement;
+      }
+    }
+    return null;
+  }
+
+  function guessRawCandidateWrapper(panelRoot) {
+    const checkboxes = Array.from(panelRoot.querySelectorAll('input[type="checkbox"]'));
+    if (!checkboxes.length) return null;
+    const candidateCheckboxes = checkboxes.filter(cb => !cb.closest('.cgweb122fix1-enhanced'));
+    if (!candidateCheckboxes.length) return null;
+
+    let wrapper = candidateCheckboxes[0].parentElement;
+    for (let i = 0; i < 5 && wrapper; i++) {
+      if (wrapper.parentElement && wrapper.parentElement.querySelectorAll('input[type="checkbox"]').length >= candidateCheckboxes.length) {
+        wrapper = wrapper.parentElement;
+      } else {
+        break;
+      }
+    }
+    return wrapper;
+  }
+
+  function getRawCandidateCheckboxes(panelRoot) {
+    const wrapper = guessRawCandidateWrapper(panelRoot);
+    if (!wrapper) return [];
+    const boxes = Array.from(wrapper.querySelectorAll('input[type="checkbox"]')).filter(cb => {
+      return !cb.closest('.cgweb122fix1-enhanced');
+    });
+    return boxes;
+  }
+
+  function findPrepareButton(panelRoot) {
+    return Array.from(panelRoot.querySelectorAll('button')).find(btn =>
+      (btn.textContent || '').includes('Préparer la fusion')
+    ) || null;
+  }
+
+  function enhanceJoinPanel() {
+    ensureStyles();
+
+    const panelRoot = findJoinPanelRoot();
+    if (!panelRoot) return false;
+
+    const discovered = discoverJoinState();
+    if (!discovered) return false;
+
+    const destination = discovered.destination || null;
+    const candidates = discovered.candidates || [];
+    const rawCheckboxes = getRawCandidateCheckboxes(panelRoot);
+    const prepareButton = findPrepareButton(panelRoot);
+
+    if (!prepareButton) return false;
+
+    const signature = JSON.stringify({
+      d: destination ? [
+        extractDateString(destination),
+        extractTimeString(destination),
+        formatDistance(destination),
+        extractEquipment(destination)
+      ] : null,
+      c: candidates.map(c => [
+        extractTimeString(c),
+        formatDistance(c),
+        extractEquipment(c),
+        extractRepere(c)
+      ]),
+      n: rawCheckboxes.map(cb => !!cb.checked)
+    });
+
+    let mount = panelRoot.querySelector('.cgweb122fix1-enhanced');
+    if (!mount) {
+      mount = document.createElement('div');
+      mount.className = 'cgweb122fix1-enhanced';
+      prepareButton.parentElement.insertBefore(mount, prepareButton);
+    }
+
+    if (mount.dataset.signature === signature) return true;
+    mount.dataset.signature = signature;
+
+    const rawWrapper = guessRawCandidateWrapper(panelRoot);
+    if (rawWrapper) rawWrapper.classList.add('cgweb122fix1-hidden-raw');
+
+    mount.innerHTML = `
+      ${renderDestinationBanner(destination)}
+      ${renderCandidateTable(candidates, rawCheckboxes)}
+    `;
+
+    mount.querySelectorAll('[data-cgweb122fix1-proxy]').forEach(proxy => {
+      proxy.addEventListener('change', () => {
+        const idx = Number(proxy.getAttribute('data-cgweb122fix1-proxy'));
+        const raw = rawCheckboxes[idx];
+        if (!raw) return;
+        raw.checked = proxy.checked;
+        raw.dispatchEvent(new Event('change', { bubbles: true }));
+        setTimeout(enhanceJoinPanel, 0);
+      });
+    });
+
+    return true;
+  }
+
+  function scheduleEnhance() {
+    try { enhanceJoinPanel(); } catch (_) {}
+  }
+
+  let observerInstalled = false;
+  function installObserver() {
+    if (observerInstalled) return;
+    observerInstalled = true;
+    const obs = new MutationObserver(() => {
+      scheduleEnhance();
+    });
+    obs.observe(document.documentElement || document.body, {
+      childList: true,
+      subtree: true
+    });
+    window.__cgweb122fix1Observer = obs;
+  }
+
+  window.CGWEB122_FIX1_STATUS = function() {
+    const discovered = discoverJoinState();
+    return {
+      fix: 'CGWEB122 FIX1',
+      panelFound: !!findJoinPanelRoot(),
+      stateFound: !!discovered,
+      stateKey: discovered?.key || null,
+      candidateCount: discovered?.candidates?.length || 0,
+      destinationFound: !!discovered?.destination,
+      enhancedPresent: !!document.querySelector('.cgweb122fix1-enhanced')
+    };
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      installObserver();
+      scheduleEnhance();
+      setTimeout(scheduleEnhance, 400);
+      setTimeout(scheduleEnhance, 1200);
+    }, { once: true });
+  } else {
+    installObserver();
+    scheduleEnhance();
+    setTimeout(scheduleEnhance, 400);
+    setTimeout(scheduleEnhance, 1200);
+  }
+})();
+/* CGWEB122_FIX1_END */
