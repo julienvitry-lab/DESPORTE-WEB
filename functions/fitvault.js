@@ -361,6 +361,780 @@ function createFitVault() {
   }
   /* CGWEB076_FITROUNDTRIP001_HELPERS_END */
 
+  /* CGWEB122_BACKEND_START
+     FIT_JOIN_REPLACE001
+     DESTINATION_ACTIVITY_MERGE001
+     SOURCE_DELETE_AFTER_VALIDATE001
+  */
+
+  function cg122Finite(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function cg122DayKey(ms) {
+    const date = new Date(Number(ms));
+    if (!Number.isFinite(date.getTime())) return "";
+
+    const parts = new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        timeZone: "Europe/Paris",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }
+    ).formatToParts(date);
+
+    const values = {};
+    for (const part of parts) {
+      if (part.type !== "literal") values[part.type] = part.value;
+    }
+
+    return `${values.year}-${values.month}-${values.day}`;
+  }
+
+  function cg122SubSport(activity) {
+    return Number(
+      activity?.sub_sport ??
+      activity?.subSport ??
+      0
+    );
+  }
+
+  function cg122Label(activity, id) {
+    return String(
+      activity?.custom_title ||
+      activity?.title ||
+      activity?.name ||
+      activity?.file_name ||
+      id
+    ).trim();
+  }
+
+  async function cg122LoadSegment(uid, id) {
+    const activityRef = db.doc(
+      `${ROOT}/${uid}/activities/${id}`
+    );
+    const routeRef = db.doc(
+      `${ROOT}/${uid}/activity_routes/${id}`
+    );
+
+    const [activitySnap, routeSnap] = await Promise.all([
+      activityRef.get(),
+      routeRef.get()
+    ]);
+
+    if (!activitySnap.exists) {
+      throw Object.assign(
+        new Error(`CGWEB122 : activité ${id} introuvable.`),
+        {status: 404}
+      );
+    }
+
+    const activity = activitySnap.data() || {};
+    if (activity.deleted_at_ms != null) {
+      throw Object.assign(
+        new Error(`CGWEB122 : activité ${id} supprimée.`),
+        {status: 409}
+      );
+    }
+
+    const route = routeSnap.exists
+      ? routeSnap.data() || {}
+      : {};
+
+    const prepared = v078BuildPayload(
+      activity,
+      route
+    );
+
+    const startMs = Number(prepared.source.startMs);
+    const durationMs = Number(prepared.source.durationMs || 0);
+    const endMs = startMs + durationMs;
+
+    return {
+      id,
+      activityRef,
+      routeRef,
+      activity,
+      route,
+      prepared,
+      startMs,
+      durationMs,
+      endMs,
+      timerMs: Math.max(
+        0,
+        Number(prepared.source.timerMs || durationMs || 0)
+      ),
+      distance: Math.max(
+        0,
+        Number(prepared.source.distance || 0)
+      ),
+      ascent: Math.max(
+        0,
+        Number(prepared.source.ascent || 0)
+      ),
+      avgHr: cg122Finite(prepared.source.avgHr),
+      maxHr: cg122Finite(prepared.source.maxHr),
+      sport: Number(prepared.source.sport),
+      subSport: Number(prepared.source.subSport || 0),
+      label: cg122Label(activity, id)
+    };
+  }
+
+  async function cg122BuildPlan(
+    uid,
+    destinationId,
+    sourceIds
+  ) {
+    const destination = String(destinationId || "").trim();
+    const cleanSources = [
+      ...new Set(
+        (Array.isArray(sourceIds) ? sourceIds : [])
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      )
+    ];
+
+    if (!destination || destination.includes("/")) {
+      throw Object.assign(
+        new Error("CGWEB122 : activité de destination invalide."),
+        {status: 400}
+      );
+    }
+
+    if (
+      cleanSources.length < 1 ||
+      cleanSources.length > 11
+    ) {
+      throw Object.assign(
+        new Error("CGWEB122 : sélectionner entre 1 et 11 activités sources."),
+        {status: 400}
+      );
+    }
+
+    if (cleanSources.includes(destination)) {
+      throw Object.assign(
+        new Error("CGWEB122 : la destination ne peut pas être une source."),
+        {status: 400}
+      );
+    }
+
+    const ids = [destination, ...cleanSources];
+    const segments = await Promise.all(
+      ids.map((id) => cg122LoadSegment(uid, id))
+    );
+
+    const destinationSegment = segments.find(
+      (segment) => segment.id === destination
+    );
+
+    if (!destinationSegment) {
+      throw Object.assign(
+        new Error("CGWEB122 : destination introuvable."),
+        {status: 404}
+      );
+    }
+
+    const dayKey = cg122DayKey(destinationSegment.startMs);
+    const sport = destinationSegment.sport;
+    const subSport = destinationSegment.subSport;
+
+    for (const segment of segments) {
+      if (cg122DayKey(segment.startMs) !== dayKey) {
+        throw Object.assign(
+          new Error(
+            `CGWEB122 : ${segment.label} n'est pas du même jour que la destination.`
+          ),
+          {status: 409}
+        );
+      }
+
+      if (
+        segment.sport !== sport ||
+        segment.subSport !== subSport
+      ) {
+        throw Object.assign(
+          new Error(
+            `CGWEB122 : sport/sous-sport incompatible pour ${segment.label}.`
+          ),
+          {status: 409}
+        );
+      }
+    }
+
+    const ordered = [...segments].sort(
+      (a, b) => a.startMs - b.startMs
+    );
+
+    const gaps = [];
+
+    for (let i = 1; i < ordered.length; i += 1) {
+      const previous = ordered[i - 1];
+      const current = ordered[i];
+
+      if (current.startMs < previous.endMs - 1000) {
+        throw Object.assign(
+          new Error(
+            `CGWEB122 : chevauchement temporel entre ${previous.label} et ${current.label}.`
+          ),
+          {status: 409}
+        );
+      }
+
+      gaps.push({
+        from_id: previous.id,
+        to_id: current.id,
+        gap_ms: Math.max(0, current.startMs - previous.endMs)
+      });
+    }
+
+    const first = ordered[0];
+    const last = ordered[ordered.length - 1];
+
+    const totalDistance = ordered.reduce(
+      (sum, segment) => sum + segment.distance,
+      0
+    );
+
+    const totalAscent = ordered.reduce(
+      (sum, segment) => sum + segment.ascent,
+      0
+    );
+
+    const totalTimerMs = ordered.reduce(
+      (sum, segment) => sum + segment.timerMs,
+      0
+    );
+
+    let hrWeight = 0;
+    let hrTotal = 0;
+    let maxHr = null;
+
+    for (const segment of ordered) {
+      if (segment.avgHr != null) {
+        const weight = Math.max(1, segment.timerMs);
+        hrTotal += segment.avgHr * weight;
+        hrWeight += weight;
+      }
+      if (segment.maxHr != null) {
+        maxHr = maxHr == null
+          ? segment.maxHr
+          : Math.max(maxHr, segment.maxHr);
+      }
+    }
+
+    const avgHr = hrWeight > 0
+      ? Math.round(hrTotal / hrWeight)
+      : null;
+
+    const tokenPayload = ordered.map((segment) => ({
+      id: segment.id,
+      start_time_ms: segment.startMs,
+      duration_ms: segment.durationMs,
+      distance_m: segment.distance,
+      ascent_m: segment.ascent,
+      fit_active_sha256:
+        String(segment.activity?.fit_active_sha256 || "")
+    }));
+
+    const planToken = sha256(
+      Buffer.from(
+        JSON.stringify({
+          destination,
+          sources: cleanSources,
+          segments: tokenPayload
+        }),
+        "utf8"
+      )
+    );
+
+    return {
+      destinationId: destination,
+      sourceIds: cleanSources,
+      segments,
+      ordered,
+      first,
+      last,
+      dayKey,
+      sport,
+      subSport,
+      totalDistance,
+      totalAscent,
+      totalTimerMs,
+      avgHr,
+      maxHr,
+      startMs: first.startMs,
+      endMs: last.endMs,
+      elapsedMs: Math.max(0, last.endMs - first.startMs),
+      gaps,
+      planToken
+    };
+  }
+
+  function cg122PublicPlan(plan) {
+    return {
+      destination_id: plan.destinationId,
+      source_ids: plan.sourceIds,
+      plan_token: plan.planToken,
+      day_key: plan.dayKey,
+      sport: plan.sport,
+      sub_sport: plan.subSport,
+      start_time_ms: plan.startMs,
+      end_time_ms: plan.endMs,
+      elapsed_time_ms: plan.elapsedMs,
+      timer_time_ms: plan.totalTimerMs,
+      distance_m: plan.totalDistance,
+      ascent_m: plan.totalAscent,
+      avg_hr: plan.avgHr,
+      max_hr: plan.maxHr,
+      gaps: plan.gaps,
+      ordered_segments: plan.ordered.map((segment) => ({
+        activity_id: segment.id,
+        destination: segment.id === plan.destinationId,
+        label: segment.label,
+        start_time_ms: segment.startMs,
+        end_time_ms: segment.endMs,
+        duration_ms: segment.durationMs,
+        timer_time_ms: segment.timerMs,
+        distance_m: segment.distance,
+        ascent_m: segment.ascent
+      }))
+    };
+  }
+
+  function cg122MergePayload(plan) {
+    const points = [];
+    let distanceOffset = 0;
+
+    for (const segment of plan.ordered) {
+      const sourcePoints = Array.isArray(segment.prepared?.payload?.points)
+        ? segment.prepared.payload.points
+        : [];
+
+      for (let i = 0; i < sourcePoints.length; i += 1) {
+        const sourcePoint = sourcePoints[i] || {};
+        const timestamp = Number(sourcePoint.timestamp_ms);
+
+        if (!Number.isFinite(timestamp)) continue;
+
+        if (
+          points.length &&
+          i === 0 &&
+          timestamp <= Number(points[points.length - 1].timestamp_ms)
+        ) {
+          continue;
+        }
+
+        const localDistance = cg122Finite(sourcePoint.distance_m);
+
+        points.push({
+          ...sourcePoint,
+          timestamp_ms: timestamp,
+          distance_m:
+            distanceOffset +
+            Math.max(0, localDistance == null ? 0 : localDistance)
+        });
+      }
+
+      distanceOffset += segment.distance;
+    }
+
+    if (!points.length) {
+      throw Object.assign(
+        new Error("CGWEB122 : aucun point exploitable pour la fusion."),
+        {status: 422}
+      );
+    }
+
+    points.sort((a, b) =>
+      Number(a.timestamp_ms) - Number(b.timestamp_ms)
+    );
+
+    points[0].timestamp_ms = plan.startMs;
+    points[0].distance_m = 0;
+    points[points.length - 1].distance_m = plan.totalDistance;
+
+    return {
+      start_time_ms: plan.startMs,
+      sport: plan.sport,
+      sub_sport: plan.subSport,
+      duration_s: plan.elapsedMs / 1000,
+      total_timer_time_s: plan.totalTimerMs / 1000,
+      distance_m: plan.totalDistance,
+      total_ascent_m: plan.totalAscent,
+      avg_hr: plan.avgHr,
+      max_hr: plan.maxHr,
+      points
+    };
+  }
+
+  function cg122RouteFromPayload(payload) {
+    const points = Array.isArray(payload?.points)
+      ? payload.points
+      : [];
+
+    const finiteOrNull = (value) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    return {
+      lat: points.map((point) => finiteOrNull(point.lat)),
+      lon: points.map((point) => finiteOrNull(point.lon)),
+      alt_m: points.map((point) => finiteOrNull(point.altitude_m)),
+      distance_m: points.map((point) => finiteOrNull(point.distance_m)),
+      time_ms: points.map((point) => finiteOrNull(point.timestamp_ms)),
+      hr_bpm: points.map((point) => finiteOrNull(point.heart_rate)),
+      cadence: points.map((point) => finiteOrNull(point.cadence)),
+      power: points.map((point) => finiteOrNull(point.power)),
+      speed_mps: points.map((point) => finiteOrNull(point.speed_mps)),
+      source_point_count: points.length,
+      point_count: points.length,
+      cgweb122_join_replace: true,
+      cgweb122_version: "FIT_JOIN_REPLACE001",
+      updated_at_ms: Date.now()
+    };
+  }
+
+  async function cg122DeleteFitFamily(uid, activityId) {
+    const id = String(activityId || "").trim();
+    const family = await files(uid)
+      .where("activity_id", "==", id)
+      .limit(500)
+      .get();
+
+    const errors = [];
+    let deletedDocs = 0;
+    let deletedObjects = 0;
+
+    for (const docSnap of family.docs) {
+      const row = docSnap.data() || {};
+      const objectName = String(row.object_path || "").trim();
+
+      if (objectName) {
+        try {
+          await bucket()
+            .file(objectName)
+            .delete({ignoreNotFound: true});
+          deletedObjects += 1;
+        } catch (error) {
+          const code = Number(error?.code || 0);
+          if (code !== 404) {
+            errors.push({
+              stage: "STORAGE_DELETE",
+              sha256: row.sha256 || docSnap.id,
+              error: error?.message || String(error)
+            });
+            continue;
+          }
+        }
+      }
+
+      try {
+        await docSnap.ref.delete();
+        deletedDocs += 1;
+      } catch (error) {
+        errors.push({
+          stage: "FIRESTORE_DELETE",
+          sha256: row.sha256 || docSnap.id,
+          error: error?.message || String(error)
+        });
+      }
+    }
+
+    const remaining = await files(uid)
+      .where("activity_id", "==", id)
+      .limit(10)
+      .get();
+
+    return {
+      ok: errors.length === 0 && remaining.empty,
+      deleted_docs: deletedDocs,
+      deleted_objects: deletedObjects,
+      remaining_docs: remaining.size,
+      errors
+    };
+  }
+
+  async function cg122ExecuteJoin(uid, plan) {
+    const payload = cg122MergePayload(plan);
+    const generated = await encodeCanonicalFit(payload);
+    const validation = await inspectFitBuffer(generated.buffer);
+
+    if (!validation.ok) {
+      throw Object.assign(
+        new Error("CGWEB122 : FIT fusionné invalide."),
+        {status: 500, validation}
+      );
+    }
+
+    const decoded = await decodeCanonicalFitSummary(generated.buffer);
+
+    if (
+      !decoded.integrity ||
+      decoded.activityCount !== 1 ||
+      decoded.sessionCount !== 1
+    ) {
+      throw Object.assign(
+        new Error("CGWEB122 : structure du FIT fusionné non conforme."),
+        {status: 500}
+      );
+    }
+
+    const hash = sha256(generated.buffer);
+    const fileName = safeName(
+      generated.fileName || "activity.fit"
+    );
+    const path = objectPath(uid, hash, plan.startMs);
+    const fileRef = fileDoc(uid, hash);
+    const existing = await fileRef.get();
+
+    if (existing.exists) {
+      const row = existing.data() || {};
+      const linked = String(row.activity_id || "").trim();
+      if (
+        row.deleted_at_ms == null &&
+        linked &&
+        linked !== plan.destinationId
+      ) {
+        throw Object.assign(
+          new Error("CGWEB122 : le FIT fusionné existe déjà sous une autre activité."),
+          {status: 409}
+        );
+      }
+    }
+
+    const object = bucket().file(path);
+    const [exists] = await object.exists();
+
+    if (!exists) {
+      await object.save(generated.buffer, {
+        resumable: false,
+        validation: "crc32c",
+        contentType: "application/vnd.ant.fit",
+        metadata: {
+          cacheControl: "private, no-store",
+          metadata: {
+            sha256: hash,
+            owner_uid: uid,
+            source: "WEB_FIT_JOIN_REPLACE",
+            mode: "JOIN_REPLACE_CANONICAL",
+            writer: "FITWRITER001",
+            joiner: "FIT_JOIN_REPLACE001"
+          }
+        }
+      });
+    }
+
+    const now = Date.now();
+    const metadata = {
+      file_id: hash,
+      sha256: hash,
+      object_path: path,
+      file_name: fileName,
+      original_name: fileName,
+      size_bytes: generated.buffer.length,
+      mime_type: "application/vnd.ant.fit",
+      source: "WEB_FIT_JOIN_REPLACE",
+      upload_mode: "CURRENT_CANONICAL",
+      start_time_ms: plan.startMs,
+      sport: generated.stats.sport,
+      sub_sport: generated.stats.subSport,
+      activity_id: plan.destinationId,
+      link_status: "LINKED_CURRENT",
+      point_count: generated.stats.pointCount,
+      fit_integrity: true,
+      fitwriter_version: "FITWRITER001",
+      fitjoin_version: "FIT_JOIN_REPLACE001",
+      version_index: 1,
+      version_family_id: hash,
+      parent_sha256: null,
+      version_kind: "CURRENT_CANONICAL",
+      is_active_version: true,
+      active_changed_at_ms: now,
+      first_uploaded_at_ms: now,
+      uploaded_at_ms: now,
+      last_seen_at_ms: now,
+      deleted_at_ms: null,
+      storage_version: "FITCLOUD001"
+    };
+
+    await fileRef.set(metadata, {merge: true});
+
+    const destination = plan.segments.find(
+      (segment) => segment.id === plan.destinationId
+    );
+
+    const movingMs = plan.ordered.reduce(
+      (sum, segment) => {
+        const direct = cg122Finite(segment.activity?.moving_time_ms);
+        return sum + Math.max(0, direct == null ? segment.timerMs : direct);
+      },
+      0
+    );
+
+    const activityPatch = {
+      start_time_ms: plan.startMs,
+      end_time_ms: plan.endMs,
+      elapsed_time_ms: plan.elapsedMs,
+      duration_ms: plan.elapsedMs,
+      timer_time_ms: plan.totalTimerMs,
+      moving_time_ms: movingMs,
+      distance_m: plan.totalDistance,
+      ascent_m: plan.totalAscent,
+      avg_hr: plan.avgHr,
+      max_hr: plan.maxHr,
+      record_count: payload.points.length,
+      gps_point_count: payload.points.filter(
+        (point) =>
+          Number.isFinite(Number(point.lat)) &&
+          Number.isFinite(Number(point.lon))
+      ).length,
+      fit_active_sha256: hash,
+      fit_active_version_index: 1,
+      fit_active_file_name: fileName,
+      fit_updated_at_ms: now,
+      fitjoin_version: "FIT_JOIN_REPLACE001",
+      join_destination_activity_id: plan.destinationId,
+      join_source_activity_ids: plan.sourceIds,
+      join_segment_activity_ids: plan.ordered.map((segment) => segment.id),
+      join_segment_count: plan.ordered.length,
+      join_plan_token: plan.planToken,
+      join_replaced_at_ms: now,
+      join_source_delete_state: "PENDING"
+    };
+
+    const routePatch = cg122RouteFromPayload(payload);
+
+    const writeBatch = db.batch();
+    writeBatch.set(
+      destination.activityRef,
+      activityPatch,
+      {merge: true}
+    );
+    writeBatch.set(
+      destination.routeRef,
+      routePatch,
+      {merge: false}
+    );
+    await writeBatch.commit();
+
+    const destinationCleanup = await v121ReplaceFitFamily(
+      uid,
+      plan.destinationId,
+      hash,
+      fileName,
+      plan.startMs
+    );
+
+    if (!destinationCleanup.ok) {
+      throw Object.assign(
+        new Error("CGWEB122 : le FIT destination est valide mais les anciens FIT destination n'ont pas tous été supprimés."),
+        {status: 500, cleanup: destinationCleanup}
+      );
+    }
+
+    const [destinationAfter, routeAfter, fileAfter] = await Promise.all([
+      destination.activityRef.get(),
+      destination.routeRef.get(),
+      fileRef.get()
+    ]);
+
+    if (
+      !destinationAfter.exists ||
+      !routeAfter.exists ||
+      !fileAfter.exists ||
+      String(destinationAfter.data()?.fit_active_sha256 || "") !== hash ||
+      Number(destinationAfter.data()?.start_time_ms) !== Number(plan.startMs)
+    ) {
+      throw Object.assign(
+        new Error("CGWEB122 : postcondition destination non satisfaite ; aucune source ne sera supprimée."),
+        {status: 500}
+      );
+    }
+
+    const deletedSources = [];
+    const sourceCleanup = [];
+
+    for (const sourceId of plan.sourceIds) {
+      const fitCleanup = await cg122DeleteFitFamily(uid, sourceId);
+
+      if (!fitCleanup.ok) {
+        sourceCleanup.push({
+          activity_id: sourceId,
+          ok: false,
+          fit_cleanup: fitCleanup
+        });
+        continue;
+      }
+
+      const sourceActivityRef = db.doc(
+        `${ROOT}/${uid}/activities/${sourceId}`
+      );
+      const sourceRouteRef = db.doc(
+        `${ROOT}/${uid}/activity_routes/${sourceId}`
+      );
+
+      const deleteBatch = db.batch();
+      deleteBatch.delete(sourceRouteRef);
+      deleteBatch.delete(sourceActivityRef);
+      await deleteBatch.commit();
+
+      const [activityCheck, routeCheck] = await Promise.all([
+        sourceActivityRef.get(),
+        sourceRouteRef.get()
+      ]);
+
+      const ok = !activityCheck.exists && !routeCheck.exists;
+
+      sourceCleanup.push({
+        activity_id: sourceId,
+        ok,
+        fit_cleanup: fitCleanup
+      });
+
+      if (ok) deletedSources.push(sourceId);
+    }
+
+    const allSourcesDeleted =
+      deletedSources.length === plan.sourceIds.length;
+
+    await destination.activityRef.set(
+      {
+        join_source_delete_state:
+          allSourcesDeleted ? "DONE" : "PARTIAL",
+        join_deleted_source_activity_ids: deletedSources,
+        join_source_cleanup: sourceCleanup,
+        join_completed_at_ms: Date.now()
+      },
+      {merge: true}
+    );
+
+    if (!allSourcesDeleted) {
+      throw Object.assign(
+        new Error("CGWEB122 : destination fusionnée et validée, mais suppression de certaines sources incomplète."),
+        {status: 500, source_cleanup: sourceCleanup}
+      );
+    }
+
+    return {
+      ok: true,
+      service: "FIT_JOIN_REPLACE001",
+      plan: cg122PublicPlan(plan),
+      file: metadata,
+      destination_activity_id: plan.destinationId,
+      deleted_source_activity_ids: deletedSources,
+      destination_cleanup: destinationCleanup,
+      source_cleanup: sourceCleanup,
+      validation,
+      fit: decoded
+    };
+  }
+
+  /* CGWEB122_BACKEND_END */
+
 /* CGWEB078_FITVERSION001_HELPERS_START */
   function v078Finite(value) {
     const n = Number(value);
@@ -12845,6 +13619,81 @@ async function c099GlobalDirectoryQuery(
           });
         }
         /* CGWEB076_FITROUNDTRIP001_ACTION_END */
+        /* CGWEB122_ACTIONS_START */
+        if (
+          action === "join_replace_plan" ||
+          action === "join_replace"
+        ) {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+
+          let body = req.body;
+          if (Buffer.isBuffer(body)) {
+            try {
+              body = JSON.parse(body.toString("utf8"));
+            } catch {
+              body = null;
+            }
+          }
+          if (!body || typeof body !== "object" || Array.isArray(body)) {
+            body = {};
+          }
+
+          const destinationId = String(
+            body.destination_activity_id || ""
+          ).trim();
+          const sourceIds = Array.isArray(body.source_activity_ids)
+            ? body.source_activity_ids
+            : [];
+
+          try {
+            const plan = await cg122BuildPlan(
+              uid,
+              destinationId,
+              sourceIds
+            );
+
+            if (action === "join_replace_plan") {
+              return res.json({
+                ok: true,
+                service: "FIT_JOIN_REPLACE001",
+                mode: "PLAN",
+                plan: cg122PublicPlan(plan)
+              });
+            }
+
+            const expectedToken = String(
+              body.plan_token || ""
+            ).trim();
+
+            if (
+              !expectedToken ||
+              expectedToken !== plan.planToken
+            ) {
+              return res.status(409).json({
+                error: "CGWEB122 : le plan a changé ; préparer de nouveau la fusion.",
+                current_plan: cg122PublicPlan(plan)
+              });
+            }
+
+            const result = await cg122ExecuteJoin(uid, plan);
+            return res.json(result);
+          } catch (error) {
+            const status = Math.max(
+              400,
+              Math.min(599, Number(error?.status || 500))
+            );
+
+            return res.status(status).json({
+              error: error?.message || String(error),
+              cleanup: error?.cleanup || null,
+              source_cleanup: error?.source_cleanup || null
+            });
+          }
+        }
+        /* CGWEB122_ACTIONS_END */
+
 /* CGWEB078_FITVERSION001_ACTION_START */
         if (action === "version") {
           if (req.method !== "POST") {

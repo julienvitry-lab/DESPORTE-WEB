@@ -55627,3 +55627,461 @@ window.CGWEB121_FIX8_FIX8_STATUS = function () {
   };
 };
 /* CGWEB121_FIX8_FIX8_FRONTEND_END */
+
+/* CGWEB122_FRONTEND_START
+   FIT_JOIN_REPLACE001
+   DESTINATION_ACTIVITY_MERGE001
+   SOURCE_DELETE_AFTER_VALIDATE001
+*/
+
+function cgweb122Norm(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function cgweb122ActivityId(activity) {
+  try {
+    return String(
+      window.SPORT_WEB_BRIDGE?.activityKey?.(activity) ||
+      activity?.id ||
+      activity?.__docId ||
+      ""
+    ).trim();
+  } catch (_) {
+    return String(
+      activity?.id || activity?.__docId || ""
+    ).trim();
+  }
+}
+
+function cgweb122DayKey(ms) {
+  const date = new Date(Number(ms));
+  if (!Number.isFinite(date.getTime())) return "";
+
+  const parts = new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      timeZone: "Europe/Paris",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }
+  ).formatToParts(date);
+
+  const values = {};
+  for (const part of parts) {
+    if (part.type !== "literal") values[part.type] = part.value;
+  }
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function cgweb122Time(ms) {
+  return new Date(Number(ms)).toLocaleTimeString(
+    "fr-FR",
+    {
+      timeZone: "Europe/Paris",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    }
+  );
+}
+
+function cgweb122Distance(meters) {
+  const km = Number(meters || 0) / 1000;
+  return km.toLocaleString(
+    "fr-FR",
+    {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }
+  ) + " km";
+}
+
+function cgweb122Duration(ms) {
+  let seconds = Math.max(0, Math.round(Number(ms || 0) / 1000));
+  const h = Math.floor(seconds / 3600);
+  seconds -= h * 3600;
+  const m = Math.floor(seconds / 60);
+  const s = seconds - m * 60;
+
+  return [
+    h ? `${h} h` : "",
+    `${m} min`,
+    `${s} s`
+  ].filter(Boolean).join(" ");
+}
+
+function cgweb122FindDetails() {
+  const summaries = [...document.querySelectorAll("summary")];
+
+  return summaries.find(
+    (summary) =>
+      cgweb122Norm(summary.textContent) ===
+      "joindre des activites du meme jour"
+  )?.closest("details") || null;
+}
+
+function cgweb122CurrentActivity() {
+  try {
+    return currentDetailActivity();
+  } catch (_) {
+    return null;
+  }
+}
+
+function cgweb122Candidates(destination) {
+  const bridge = window.SPORT_WEB_BRIDGE;
+  const all = bridge?.getActivities?.();
+
+  if (!Array.isArray(all)) return [];
+
+  const destinationId = cgweb122ActivityId(destination);
+  const day = cgweb122DayKey(destination?.start_time_ms);
+  const sport = Number(destination?.sport);
+  const subSport = Number(
+    destination?.sub_sport ??
+    destination?.subSport ??
+    0
+  );
+
+  return all
+    .filter((activity) => {
+      const id = cgweb122ActivityId(activity);
+      if (!id || id === destinationId) return false;
+      if (activity?.deleted_at_ms != null) return false;
+      if (cgweb122DayKey(activity?.start_time_ms) !== day) return false;
+      if (Number(activity?.sport) !== sport) return false;
+      if (
+        Number(activity?.sub_sport ?? activity?.subSport ?? 0) !==
+        subSport
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .sort(
+      (a, b) =>
+        Number(a?.start_time_ms || 0) -
+        Number(b?.start_time_ms || 0)
+    );
+}
+
+function cgweb122EnsureStyle() {
+  if (document.getElementById("cgweb122Style")) return;
+
+  const style = document.createElement("style");
+  style.id = "cgweb122Style";
+  style.textContent = `
+    .cg122-panel{padding:16px 18px 18px;border-top:1px solid rgba(255,255,255,.07)}
+    .cg122-note{opacity:.78;margin:0 0 12px;line-height:1.45}
+    .cg122-destination{padding:10px 12px;border:1px solid rgba(162,255,0,.25);border-radius:12px;margin:8px 0 12px}
+    .cg122-row{display:flex;align-items:center;gap:10px;padding:9px 10px;margin:6px 0;border:1px solid rgba(255,255,255,.10);border-radius:10px}
+    .cg122-row label{display:flex;align-items:center;gap:10px;cursor:pointer;flex:1}
+    .cg122-meta{opacity:.72;font-size:.92em}
+    .cg122-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+    .cg122-actions button{border-radius:12px;padding:10px 16px;cursor:pointer}
+    .cg122-plan{margin-top:14px;padding:12px;border:1px solid rgba(162,255,0,.25);border-radius:12px}
+    .cg122-danger{margin-top:10px;color:#ffbf66;line-height:1.45}
+    .cg122-error{margin-top:10px;color:#ff7777;white-space:pre-wrap}
+    .cg122-ok{margin-top:10px;color:#b8ff4a}
+  `;
+  document.head.appendChild(style);
+}
+
+function cgweb122RenderPlan(target, plan, destinationId, sourceIds) {
+  target.replaceChildren();
+
+  const box = document.createElement("div");
+  box.className = "cg122-plan";
+
+  const title = document.createElement("strong");
+  title.textContent = "Plan de fusion";
+  box.appendChild(title);
+
+  const ordered = document.createElement("div");
+  ordered.style.marginTop = "8px";
+
+  for (const segment of plan.ordered_segments || []) {
+    const line = document.createElement("div");
+    line.textContent =
+      `${cgweb122Time(segment.start_time_ms)} · ` +
+      `${cgweb122Distance(segment.distance_m)} · ` +
+      `${segment.destination ? "DESTINATION" : "source"}`;
+    ordered.appendChild(line);
+  }
+
+  box.appendChild(ordered);
+
+  const totals = document.createElement("div");
+  totals.className = "cg122-meta";
+  totals.style.marginTop = "10px";
+  totals.textContent =
+    `Résultat : ${cgweb122Distance(plan.distance_m)} · ` +
+    `D+ ${Math.round(Number(plan.ascent_m || 0))} m · ` +
+    `temps écoulé ${cgweb122Duration(plan.elapsed_time_ms)} · ` +
+    `temps actif ${cgweb122Duration(plan.timer_time_ms)}.`;
+  box.appendChild(totals);
+
+  const danger = document.createElement("div");
+  danger.className = "cg122-danger";
+  danger.textContent =
+    "Après création et validation du FIT fusionné, les activités sources et leurs FIT seront supprimés définitivement. L’activité de destination sera conservée et remplacée par le résultat fusionné.";
+  box.appendChild(danger);
+
+  const actions = document.createElement("div");
+  actions.className = "cg122-actions";
+
+  const execute = document.createElement("button");
+  execute.type = "button";
+  execute.textContent = "Fusionner et remplacer les originaux";
+
+  execute.addEventListener("click", async () => {
+    const confirmation = [
+      "Fusion définitive des activités ?",
+      "",
+      `Destination conservée : ${destinationId}`,
+      `Sources supprimées : ${sourceIds.length}`,
+      `Distance finale : ${cgweb122Distance(plan.distance_m)}`,
+      "",
+      "Le FIT fusionné sera d'abord créé et validé.",
+      "Les sources ne seront supprimées qu'après validation de la destination.",
+      "",
+      "Cette suppression est définitive dans SPORT Web."
+    ].join("\n");
+
+    if (!window.confirm(confirmation)) return;
+
+    execute.disabled = true;
+    execute.textContent = "Fusion en cours…";
+
+    try {
+      const result = await window.SPORT_FIT_JOIN_REPLACE.execute(
+        destinationId,
+        sourceIds,
+        plan.plan_token
+      );
+
+      if (!result?.ok) {
+        throw new Error(result?.error || "Fusion non confirmée.");
+      }
+
+      const ok = document.createElement("div");
+      ok.className = "cg122-ok";
+      ok.textContent =
+        `Fusion terminée · ${result.deleted_source_activity_ids?.length || 0} source(s) supprimée(s). Rechargement…`;
+      box.appendChild(ok);
+
+      window.SPORT_FIT_QUICKDOWNLOAD?.invalidate?.();
+      setTimeout(() => window.location.reload(), 900);
+    } catch (error) {
+      execute.disabled = false;
+      execute.textContent = "Fusionner et remplacer les originaux";
+
+      const err = document.createElement("div");
+      err.className = "cg122-error";
+      err.textContent = error?.message || String(error);
+      box.appendChild(err);
+    }
+  });
+
+  actions.appendChild(execute);
+  box.appendChild(actions);
+  target.appendChild(box);
+}
+
+function cgweb122Mount() {
+  cgweb122EnsureStyle();
+
+  const details = cgweb122FindDetails();
+  const destination = cgweb122CurrentActivity();
+
+  if (!details || !destination) return;
+
+  const destinationId = cgweb122ActivityId(destination);
+  if (!destinationId) return;
+
+  let panel = details.querySelector(".cg122-panel");
+
+  if (
+    panel &&
+    panel.dataset.destinationId === destinationId
+  ) {
+    return;
+  }
+
+  panel?.remove();
+
+  panel = document.createElement("div");
+  panel.className = "cg122-panel";
+  panel.dataset.destinationId = destinationId;
+
+  const note = document.createElement("p");
+  note.className = "cg122-note";
+  note.textContent =
+    "L’activité ouverte est la destination. Sélectionnez les autres activités du même jour à intégrer. Les segments doivent avoir le même sport/sous-sport et ne pas se chevaucher.";
+  panel.appendChild(note);
+
+  const destinationBox = document.createElement("div");
+  destinationBox.className = "cg122-destination";
+  destinationBox.textContent =
+    `Destination : ${cgweb122Time(destination.start_time_ms)} · ` +
+    `${cgweb122Distance(destination.distance_m)} · cette activité sera conservée.`;
+  panel.appendChild(destinationBox);
+
+  const candidates = cgweb122Candidates(destination);
+
+  if (!candidates.length) {
+    const empty = document.createElement("div");
+    empty.className = "cg122-meta";
+    empty.textContent =
+      "Aucune autre activité compatible du même jour n’est actuellement chargée dans le répertoire.";
+    panel.appendChild(empty);
+    details.appendChild(panel);
+    return;
+  }
+
+  const rows = document.createElement("div");
+
+  for (const activity of candidates) {
+    const id = cgweb122ActivityId(activity);
+    const row = document.createElement("div");
+    row.className = "cg122-row";
+
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = id;
+    checkbox.dataset.cg122Source = "1";
+
+    const text = document.createElement("span");
+    text.textContent =
+      `${cgweb122Time(activity.start_time_ms)} · ` +
+      `${cgweb122Distance(activity.distance_m)}`;
+
+    label.appendChild(checkbox);
+    label.appendChild(text);
+    row.appendChild(label);
+    rows.appendChild(row);
+  }
+
+  panel.appendChild(rows);
+
+  const actions = document.createElement("div");
+  actions.className = "cg122-actions";
+
+  const planButton = document.createElement("button");
+  planButton.type = "button";
+  planButton.textContent = "Préparer la fusion";
+
+  const resultBox = document.createElement("div");
+
+  planButton.addEventListener("click", async () => {
+    resultBox.replaceChildren();
+
+    const sourceIds = [
+      ...panel.querySelectorAll(
+        'input[data-cg122-source="1"]:checked'
+      )
+    ].map((input) => input.value);
+
+    if (!sourceIds.length) {
+      const err = document.createElement("div");
+      err.className = "cg122-error";
+      err.textContent = "Sélectionnez au moins une activité source.";
+      resultBox.appendChild(err);
+      return;
+    }
+
+    planButton.disabled = true;
+    planButton.textContent = "Analyse…";
+
+    try {
+      const response = await window.SPORT_FIT_JOIN_REPLACE.plan(
+        destinationId,
+        sourceIds
+      );
+
+      if (!response?.ok || !response?.plan) {
+        throw new Error(
+          response?.error || "Plan de fusion indisponible."
+        );
+      }
+
+      cgweb122RenderPlan(
+        resultBox,
+        response.plan,
+        destinationId,
+        sourceIds
+      );
+    } catch (error) {
+      const err = document.createElement("div");
+      err.className = "cg122-error";
+      err.textContent = error?.message || String(error);
+      resultBox.appendChild(err);
+    } finally {
+      planButton.disabled = false;
+      planButton.textContent = "Préparer la fusion";
+    }
+  });
+
+  actions.appendChild(planButton);
+  panel.appendChild(actions);
+  panel.appendChild(resultBox);
+  details.appendChild(panel);
+}
+
+let cgweb122MountTimer = null;
+
+function cgweb122ScheduleMount() {
+  clearTimeout(cgweb122MountTimer);
+  cgweb122MountTimer = setTimeout(
+    cgweb122Mount,
+    80
+  );
+}
+
+const cgweb122Observer = new MutationObserver(
+  cgweb122ScheduleMount
+);
+
+cgweb122Observer.observe(
+  document.body,
+  {
+    childList: true,
+    subtree: true
+  }
+);
+
+window.addEventListener(
+  "sport-fit-join-replace-ready",
+  cgweb122ScheduleMount
+);
+
+window.CGWEB122_STATUS = function () {
+  const destination = cgweb122CurrentActivity();
+  const details = cgweb122FindDetails();
+
+  return {
+    build: "CGWEB122",
+    fit_join_replace: true,
+    destination_activity_merge: true,
+    source_delete_after_validate: true,
+    destination_id:
+      destination ? cgweb122ActivityId(destination) : null,
+    join_panel_found: Boolean(details),
+    api_ready: Boolean(window.SPORT_FIT_JOIN_REPLACE),
+    loaded_candidates:
+      destination ? cgweb122Candidates(destination).length : 0
+  };
+};
+
+queueMicrotask(cgweb122ScheduleMount);
+
+console.info(
+  "CGWEB122 actif · FIT_JOIN_REPLACE001 / DESTINATION_ACTIVITY_MERGE001 / SOURCE_DELETE_AFTER_VALIDATE001"
+);
+/* CGWEB122_FRONTEND_END */

@@ -6232,3 +6232,70 @@ console.info(
   "CGWEB121 FIX8 FIX8 actif · remplacement définitif du FIT après validation"
 );
 /* CGWEB121_FIX8_FIX8_FITCLOUD_END */
+
+/* CGWEB122_FITCLOUD_START
+   FIT_JOIN_REPLACE001
+*/
+async function cgweb122JoinReplacePlan(
+  destinationActivityId,
+  sourceActivityIds
+) {
+  return request(
+    "join_replace_plan",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        destination_activity_id:
+          String(destinationActivityId || "").trim(),
+        source_activity_ids:
+          Array.isArray(sourceActivityIds)
+            ? sourceActivityIds
+            : []
+      })
+    }
+  );
+}
+
+async function cgweb122JoinReplaceExecute(
+  destinationActivityId,
+  sourceActivityIds,
+  planToken
+) {
+  return request(
+    "join_replace",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        destination_activity_id:
+          String(destinationActivityId || "").trim(),
+        source_activity_ids:
+          Array.isArray(sourceActivityIds)
+            ? sourceActivityIds
+            : [],
+        plan_token:
+          String(planToken || "").trim()
+      })
+    }
+  );
+}
+
+window.SPORT_FIT_JOIN_REPLACE = Object.freeze({
+  version: "FIT_JOIN_REPLACE001",
+  plan: cgweb122JoinReplacePlan,
+  execute: cgweb122JoinReplaceExecute
+});
+
+window.dispatchEvent(
+  new CustomEvent("sport-fit-join-replace-ready")
+);
+
+console.info(
+  "CGWEB122 actif dans fitcloud.js · FIT_JOIN_REPLACE001"
+);
+/* CGWEB122_FITCLOUD_END */
