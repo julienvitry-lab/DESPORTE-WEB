@@ -569,18 +569,73 @@ function createFitVault() {
     const payload = prepared.payload;
     const source = prepared.source;
 
-    const offsetSeconds = Math.max(
-      -86400,
-      Math.min(86400, v078Finite(body?.start_offset_s) ?? 0)
-    );
-    const offsetMs = Math.round(offsetSeconds * 1000);
+    /*
+     * CGWEB121 FIX8 FIX7 · ABSOLUTE_TARGET_TIME001
+     *
+     * L'heure saisie par l'utilisateur devient l'autorité absolue.
+     * Le serveur calcule lui-même le delta depuis l'activité Firestore
+     * réellement utilisée pour reconstruire le FIT.
+     */
+    const requestedTargetStartMs =
+      v078Finite(body?.target_start_time_ms);
+
+    let offsetSeconds = 0;
+    let offsetMs = 0;
+
+    if (
+      requestedTargetStartMs != null &&
+      requestedTargetStartMs > 0
+    ) {
+      offsetMs =
+        Math.round(
+          requestedTargetStartMs -
+          Number(source.startMs)
+        );
+
+      if (Math.abs(offsetMs) > 86400000) {
+        throw Object.assign(
+          new Error(
+            "FITVERSION001 : heure cible à plus de 24 h de l'activité source."
+          ),
+          {status: 422}
+        );
+      }
+
+      offsetSeconds = offsetMs / 1000;
+    } else {
+      offsetSeconds = Math.max(
+        -86400,
+        Math.min(
+          86400,
+          v078Finite(body?.start_offset_s) ?? 0
+        )
+      );
+
+      offsetMs =
+        Math.round(
+          offsetSeconds * 1000
+        );
+    }
 
     if (offsetMs !== 0) {
-      payload.start_time_ms += offsetMs;
-      payload.points = payload.points.map((point) => ({
-        ...point,
-        timestamp_ms: Number(point.timestamp_ms) + offsetMs
-      }));
+      payload.start_time_ms =
+        requestedTargetStartMs != null &&
+        requestedTargetStartMs > 0
+          ? Math.round(requestedTargetStartMs)
+          : Number(payload.start_time_ms) + offsetMs;
+
+      payload.points =
+        payload.points.map((point) => ({
+          ...point,
+          timestamp_ms:
+            Number(point.timestamp_ms) + offsetMs
+        }));
+    } else if (
+      requestedTargetStartMs != null &&
+      requestedTargetStartMs > 0
+    ) {
+      payload.start_time_ms =
+        Math.round(requestedTargetStartMs);
     }
 
     const avgOverride = v078Finite(body?.avg_hr_override);
@@ -609,6 +664,11 @@ function createFitVault() {
       payload,
       edits: {
         start_offset_s: offsetSeconds,
+        target_start_time_ms_requested:
+          requestedTargetStartMs != null &&
+          requestedTargetStartMs > 0
+            ? Math.round(requestedTargetStartMs)
+            : null,
         start_time_ms_source: source.startMs,
         start_time_ms_version: payload.start_time_ms,
         heart_rate_mode: hasHrOverride ? "SIMULATED" : "SOURCE",
@@ -5998,10 +6058,51 @@ async function c091TransferAudit(uid) {
     );
 
     const linked=await files(uid).where("activity_id","==",id).get();
+
+    /*
+     * CGWEB121 FIX8 FIX7 · ACTIVE_FIT_DIRECT_DOWNLOAD001
+     *
+     * Le téléchargement direct du répertoire utilisait historiquement
+     * ORIGINAL > CANONICAL > EDITED.
+     *
+     * Pour une activité éditée, cette règle pouvait donc renvoyer
+     * encore l'ORIGINAL même lorsqu'une nouvelle version était ACTIVE.
+     */
+    const activeSha =
+      String(
+        activity?.fit_active_sha256 || ""
+      )
+        .trim()
+        .toLowerCase();
+
     const rows=linked.docs
       .map(x=>({...x.data(),__doc_id:String(x.id)}))
       .filter(x=>x.deleted_at_ms==null)
-      .sort((a,b)=>c096RoleRank(b)-c096RoleRank(a));
+      .sort((a,b)=>{
+        const aSha=
+          String(a?.sha256||a?.__doc_id||"")
+            .trim()
+            .toLowerCase();
+
+        const bSha=
+          String(b?.sha256||b?.__doc_id||"")
+            .trim()
+            .toLowerCase();
+
+        const aActive=
+          a?.is_active_version===true ||
+          Boolean(activeSha && aSha===activeSha);
+
+        const bActive=
+          b?.is_active_version===true ||
+          Boolean(activeSha && bSha===activeSha);
+
+        if(aActive!==bActive){
+          return bActive ? 1 : -1;
+        }
+
+        return c096RoleRank(b)-c096RoleRank(a);
+      });
 
     if(!rows.length)throw Object.assign(
       new Error("DOWNLOAD_ERROR_TRUTH001 : aucun FIT lié à cette activité."),
@@ -15132,3 +15233,13 @@ if (action === "transfer_audit") {
 }
 
 module.exports = {createFitVault};
+
+/* CGWEB121_FIX8_FIX7_BACKEND_START
+   ABSOLUTE_TARGET_TIME001
+   ACTIVE_FIT_DIRECT_DOWNLOAD001
+
+   Le backend possède désormais deux invariants :
+   - l'heure cible peut être transmise comme timestamp absolu ;
+   - le téléchargement direct privilégie le FIT ACTIVE.
+*/
+/* CGWEB121_FIX8_FIX7_BACKEND_END */

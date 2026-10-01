@@ -55198,6 +55198,14 @@ async function cgweb121Fix8Fix5Apply() {
         {
           start_offset_s:
             backendOffsetSeconds,
+
+          /*
+           * FIX7 : la cible absolue est envoyée au serveur.
+           * start_offset_s reste présent comme fallback historique.
+           */
+          target_start_time_ms:
+            target.newStart,
+
           avg_hr_override:
             target.synthetic
               ? target.avgHr
@@ -55232,6 +55240,43 @@ async function cgweb121Fix8Fix5Apply() {
 
     const file =
       result?.file || {};
+
+    /*
+     * TRIPLE_POSTCONDITION001
+     * On refuse de déclarer un succès si le serveur ne confirme pas
+     * explicitement la même heure pour le FIT et pour l'activité.
+     */
+    const serverFitStart =
+      Number(file?.start_time_ms);
+
+    if (
+      !Number.isFinite(serverFitStart) ||
+      Math.abs(serverFitStart - target.newStart) > 1000
+    ) {
+      throw new Error(
+        "POSTCONDITION FIT : heure serveur différente de la cible."
+      );
+    }
+
+    const serverActivityStart =
+      Number(
+        result?.activity_patch?.start_time_ms
+      );
+
+    if (
+      backendOffsetSeconds !== 0 &&
+      (
+        !Number.isFinite(serverActivityStart) ||
+        Math.abs(
+          serverActivityStart -
+          target.newStart
+        ) > 1000
+      )
+    ) {
+      throw new Error(
+        "POSTCONDITION ACTIVITÉ : heure Firestore différente de la cible."
+      );
+    }
 
     const activeSha =
       String(
@@ -55546,3 +55591,17 @@ console.info(
 );
 
 /* CGWEB121_FIX8_FIX5_END */
+
+/* CGWEB121_FIX8_FIX7_FRONTEND_START
+   ABSOLUTE_TARGET_TIME001
+   TRIPLE_POSTCONDITION001
+*/
+window.CGWEB121_FIX8_FIX7_STATUS = function () {
+  return {
+    build: "CGWEB121_FIX8_FIX7",
+    absolute_target_time: true,
+    active_fit_direct_download: true,
+    triple_postcondition: true
+  };
+};
+/* CGWEB121_FIX8_FIX7_FRONTEND_END */

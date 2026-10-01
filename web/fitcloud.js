@@ -6151,6 +6151,12 @@ async function cgweb121Fix8CreateActiveVersionFromSource(
         activity_id: key,
         parent_sha256: parentSha,
         start_offset_s: Number(options.start_offset_s || 0),
+        target_start_time_ms:
+          Number.isFinite(
+            Number(options.target_start_time_ms)
+          )
+            ? Number(options.target_start_time_ms)
+            : null,
         avg_hr_override: options.avg_hr_override ?? null,
         max_hr_override: options.max_hr_override ?? null,
         fit_editor_mode: "FITEDITOR001",
