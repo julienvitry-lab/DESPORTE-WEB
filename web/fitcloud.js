@@ -6299,3 +6299,122 @@ console.info(
   "CGWEB122 actif dans fitcloud.js · FIT_JOIN_REPLACE001"
 );
 /* CGWEB122_FITCLOUD_END */
+
+/* CGWEB124_MANUAL_FIT_SPLIT_CLIENT_START
+   MANUAL_FIT_SPLIT001
+   SPLIT_REPLACE001
+*/
+
+async function cgweb124GenerateSplitFit(
+  activity,
+  route
+) {
+  const payload =
+    fp077BuildWriterPayload(
+      activity,
+      route,
+      "CGWEB124_MANUAL_FIT_SPLIT001"
+    );
+
+  payload.pipeline_source =
+    "CGWEB124_MANUAL_FIT_SPLIT001";
+
+  payload.fitpipeline_version =
+    "CGWEB124";
+
+  payload.fit_signature_seed =
+    String(
+      activity?.id ??
+      activity?.__docId ??
+      ""
+    );
+
+  const result =
+    await request(
+      "generate",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify(payload)
+      }
+    );
+
+  if (
+    !result?.ok ||
+    !result?.file?.sha256 ||
+    result?.validation?.ok === false
+  ) {
+    throw new Error(
+      "CGWEB124 : le FIT généré n'a pas été validé."
+    );
+  }
+
+  try {
+    await v080MaybeAutoBackupResult(
+      result
+    );
+  } catch (error) {
+    console.warn(
+      "CGWEB124 sauvegarde Drive facultative",
+      error
+    );
+  }
+
+  return result;
+}
+
+async function cgweb124DeleteGeneratedFit(
+  sha256
+) {
+  const sha =
+    String(sha256 || "")
+      .trim()
+      .toLowerCase();
+
+  if (
+    !/^[a-f0-9]{64}$/.test(sha)
+  ) {
+    return {
+      ok: false,
+      skipped: true
+    };
+  }
+
+  return request(
+    "delete",
+    {
+      method: "POST",
+      query: {
+        sha256: sha
+      }
+    }
+  );
+}
+
+window.SPORT_MANUAL_FIT_SPLIT =
+  Object.freeze({
+    version:
+      "CGWEB124-MANUAL_FIT_SPLIT001-SPLIT_REPLACE001",
+
+    generate:
+      cgweb124GenerateSplitFit,
+
+    deleteGenerated:
+      cgweb124DeleteGeneratedFit
+  });
+
+window.dispatchEvent(
+  new CustomEvent(
+    "sport-manual-fit-split-ready"
+  )
+);
+
+console.info(
+  "CGWEB124 actif dans fitcloud.js · MANUAL_FIT_SPLIT001 / SPLIT_REPLACE001"
+);
+
+/* CGWEB124_MANUAL_FIT_SPLIT_CLIENT_END */

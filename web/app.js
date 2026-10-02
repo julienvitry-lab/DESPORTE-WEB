@@ -61144,3 +61144,3667 @@ console.info(
   );
 })();
 /* CGWEB122_FIX6_FRONTEND_END */
+
+/* CGWEB123_124_START
+   ================================================================
+   CGWEB123
+   BULK_COMMUTE_JOIN001
+   SAME_DAY_SAME_EQUIPMENT001
+   ENDPOINT_200M_CHAIN001
+   JOIN_PREVIEW001
+
+   CGWEB124
+   MANUAL_FIT_SPLIT001
+   MAP_SPLIT_POINT001
+   SPLIT_REPLACE001
+   ================================================================
+*/
+(() => {
+  const CGWEB123_VERSION =
+    "CGWEB123";
+
+  const CGWEB124_VERSION =
+    "CGWEB124";
+
+  const CGWEB123_MAX_ENDPOINT_M =
+    200;
+
+  const CGWEB123_MAX_CHAIN_ACTIVITIES =
+    12;
+
+  const cgweb123State = {
+    busy: false,
+    chains: [],
+    revision: 0,
+    scannedAt: 0
+  };
+
+  const cgweb124State = {
+    active: false,
+    busy: false,
+    mapHandler: null,
+    cutMarker: null
+  };
+
+  /* ==============================================================
+     COMMUN
+     ============================================================== */
+
+  function cgweb123124Norm(value) {
+    return String(
+      value ?? ""
+    )
+      .trim()
+      .normalize("NFD")
+      .replace(
+        /[\u0300-\u036f]/g,
+        ""
+      )
+      .replace(/\s+/g, " ")
+      .toLocaleLowerCase(
+        "fr-FR"
+      );
+  }
+
+  function cgweb123124DateKey(ms) {
+    const value =
+      Number(ms);
+
+    if (
+      !Number.isFinite(value) ||
+      value <= 0
+    ) {
+      return "";
+    }
+
+    const parts =
+      new Intl.DateTimeFormat(
+        "en-GB",
+        {
+          timeZone:
+            "Europe/Paris",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit"
+        }
+      ).formatToParts(
+        new Date(value)
+      );
+
+    const out = {};
+
+    for (const part of parts) {
+      if (
+        part.type !==
+        "literal"
+      ) {
+        out[part.type] =
+          part.value;
+      }
+    }
+
+    return (
+      out.year +
+      "-" +
+      out.month +
+      "-" +
+      out.day
+    );
+  }
+
+  function cgweb123124Equipment(
+    activity
+  ) {
+    return {
+      id:
+        String(
+          activity?.equipment_id ??
+          activity?.gear_id ??
+          activity?.material_id ??
+          activity?.equipmentId ??
+          activity?.gearId ??
+          ""
+        ).trim(),
+
+      name:
+        cgweb123124Norm(
+          activity?.equipment_name ??
+          activity?.equipment ??
+          activity?.gear_name ??
+          activity?.material_name ??
+          ""
+        ),
+
+      label:
+        String(
+          activity?.equipment_name ??
+          activity?.equipment ??
+          activity?.gear_name ??
+          activity?.material_name ??
+          ""
+        ).trim()
+    };
+  }
+
+  function cgweb123124SameEquipment(
+    a,
+    b
+  ) {
+    const left =
+      cgweb123124Equipment(a);
+
+    const right =
+      cgweb123124Equipment(b);
+
+    if (
+      left.id &&
+      right.id
+    ) {
+      return left.id === right.id;
+    }
+
+    return Boolean(
+      left.name &&
+      right.name &&
+      left.name === right.name
+    );
+  }
+
+  function cgweb123124IsSplitRelated(
+    activity
+  ) {
+    if (!activity) return true;
+
+    if (
+      String(
+        activity
+          .split_parent_activity_id ||
+        ""
+      ).trim()
+    ) {
+      return true;
+    }
+
+    if (
+      Array.isArray(
+        activity.split_children_ids
+      ) &&
+      activity
+        .split_children_ids
+        .length
+    ) {
+      return true;
+    }
+
+    if (
+      String(
+        activity.split_status ||
+        ""
+      ).trim()
+    ) {
+      return true;
+    }
+
+    if (
+      String(
+        activity.import_source ||
+        ""
+      ).toUpperCase() ===
+      "WEB_SPLIT"
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function cgweb123124Time(
+    ms
+  ) {
+    const n =
+      Number(ms);
+
+    if (
+      !Number.isFinite(n) ||
+      n <= 0
+    ) {
+      return "—";
+    }
+
+    return new Intl.DateTimeFormat(
+      "fr-FR",
+      {
+        timeZone:
+          "Europe/Paris",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      }
+    ).format(
+      new Date(n)
+    );
+  }
+
+  function cgweb123124DateLabel(
+    key
+  ) {
+    const match =
+      String(key || "")
+        .match(
+          /^(\d{4})-(\d{2})-(\d{2})$/
+        );
+
+    if (!match) return key || "—";
+
+    return (
+      match[3] +
+      "/" +
+      match[2] +
+      "/" +
+      match[1]
+    );
+  }
+
+  function cgweb123124Km(
+    meters
+  ) {
+    return (
+      (
+        Math.max(
+          0,
+          Number(meters) || 0
+        ) / 1000
+      ).toLocaleString(
+        "fr-FR",
+        {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }
+      ) +
+      " km"
+    );
+  }
+
+  function cgweb123124Meters(
+    meters
+  ) {
+    const n =
+      Number(meters);
+
+    return Number.isFinite(n)
+      ? (
+          Math.round(n)
+            .toLocaleString(
+              "fr-FR"
+            ) +
+          " m"
+        )
+      : "—";
+  }
+
+  function cgweb123124Haversine(
+    a,
+    b
+  ) {
+    if (!a || !b) {
+      return Infinity;
+    }
+
+    const lat1 =
+      Number(a.lat);
+
+    const lon1 =
+      Number(a.lon);
+
+    const lat2 =
+      Number(b.lat);
+
+    const lon2 =
+      Number(b.lon);
+
+    if (
+      ![
+        lat1,
+        lon1,
+        lat2,
+        lon2
+      ].every(
+        Number.isFinite
+      )
+    ) {
+      return Infinity;
+    }
+
+    const rad =
+      Math.PI / 180;
+
+    const dLat =
+      (lat2 - lat1) * rad;
+
+    const dLon =
+      (lon2 - lon1) * rad;
+
+    const x =
+      Math.sin(
+        dLat / 2
+      ) ** 2 +
+      Math.cos(lat1 * rad) *
+      Math.cos(lat2 * rad) *
+      Math.sin(
+        dLon / 2
+      ) ** 2;
+
+    return (
+      6371000 *
+      2 *
+      Math.atan2(
+        Math.sqrt(x),
+        Math.sqrt(
+          Math.max(
+            0,
+            1 - x
+          )
+        )
+      )
+    );
+  }
+
+  async function cgweb123124WaitApi(
+    name,
+    timeoutMs = 6000
+  ) {
+    const start =
+      Date.now();
+
+    while (
+      Date.now() - start <
+      timeoutMs
+    ) {
+      const api =
+        window[name];
+
+      if (api) return api;
+
+      await new Promise(
+        resolve =>
+          setTimeout(
+            resolve,
+            80
+          )
+      );
+    }
+
+    throw new Error(
+      "Service " +
+      name +
+      " non chargé."
+    );
+  }
+
+  /* ==============================================================
+     STYLE
+     ============================================================== */
+
+  function cgweb123124InstallStyle() {
+    if (
+      document.getElementById(
+        "cgweb123124Style"
+      )
+    ) {
+      return;
+    }
+
+    const style =
+      document.createElement(
+        "style"
+      );
+
+    style.id =
+      "cgweb123124Style";
+
+    style.textContent = `
+      /* ==========================================================
+         CGWEB123
+         ========================================================== */
+
+      #cgweb123BulkPanel {
+        margin-top: 2mm;
+      }
+
+      #cgweb123BulkPanel > summary {
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      #cgweb123BulkBody {
+        display: grid;
+        gap: 10px;
+        padding-top: 10px;
+      }
+
+      .cgweb123-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      #cgweb123Status {
+        flex: 1 1 260px;
+      }
+
+      #cgweb123ChainList {
+        display: grid;
+        gap: 10px;
+      }
+
+      .cgweb123-chain {
+        display: grid;
+        gap: 7px;
+
+        padding: 11px 12px;
+
+        border:
+          1px solid
+          rgba(167,255,42,.20);
+
+        border-radius: 12px;
+
+        background:
+          rgba(255,255,255,.015);
+      }
+
+      .cgweb123-chain-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .cgweb123-chain-head label {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-weight: 700;
+      }
+
+      .cgweb123-chain-equipment {
+        color:
+          var(--green,#b6ff3b);
+      }
+
+      .cgweb123-chain-total {
+        margin-left: auto;
+        white-space: nowrap;
+      }
+
+      .cgweb123-chain-table {
+        display: grid;
+        gap: 3px;
+      }
+
+      .cgweb123-chain-row {
+        display: grid;
+
+        grid-template-columns:
+          90px
+          minmax(160px,1fr)
+          110px
+          170px;
+
+        gap: 8px;
+        align-items: center;
+
+        padding: 5px 7px;
+
+        border-top:
+          1px solid
+          rgba(255,255,255,.06);
+      }
+
+      .cgweb123-gap-ok {
+        color:
+          #7ee7bd;
+      }
+
+      .cgweb123-safe-note {
+        padding: 8px 10px;
+
+        border:
+          1px solid
+          rgba(167,255,42,.14);
+
+        border-radius: 10px;
+
+        color:
+          var(--muted,#9ca89f);
+      }
+
+      /* ==========================================================
+         CGWEB124
+         ========================================================== */
+
+      #detailView
+      #splitActivityPanel.cgweb124-visible {
+        display: block !important;
+      }
+
+      #cgweb124SplitButton {
+        display: inline-flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+      }
+
+      #splitActivityPanel.cgweb124-visible
+      #splitActivityAutoButton {
+        display: none !important;
+      }
+
+      #splitActivityPanel.cgweb124-visible
+      .split-source-note {
+        border-color:
+          rgba(167,255,42,.25);
+      }
+
+      #splitActivityPanel.cgweb124-visible
+      .split-source-note::before {
+        content:
+          "CGWEB124 · FIT A + FIT B validés avant remplacement de la source.";
+        display: block;
+        margin-bottom: 5px;
+        color:
+          var(--green,#b6ff3b);
+        font-weight: 700;
+      }
+
+      #splitActivityPanel.cgweb124-visible
+      #splitActivityCommitButton {
+        display: inline-flex !important;
+      }
+
+      #splitActivityPanel.cgweb124-visible
+      .split-profile-svg,
+      body.cgweb124-split-active
+      #elevationProfile,
+      body.cgweb124-split-active
+      #activityMap {
+        cursor: crosshair !important;
+      }
+
+      #splitActivityPanel.cgweb124-visible
+      .split-range-label {
+        display: grid !important;
+      }
+
+      #splitActivityPanel.cgweb124-visible
+      .split-activity-options {
+        display: grid !important;
+      }
+
+      @media (max-width: 760px) {
+        .cgweb123-chain-row {
+          grid-template-columns:
+            80px 1fr;
+        }
+
+        .cgweb123-chain-total {
+          margin-left: 0;
+        }
+      }
+    `;
+
+    document.head.appendChild(
+      style
+    );
+  }
+
+  /* ==============================================================
+     CGWEB123 · BULK_COMMUTE_JOIN001
+     ============================================================== */
+
+  function cgweb123Panel() {
+    return document.getElementById(
+      "cgweb123BulkPanel"
+    );
+  }
+
+  function cgweb123Status(
+    text,
+    state = "neutral"
+  ) {
+    const node =
+      document.getElementById(
+        "cgweb123Status"
+      );
+
+    if (!node) return;
+
+    node.textContent = text;
+
+    node.className =
+      "pill " +
+      (
+        state === "success"
+          ? "ok"
+          : state === "error"
+            ? "error"
+            : state === "pending"
+              ? "pending"
+              : "neutral"
+      );
+  }
+
+  function cgweb123Mount() {
+    if (
+      document.getElementById(
+        "cgweb123BulkPanel"
+      )
+    ) {
+      return true;
+    }
+
+    const directory =
+      document.getElementById(
+        "activityDirectorySection"
+      );
+
+    if (!directory) {
+      return false;
+    }
+
+    const panel =
+      document.createElement(
+        "details"
+      );
+
+    panel.id =
+      "cgweb123BulkPanel";
+
+    panel.className =
+      "panel compact-disclosure";
+
+    panel.innerHTML = `
+      <summary>
+        CGWEB123 · Jonction automatique de masse
+      </summary>
+
+      <div id="cgweb123BulkBody">
+        <p class="muted">
+          SPORT recherche les chaînes :
+          même date locale +
+          même sport/sous-sport +
+          même matériel +
+          arrivée du segment précédent à 200 m maximum
+          du départ du segment suivant.
+        </p>
+
+        <div class="cgweb123-actions">
+          <button
+            id="cgweb123ScanButton"
+            class="secondary"
+            type="button">
+            Analyser les trajets morcelés
+          </button>
+
+          <button
+            id="cgweb123ApplyButton"
+            class="primary"
+            type="button"
+            disabled>
+            Appliquer les chaînes cochées
+          </button>
+
+          <span
+            id="cgweb123Status"
+            class="pill neutral">
+            Analyse non lancée
+          </span>
+        </div>
+
+        <div class="cgweb123-safe-note">
+          JOIN_PREVIEW001 · aucune fusion automatique.
+          Chaque chaîne est d'abord revalidée par
+          CGWEB122 / FIT_JOIN_REPLACE001.
+          Le FIT destination est validé avant toute suppression
+          des activités sources.
+        </div>
+
+        <div id="cgweb123ChainList"></div>
+      </div>
+    `;
+
+    directory.insertAdjacentElement(
+      "afterend",
+      panel
+    );
+
+    document
+      .getElementById(
+        "cgweb123ScanButton"
+      )
+      ?.addEventListener(
+        "click",
+        () => {
+          void cgweb123Scan();
+        }
+      );
+
+    document
+      .getElementById(
+        "cgweb123ApplyButton"
+      )
+      ?.addEventListener(
+        "click",
+        () => {
+          void cgweb123Apply();
+        }
+      );
+
+    return true;
+  }
+
+  async function cgweb123LoadActivities() {
+    if (!currentUser) {
+      throw new Error(
+        "Connexion SPORT requise."
+      );
+    }
+
+    const snapshot =
+      await getDocs(
+        userCollection(
+          "activities"
+        )
+      );
+
+    const rows = [];
+
+    snapshot.forEach(
+      item => {
+        const row =
+          item.data() || {};
+
+        if (
+          row.deleted_at_ms != null
+        ) {
+          return;
+        }
+
+        rows.push({
+          ...row,
+          __docId:
+            String(item.id)
+        });
+      }
+    );
+
+    return rows;
+  }
+
+  function cgweb123EndpointFromRoute(
+    route
+  ) {
+    const lat =
+      Array.isArray(route?.lat)
+        ? route.lat
+        : [];
+
+    const lon =
+      Array.isArray(route?.lon)
+        ? route.lon
+        : [];
+
+    const count =
+      Math.min(
+        lat.length,
+        lon.length
+      );
+
+    let start = null;
+    let end = null;
+
+    for (
+      let i = 0;
+      i < count;
+      i += 1
+    ) {
+      const a =
+        Number(lat[i]);
+
+      const b =
+        Number(lon[i]);
+
+      if (
+        !Number.isFinite(a) ||
+        !Number.isFinite(b) ||
+        a < -90 ||
+        a > 90 ||
+        b < -180 ||
+        b > 180
+      ) {
+        continue;
+      }
+
+      start = {
+        lat: a,
+        lon: b,
+        index: i
+      };
+
+      break;
+    }
+
+    for (
+      let i = count - 1;
+      i >= 0;
+      i -= 1
+    ) {
+      const a =
+        Number(lat[i]);
+
+      const b =
+        Number(lon[i]);
+
+      if (
+        !Number.isFinite(a) ||
+        !Number.isFinite(b) ||
+        a < -90 ||
+        a > 90 ||
+        b < -180 ||
+        b > 180
+      ) {
+        continue;
+      }
+
+      end = {
+        lat: a,
+        lon: b,
+        index: i
+      };
+
+      break;
+    }
+
+    if (!start || !end) {
+      return null;
+    }
+
+    return {
+      start,
+      end
+    };
+  }
+
+  async function cgweb123LoadEndpoint(
+    activity
+  ) {
+    const id =
+      String(
+        activityKey(activity)
+      );
+
+    if (!id) return null;
+
+    try {
+      const snapshot =
+        await getDoc(
+          doc(
+            db,
+            ROOT,
+            currentUser.uid,
+            "activity_routes",
+            id
+          )
+        );
+
+      if (!snapshot.exists()) {
+        return null;
+      }
+
+      return cgweb123EndpointFromRoute(
+        snapshot.data() || {}
+      );
+    } catch (error) {
+      console.warn(
+        "CGWEB123 route",
+        id,
+        error
+      );
+
+      return null;
+    }
+  }
+
+  async function cgweb123MapLimit(
+    items,
+    concurrency,
+    mapper
+  ) {
+    const source =
+      Array.isArray(items)
+        ? items
+        : [];
+
+    const results =
+      new Array(
+        source.length
+      );
+
+    let cursor = 0;
+
+    async function worker() {
+      while (true) {
+        const index =
+          cursor++;
+
+        if (
+          index >=
+          source.length
+        ) {
+          return;
+        }
+
+        results[index] =
+          await mapper(
+            source[index],
+            index
+          );
+      }
+    }
+
+    const workers =
+      Array.from(
+        {
+          length:
+            Math.min(
+              Math.max(
+                1,
+                concurrency
+              ),
+              Math.max(
+                1,
+                source.length
+              )
+            )
+        },
+        () => worker()
+      );
+
+    await Promise.all(
+      workers
+    );
+
+    return results;
+  }
+
+  function cgweb123CandidateGroupKey(
+    activity
+  ) {
+    const day =
+      cgweb123124DateKey(
+        activity?.start_time_ms
+      );
+
+    const sport =
+      Number(
+        activity?.sport
+      );
+
+    const subSport =
+      Number(
+        activity?.sub_sport ??
+        activity?.subSport ??
+        0
+      );
+
+    if (
+      !day ||
+      !Number.isFinite(sport) ||
+      !Number.isFinite(subSport)
+    ) {
+      return "";
+    }
+
+    return (
+      day +
+      "|" +
+      sport +
+      "|" +
+      subSport
+    );
+  }
+
+  function cgweb123EligibleActivity(
+    activity
+  ) {
+    if (
+      !activity ||
+      activity.deleted_at_ms != null ||
+      cgweb123124IsSplitRelated(
+        activity
+      )
+    ) {
+      return false;
+    }
+
+    const equipment =
+      cgweb123124Equipment(
+        activity
+      );
+
+    if (
+      !equipment.id &&
+      !equipment.name
+    ) {
+      return false;
+    }
+
+    return Boolean(
+      cgweb123CandidateGroupKey(
+        activity
+      )
+    );
+  }
+
+  function cgweb123FinalizeChain(
+    chain,
+    rawChains
+  ) {
+    if (
+      Array.isArray(chain) &&
+      chain.length >= 2
+    ) {
+      rawChains.push(
+        chain.map(
+          item => ({
+            ...item
+          })
+        )
+      );
+    }
+  }
+
+  async function cgweb123DetectRawChains(
+    allActivities
+  ) {
+    const groups =
+      new Map();
+
+    for (
+      const activity
+      of allActivities
+    ) {
+      if (
+        !cgweb123EligibleActivity(
+          activity
+        )
+      ) {
+        continue;
+      }
+
+      const key =
+        cgweb123CandidateGroupKey(
+          activity
+        );
+
+      const list =
+        groups.get(key) || [];
+
+      list.push(activity);
+
+      groups.set(
+        key,
+        list
+      );
+    }
+
+    const candidateRows = [];
+
+    for (
+      const rows
+      of groups.values()
+    ) {
+      if (rows.length < 2) {
+        continue;
+      }
+
+      rows.sort(
+        (a,b) =>
+          Number(
+            a?.start_time_ms || 0
+          ) -
+          Number(
+            b?.start_time_ms || 0
+          )
+      );
+
+      candidateRows.push(
+        ...rows
+      );
+    }
+
+    cgweb123Status(
+      "Lecture des extrémités GPS · " +
+      candidateRows.length +
+      " activité(s)…",
+      "pending"
+    );
+
+    const endpointRows =
+      await cgweb123MapLimit(
+        candidateRows,
+        10,
+        async activity => ({
+          activity,
+          endpoint:
+            await cgweb123LoadEndpoint(
+              activity
+            )
+        })
+      );
+
+    const endpointById =
+      new Map(
+        endpointRows.map(
+          row => [
+            String(
+              activityKey(
+                row.activity
+              )
+            ),
+            row.endpoint
+          ]
+        )
+      );
+
+    const rawChains = [];
+
+    for (
+      const rows
+      of groups.values()
+    ) {
+      if (rows.length < 2) {
+        continue;
+      }
+
+      rows.sort(
+        (a,b) =>
+          Number(
+            a?.start_time_ms || 0
+          ) -
+          Number(
+            b?.start_time_ms || 0
+          )
+      );
+
+      let chain = [];
+
+      for (
+        const activity
+        of rows
+      ) {
+        const id =
+          String(
+            activityKey(
+              activity
+            )
+          );
+
+        const endpoint =
+          endpointById.get(id);
+
+        if (!endpoint) {
+          cgweb123FinalizeChain(
+            chain,
+            rawChains
+          );
+
+          chain = [];
+          continue;
+        }
+
+        const item = {
+          activity,
+          endpoint,
+          gap_from_previous_m:
+            null
+        };
+
+        if (!chain.length) {
+          chain = [item];
+          continue;
+        }
+
+        const base =
+          chain[0].activity;
+
+        const previous =
+          chain[
+            chain.length - 1
+          ];
+
+        const gap =
+          cgweb123124Haversine(
+            previous
+              .endpoint
+              .end,
+            endpoint.start
+          );
+
+        const compatible =
+          cgweb123124SameEquipment(
+            base,
+            activity
+          ) &&
+          Number(
+            base?.sport
+          ) ===
+          Number(
+            activity?.sport
+          ) &&
+          Number(
+            base?.sub_sport ??
+            base?.subSport ??
+            0
+          ) ===
+          Number(
+            activity?.sub_sport ??
+            activity?.subSport ??
+            0
+          ) &&
+          Number.isFinite(gap) &&
+          gap <=
+            CGWEB123_MAX_ENDPOINT_M;
+
+        if (
+          compatible &&
+          chain.length <
+            CGWEB123_MAX_CHAIN_ACTIVITIES
+        ) {
+          item
+            .gap_from_previous_m =
+              gap;
+
+          chain.push(item);
+        } else {
+          cgweb123FinalizeChain(
+            chain,
+            rawChains
+          );
+
+          chain = [item];
+        }
+      }
+
+      cgweb123FinalizeChain(
+        chain,
+        rawChains
+      );
+    }
+
+    return rawChains;
+  }
+
+  async function cgweb123ValidateChains(
+    rawChains
+  ) {
+    const api =
+      await cgweb123124WaitApi(
+        "SPORT_FIT_JOIN_REPLACE"
+      );
+
+    const valid = [];
+
+    let rejected = 0;
+
+    for (
+      let index = 0;
+      index < rawChains.length;
+      index += 1
+    ) {
+      const chain =
+        rawChains[index];
+
+      cgweb123Status(
+        "JOIN_PREVIEW001 · validation " +
+        (index + 1) +
+        "/" +
+        rawChains.length +
+        "…",
+        "pending"
+      );
+
+      const ids =
+        chain.map(
+          item =>
+            String(
+              activityKey(
+                item.activity
+              )
+            )
+        );
+
+      try {
+        const result =
+          await api.plan(
+            ids[0],
+            ids.slice(1)
+          );
+
+        const plan =
+          result?.plan;
+
+        if (
+          !result?.ok ||
+          !plan?.plan_token
+        ) {
+          rejected += 1;
+          continue;
+        }
+
+        valid.push({
+          key:
+            plan.plan_token,
+
+          selected:
+            true,
+
+          day:
+            cgweb123124DateKey(
+              chain[0]
+                .activity
+                .start_time_ms
+            ),
+
+          equipment:
+            cgweb123124Equipment(
+              chain[0]
+                .activity
+            ),
+
+          sport:
+            Number(
+              chain[0]
+                .activity
+                .sport
+            ),
+
+          sub_sport:
+            Number(
+              chain[0]
+                .activity
+                .sub_sport ??
+              chain[0]
+                .activity
+                .subSport ??
+              0
+            ),
+
+          destination_id:
+            ids[0],
+
+          source_ids:
+            ids.slice(1),
+
+          activity_ids:
+            ids,
+
+          items:
+            chain,
+
+          total_distance_m:
+            Number(
+              plan.distance_m || 0
+            ),
+
+          plan_token:
+            plan.plan_token,
+
+          plan
+        });
+      } catch (error) {
+        rejected += 1;
+
+        console.warn(
+          "CGWEB123 chaîne rejetée par CGWEB122",
+          ids,
+          error
+        );
+      }
+    }
+
+    return {
+      valid,
+      rejected
+    };
+  }
+
+  function cgweb123Render() {
+    const host =
+      document.getElementById(
+        "cgweb123ChainList"
+      );
+
+    const apply =
+      document.getElementById(
+        "cgweb123ApplyButton"
+      );
+
+    if (!host) return;
+
+    host.innerHTML = "";
+
+    if (
+      !cgweb123State
+        .chains.length
+    ) {
+      host.innerHTML =
+        '<p class="muted">' +
+        'Aucune chaîne compatible détectée.' +
+        '</p>';
+
+      if (apply) {
+        apply.disabled = true;
+      }
+
+      return;
+    }
+
+    for (
+      const chain
+      of cgweb123State.chains
+    ) {
+      const card =
+        document.createElement(
+          "article"
+        );
+
+      card.className =
+        "cgweb123-chain";
+
+      const equipmentLabel =
+        chain
+          .equipment
+          .label ||
+        chain
+          .equipment
+          .id ||
+        "Matériel";
+
+      const rows =
+        chain.items
+          .map(
+            (
+              item,
+              index
+            ) => {
+              const activity =
+                item.activity;
+
+              const title =
+                String(
+                  activity
+                    ?.custom_title ??
+                  activity
+                    ?.title ??
+                  activity
+                    ?.name ??
+                  sportName(
+                    activity?.sport
+                  )
+                ).trim();
+
+              const gap =
+                index === 0
+                  ? "Base"
+                  : (
+                      "Écart géographique " +
+                      cgweb123124Meters(
+                        item
+                          .gap_from_previous_m
+                      )
+                    );
+
+              return `
+                <div class="cgweb123-chain-row">
+                  <strong>
+                    ${escapeHtml(
+                      cgweb123124Time(
+                        activity
+                          ?.start_time_ms
+                      )
+                    )}
+                  </strong>
+
+                  <span>
+                    ${escapeHtml(title)}
+                  </span>
+
+                  <span>
+                    ${escapeHtml(
+                      cgweb123124Km(
+                        activity
+                          ?.distance_m
+                      )
+                    )}
+                  </span>
+
+                  <span class="${index ? "cgweb123-gap-ok" : "muted"}">
+                    ${escapeHtml(gap)}
+                  </span>
+                </div>
+              `;
+            }
+          )
+          .join("");
+
+      card.innerHTML = `
+        <div class="cgweb123-chain-head">
+          <label>
+            <input
+              type="checkbox"
+              class="cgweb123-chain-check"
+              ${chain.selected ? "checked" : ""}
+            >
+
+            <span>
+              ${escapeHtml(
+                cgweb123124DateLabel(
+                  chain.day
+                )
+              )}
+            </span>
+          </label>
+
+          <strong class="cgweb123-chain-equipment">
+            ${escapeHtml(
+              equipmentLabel
+            )}
+          </strong>
+
+          <span class="muted">
+            sport
+            ${escapeHtml(
+              String(
+                chain.sport
+              )
+            )}
+            /
+            ${escapeHtml(
+              String(
+                chain.sub_sport
+              )
+            )}
+          </span>
+
+          <strong class="cgweb123-chain-total">
+            → Fusion proposée :
+            ${escapeHtml(
+              cgweb123124Km(
+                chain
+                  .total_distance_m
+              )
+            )}
+          </strong>
+        </div>
+
+        <div class="cgweb123-chain-table">
+          ${rows}
+        </div>
+      `;
+
+      const checkbox =
+        card.querySelector(
+          ".cgweb123-chain-check"
+        );
+
+      checkbox?.addEventListener(
+        "change",
+        () => {
+          chain.selected =
+            Boolean(
+              checkbox.checked
+            );
+
+          cgweb123UpdateApplyButton();
+        }
+      );
+
+      host.appendChild(card);
+    }
+
+    cgweb123UpdateApplyButton();
+  }
+
+  function cgweb123UpdateApplyButton() {
+    const button =
+      document.getElementById(
+        "cgweb123ApplyButton"
+      );
+
+    if (!button) return;
+
+    const count =
+      cgweb123State
+        .chains
+        .filter(
+          chain =>
+            chain.selected
+        )
+        .length;
+
+    button.disabled =
+      cgweb123State.busy ||
+      count === 0;
+
+    button.textContent =
+      count
+        ? (
+            "Appliquer " +
+            count +
+            " chaîne" +
+            (
+              count > 1
+                ? "s"
+                : ""
+            )
+          )
+        : "Aucune chaîne cochée";
+  }
+
+  async function cgweb123Scan() {
+    if (
+      cgweb123State.busy
+    ) {
+      return;
+    }
+
+    if (!navigator.onLine) {
+      cgweb123Status(
+        "Connexion requise.",
+        "error"
+      );
+
+      return;
+    }
+
+    cgweb123State.busy = true;
+    cgweb123State.chains = [];
+
+    cgweb123UpdateApplyButton();
+
+    const scanButton =
+      document.getElementById(
+        "cgweb123ScanButton"
+      );
+
+    if (scanButton) {
+      scanButton.disabled = true;
+    }
+
+    try {
+      cgweb123Status(
+        "Lecture du répertoire complet…",
+        "pending"
+      );
+
+      const all =
+        await cgweb123LoadActivities();
+
+      const raw =
+        await cgweb123DetectRawChains(
+          all
+        );
+
+      const validation =
+        await cgweb123ValidateChains(
+          raw
+        );
+
+      cgweb123State.chains =
+        validation.valid;
+
+      cgweb123State.revision +=
+        1;
+
+      cgweb123State.scannedAt =
+        Date.now();
+
+      cgweb123Render();
+
+      cgweb123Status(
+        validation.valid.length
+          ? (
+              validation.valid.length +
+              " chaîne(s) valide(s) · " +
+              validation.rejected +
+              " rejetée(s) par les garde-fous CGWEB122."
+            )
+          : (
+              "Aucune chaîne compatible · " +
+              validation.rejected +
+              " proposition(s) rejetée(s) par les garde-fous."
+            ),
+        validation.valid.length
+          ? "success"
+          : "neutral"
+      );
+    } catch (error) {
+      console.error(
+        "CGWEB123 scan",
+        error
+      );
+
+      cgweb123Status(
+        "Analyse impossible : " +
+        (
+          error?.message ||
+          error
+        ),
+        "error"
+      );
+    } finally {
+      cgweb123State.busy =
+        false;
+
+      if (scanButton) {
+        scanButton.disabled =
+          false;
+      }
+
+      cgweb123UpdateApplyButton();
+    }
+  }
+
+  async function cgweb123Apply() {
+    if (
+      cgweb123State.busy
+    ) {
+      return;
+    }
+
+    const selected =
+      cgweb123State
+        .chains
+        .filter(
+          chain =>
+            chain.selected
+        );
+
+    if (!selected.length) {
+      return;
+    }
+
+    const activityCount =
+      selected.reduce(
+        (
+          sum,
+          chain
+        ) =>
+          sum +
+          chain
+            .activity_ids
+            .length,
+        0
+      );
+
+    const ok =
+      window.confirm(
+        "CGWEB123 · appliquer les fusions proposées ?\n\n" +
+        selected.length +
+        " chaîne(s) cochée(s)\n" +
+        activityCount +
+        " activités concernées\n\n" +
+        "Chaque chaîne sera revalidée par CGWEB122.\n" +
+        "Le traitement s'arrête à la première erreur."
+      );
+
+    if (!ok) return;
+
+    cgweb123State.busy =
+      true;
+
+    cgweb123UpdateApplyButton();
+
+    const scanButton =
+      document.getElementById(
+        "cgweb123ScanButton"
+      );
+
+    if (scanButton) {
+      scanButton.disabled = true;
+    }
+
+    try {
+      const api =
+        await cgweb123124WaitApi(
+          "SPORT_FIT_JOIN_REPLACE"
+        );
+
+      let completed = 0;
+
+      for (
+        const chain
+        of selected
+      ) {
+        cgweb123Status(
+          "Fusion " +
+          (completed + 1) +
+          "/" +
+          selected.length +
+          " · " +
+          cgweb123124DateLabel(
+            chain.day
+          ) +
+          "…",
+          "pending"
+        );
+
+        const result =
+          await api.execute(
+            chain.destination_id,
+            chain.source_ids,
+            chain.plan_token
+          );
+
+        if (!result?.ok) {
+          throw new Error(
+            "FIT_JOIN_REPLACE001 : fusion non validée."
+          );
+        }
+
+        completed += 1;
+      }
+
+      cgweb123Status(
+        completed +
+        " chaîne(s) fusionnée(s) avec succès.",
+        "success"
+      );
+
+      setMessage(
+        "CGWEB123 · " +
+        completed +
+        " chaîne(s) fusionnée(s).",
+        "success"
+      );
+
+      window.setTimeout(
+        () => {
+          window.location.reload();
+        },
+        900
+      );
+    } catch (error) {
+      console.error(
+        "CGWEB123 apply",
+        error
+      );
+
+      cgweb123Status(
+        "Traitement interrompu : " +
+        (
+          error?.message ||
+          error
+        ),
+        "error"
+      );
+
+      setMessage(
+        "CGWEB123 · traitement arrêté au premier échec.",
+        "error"
+      );
+    } finally {
+      cgweb123State.busy =
+        false;
+
+      if (scanButton) {
+        scanButton.disabled =
+          false;
+      }
+
+      cgweb123UpdateApplyButton();
+    }
+  }
+
+  /* ==============================================================
+     CGWEB124 · MANUAL_FIT_SPLIT001
+     ============================================================== */
+
+  function cgweb124EnsureToolbarButton() {
+    const detail =
+      document.getElementById(
+        "detailView"
+      );
+
+    if (
+      !detail ||
+      detail.classList.contains(
+        "hidden"
+      )
+    ) {
+      return false;
+    }
+
+    const host =
+      document.getElementById(
+        "web065ToolbarCenter"
+      );
+
+    if (!host) {
+      return false;
+    }
+
+    let button =
+      document.getElementById(
+        "cgweb124SplitButton"
+      );
+
+    if (!button) {
+      button =
+        document.createElement(
+          "button"
+        );
+
+      button.id =
+        "cgweb124SplitButton";
+
+      button.type =
+        "button";
+
+      button.className =
+        "secondary";
+
+      button.textContent =
+        "Découper";
+
+      button.addEventListener(
+        "click",
+        () => {
+          void cgweb124Open();
+        }
+      );
+    }
+
+    const manual =
+      document.getElementById(
+        "cg122ManualButton"
+      );
+
+    if (
+      manual &&
+      manual.parentElement ===
+        host
+    ) {
+      manual.insertAdjacentElement(
+        "afterend",
+        button
+      );
+    } else {
+      host.appendChild(
+        button
+      );
+    }
+
+    return true;
+  }
+
+  function cgweb124RemoveCutMarker() {
+    if (
+      cgweb124State.cutMarker &&
+      activityMapInstance
+    ) {
+      try {
+        activityMapInstance
+          .removeLayer(
+            cgweb124State
+              .cutMarker
+          );
+      } catch (_) {}
+    }
+
+    cgweb124State.cutMarker =
+      null;
+  }
+
+  function cgweb124UnbindMap() {
+    if (
+      cgweb124State.mapHandler &&
+      activityMapInstance
+    ) {
+      try {
+        activityMapInstance.off(
+          "click",
+          cgweb124State.mapHandler
+        );
+      } catch (_) {}
+    }
+
+    cgweb124State.mapHandler =
+      null;
+
+    cgweb124RemoveCutMarker();
+  }
+
+  function cgweb124Deactivate() {
+    cgweb124State.active =
+      false;
+
+    cgweb124UnbindMap();
+
+    document.body.classList.remove(
+      "cgweb124-split-active"
+    );
+
+    ui.splitActivityPanel
+      ?.classList.remove(
+        "cgweb124-visible"
+      );
+  }
+
+  function cgweb124Close() {
+    cgweb124Deactivate();
+
+    closeSplitActivityPanel();
+  }
+
+  function cgweb124NearestRouteIndex(
+    lat,
+    lon
+  ) {
+    const points =
+      splitActivityRoute
+        ?.points || [];
+
+    if (points.length < 3) {
+      return null;
+    }
+
+    let best =
+      null;
+
+    let bestDistance =
+      Infinity;
+
+    for (
+      let index = 1;
+      index <
+        points.length - 1;
+      index += 1
+    ) {
+      const point =
+        points[index];
+
+      const latitude =
+        Number(
+          point.latitude
+        );
+
+      const longitude =
+        Number(
+          point.longitude
+        );
+
+      if (
+        !Number.isFinite(
+          latitude
+        ) ||
+        !Number.isFinite(
+          longitude
+        )
+      ) {
+        continue;
+      }
+
+      const distance =
+        cgweb123124Haversine(
+          {
+            lat,
+            lon
+          },
+          {
+            lat:
+              latitude,
+            lon:
+              longitude
+          }
+        );
+
+      if (
+        distance <
+        bestDistance
+      ) {
+        bestDistance =
+          distance;
+
+        best = index;
+      }
+    }
+
+    return best;
+  }
+
+  function cgweb124PercentForIndex(
+    index
+  ) {
+    const points =
+      splitActivityRoute
+        ?.points || [];
+
+    if (
+      !points.length ||
+      index <= 0 ||
+      index >=
+        points.length - 1
+    ) {
+      return 50;
+    }
+
+    const first =
+      Number(
+        points[0]
+          ?.distanceMeters
+      );
+
+    const last =
+      Number(
+        points[
+          points.length - 1
+        ]?.distanceMeters
+      );
+
+    const current =
+      Number(
+        points[index]
+          ?.distanceMeters
+      );
+
+    if (
+      Number.isFinite(first) &&
+      Number.isFinite(last) &&
+      Number.isFinite(current) &&
+      last > first
+    ) {
+      return Math.max(
+        0.01,
+        Math.min(
+          99.99,
+          (
+            (
+              current - first
+            ) /
+            (
+              last - first
+            )
+          ) * 100
+        )
+      );
+    }
+
+    return Math.max(
+      0.01,
+      Math.min(
+        99.99,
+        (
+          index /
+          (
+            points.length - 1
+          )
+        ) * 100
+      )
+    );
+  }
+
+  function cgweb124SetCutIndex(
+    index,
+    origin
+  ) {
+    const points =
+      splitActivityRoute
+        ?.points || [];
+
+    const safe =
+      Math.max(
+        1,
+        Math.min(
+          points.length - 2,
+          Number(index) || 1
+        )
+      );
+
+    const percent =
+      cgweb124PercentForIndex(
+        safe
+      );
+
+    if (
+      ui.splitActivityRange
+    ) {
+      ui.splitActivityRange.value =
+        String(percent);
+    }
+
+    renderSplitActivityPreview();
+
+    cgweb124SyncCutUi(
+      origin
+    );
+  }
+
+  function cgweb124SelectedPoint() {
+    const parts =
+      currentSplitParts();
+
+    if (!parts) {
+      return null;
+    }
+
+    return {
+      index:
+        parts.index,
+
+      point:
+        splitActivityRoute
+          ?.points?.[
+            parts.index
+          ] || null,
+
+      parts
+    };
+  }
+
+  function cgweb124SyncCutUi(
+    origin = "curseur"
+  ) {
+    if (
+      !cgweb124State.active
+    ) {
+      return;
+    }
+
+    const selected =
+      cgweb124SelectedPoint();
+
+    if (!selected) {
+      return;
+    }
+
+    const {
+      point,
+      parts
+    } = selected;
+
+    const pct =
+      Number(
+        ui
+          .splitActivityRange
+          ?.value || 0
+      );
+
+    if (
+      ui.splitActivityRangeLabel
+    ) {
+      ui.splitActivityRangeLabel
+        .textContent =
+          pct.toLocaleString(
+            "fr-FR",
+            {
+              minimumFractionDigits:
+                0,
+              maximumFractionDigits:
+                2
+            }
+          ) +
+          " % · " +
+          formatDistance(
+            parts
+              .statsA
+              .distance_m
+          ) +
+          " · " +
+          cgweb123124Time(
+            point?.timeMs
+          ) +
+          " · sélection " +
+          origin;
+    }
+
+    cgweb124RemoveCutMarker();
+
+    const lat =
+      Number(
+        point?.latitude
+      );
+
+    const lon =
+      Number(
+        point?.longitude
+      );
+
+    if (
+      activityMapInstance &&
+      globalThis.L &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lon)
+    ) {
+      try {
+        cgweb124State.cutMarker =
+          L.marker(
+            [lat,lon],
+            {
+              title:
+                "Point de découpe CGWEB124"
+            }
+          )
+          .addTo(
+            activityMapInstance
+          );
+      } catch (_) {}
+    }
+  }
+
+  function cgweb124BindMap() {
+    cgweb124UnbindMap();
+
+    if (
+      !activityMapInstance ||
+      !splitActivityRoute
+    ) {
+      return;
+    }
+
+    cgweb124State.mapHandler =
+      event => {
+        if (
+          !cgweb124State.active
+        ) {
+          return;
+        }
+
+        const lat =
+          Number(
+            event?.latlng?.lat
+          );
+
+        const lon =
+          Number(
+            event?.latlng?.lng
+          );
+
+        if (
+          !Number.isFinite(lat) ||
+          !Number.isFinite(lon)
+        ) {
+          return;
+        }
+
+        const index =
+          cgweb124NearestRouteIndex(
+            lat,
+            lon
+          );
+
+        if (
+          index != null
+        ) {
+          cgweb124SetCutIndex(
+            index,
+            "carte"
+          );
+        }
+      };
+
+    activityMapInstance.on(
+      "click",
+      cgweb124State.mapHandler
+    );
+  }
+
+  function cgweb124SetCutFromSvg(
+    event,
+    svg,
+    origin
+  ) {
+    if (
+      !cgweb124State.active ||
+      !splitActivityRoute ||
+      !svg
+    ) {
+      return;
+    }
+
+    const rect =
+      svg.getBoundingClientRect();
+
+    if (
+      rect.width <= 0
+    ) {
+      return;
+    }
+
+    const ratio =
+      Math.max(
+        0.01,
+        Math.min(
+          0.99,
+          (
+            event.clientX -
+            rect.left
+          ) /
+          rect.width
+        )
+      );
+
+    const points =
+      splitActivityRoute.points;
+
+    const index =
+      Math.max(
+        1,
+        Math.min(
+          points.length - 2,
+          Math.round(
+            ratio *
+            (
+              points.length - 1
+            )
+          )
+        )
+      );
+
+    cgweb124SetCutIndex(
+      index,
+      origin
+    );
+  }
+
+  function cgweb124WireSelectors() {
+    if (
+      ui.splitActivityRange &&
+      ui.splitActivityRange
+        .dataset
+        .cgweb124 !== "1"
+    ) {
+      ui.splitActivityRange
+        .dataset
+        .cgweb124 = "1";
+
+      ui.splitActivityRange.step =
+        "0.01";
+
+      ui.splitActivityRange
+        .addEventListener(
+          "input",
+          () => {
+            requestAnimationFrame(
+              () =>
+                cgweb124SyncCutUi(
+                  "curseur"
+                )
+            );
+          }
+        );
+    }
+
+    if (
+      ui.splitProfileSvg &&
+      ui.splitProfileSvg
+        .dataset
+        .cgweb124 !== "1"
+    ) {
+      ui.splitProfileSvg
+        .dataset
+        .cgweb124 = "1";
+
+      ui.splitProfileSvg
+        .addEventListener(
+          "click",
+          event => {
+            cgweb124SetCutFromSvg(
+              event,
+              ui.splitProfileSvg,
+              "profil de découpe"
+            );
+          }
+        );
+    }
+
+    if (
+      ui.elevationProfile &&
+      ui.elevationProfile
+        .dataset
+        .cgweb124 !== "1"
+    ) {
+      ui.elevationProfile
+        .dataset
+        .cgweb124 = "1";
+
+      ui.elevationProfile
+        .addEventListener(
+          "click",
+          event => {
+            cgweb124SetCutFromSvg(
+              event,
+              ui.elevationProfile,
+              "profil altimétrique"
+            );
+          }
+        );
+    }
+
+    if (
+      ui.splitActivityCloseButton &&
+      ui.splitActivityCloseButton
+        .dataset
+        .cgweb124 !== "1"
+    ) {
+      ui.splitActivityCloseButton
+        .dataset
+        .cgweb124 = "1";
+
+      ui.splitActivityCloseButton
+        .addEventListener(
+          "click",
+          () => {
+            cgweb124Deactivate();
+          }
+        );
+    }
+  }
+
+  async function cgweb124Open() {
+    if (
+      cgweb124State.busy
+    ) {
+      return;
+    }
+
+    const activity =
+      currentDetailActivity();
+
+    if (!activity) {
+      setMessage(
+        "CGWEB124 · aucune activité ouverte.",
+        "error"
+      );
+
+      return;
+    }
+
+    cgweb124State.active =
+      true;
+
+    splitActivitySource =
+      activity;
+
+    ui.splitActivityPanel
+      ?.classList.remove(
+        "hidden"
+      );
+
+    ui.splitActivityPanel
+      ?.classList.add(
+        "cgweb124-visible"
+      );
+
+    ui.splitActivityWorkspace
+      ?.classList.add(
+        "hidden"
+      );
+
+    document.body.classList.add(
+      "cgweb124-split-active"
+    );
+
+    ui.splitActivityStatus.textContent =
+      "CGWEB124 · chargement du tracé détaillé…";
+
+    ui.splitActivityStatus.className =
+      "split-activity-status pending";
+
+    ui.splitActivityPanel
+      ?.scrollIntoView({
+        behavior:
+          "smooth",
+        block:
+          "start"
+      });
+
+    try {
+      let route = null;
+
+      try {
+        route =
+          await recoverSplitRouteForActivity(
+            activity
+          );
+      } catch (
+        recoveryError
+      ) {
+        if (
+          activeRoute &&
+          splitRouteHasTimeline(
+            activeRoute
+          )
+        ) {
+          route =
+            activeRoute;
+        } else {
+          throw recoveryError;
+        }
+      }
+
+      if (
+        !route?.points ||
+        route.points.length < 4
+      ) {
+        throw new Error(
+          "CGWEB124 : au moins 4 points sont nécessaires."
+        );
+      }
+
+      if (
+        !splitRouteHasTimeline(
+          route
+        )
+      ) {
+        throw new Error(
+          "CGWEB124 : chronologie point-par-point insuffisante."
+        );
+      }
+
+      splitActivityRoute =
+        route;
+
+      splitActivitySessions =
+        Array.isArray(
+          route.sessions
+        )
+          ? route.sessions
+          : [];
+
+      ui.splitActivityWorkspace
+        .classList.remove(
+          "hidden"
+        );
+
+      setSplitManualControlsVisible(
+        true
+      );
+
+      if (
+        ui.splitActivityAutoButton
+      ) {
+        ui.splitActivityAutoButton.hidden =
+          true;
+
+        ui.splitActivityAutoButton.disabled =
+          true;
+      }
+
+      ui.splitActivityRange.min =
+        "0.01";
+
+      ui.splitActivityRange.max =
+        "99.99";
+
+      ui.splitActivityRange.step =
+        "0.01";
+
+      ui.splitActivityRange.value =
+        "50";
+
+      const baseTitle =
+        String(
+          activity.custom_title ||
+          sportName(
+            activity.sport
+          )
+        ).trim();
+
+      ui.splitActivityTitleA.value =
+        baseTitle +
+        " · 1";
+
+      ui.splitActivityTitleB.value =
+        baseTitle +
+        " · 2";
+
+      ui.splitActivityStatus.textContent =
+        "CGWEB124 · choisissez le point de séparation sur la carte, sur le profil ou avec le curseur précis.";
+
+      ui.splitActivityStatus.className =
+        "split-activity-status success";
+
+      renderSplitActivityPreview();
+
+      cgweb124WireSelectors();
+
+      cgweb124BindMap();
+
+      cgweb124SyncCutUi(
+        "curseur"
+      );
+    } catch (error) {
+      console.error(
+        "CGWEB124 open",
+        error
+      );
+
+      ui.splitActivityStatus.textContent =
+        error?.message ||
+        String(error);
+
+      ui.splitActivityStatus.className =
+        "split-activity-status error";
+    }
+  }
+
+  function cgweb124BuildChild(
+    source,
+    stats,
+    id,
+    title,
+    partNumber,
+    totalDuration
+  ) {
+    const child =
+      buildSplitChild(
+        source,
+        stats,
+        id,
+        title,
+        partNumber,
+        totalDuration
+      );
+
+    /*
+     * Découpe manuelle :
+     * même activité => même sport / sous-sport / matériel.
+     * Aucun reclassement automatique du matériel.
+     */
+    child.sport =
+      Number(
+        source.sport
+      ) || 0;
+
+    child.sub_sport =
+      Number(
+        source.sub_sport ??
+        source.subSport ??
+        0
+      );
+
+    child.equipment_id =
+      source.equipment_id ??
+      null;
+
+    child.gear_id =
+      source.gear_id ??
+      null;
+
+    child.equipment_name =
+      source.equipment_name ??
+      source.equipment ??
+      source.gear_name ??
+      null;
+
+    child.equipment_manual =
+      source.equipment_manual ??
+      0;
+
+    child.import_source =
+      "WEB_SPLIT";
+
+    child.import_profile =
+      "CGWEB124_MANUAL_FIT_SPLIT001";
+
+    child.split_status =
+      "CHILD_MANUAL_REPLACE";
+
+    child.split_total =
+      2;
+
+    child.split_replace_state =
+      "PENDING_FIT";
+
+    child.split_replace_version =
+      "SPLIT_REPLACE001";
+
+    child.deleted_at_ms =
+      null;
+
+    return child;
+  }
+
+  async function cgweb124CreateChild(
+    child,
+    route,
+    sourceId
+  ) {
+    const key =
+      String(child.id);
+
+    const materialized =
+      {
+        ...child
+      };
+
+    delete materialized.__docId;
+
+    const routeRow = {
+      ...route,
+
+      split_parent_activity_id:
+        String(sourceId),
+
+      split_part:
+        child.split_part,
+
+      split_total:
+        2,
+
+      split_replace_version:
+        "SPLIT_REPLACE001"
+    };
+
+    await commitWebMutation({
+      table:
+        "activities",
+
+      rowKey:
+        key,
+
+      operation:
+        "UPSERT",
+
+      row:
+        materialized,
+
+      materializedCollection:
+        "activities",
+
+      materializedData:
+        materialized,
+
+      metaIncrements: {
+        activityCount: 1,
+        expectedDocuments: 1
+      }
+    });
+
+    await commitWebMutation({
+      table:
+        "activity_routes",
+
+      rowKey:
+        key,
+
+      operation:
+        "UPSERT",
+
+      row: {
+        id:
+          child.id,
+
+        split_parent_activity_id:
+          String(sourceId),
+
+        split_part:
+          child.split_part
+      },
+
+      materializedCollection:
+        "activity_routes",
+
+      materializedData:
+        routeRow
+    });
+
+    return {
+      child:
+        materialized,
+      route:
+        routeRow,
+      key
+    };
+  }
+
+  async function cgweb124DeleteChild(
+    created
+  ) {
+    if (!created?.key) {
+      return;
+    }
+
+    try {
+      await commitWebMutation({
+        table:
+          "activity_routes",
+
+        rowKey:
+          created.key,
+
+        operation:
+          "DELETE",
+
+        row:
+          null,
+
+        materializedCollection:
+          "activity_routes",
+
+        deleteMaterialized:
+          true
+      });
+    } catch (error) {
+      console.warn(
+        "CGWEB124 rollback route",
+        created.key,
+        error
+      );
+    }
+
+    try {
+      await commitWebMutation({
+        table:
+          "activities",
+
+        rowKey:
+          created.key,
+
+        operation:
+          "DELETE",
+
+        row:
+          null,
+
+        materializedCollection:
+          "activities",
+
+        deleteMaterialized:
+          true,
+
+        metaIncrements: {
+          activityCount: -1,
+          expectedDocuments: -1
+        }
+      });
+    } catch (error) {
+      console.warn(
+        "CGWEB124 rollback activité",
+        created.key,
+        error
+      );
+    }
+  }
+
+  async function cgweb124FinalizeChild(
+    created,
+    fitResult
+  ) {
+    const file =
+      fitResult?.file || {};
+
+    const patch = {
+      ...created.child,
+
+      fit_active_sha256:
+        String(
+          file.sha256 ||
+          ""
+        ) || null,
+
+      fit_active_file_name:
+        String(
+          file.file_name ||
+          ""
+        ) || null,
+
+      fit_active_version_index:
+        1,
+
+      fit_updated_at_ms:
+        Date.now(),
+
+      split_replace_state:
+        "FIT_VALIDATED",
+
+      split_fit_version:
+        "MANUAL_FIT_SPLIT001"
+    };
+
+    await commitWebMutation({
+      table:
+        "activities",
+
+      rowKey:
+        created.key,
+
+      operation:
+        "UPSERT",
+
+      row:
+        patch,
+
+      materializedCollection:
+        "activities",
+
+      materializedData:
+        patch
+    });
+
+    created.child =
+      patch;
+  }
+
+  async function cgweb124Commit() {
+    if (
+      cgweb124State.busy ||
+      !cgweb124State.active ||
+      !splitActivitySource ||
+      !splitActivityRoute
+    ) {
+      return;
+    }
+
+    if (!navigator.onLine) {
+      setMessage(
+        "CGWEB124 · connexion requise pour valider les FIT.",
+        "error"
+      );
+
+      return;
+    }
+
+    const parts =
+      currentSplitParts();
+
+    if (
+      !parts ||
+      parts.pointsA.length < 2 ||
+      parts.pointsB.length < 2
+    ) {
+      setMessage(
+        "CGWEB124 · point de découpe invalide.",
+        "error"
+      );
+
+      return;
+    }
+
+    const durationA =
+      Number(
+        parts.statsA
+          ?.elapsed_time_ms
+      );
+
+    const durationB =
+      Number(
+        parts.statsB
+          ?.elapsed_time_ms
+      );
+
+    if (
+      !Number.isFinite(durationA) ||
+      !Number.isFinite(durationB) ||
+      durationA <= 0 ||
+      durationB <= 0
+    ) {
+      setMessage(
+        "CGWEB124 · chronologie insuffisante.",
+        "error"
+      );
+
+      return;
+    }
+
+    const source =
+      splitActivitySource;
+
+    const sourceId =
+      String(
+        activityKey(source)
+      );
+
+    const confirmation =
+      window.confirm(
+        "CGWEB124 · SPLIT_REPLACE001\n\n" +
+        "Partie 1 : " +
+        formatDistance(
+          parts.statsA.distance_m
+        ) +
+        " · " +
+        formatDuration(
+          durationA
+        ) +
+        "\n" +
+        "Partie 2 : " +
+        formatDistance(
+          parts.statsB.distance_m
+        ) +
+        " · " +
+        formatDuration(
+          durationB
+        ) +
+        "\n\n" +
+        "SPORT créera et validera d'abord les deux FIT.\n" +
+        "L'activité source ne sera placée dans la corbeille qu'après validation des deux fichiers."
+      );
+
+    if (!confirmation) {
+      return;
+    }
+
+    cgweb124State.busy =
+      true;
+
+    splitActivitySaving =
+      true;
+
+    ui.splitActivityCommitButton.disabled =
+      true;
+
+    ui.splitActivityCommitButton.textContent =
+      "Validation des FIT…";
+
+    ui.splitActivityStatus.textContent =
+      "CGWEB124 · création des deux activités, source encore intacte…";
+
+    ui.splitActivityStatus.className =
+      "split-activity-status pending";
+
+    const created = [];
+    const generatedFits = [];
+
+    try {
+      const totalDuration =
+        durationA +
+        durationB;
+
+      const idA =
+        makeWebImportedActivityId(
+          parts
+            .statsA
+            .start_time_ms
+        );
+
+      let idB =
+        makeWebImportedActivityId(
+          parts
+            .statsB
+            .start_time_ms
+        );
+
+      if (idB === idA) {
+        idB += 1;
+      }
+
+      const childA =
+        cgweb124BuildChild(
+          source,
+          parts.statsA,
+          idA,
+          ui
+            .splitActivityTitleA
+            .value,
+          1,
+          totalDuration
+        );
+
+      const childB =
+        cgweb124BuildChild(
+          source,
+          parts.statsB,
+          idB,
+          ui
+            .splitActivityTitleB
+            .value,
+          2,
+          totalDuration
+        );
+
+      const routeA =
+        splitRouteDocument(
+          parts.pointsA
+        );
+
+      const routeB =
+        splitRouteDocument(
+          parts.pointsB
+        );
+
+      /*
+       * Phase 1 :
+       * activités + routes enfants.
+       * La source est ENCORE ACTIVE.
+       */
+      created.push(
+        await cgweb124CreateChild(
+          childA,
+          routeA,
+          sourceId
+        )
+      );
+
+      created.push(
+        await cgweb124CreateChild(
+          childB,
+          routeB,
+          sourceId
+        )
+      );
+
+      const api =
+        await cgweb123124WaitApi(
+          "SPORT_MANUAL_FIT_SPLIT"
+        );
+
+      /*
+       * Phase 2 :
+       * génération et validation physique des 2 FIT.
+       */
+      for (
+        let index = 0;
+        index < created.length;
+        index += 1
+      ) {
+        const item =
+          created[index];
+
+        ui.splitActivityStatus.textContent =
+          "CGWEB124 · génération FIT " +
+          (index + 1) +
+          "/2 · source toujours intacte…";
+
+        const result =
+          await api.generate(
+            item.child,
+            item.route
+          );
+
+        generatedFits.push({
+          result,
+          created:
+            item
+        });
+
+        await cgweb124FinalizeChild(
+          item,
+          result
+        );
+      }
+
+      if (
+        generatedFits.length !== 2 ||
+        generatedFits.some(
+          item =>
+            !item
+              .result
+              ?.file
+              ?.sha256 ||
+            item
+              .result
+              ?.validation
+              ?.ok === false
+        )
+      ) {
+        throw new Error(
+          "Les deux FIT n'ont pas été validés."
+        );
+      }
+
+      /*
+       * Phase 3 :
+       * uniquement après validation des 2 FIT,
+       * la source passe dans la corbeille.
+       */
+      const now =
+        Date.now();
+
+      const sourcePatch = {
+        ...source,
+
+        deleted_at_ms:
+          now,
+
+        split_status:
+          "SOURCE_MANUAL_REPLACED",
+
+        split_profile:
+          "CGWEB124_MANUAL_FIT_SPLIT001",
+
+        split_children_ids:
+          created.map(
+            item =>
+              item.key
+          ),
+
+        split_replace_state:
+          "DONE",
+
+        split_replace_version:
+          "SPLIT_REPLACE001",
+
+        split_updated_at_ms:
+          now
+      };
+
+      delete sourcePatch.__docId;
+
+      await commitWebMutation({
+        table:
+          "activities",
+
+        rowKey:
+          sourceId,
+
+        operation:
+          "UPSERT",
+
+        row:
+          sourcePatch,
+
+        materializedCollection:
+          "activities",
+
+        materializedData:
+          sourcePatch
+      });
+
+      ui.splitActivityStatus.textContent =
+        "CGWEB124 · 2 FIT validés · activité source placée dans la corbeille.";
+
+      ui.splitActivityStatus.className =
+        "split-activity-status success";
+
+      setMessage(
+        "CGWEB124 · découpe terminée : 2 activités + 2 FIT validés.",
+        "success"
+      );
+
+      cgweb124Deactivate();
+
+      window.setTimeout(
+        () => {
+          window.location.reload();
+        },
+        1000
+      );
+    } catch (error) {
+      console.error(
+        "CGWEB124 split",
+        error
+      );
+
+      /*
+       * ROLLBACK :
+       * la source n'a pas encore été touchée.
+       */
+      let api = null;
+
+      try {
+        api =
+          await cgweb123124WaitApi(
+            "SPORT_MANUAL_FIT_SPLIT",
+            1200
+          );
+      } catch (_) {}
+
+      for (
+        const item
+        of [...generatedFits]
+          .reverse()
+      ) {
+        const result =
+          item.result;
+
+        if (
+          result?.file?.sha256 &&
+          result?.deduplicated !== true &&
+          api
+        ) {
+          try {
+            await api.deleteGenerated(
+              result
+                .file
+                .sha256
+            );
+          } catch (
+            cleanupError
+          ) {
+            console.warn(
+              "CGWEB124 rollback FIT",
+              cleanupError
+            );
+          }
+        }
+      }
+
+      for (
+        const item
+        of [...created]
+          .reverse()
+      ) {
+        await cgweb124DeleteChild(
+          item
+        );
+      }
+
+      ui.splitActivityStatus.textContent =
+        "CGWEB124 · découpe annulée : " +
+        (
+          error?.message ||
+          error
+        ) +
+        " · activité source conservée.";
+
+      ui.splitActivityStatus.className =
+        "split-activity-status error";
+
+      setMessage(
+        "CGWEB124 · échec : source conservée, rollback des enfants engagé.",
+        "error"
+      );
+    } finally {
+      cgweb124State.busy =
+        false;
+
+      splitActivitySaving =
+        false;
+
+      if (
+        ui.splitActivityCommitButton
+      ) {
+        ui.splitActivityCommitButton.disabled =
+          false;
+
+        ui.splitActivityCommitButton.textContent =
+          "Découper et remplacer l’activité source";
+      }
+    }
+  }
+
+  function cgweb124ReplaceCommitButton() {
+    const oldButton =
+      ui.splitActivityCommitButton;
+
+    if (!oldButton) {
+      return;
+    }
+
+    if (
+      oldButton
+        .dataset
+        .cgweb124Commit === "1"
+    ) {
+      return;
+    }
+
+    /*
+     * Clone => suppression du listener historique
+     * WEBSPLIT qui conservait la source.
+     */
+    const button =
+      oldButton.cloneNode(
+        true
+      );
+
+    button.dataset.cgweb124Commit =
+      "1";
+
+    button.textContent =
+      "Découper et remplacer l’activité source";
+
+    oldButton.replaceWith(
+      button
+    );
+
+    ui.splitActivityCommitButton =
+      button;
+
+    button.addEventListener(
+      "click",
+      () => {
+        void cgweb124Commit();
+      }
+    );
+  }
+
+  /* ==============================================================
+     INSTALLATION / SURVEILLANCE DOM
+     ============================================================== */
+
+  function cgweb123124Install() {
+    cgweb123124InstallStyle();
+
+    cgweb123Mount();
+
+    cgweb124WireSelectors();
+
+    cgweb124ReplaceCommitButton();
+
+    cgweb124EnsureToolbarButton();
+  }
+
+  const cgweb123124Observer =
+    new MutationObserver(
+      () => {
+        queueMicrotask(
+          cgweb123124Install
+        );
+      }
+    );
+
+  cgweb123124Observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+
+  window.CGWEB123_STATUS =
+    function() {
+      return {
+        build:
+          CGWEB123_VERSION,
+
+        bulk_commute_join:
+          true,
+
+        same_day:
+          true,
+
+        same_sport_sub_sport:
+          true,
+
+        same_equipment:
+          true,
+
+        endpoint_max_m:
+          CGWEB123_MAX_ENDPOINT_M,
+
+        preview_required:
+          true,
+
+        chain_count:
+          cgweb123State
+            .chains
+            .length,
+
+        selected_count:
+          cgweb123State
+            .chains
+            .filter(
+              chain =>
+                chain.selected
+            )
+            .length,
+
+        scanned_at_ms:
+          cgweb123State
+            .scannedAt
+      };
+    };
+
+  window.CGWEB124_STATUS =
+    function() {
+      const selected =
+        cgweb124State.active
+          ? cgweb124SelectedPoint()
+          : null;
+
+      return {
+        build:
+          CGWEB124_VERSION,
+
+        manual_fit_split:
+          true,
+
+        map_split_point:
+          true,
+
+        profile_split_point:
+          true,
+
+        precise_slider:
+          true,
+
+        split_replace:
+          true,
+
+        source_deleted_before_fit_validation:
+          false,
+
+        active:
+          cgweb124State.active,
+
+        cut_index:
+          selected?.index ??
+          null
+      };
+    };
+
+  queueMicrotask(
+    cgweb123124Install
+  );
+
+  requestAnimationFrame(
+    cgweb123124Install
+  );
+
+  setTimeout(
+    cgweb123124Install,
+    500
+  );
+
+  console.info(
+    "CGWEB123 actif · BULK_COMMUTE_JOIN001 / ENDPOINT_200M_CHAIN001 / JOIN_PREVIEW001"
+  );
+
+  console.info(
+    "CGWEB124 actif · MANUAL_FIT_SPLIT001 / MAP_SPLIT_POINT001 / SPLIT_REPLACE001"
+  );
+})();
+/* CGWEB123_124_END */
