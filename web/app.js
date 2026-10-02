@@ -67338,7 +67338,9 @@ console.info(
   "CGWEB123 FIX1 actif · JOIN_WORKSPACE_TAB001 / ANALOG_ONLY_DIRECTORY001 / SHARED_ACTIVITY_TRUTH001 / LIVE_JOIN_RECONCILE001"
 );
 
-/* CGWEB123_FIX1_END */\n\n/* CGWEB123_FIX1_FIX1_START
+/* CGWEB123_FIX1_END */
+
+/* CGWEB123_FIX1_FIX1_START
    OBSERVER_SELF_LOOP_GUARD001
    IDEMPOTENT_PANEL_REHOME001
 
@@ -67347,4 +67349,4 @@ console.info(
    - aucun déplacement répété du panneau ;
    - suppression de la récursion MutationObserver -> textContent -> MutationObserver.
 */
-/* CGWEB123_FIX1_FIX1_END */\n
+/* CGWEB123_FIX1_FIX1_END */
