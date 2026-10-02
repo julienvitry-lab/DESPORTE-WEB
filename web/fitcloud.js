@@ -5864,7 +5864,7 @@ async function c105JoinCandidates(
 window.SPORT_ACTIVITY_JOIN=
   Object.freeze({
     version:
-      "CGWEB105-SAME_DAY_SAME_SPORT_JOIN001",
+      "CGWEB122-FIX6-JOIN-CANDIDATE-TRUTH001",
     candidates:
       c105JoinCandidates
   });

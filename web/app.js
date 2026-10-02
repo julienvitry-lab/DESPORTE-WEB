@@ -32465,7 +32465,7 @@ function cgweb105CreatePanel(activity){
       '<div>'+
         '<p class="eyebrow">CGWEB105 · SAME_DAY_SAME_SPORT_JOIN001</p>'+
         '<h3>Joindre des activités du même jour</h3>'+
-        '<p class="muted">Même sport strict · même date locale · activités WEBSPLIT exclues.</p>'+
+        '<p class="muted">Même date locale · même sport/sous-sport exact · même matériel exact · activités WEBSPLIT exclues.</p>'+
       '</div>'+
       '<span id="cgweb105JoinPill" class="pill neutral">Non recherché</span>'+
     '</div>'+
@@ -33226,7 +33226,7 @@ async function cgweb105LoadCandidates(
 
   if(status){
     status.textContent=
-      "Recherche même date locale + même sport strict…";
+      "Recherche : même date locale + même sport/sous-sport exact + même matériel exact…";
   }
 
   try{
@@ -55922,7 +55922,7 @@ function cgweb122Mount() {
   const note = document.createElement("p");
   note.className = "cg122-note";
   note.textContent =
-    "L’activité ouverte est la destination. Sélectionnez les autres activités du même jour à intégrer. Les segments doivent avoir le même sport/sous-sport et ne pas se chevaucher.";
+    "L’activité ouverte est la destination. Sélectionnez les autres activités du même jour à intégrer. Les segments doivent avoir le même jour, le même sport/sous-sport et le même matériel, sans chevauchement.";
   panel.appendChild(note);
 
   const destinationBox = document.createElement("div");
@@ -55938,7 +55938,7 @@ function cgweb122Mount() {
     const empty = document.createElement("div");
     empty.className = "cg122-meta";
     empty.textContent =
-      "Aucune autre activité compatible du même jour n’est actuellement chargée dans le répertoire.";
+      "Aucune autre activité ne respecte simultanément le même jour, le même sport/sous-sport et le même matériel.";
     panel.appendChild(empty);
     details.appendChild(panel);
     return;
@@ -60891,3 +60891,256 @@ console.info(
   );
 })();
 /* CGWEB122_FIX5_END */
+
+/* CGWEB122_FIX6_FRONTEND_START
+   SAME_DAY_STRICT001
+   SAME_SPORT_STRICT001
+   SAME_EQUIPMENT_STRICT001
+   JOIN_CANDIDATE_TRUTH001
+*/
+(() => {
+  const BUILD =
+    "CGWEB122_FIX6";
+
+  function equipmentIdentity(activity) {
+    return {
+      id:
+        String(
+          activity?.equipment_id ??
+          activity?.gear_id ??
+          activity?.material_id ??
+          activity?.equipmentId ??
+          activity?.gearId ??
+          ""
+        ).trim(),
+
+      name:
+        cgweb122Norm(
+          activity?.equipment_name ??
+          activity?.equipment ??
+          activity?.gear_name ??
+          activity?.material_name ??
+          ""
+        )
+    };
+  }
+
+  function sameEquipment(a, b) {
+    const left =
+      equipmentIdentity(a);
+
+    const right =
+      equipmentIdentity(b);
+
+    if (
+      left.id &&
+      right.id
+    ) {
+      return left.id === right.id;
+    }
+
+    return Boolean(
+      left.name &&
+      right.name &&
+      left.name === right.name
+    );
+  }
+
+  /*
+   * Remplace la pile historique de wrappers.
+   * Une activité n'est candidate que si les 3 vérités
+   * métier sont simultanément satisfaites.
+   */
+  cgweb122Candidates =
+    function(destination) {
+      const bridge =
+        window.SPORT_WEB_BRIDGE;
+
+      const all =
+        bridge?.getActivities?.();
+
+      if (!Array.isArray(all)) {
+        return [];
+      }
+
+      const destinationId =
+        cgweb122ActivityId(
+          destination
+        );
+
+      const day =
+        cgweb122DayKey(
+          destination?.start_time_ms
+        );
+
+      const sport =
+        Number(
+          destination?.sport
+        );
+
+      const subSport =
+        Number(
+          destination?.sub_sport ??
+          destination?.subSport ??
+          0
+        );
+
+      const equipment =
+        equipmentIdentity(
+          destination
+        );
+
+      if (
+        !day ||
+        !Number.isFinite(sport) ||
+        (
+          !equipment.id &&
+          !equipment.name
+        )
+      ) {
+        return [];
+      }
+
+      return all
+        .filter(activity => {
+          const id =
+            cgweb122ActivityId(
+              activity
+            );
+
+          if (
+            !id ||
+            id === destinationId
+          ) {
+            return false;
+          }
+
+          if (
+            activity?.deleted_at_ms != null
+          ) {
+            return false;
+          }
+
+          if (
+            cgweb122DayKey(
+              activity?.start_time_ms
+            ) !== day
+          ) {
+            return false;
+          }
+
+          if (
+            Number(
+              activity?.sport
+            ) !== sport
+          ) {
+            return false;
+          }
+
+          if (
+            Number(
+              activity?.sub_sport ??
+              activity?.subSport ??
+              0
+            ) !== subSport
+          ) {
+            return false;
+          }
+
+          if (
+            !sameEquipment(
+              destination,
+              activity
+            )
+          ) {
+            return false;
+          }
+
+          return true;
+        })
+        .sort(
+          (a,b) =>
+            Number(
+              a?.start_time_ms || 0
+            ) -
+            Number(
+              b?.start_time_ms || 0
+            )
+        );
+    };
+
+  window.CGWEB122_FIX6_STATUS =
+    function() {
+      const activity =
+        typeof currentDetailActivity ===
+          "function"
+          ? currentDetailActivity()
+          : null;
+
+      const equipment =
+        activity
+          ? equipmentIdentity(activity)
+          : null;
+
+      const candidates =
+        activity
+          ? cgweb122Candidates(
+              activity
+            )
+          : [];
+
+      return {
+        build:
+          BUILD,
+
+        same_day_strict:
+          true,
+
+        same_sport_strict:
+          true,
+
+        same_sub_sport_strict:
+          true,
+
+        same_equipment_strict:
+          true,
+
+        base_activity_counted:
+          false,
+
+        activity_id:
+          activity
+            ? cgweb122ActivityId(
+                activity
+              )
+            : null,
+
+        sport:
+          activity?.sport ?? null,
+
+        sub_sport:
+          activity?.sub_sport ??
+          activity?.subSport ??
+          null,
+
+        equipment_id:
+          equipment?.id || null,
+
+        equipment_name:
+          equipment?.name || null,
+
+        candidate_count:
+          candidates.length,
+
+        candidate_ids:
+          candidates.map(
+            cgweb122ActivityId
+          )
+      };
+    };
+
+  console.info(
+    "CGWEB122 FIX6 actif · SAME_DAY_STRICT001 / SAME_SPORT_STRICT001 / SAME_EQUIPMENT_STRICT001 / JOIN_CANDIDATE_TRUTH001"
+  );
+})();
+/* CGWEB122_FIX6_FRONTEND_END */

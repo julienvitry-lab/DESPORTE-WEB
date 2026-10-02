@@ -402,6 +402,52 @@ function createFitVault() {
     );
   }
 
+  function cg122StrictNorm(value) {
+    return String(value ?? "")
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .toLocaleLowerCase("fr-FR");
+  }
+
+  function cg122EquipmentIdentity(activity) {
+    return {
+      id:
+        String(
+          activity?.equipment_id ??
+          activity?.gear_id ??
+          activity?.material_id ??
+          activity?.equipmentId ??
+          activity?.gearId ??
+          ""
+        ).trim(),
+
+      name:
+        cg122StrictNorm(
+          activity?.equipment_name ??
+          activity?.equipment ??
+          activity?.gear_name ??
+          activity?.material_name
+        )
+    };
+  }
+
+  function cg122SameEquipmentIdentity(a, b) {
+    if (
+      a?.id &&
+      b?.id
+    ) {
+      return a.id === b.id;
+    }
+
+    return Boolean(
+      a?.name &&
+      b?.name &&
+      a.name === b.name
+    );
+  }
+
   function cg122Label(activity, id) {
     return String(
       activity?.custom_title ||
@@ -479,6 +525,10 @@ function createFitVault() {
       maxHr: cg122Finite(prepared.source.maxHr),
       sport: Number(prepared.source.sport),
       subSport: Number(prepared.source.subSport || 0),
+      equipment:
+        cg122EquipmentIdentity(
+          activity
+        ),
       label: cg122Label(activity, id)
     };
   }
@@ -540,6 +590,20 @@ function createFitVault() {
     const dayKey = cg122DayKey(destinationSegment.startMs);
     const sport = destinationSegment.sport;
     const subSport = destinationSegment.subSport;
+    const equipment =
+      destinationSegment.equipment;
+
+    if (
+      !equipment?.id &&
+      !equipment?.name
+    ) {
+      throw Object.assign(
+        new Error(
+          "CGWEB122 · SAME_EQUIPMENT_STRICT001 : matériel de destination indéterminable."
+        ),
+        {status: 409}
+      );
+    }
 
     for (const segment of segments) {
       if (cg122DayKey(segment.startMs) !== dayKey) {
@@ -557,7 +621,21 @@ function createFitVault() {
       ) {
         throw Object.assign(
           new Error(
-            `CGWEB122 : sport/sous-sport incompatible pour ${segment.label}.`
+            `CGWEB122 · SAME_SPORT_STRICT001 : sport/sous-sport incompatible pour ${segment.label}.`
+          ),
+          {status: 409}
+        );
+      }
+
+      if (
+        !cg122SameEquipmentIdentity(
+          equipment,
+          segment.equipment
+        )
+      ) {
+        throw Object.assign(
+          new Error(
+            `CGWEB122 · SAME_EQUIPMENT_STRICT001 : matériel incompatible pour ${segment.label}.`
           ),
           {status: 409}
         );
@@ -636,7 +714,11 @@ function createFitVault() {
       distance_m: segment.distance,
       ascent_m: segment.ascent,
       fit_active_sha256:
-        String(segment.activity?.fit_active_sha256 || "")
+        String(segment.activity?.fit_active_sha256 || ""),
+      equipment_id:
+        String(segment.equipment?.id || ""),
+      equipment_name:
+        String(segment.equipment?.name || "")
     }));
 
     const planToken = sha256(
@@ -660,6 +742,7 @@ function createFitVault() {
       dayKey,
       sport,
       subSport,
+      equipment,
       totalDistance,
       totalAscent,
       totalTimerMs,
@@ -681,6 +764,20 @@ function createFitVault() {
       day_key: plan.dayKey,
       sport: plan.sport,
       sub_sport: plan.subSport,
+      equipment_id:
+        plan.equipment?.id || null,
+      equipment_name:
+        plan.equipment?.name || null,
+      strict_guards: {
+        same_day:
+          "SAME_DAY_STRICT001",
+        same_sport:
+          "SAME_SPORT_STRICT001",
+        same_equipment:
+          "SAME_EQUIPMENT_STRICT001",
+        candidate_truth:
+          "JOIN_CANDIDATE_TRUTH001"
+      },
       start_time_ms: plan.startMs,
       end_time_ms: plan.endMs,
       elapsed_time_ms: plan.elapsedMs,
@@ -10537,6 +10634,109 @@ async function c102FilterByFitProvenance(
     );
   }
 
+  /* CGWEB122_FIX6_STRICT_JOIN_HELPERS_START
+     SAME_DAY_STRICT001
+     SAME_SPORT_STRICT001
+     SAME_EQUIPMENT_STRICT001
+     JOIN_CANDIDATE_TRUTH001
+  */
+
+  function c105StrictNorm(value){
+    return c105Text(value)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g,"")
+      .replace(/\s+/g," ")
+      .toLocaleLowerCase("fr-FR");
+  }
+
+  function c105SubSportKey(row){
+    const value=
+      c105Num(
+        row?.sub_sport ??
+        row?.subSport ??
+        row?.subsport ??
+        0
+      );
+
+    return value==null
+      ? ""
+      : String(
+          Math.trunc(value)
+        );
+  }
+
+  function c105SportStrictKey(row){
+    const sport=
+      c105SportKey(row);
+
+    const subSport=
+      c105SubSportKey(row);
+
+    if(
+      !sport ||
+      subSport===""
+    ){
+      return "";
+    }
+
+    return sport+"|"+subSport;
+  }
+
+  function c105EquipmentIdentity(row){
+    const id=
+      c105Text(
+        row?.equipment_id ??
+        row?.gear_id ??
+        row?.material_id ??
+        row?.equipmentId ??
+        row?.gearId
+      );
+
+    const name=
+      c105StrictNorm(
+        row?.equipment_name ??
+        row?.equipment ??
+        row?.gear_name ??
+        row?.material_name
+      );
+
+    return {
+      id,
+      name
+    };
+  }
+
+  function c105SameEquipment(a,b){
+    const left=
+      c105EquipmentIdentity(a);
+
+    const right=
+      c105EquipmentIdentity(b);
+
+    /*
+     * Si les deux activités possèdent un ID matériel,
+     * l'ID constitue l'autorité.
+     */
+    if(
+      left.id &&
+      right.id
+    ){
+      return left.id===right.id;
+    }
+
+    /*
+     * Sinon : repli sur le nom normalisé exact.
+     * Un nom absent ne constitue jamais une preuve d'identité.
+     */
+    return Boolean(
+      left.name &&
+      right.name &&
+      left.name===right.name
+    );
+  }
+
+  /* CGWEB122_FIX6_STRICT_JOIN_HELPERS_END */
+
   function c105IsSplitRelated(row){
     if(!row){
       return false;
@@ -10754,19 +10954,46 @@ async function c102FilterByFitProvenance(
         source
       );
 
+    const subSportKey=
+      c105SubSportKey(
+        source
+      );
+
+    const strictSportKey=
+      c105SportStrictKey(
+        source
+      );
+
+    const sourceEquipment=
+      c105EquipmentIdentity(
+        source
+      );
+
     if(!dateKey){
       throw Object.assign(
         new Error(
-          "Date locale de l'activité source indéterminable."
+          "SAME_DAY_STRICT001 : date locale de l'activité source indéterminable."
         ),
         {status:409}
       );
     }
 
-    if(!sportKey){
+    if(!strictSportKey){
       throw Object.assign(
         new Error(
-          "Sport de l'activité source indéterminable."
+          "SAME_SPORT_STRICT001 : sport/sous-sport de l'activité source indéterminable."
+        ),
+        {status:409}
+      );
+    }
+
+    if(
+      !sourceEquipment.id &&
+      !sourceEquipment.name
+    ){
+      throw Object.assign(
+        new Error(
+          "SAME_EQUIPMENT_STRICT001 : matériel de l'activité source indéterminable."
         ),
         {status:409}
       );
@@ -10831,6 +11058,14 @@ async function c102FilterByFitProvenance(
             c105SportKey(
               merged
             ),
+          sub_sport:
+            c105SubSportKey(
+              merged
+            ),
+          sport_strict_key:
+            c105SportStrictKey(
+              merged
+            ),
           start_iso:
             c105Text(
               merged?.start_iso ??
@@ -10857,6 +11092,14 @@ async function c102FilterByFitProvenance(
             c105Equipment(
               merged
             ),
+          equipment_id:
+            c105EquipmentIdentity(
+              merged
+            ).id || null,
+          equipment_key:
+            c105EquipmentIdentity(
+              merged
+            ).name || null,
           fit_role:
             state.role,
           fit_status:
@@ -10924,9 +11167,18 @@ async function c102FilterByFitProvenance(
       }
 
       if(
-        c105SportKey(
+        c105SportStrictKey(
           merged
-        )!==sportKey
+        )!==strictSportKey
+      ){
+        continue;
+      }
+
+      if(
+        !c105SameEquipment(
+          source,
+          merged
+        )
       ){
         continue;
       }
@@ -10958,8 +11210,25 @@ async function c102FilterByFitProvenance(
         dateKey,
       sport_key:
         sportKey,
+      sub_sport_key:
+        subSportKey,
+      sport_strict_key:
+        strictSportKey,
+      equipment_id:
+        sourceEquipment.id || null,
+      equipment_key:
+        sourceEquipment.name || null,
       candidate_count:
         candidates.length,
+      candidate_truth:{
+        same_day_strict:true,
+        same_sport_strict:true,
+        same_sub_sport_strict:true,
+        same_equipment_strict:true,
+        base_activity_counted:false,
+        version:
+          "JOIN_CANDIDATE_TRUTH001"
+      },
       candidates,
       join_lineage_preview:{
         join_status:
@@ -10968,7 +11237,7 @@ async function c102FilterByFitProvenance(
           id
         ],
         join_version:
-          "CGWEB105"
+          "CGWEB122_FIX6"
       }
     };
   }
@@ -15314,7 +15583,13 @@ if (action === "transfer_audit") {
             service:
               "JOIN_CANDIDATE_DISCOVERY001",
             join_service:
-              "SAME_DAY_SAME_SPORT_JOIN001",
+              "JOIN_CANDIDATE_TRUTH001",
+            day_guard:
+              "SAME_DAY_STRICT001",
+            sport_guard:
+              "SAME_SPORT_STRICT001",
+            equipment_guard:
+              "SAME_EQUIPMENT_STRICT001",
             guard:
               "NON_SPLIT_GUARD001",
             preview:
