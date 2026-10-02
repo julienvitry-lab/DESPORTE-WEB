@@ -57205,3 +57205,479 @@ console.info(
   );
 })();
 /* CGWEB122_FIX2_END */
+
+/* CGWEB122_FIX3_START
+   ACTION_BAR_REANCHOR001
+   QUICK_ACTION_VISIBILITY001
+   TRASH_RELOCATE002
+   DETAIL_GAP_2MM002
+   DOM_REINJECTION_GUARD001
+*/
+(() => {
+  const FIX3 = "CGWEB122_FIX3";
+
+  function installFix3Style() {
+    if (document.getElementById("cg122Fix3Style")) return;
+
+    const style = document.createElement("style");
+    style.id = "cg122Fix3Style";
+
+    style.textContent = `
+      /*
+       * CGWEB122 FIX3
+       * Le bandeau appartient au flux normal de la fiche.
+       */
+      #web064DirectDetailToolbar {
+        position:static!important;
+        top:auto!important;
+        left:auto!important;
+        right:auto!important;
+        width:auto!important;
+        transform:none!important;
+        margin:0!important;
+      }
+
+      #web065DetailStickySpacer,
+      .web072-fix11-toolbar-placeholder {
+        display:none!important;
+        height:0!important;
+        min-height:0!important;
+        max-height:0!important;
+        margin:0!important;
+        padding:0!important;
+        border:0!important;
+      }
+
+      /*
+       * FIX3 doit l'emporter sur d'anciens display:none / hidden
+       * pouvant survivre aux anciennes générations du bandeau.
+       */
+      #cg122MarkerButton,
+      #cg122JoinButton {
+        display:inline-flex!important;
+        visibility:visible!important;
+        opacity:1!important;
+        align-items:center!important;
+        justify-content:center!important;
+      }
+
+      #web065ToolbarCenter {
+        display:flex!important;
+        align-items:center!important;
+        flex-wrap:wrap!important;
+        gap:2mm!important;
+      }
+
+      /*
+       * Espacement vertical de référence : 2 mm.
+       */
+      #detailView {
+        padding-top:0!important;
+      }
+
+      #detailView > * {
+        margin-top:0!important;
+        margin-bottom:0!important;
+      }
+
+      #detailView > * + * {
+        margin-top:2mm!important;
+      }
+
+      /*
+       * La corbeille ne doit jamais apparaître dans la barre rapide.
+       */
+      #cg122ManagementBody {
+        display:flex;
+        align-items:center;
+        flex-wrap:wrap;
+        gap:2mm;
+      }
+
+      #cg122ManagementBody #trashCurrentActivityButton,
+      #cg122ManagementBody [data-action="trash-current-activity"] {
+        display:inline-flex!important;
+        visibility:visible!important;
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function getToolbar() {
+    return document.getElementById("web064DirectDetailToolbar");
+  }
+
+  function getCenter(toolbar) {
+    return (
+      document.getElementById("web065ToolbarCenter") ||
+      toolbar?.querySelector("#web065ToolbarCenter") ||
+      toolbar
+    );
+  }
+
+  function getManualButton(toolbar) {
+    return (
+      toolbar?.querySelector(".web072-manual-add-btn") ||
+      toolbar?.querySelector('[data-action="manual-add"]') ||
+      [...(toolbar?.querySelectorAll("button") || [])].find(
+        b => /ajout manuel/i.test(b.textContent || "")
+      ) ||
+      null
+    );
+  }
+
+  function getTrashButton() {
+    try {
+      if (window.ui?.trashCurrentActivityButton) {
+        return window.ui.trashCurrentActivityButton;
+      }
+    } catch (_) {}
+
+    return (
+      document.getElementById("trashCurrentActivityButton") ||
+      [...document.querySelectorAll("button")].find(
+        b => /mettre à la corbeille/i.test(b.textContent || "")
+      ) ||
+      null
+    );
+  }
+
+  function ensureManagementContainer() {
+    const detail = document.getElementById("detailView");
+    if (!detail) return null;
+
+    let details = document.getElementById("cg122Management");
+
+    if (!details) {
+      details = document.createElement("details");
+      details.id = "cg122Management";
+
+      const summary = document.createElement("summary");
+      summary.textContent = "Gestion de l’activité";
+
+      const body = document.createElement("div");
+      body.id = "cg122ManagementBody";
+
+      details.append(summary, body);
+      detail.appendChild(details);
+    }
+
+    let body = document.getElementById("cg122ManagementBody");
+
+    if (!body) {
+      body = document.createElement("div");
+      body.id = "cg122ManagementBody";
+      details.appendChild(body);
+    }
+
+    return body;
+  }
+
+  function relocateTrash() {
+    const trash = getTrashButton();
+    if (!trash) return false;
+
+    const body = ensureManagementContainer();
+    if (!body) return false;
+
+    if (trash.parentElement !== body) {
+      body.appendChild(trash);
+    }
+
+    trash.hidden = false;
+    trash.removeAttribute("aria-hidden");
+
+    return trash.parentElement === body;
+  }
+
+  function forceQuickButton(button) {
+    if (!button) return;
+
+    button.hidden = false;
+    button.removeAttribute("hidden");
+    button.removeAttribute("aria-hidden");
+
+    button.style.removeProperty("display");
+    button.style.removeProperty("visibility");
+    button.style.removeProperty("opacity");
+  }
+
+  function reanchorActionBar() {
+    installFix3Style();
+
+    const toolbar = getToolbar();
+    if (!toolbar) return false;
+
+    /*
+     * Toute ancienne classe sticky/fixed est supprimée à chaque passage.
+     */
+    toolbar.classList.remove(
+      "web072-fix9-toolbar-sticky",
+      "web072-fix10-toolbar-fixed",
+      "web072-fix11-toolbar-fixed"
+    );
+
+    toolbar.style.setProperty("position", "static", "important");
+    toolbar.style.setProperty("top", "auto", "important");
+    toolbar.style.setProperty("left", "auto", "important");
+    toolbar.style.setProperty("right", "auto", "important");
+    toolbar.style.setProperty("width", "auto", "important");
+    toolbar.style.setProperty("transform", "none", "important");
+
+    const center = getCenter(toolbar);
+    if (!center) return false;
+
+    const marker = document.getElementById("cg122MarkerButton");
+    const join   = document.getElementById("cg122JoinButton");
+    const manual = getManualButton(toolbar);
+
+    forceQuickButton(marker);
+    forceQuickButton(join);
+    forceQuickButton(manual);
+
+    /*
+     * Ordre imposé :
+     * Repères | Joindre | Ajout manuel
+     *
+     * On déplace les nœuds existants :
+     * aucun clone, donc aucun listener perdu.
+     */
+    if (marker && join && manual) {
+      center.insertBefore(marker, manual);
+      center.insertBefore(join, manual);
+    } else {
+      if (marker && marker.parentElement !== center) {
+        center.appendChild(marker);
+      }
+
+      if (join && join.parentElement !== center) {
+        center.appendChild(join);
+      }
+    }
+
+    relocateTrash();
+
+    return Boolean(
+      document.getElementById("cg122MarkerButton") &&
+      document.getElementById("cg122JoinButton")
+    );
+  }
+
+  /*
+   * FIX2 crée déjà les deux boutons.
+   * Le problème observé est leur perte/repositionnement lors des
+   * réécritures ultérieures du DOM. FIX3 réapplique donc uniquement
+   * la structure, sans toucher à leurs listeners métier.
+   */
+  function refresh() {
+    try {
+      if (
+        typeof arrangeToolbar === "function"
+      ) {
+        arrangeToolbar();
+      }
+    } catch (_) {}
+
+    reanchorActionBar();
+  }
+
+  /*
+   * Plusieurs passes courtes couvrent le rendu asynchrone historique.
+   */
+  function refreshBurst() {
+    queueMicrotask(refresh);
+
+    requestAnimationFrame(() => {
+      refresh();
+
+      requestAnimationFrame(refresh);
+    });
+
+    setTimeout(refresh, 50);
+    setTimeout(refresh, 150);
+    setTimeout(refresh, 350);
+    setTimeout(refresh, 700);
+  }
+
+  /*
+   * Surveillance limitée à la fiche activité.
+   * On ne réagit qu'aux mutations susceptibles de reconstruire
+   * le bandeau ou de replacer la corbeille.
+   */
+  let scheduled = false;
+
+  const observer = new MutationObserver(mutations => {
+    const detail = document.getElementById("detailView");
+    if (!detail || detail.classList.contains("hidden")) return;
+
+    let relevant = false;
+
+    for (const mutation of mutations) {
+      if (mutation.type !== "childList") continue;
+
+      const nodes = [
+        ...mutation.addedNodes,
+        ...mutation.removedNodes
+      ];
+
+      relevant = nodes.some(node => {
+        if (!(node instanceof Element)) return false;
+
+        return (
+          node.id === "web064DirectDetailToolbar" ||
+          node.id === "web065ToolbarCenter" ||
+          node.id === "cg122MarkerButton" ||
+          node.id === "cg122JoinButton" ||
+          node.id === "trashCurrentActivityButton" ||
+          node.matches?.(".web072-manual-add-btn") ||
+          node.querySelector?.(
+            "#web064DirectDetailToolbar," +
+            "#web065ToolbarCenter," +
+            "#cg122MarkerButton," +
+            "#cg122JoinButton," +
+            "#trashCurrentActivityButton," +
+            ".web072-manual-add-btn"
+          )
+        );
+      });
+
+      if (relevant) break;
+    }
+
+    if (!relevant || scheduled) return;
+
+    scheduled = true;
+
+    requestAnimationFrame(() => {
+      scheduled = false;
+      refresh();
+    });
+  });
+
+  function startObserver() {
+    const detail = document.getElementById("detailView");
+    if (!detail) return;
+
+    observer.disconnect();
+
+    observer.observe(detail, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  /*
+   * Hook supplémentaire sur renderDetail.
+   * Il complète l'observer mais ne remplace pas FIX2.
+   */
+  try {
+    if (
+      typeof renderDetail === "function" &&
+      !window.__CGWEB122_FIX3_RENDER_WRAPPED
+    ) {
+      const previousRenderDetailFix3 = renderDetail;
+
+      renderDetail = function(...args) {
+        const result =
+          previousRenderDetailFix3.apply(this, args);
+
+        refreshBurst();
+        startObserver();
+
+        return result;
+      };
+
+      window.__CGWEB122_FIX3_RENDER_WRAPPED = true;
+    }
+  } catch (_) {}
+
+  window.CGWEB122_FIX3_STATUS = function() {
+    const toolbar = getToolbar();
+    const center = toolbar ? getCenter(toolbar) : null;
+
+    const marker =
+      document.getElementById("cg122MarkerButton");
+
+    const join =
+      document.getElementById("cg122JoinButton");
+
+    const manual =
+      toolbar ? getManualButton(toolbar) : null;
+
+    const trash =
+      getTrashButton();
+
+    const management =
+      document.getElementById("cg122ManagementBody");
+
+    const children =
+      center
+        ? [...center.children]
+        : [];
+
+    return {
+      build: FIX3,
+
+      toolbar_present:
+        Boolean(toolbar),
+
+      marker_present:
+        Boolean(marker),
+
+      join_present:
+        Boolean(join),
+
+      marker_visible:
+        Boolean(
+          marker &&
+          getComputedStyle(marker).display !== "none" &&
+          getComputedStyle(marker).visibility !== "hidden"
+        ),
+
+      join_visible:
+        Boolean(
+          join &&
+          getComputedStyle(join).display !== "none" &&
+          getComputedStyle(join).visibility !== "hidden"
+        ),
+
+      quick_order:
+        {
+          marker:
+            marker ? children.indexOf(marker) : -1,
+
+          join:
+            join ? children.indexOf(join) : -1,
+
+          manual:
+            manual ? children.indexOf(manual) : -1
+        },
+
+      trash_relocated:
+        Boolean(
+          trash &&
+          management &&
+          trash.parentElement === management
+        ),
+
+      detail_gap:
+        "2mm",
+
+      observer:
+        true
+    };
+  };
+
+  installFix3Style();
+  refreshBurst();
+
+  setTimeout(startObserver, 0);
+  setTimeout(startObserver, 300);
+
+  console.info(
+    "CGWEB122 FIX3 actif",
+    window.CGWEB122_FIX3_STATUS()
+  );
+})();
+/* CGWEB122_FIX3_END */
