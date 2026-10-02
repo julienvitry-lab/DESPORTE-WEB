@@ -66926,7 +66926,21 @@ function cgweb123Fix1MoveLegacyBulkPanel() {
       ":scope > summary"
     );
 
-  if (summary) {
+  /*
+   * CGWEB123 FIX1 FIX1
+   * IDEMPOTENT_PANEL_REHOME001
+   *
+   * IMPORTANT :
+   * ne jamais réécrire textContent si la valeur est déjà correcte.
+   * Une écriture inutile déclenche MutationObserver à nouveau.
+   */
+  if (
+    summary &&
+    String(
+      summary.textContent || ""
+    ).trim() !==
+      "Chaînes automatiques ≤ 200 m"
+  ) {
     summary.textContent =
       "Chaînes automatiques ≤ 200 m";
   }
@@ -67147,9 +67161,58 @@ function cgweb123Fix1Install() {
  * pour le déplacer dans le workspace au lieu de le laisser
  * sous Activités.
  */
+/*
+ * CGWEB123 FIX1 FIX1
+ * OBSERVER_SELF_LOOP_GUARD001
+ *
+ * L'observer ne modifie le DOM que si quelque chose
+ * doit réellement être corrigé.
+ */
 const cgweb123Fix1Observer =
   new MutationObserver(
     () => {
+      const panel =
+        document.getElementById(
+          "cgweb123BulkPanel"
+        );
+
+      const host =
+        document.getElementById(
+          "cgweb123Fix1AutoHost"
+        );
+
+      if (
+        !panel ||
+        !host
+      ) {
+        return;
+      }
+
+      const summary =
+        panel.querySelector(
+          ":scope > summary"
+        );
+
+      const needsMove =
+        panel.parentElement !==
+        host;
+
+      const needsTitle =
+        Boolean(
+          summary &&
+          String(
+            summary.textContent || ""
+          ).trim() !==
+            "Chaînes automatiques ≤ 200 m"
+        );
+
+      if (
+        !needsMove &&
+        !needsTitle
+      ) {
+        return;
+      }
+
       cgweb123Fix1MoveLegacyBulkPanel();
     }
   );
@@ -67275,4 +67338,13 @@ console.info(
   "CGWEB123 FIX1 actif · JOIN_WORKSPACE_TAB001 / ANALOG_ONLY_DIRECTORY001 / SHARED_ACTIVITY_TRUTH001 / LIVE_JOIN_RECONCILE001"
 );
 
-/* CGWEB123_FIX1_END */
+/* CGWEB123_FIX1_END */\n\n/* CGWEB123_FIX1_FIX1_START
+   OBSERVER_SELF_LOOP_GUARD001
+   IDEMPOTENT_PANEL_REHOME001
+
+   Correction :
+   - aucune écriture DOM si l'état est déjà correct ;
+   - aucun déplacement répété du panneau ;
+   - suppression de la récursion MutationObserver -> textContent -> MutationObserver.
+*/
+/* CGWEB123_FIX1_FIX1_END */\n
