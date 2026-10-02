@@ -57681,3 +57681,1521 @@ console.info(
   );
 })();
 /* CGWEB122_FIX3_END */
+
+/* CGWEB122_FIX4_START
+   ACTION_BUTTON_RECREATE001
+   MARKER_BUTTON_RESTORE001
+   JOIN_BUTTON_RESTORE001
+   MANUAL_ADD_RESTORE001
+   ACTION_BAR_FINALIZE001
+*/
+(() => {
+  const BUILD = "CGWEB122_FIX4";
+
+  const state = {
+    markerOpen: false,
+    repairing: false,
+    scheduled: false,
+    manualParent: null,
+    manualNextSibling: null,
+    manualWasHidden: true
+  };
+
+  function currentActivity() {
+    try {
+      return typeof currentDetailActivity === "function"
+        ? currentDetailActivity()
+        : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function activityEquipment(activity) {
+    return String(
+      activity?.equipment_name ??
+      activity?.equipmentName ??
+      activity?.gear_name ??
+      activity?.gearName ??
+      ""
+    ).trim();
+  }
+
+  function message(text, type = "error") {
+    try {
+      if (typeof setMessage === "function") {
+        setMessage(text, type);
+        return;
+      }
+    } catch (_) {}
+
+    console.warn(text);
+  }
+
+  function installStyle() {
+    if (document.getElementById("cg122Fix4Style")) return;
+
+    const style = document.createElement("style");
+    style.id = "cg122Fix4Style";
+
+    style.textContent = `
+      #detailView #web064DirectDetailToolbar {
+        position: static !important;
+        inset: auto !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        transform: none !important;
+
+        display: flex !important;
+        align-items: center !important;
+        flex-wrap: nowrap !important;
+
+        width: 100% !important;
+        min-height: 54px !important;
+
+        margin: 0 !important;
+        padding: 5px 10px !important;
+
+        box-sizing: border-box !important;
+        overflow: visible !important;
+      }
+
+      #web065DetailStickySpacer,
+      .web072-fix11-toolbar-placeholder {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+      }
+
+      #web064DirectDetailToolbar .web065-toolbar-group {
+        display: flex !important;
+        align-items: center !important;
+        gap: 2mm !important;
+        min-width: 0 !important;
+      }
+
+      #web064DirectDetailToolbar .web065-toolbar-left {
+        flex: 1 1 0 !important;
+        justify-content: flex-start !important;
+      }
+
+      #web064DirectDetailToolbar #web065ToolbarCenter,
+      #web064DirectDetailToolbar .web065-toolbar-center {
+        flex: 0 1 auto !important;
+        justify-content: center !important;
+        align-items: center !important;
+        gap: 2mm !important;
+        white-space: nowrap !important;
+      }
+
+      #web064DirectDetailToolbar .web065-toolbar-right {
+        flex: 1 1 0 !important;
+        justify-content: flex-end !important;
+      }
+
+      #cg122MarkerButton,
+      #cg122JoinButton,
+      #cg122ManualButton {
+        display: inline-flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        position: static !important;
+        inset: auto !important;
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        align-items: center !important;
+        justify-content: center !important;
+        margin: 0 !important;
+        transform: none !important;
+        white-space: nowrap !important;
+      }
+
+      #detailView {
+        padding-top: 0 !important;
+      }
+
+      #detailView > * {
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+      }
+
+      #detailView > * + * {
+        margin-top: 2mm !important;
+      }
+
+      #cg122MarkerPanel {
+        border: 1px solid rgba(167,255,42,.22);
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: rgba(255,255,255,.015);
+      }
+
+      #cg122MarkerPanel.hidden {
+        display: none !important;
+      }
+
+      .cg122-fix4-marker-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+
+      .cg122-fix4-marker-row {
+        display: grid;
+        grid-template-columns:
+          70px minmax(160px,1fr) 45px 40px 40px;
+        gap: 7px;
+        align-items: center;
+        padding: 6px 8px;
+        margin-top: 5px;
+        border: 1px solid rgba(255,255,255,.08);
+        border-radius: 9px;
+      }
+
+      .cg122-fix4-marker-code {
+        color: #a7ff2a;
+        font-weight: 700;
+      }
+
+      .cg122-fix4-marker-count {
+        text-align: center;
+      }
+
+      .cg122-fix4-marker-mini {
+        min-width: 36px !important;
+        min-height: 30px !important;
+        padding: 3px 7px !important;
+      }
+
+      #cg122Fix4ManualOverlay {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 20000 !important;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 4vh 18px;
+        background: rgba(0,0,0,.76);
+        overflow: auto;
+      }
+
+      #cg122Fix4ManualOverlay.hidden {
+        display: none !important;
+      }
+
+      #cg122Fix4ManualDialog {
+        width: min(1050px,96vw);
+        max-height: 92vh;
+        overflow: auto;
+        padding: 14px;
+        border: 1px solid rgba(167,255,42,.25);
+        border-radius: 16px;
+        background: var(--surface,#101512);
+        box-shadow: 0 20px 70px rgba(0,0,0,.58);
+      }
+
+      #cg122Fix4ManualHeader {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      #cg122Fix4ManualDialog #webManualSection {
+        display: block !important;
+        visibility: visible !important;
+        margin: 0 !important;
+      }
+
+      #cg122ManagementBody {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 2mm;
+      }
+
+      @media (max-width:850px) {
+        #detailView #web064DirectDetailToolbar {
+          flex-wrap: wrap !important;
+          gap: 2mm !important;
+        }
+
+        #web064DirectDetailToolbar #web065ToolbarCenter {
+          order: 3;
+          width: 100%;
+          justify-content: flex-start !important;
+          flex-wrap: wrap !important;
+        }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function toolbar() {
+    return document.getElementById(
+      "web064DirectDetailToolbar"
+    );
+  }
+
+  function ensureCenterGroup() {
+    const bar = toolbar();
+    if (!bar) return null;
+
+    let center =
+      document.getElementById(
+        "web065ToolbarCenter"
+      ) ||
+      bar.querySelector(
+        ".web065-toolbar-center"
+      );
+
+    if (center) {
+      center.id =
+        "web065ToolbarCenter";
+
+      center.classList.add(
+        "web065-toolbar-group",
+        "web065-toolbar-center"
+      );
+
+      return center;
+    }
+
+    center =
+      document.createElement("div");
+
+    center.id =
+      "web065ToolbarCenter";
+
+    center.className =
+      "web065-toolbar-group web065-toolbar-center";
+
+    const right =
+      bar.querySelector(
+        ".web065-toolbar-right"
+      );
+
+    if (right) {
+      bar.insertBefore(
+        center,
+        right
+      );
+
+      return center;
+    }
+
+    const navigation =
+      bar.querySelector(
+        "#nextActivityButton,#previousActivityButton"
+      );
+
+    if (navigation) {
+      bar.insertBefore(
+        center,
+        navigation
+      );
+    } else {
+      bar.appendChild(center);
+    }
+
+    return center;
+  }
+
+  function normalizeToolbar() {
+    const bar = toolbar();
+    if (!bar) return;
+
+    bar.classList.remove(
+      "web072-fix9-toolbar-sticky",
+      "web072-fix10-toolbar-fixed",
+      "web072-fix11-toolbar-fixed"
+    );
+
+    bar.style.setProperty(
+      "position",
+      "static",
+      "important"
+    );
+
+    bar.style.setProperty(
+      "top",
+      "auto",
+      "important"
+    );
+
+    bar.style.setProperty(
+      "left",
+      "auto",
+      "important"
+    );
+
+    bar.style.setProperty(
+      "right",
+      "auto",
+      "important"
+    );
+
+    bar.style.setProperty(
+      "transform",
+      "none",
+      "important"
+    );
+  }
+
+  function ensureMarkerPanel() {
+    let panel =
+      document.getElementById(
+        "cg122MarkerPanel"
+      );
+
+    if (!panel) {
+      panel =
+        document.createElement(
+          "section"
+        );
+
+      panel.id =
+        "cg122MarkerPanel";
+
+      panel.className =
+        "hidden";
+    }
+
+    const bar = toolbar();
+
+    if (
+      bar &&
+      panel.previousElementSibling !== bar
+    ) {
+      bar.insertAdjacentElement(
+        "afterend",
+        panel
+      );
+    }
+
+    return panel;
+  }
+
+  function markerRows() {
+    try {
+      if (
+        typeof landmarks === "undefined" ||
+        !landmarks ||
+        typeof landmarks.entries !==
+          "function"
+      ) {
+        return [];
+      }
+
+      return [...landmarks.entries()]
+        .map(([key,row]) => ({
+          code: String(
+            row?.code ??
+            row?.landmark_code ??
+            key ??
+            ""
+          ).trim(),
+
+          name: String(
+            row?.name ??
+            row?.label ??
+            row?.title ??
+            ""
+          ).trim(),
+
+          sort: Number(
+            row?.sort_order ??
+            row?.sortOrder ??
+            9999
+          )
+        }))
+        .filter(row => row.code)
+        .sort(
+          (a,b) =>
+            a.sort - b.sort ||
+            a.code.localeCompare(
+              b.code,
+              "fr"
+            )
+        );
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function markerOccurrence(
+    activity,
+    code
+  ) {
+    try {
+      if (
+        typeof linksForActivity !==
+        "function"
+      ) {
+        return 0;
+      }
+
+      const row =
+        linksForActivity(activity)
+          .find(
+            item =>
+              String(
+                item?.landmark_code ?? ""
+              ) === String(code)
+          );
+
+      return row
+        ? Math.max(
+            1,
+            Number(row.occurrences) || 1
+          )
+        : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function renderMarkers() {
+    const panel =
+      ensureMarkerPanel();
+
+    const activity =
+      currentActivity();
+
+    if (!panel || !activity) return;
+
+    panel.classList.toggle(
+      "hidden",
+      !state.markerOpen
+    );
+
+    if (!state.markerOpen) return;
+
+    panel.replaceChildren();
+
+    const head =
+      document.createElement("div");
+
+    head.className =
+      "cg122-fix4-marker-head";
+
+    const title =
+      document.createElement("strong");
+
+    title.textContent =
+      "Repères de l’activité";
+
+    const hint =
+      document.createElement("span");
+
+    hint.className =
+      "muted";
+
+    hint.textContent =
+      "− retire · + ajoute";
+
+    head.append(
+      title,
+      hint
+    );
+
+    panel.appendChild(head);
+
+    const rows =
+      markerRows();
+
+    if (!rows.length) {
+      const empty =
+        document.createElement("p");
+
+      empty.className =
+        "muted";
+
+      empty.textContent =
+        "Aucun repère disponible.";
+
+      panel.appendChild(empty);
+      return;
+    }
+
+    for (const row of rows) {
+      const count =
+        markerOccurrence(
+          activity,
+          row.code
+        );
+
+      const line =
+        document.createElement("div");
+
+      line.className =
+        "cg122-fix4-marker-row";
+
+      const code =
+        document.createElement("span");
+
+      code.className =
+        "cg122-fix4-marker-code";
+
+      code.textContent =
+        row.code;
+
+      const name =
+        document.createElement("span");
+
+      name.textContent =
+        row.name || "—";
+
+      const qty =
+        document.createElement("span");
+
+      qty.className =
+        "cg122-fix4-marker-count";
+
+      qty.textContent =
+        String(count);
+
+      const minus =
+        document.createElement("button");
+
+      minus.type =
+        "button";
+
+      minus.className =
+        "secondary cg122-fix4-marker-mini";
+
+      minus.textContent =
+        "−";
+
+      minus.disabled =
+        count <= 0;
+
+      const plus =
+        document.createElement("button");
+
+      plus.type =
+        "button";
+
+      plus.className =
+        "secondary cg122-fix4-marker-mini";
+
+      plus.textContent =
+        "+";
+
+      const change =
+        async delta => {
+          if (
+            typeof changeLandmarkOccurrence !==
+            "function"
+          ) {
+            message(
+              "Le moteur des repères n’est pas disponible."
+            );
+
+            return;
+          }
+
+          minus.disabled = true;
+          plus.disabled = true;
+
+          try {
+            await changeLandmarkOccurrence(
+              activity,
+              row.code,
+              delta
+            );
+          } catch (error) {
+            console.error(
+              "CGWEB122 FIX4 repère",
+              error
+            );
+
+            message(
+              "Impossible de modifier ce repère."
+            );
+          } finally {
+            renderMarkers();
+          }
+        };
+
+      minus.addEventListener(
+        "click",
+        () => void change(-1)
+      );
+
+      plus.addEventListener(
+        "click",
+        () => void change(+1)
+      );
+
+      line.append(
+        code,
+        name,
+        qty,
+        minus,
+        plus
+      );
+
+      panel.appendChild(line);
+    }
+  }
+
+  function openMarkers() {
+    state.markerOpen =
+      !state.markerOpen;
+
+    renderMarkers();
+  }
+
+  function openJoin() {
+    const activity =
+      currentActivity();
+
+    if (!activity) {
+      message(
+        "Aucune activité ouverte."
+      );
+      return;
+    }
+
+    if (
+      !activityEquipment(
+        activity
+      )
+    ) {
+      message(
+        "Aucun matériel affecté : " +
+        "la jonction rapide exige " +
+        "le même matériel."
+      );
+
+      return;
+    }
+
+    try {
+      if (
+        typeof cgweb122Mount ===
+        "function"
+      ) {
+        cgweb122Mount();
+      }
+    } catch (error) {
+      console.error(
+        "CGWEB122 FIX4 mount",
+        error
+      );
+    }
+
+    let details = null;
+
+    try {
+      if (
+        typeof cgweb122FindDetails ===
+        "function"
+      ) {
+        details =
+          cgweb122FindDetails();
+      }
+    } catch (_) {}
+
+    if (!details) {
+      details =
+        [...document.querySelectorAll(
+          "#detailView details"
+        )].find(
+          element =>
+            /joindre des activités/i.test(
+              element
+                .querySelector("summary")
+                ?.textContent || ""
+            )
+        ) || null;
+    }
+
+    if (!details) {
+      message(
+        "Le panneau de jonction n’a pas été trouvé."
+      );
+
+      return;
+    }
+
+    details.open = true;
+
+    details.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+  }
+
+  function ensureManualOverlay() {
+    let overlay =
+      document.getElementById(
+        "cg122Fix4ManualOverlay"
+      );
+
+    if (overlay) return overlay;
+
+    overlay =
+      document.createElement("div");
+
+    overlay.id =
+      "cg122Fix4ManualOverlay";
+
+    overlay.className =
+      "hidden";
+
+    const dialog =
+      document.createElement("div");
+
+    dialog.id =
+      "cg122Fix4ManualDialog";
+
+    const header =
+      document.createElement("div");
+
+    header.id =
+      "cg122Fix4ManualHeader";
+
+    const title =
+      document.createElement("strong");
+
+    title.textContent =
+      "Ajout manuel";
+
+    const close =
+      document.createElement("button");
+
+    close.id =
+      "cg122Fix4ManualClose";
+
+    close.type =
+      "button";
+
+    close.className =
+      "secondary";
+
+    close.textContent =
+      "Fermer";
+
+    close.addEventListener(
+      "click",
+      closeManual
+    );
+
+    header.append(
+      title,
+      close
+    );
+
+    dialog.appendChild(
+      header
+    );
+
+    overlay.appendChild(
+      dialog
+    );
+
+    overlay.addEventListener(
+      "click",
+      event => {
+        if (
+          event.target === overlay
+        ) {
+          closeManual();
+        }
+      }
+    );
+
+    document.body.appendChild(
+      overlay
+    );
+
+    return overlay;
+  }
+
+  function openManual() {
+    const section =
+      document.getElementById(
+        "webManualSection"
+      );
+
+    if (!section) {
+      message(
+        "Le formulaire d’ajout manuel est introuvable."
+      );
+
+      return;
+    }
+
+    const overlay =
+      ensureManualOverlay();
+
+    const dialog =
+      document.getElementById(
+        "cg122Fix4ManualDialog"
+      );
+
+    if (!dialog) return;
+
+    if (
+      section.parentElement !==
+      dialog
+    ) {
+      state.manualParent =
+        section.parentElement;
+
+      state.manualNextSibling =
+        section.nextSibling;
+
+      state.manualWasHidden =
+        section.classList.contains(
+          "hidden"
+        );
+
+      dialog.appendChild(
+        section
+      );
+    }
+
+    section.classList.remove(
+      "hidden"
+    );
+
+    section.hidden = false;
+
+    section.removeAttribute(
+      "aria-hidden"
+    );
+
+    overlay.classList.remove(
+      "hidden"
+    );
+
+    document.documentElement
+      .style.overflow =
+        "hidden";
+  }
+
+  function closeManual() {
+    const overlay =
+      document.getElementById(
+        "cg122Fix4ManualOverlay"
+      );
+
+    const section =
+      document.getElementById(
+        "webManualSection"
+      );
+
+    if (
+      section &&
+      state.manualParent
+    ) {
+      if (
+        state.manualNextSibling &&
+        state.manualNextSibling.parentNode ===
+          state.manualParent
+      ) {
+        state.manualParent
+          .insertBefore(
+            section,
+            state.manualNextSibling
+          );
+      } else {
+        state.manualParent
+          .appendChild(
+            section
+          );
+      }
+
+      if (
+        state.manualWasHidden
+      ) {
+        section.classList.add(
+          "hidden"
+        );
+      }
+
+      state.manualParent =
+        null;
+
+      state.manualNextSibling =
+        null;
+    }
+
+    overlay?.classList.add(
+      "hidden"
+    );
+
+    document.documentElement
+      .style.removeProperty(
+        "overflow"
+      );
+  }
+
+  document.addEventListener(
+    "keydown",
+    event => {
+      if (
+        event.key === "Escape" &&
+        !document
+          .getElementById(
+            "cg122Fix4ManualOverlay"
+          )
+          ?.classList.contains(
+            "hidden"
+          )
+      ) {
+        closeManual();
+      }
+    }
+  );
+
+  function createButton(
+    id,
+    label,
+    action,
+    extraClass = ""
+  ) {
+    const button =
+      document.createElement(
+        "button"
+      );
+
+    button.id = id;
+    button.type = "button";
+
+    button.className =
+      `secondary ${extraClass}`
+        .trim();
+
+    button.textContent =
+      label;
+
+    button.dataset.cg122Fix4 =
+      "1";
+
+    button.addEventListener(
+      "click",
+      event => {
+        event.preventDefault();
+        event.stopPropagation();
+        action();
+      }
+    );
+
+    return button;
+  }
+
+  function recreateButton(
+    id,
+    label,
+    action,
+    extraClass = ""
+  ) {
+    const previous =
+      document.getElementById(
+        id
+      );
+
+    if (
+      previous &&
+      previous.dataset
+        .cg122Fix4 === "1"
+    ) {
+      return previous;
+    }
+
+    const fresh =
+      createButton(
+        id,
+        label,
+        action,
+        extraClass
+      );
+
+    if (previous) {
+      previous.replaceWith(
+        fresh
+      );
+    }
+
+    return fresh;
+  }
+
+  function ensureActionButtons() {
+    const center =
+      ensureCenterGroup();
+
+    if (!center) return false;
+
+    const marker =
+      recreateButton(
+        "cg122MarkerButton",
+        "Repères",
+        openMarkers
+      );
+
+    const join =
+      recreateButton(
+        "cg122JoinButton",
+        "Joindre",
+        openJoin
+      );
+
+    const manual =
+      recreateButton(
+        "cg122ManualButton",
+        "Ajout manuel",
+        openManual,
+        "web072-manual-add-btn"
+      );
+
+    center.append(
+      marker,
+      join,
+      manual
+    );
+
+    for (
+      const button of
+      [marker,join,manual]
+    ) {
+      button.hidden = false;
+      button.removeAttribute(
+        "hidden"
+      );
+      button.removeAttribute(
+        "aria-hidden"
+      );
+    }
+
+    return true;
+  }
+
+  function trashButton() {
+    return (
+      document.getElementById(
+        "trashCurrentActivityButton"
+      ) ||
+      [...document.querySelectorAll(
+        "button"
+      )].find(
+        button =>
+          /mettre à la corbeille/i.test(
+            button.textContent || ""
+          )
+      ) ||
+      null
+    );
+  }
+
+  function ensureManagement() {
+    const detail =
+      document.getElementById(
+        "detailView"
+      );
+
+    if (!detail) return null;
+
+    let details =
+      document.getElementById(
+        "cg122Management"
+      );
+
+    if (!details) {
+      details =
+        document.createElement(
+          "details"
+        );
+
+      details.id =
+        "cg122Management";
+
+      const summary =
+        document.createElement(
+          "summary"
+        );
+
+      summary.textContent =
+        "Gestion de l’activité";
+
+      const body =
+        document.createElement(
+          "div"
+        );
+
+      body.id =
+        "cg122ManagementBody";
+
+      details.append(
+        summary,
+        body
+      );
+
+      detail.appendChild(
+        details
+      );
+    }
+
+    let body =
+      document.getElementById(
+        "cg122ManagementBody"
+      );
+
+    if (!body) {
+      body =
+        document.createElement(
+          "div"
+        );
+
+      body.id =
+        "cg122ManagementBody";
+
+      details.appendChild(
+        body
+      );
+    }
+
+    return body;
+  }
+
+  function relocateTrash() {
+    const trash =
+      trashButton();
+
+    if (!trash) return false;
+
+    const body =
+      ensureManagement();
+
+    if (!body) return false;
+
+    if (
+      trash.parentElement !==
+      body
+    ) {
+      body.appendChild(
+        trash
+      );
+    }
+
+    trash.hidden = false;
+
+    trash.removeAttribute(
+      "hidden"
+    );
+
+    trash.removeAttribute(
+      "aria-hidden"
+    );
+
+    return true;
+  }
+
+  function repairActionBar() {
+    if (state.repairing) return;
+
+    state.repairing = true;
+
+    try {
+      installStyle();
+      normalizeToolbar();
+      ensureActionButtons();
+      relocateTrash();
+      ensureMarkerPanel();
+    } finally {
+      state.repairing = false;
+    }
+  }
+
+  function repairBurst() {
+    queueMicrotask(
+      repairActionBar
+    );
+
+    requestAnimationFrame(() => {
+      repairActionBar();
+
+      requestAnimationFrame(
+        repairActionBar
+      );
+    });
+
+    setTimeout(
+      repairActionBar,
+      60
+    );
+
+    setTimeout(
+      repairActionBar,
+      180
+    );
+
+    setTimeout(
+      repairActionBar,
+      450
+    );
+
+    setTimeout(
+      repairActionBar,
+      900
+    );
+  }
+
+  const observer =
+    new MutationObserver(() => {
+      const detail =
+        document.getElementById(
+          "detailView"
+        );
+
+      if (!detail) return;
+
+      if (
+        detail.classList.contains(
+          "hidden"
+        )
+      ) {
+        return;
+      }
+
+      const missing =
+        !document.getElementById(
+          "cg122MarkerButton"
+        ) ||
+        !document.getElementById(
+          "cg122JoinButton"
+        ) ||
+        !document.getElementById(
+          "cg122ManualButton"
+        ) ||
+        !document.getElementById(
+          "web065ToolbarCenter"
+        );
+
+      const trash =
+        trashButton();
+
+      const trashMisplaced =
+        Boolean(
+          trash &&
+          trash.parentElement?.id !==
+            "cg122ManagementBody"
+        );
+
+      if (
+        !missing &&
+        !trashMisplaced
+      ) {
+        return;
+      }
+
+      if (state.scheduled) return;
+
+      state.scheduled = true;
+
+      requestAnimationFrame(() => {
+        state.scheduled = false;
+        repairActionBar();
+      });
+    });
+
+  function startObserver() {
+    const detail =
+      document.getElementById(
+        "detailView"
+      );
+
+    if (!detail) return;
+
+    observer.disconnect();
+
+    observer.observe(
+      detail,
+      {
+        childList: true,
+        subtree: true
+      }
+    );
+  }
+
+  try {
+    if (
+      typeof renderDetail ===
+        "function" &&
+      !window
+        .__CGWEB122_FIX4_RENDER_WRAPPED
+    ) {
+      const oldRenderDetail =
+        renderDetail;
+
+      renderDetail =
+        function(...args) {
+          state.markerOpen =
+            false;
+
+          const result =
+            oldRenderDetail
+              .apply(
+                this,
+                args
+              );
+
+          repairBurst();
+
+          setTimeout(
+            startObserver,
+            0
+          );
+
+          return result;
+        };
+
+      window
+        .__CGWEB122_FIX4_RENDER_WRAPPED =
+          true;
+    }
+  } catch (error) {
+    console.error(
+      "CGWEB122 FIX4 render hook",
+      error
+    );
+  }
+
+  window.CGWEB122_FIX4_STATUS =
+    function() {
+      const bar =
+        toolbar();
+
+      const center =
+        document.getElementById(
+          "web065ToolbarCenter"
+        );
+
+      const marker =
+        document.getElementById(
+          "cg122MarkerButton"
+        );
+
+      const join =
+        document.getElementById(
+          "cg122JoinButton"
+        );
+
+      const manual =
+        document.getElementById(
+          "cg122ManualButton"
+        );
+
+      const trash =
+        trashButton();
+
+      const children =
+        center
+          ? [...center.children]
+          : [];
+
+      const visible =
+        element =>
+          Boolean(
+            element &&
+            getComputedStyle(
+              element
+            ).display !==
+              "none" &&
+            getComputedStyle(
+              element
+            ).visibility !==
+              "hidden"
+          );
+
+      return {
+        build: BUILD,
+
+        toolbar_present:
+          Boolean(bar),
+
+        center_present:
+          Boolean(center),
+
+        marker_present:
+          Boolean(marker),
+
+        marker_visible:
+          visible(marker),
+
+        join_present:
+          Boolean(join),
+
+        join_visible:
+          visible(join),
+
+        manual_present:
+          Boolean(manual),
+
+        manual_visible:
+          visible(manual),
+
+        action_order: {
+          marker:
+            children.indexOf(
+              marker
+            ),
+
+          join:
+            children.indexOf(
+              join
+            ),
+
+          manual:
+            children.indexOf(
+              manual
+            )
+        },
+
+        expected_order:
+          "Repères | Joindre | Ajout manuel",
+
+        trash_relocated:
+          Boolean(
+            trash &&
+            trash.parentElement?.id ===
+              "cg122ManagementBody"
+          ),
+
+        detail_gap:
+          "2mm"
+      };
+    };
+
+  installStyle();
+  repairBurst();
+
+  setTimeout(
+    startObserver,
+    100
+  );
+
+  setTimeout(
+    startObserver,
+    500
+  );
+
+  console.info(
+    "CGWEB122 FIX4 actif"
+  );
+})();
+/* CGWEB122_FIX4_END */
