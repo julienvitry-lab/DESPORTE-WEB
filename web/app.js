@@ -1067,6 +1067,11 @@ function uxPageConfig() {
       eyebrow: "",
       subs: [["directory","Activités"]]
     },
+    joins: {
+      title: "Jonctions",
+      eyebrow: "",
+      subs: []
+    },
     analysis: {
       title: "Analyse",
       eyebrow: "",
@@ -1119,6 +1124,7 @@ function initAppearance() {
 function managedUxSections() {
   return [
     ui.webDashboardSection, ui.activityDirectorySection, ui.trashSection,
+    document.getElementById("cgweb123JoinWorkspace"),
     ui.personalSyncSection, ui.landmarkManagerSection, ui.recordsManagerSection,
     ui.globalMapSection, ui.equipmentManagerSection,
     ui.webStravaSection, ui.equipmentMappingSection, ui.appearanceSection, ui.webFilesSection, ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
@@ -1272,6 +1278,14 @@ function navigateUx(page, subpage = null, options = {}) {
   } else if (page === "activities") {
     if (sub === "trash") setUxSectionVisibility([ui.trashSection]);
     else setUxSectionVisibility([ui.activityDirectorySection]);
+  } else if (page === "joins") {
+    setUxSectionVisibility([
+      document.getElementById("cgweb123JoinWorkspace")
+    ]);
+
+    queueMicrotask(() => {
+      void cgweb123Fix1RefreshWorkspace();
+    });
   } else if (page === "analysis") {
     if (sub === "landmarks") setUxSectionVisibility([ui.landmarkManagerSection]);
     else if (sub === "records") setUxSectionVisibility([ui.recordsManagerSection]);
@@ -22575,6 +22589,14 @@ function applyRealtimeChange(event) {
   const rowKey = String(event.rowKey);
   const row = event.row && typeof event.row === "object" ? event.row : null;
   const fromWeb = String(event.deviceId || "") === webDeviceId;
+
+  /* CGWEB123_FIX1_LIVE_CHANGE_HOOK */
+  if (
+    table === "activities" &&
+    document.body.dataset.uxPage === "joins"
+  ) {
+    cgweb123Fix1ScheduleLiveRefresh();
+  }
 
   if (table === "activities") {
     const activity = activities.find((item) => activityKey(item) === rowKey);
@@ -64808,3 +64830,2449 @@ console.info(
   );
 })();
 /* CGWEB123_124_END */
+
+/* CGWEB123_FIX1_START
+   JOIN_WORKSPACE_TAB001
+   ANALOG_ONLY_DIRECTORY001
+   SHARED_ACTIVITY_TRUTH001
+   LIVE_JOIN_RECONCILE001
+*/
+
+const CGWEB123_FIX1_VERSION =
+  "CGWEB123_FIX1";
+
+const cgweb123Fix1State = {
+  loading: false,
+  groups: [],
+  activityCount: 0,
+  isolatedCount: 0,
+  excludedSplitCount: 0,
+  busyGroupKey: "",
+  refreshedAt: 0
+};
+
+let cgweb123Fix1LiveTimer =
+  null;
+
+
+/* ==========================================================
+   STYLE
+   ========================================================== */
+
+function cgweb123Fix1InstallStyle() {
+  if (
+    document.getElementById(
+      "cgweb123Fix1Style"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement(
+      "style"
+    );
+
+  style.id =
+    "cgweb123Fix1Style";
+
+  style.textContent = `
+    body[data-ux-page="joins"]
+    #catalogView > .hero {
+      display:none !important;
+    }
+
+    body[data-ux-page="activities"]
+    #cgweb123BulkPanel {
+      display:none !important;
+    }
+
+    #cgweb123JoinWorkspace {
+      display:grid;
+      gap:12px;
+      padding:0;
+      border:0;
+      background:transparent;
+    }
+
+    #cgweb123JoinWorkspace.hidden {
+      display:none !important;
+    }
+
+    .cgweb123-fix1-head {
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:14px;
+
+      padding:12px 14px;
+
+      border:
+        1px solid
+        rgba(167,255,42,.20);
+
+      border-radius:14px;
+
+      background:
+        rgba(255,255,255,.018);
+    }
+
+    .cgweb123-fix1-head h2 {
+      margin:0 0 4px;
+    }
+
+    .cgweb123-fix1-head p {
+      margin:0;
+    }
+
+    .cgweb123-fix1-summary {
+      display:grid;
+
+      grid-template-columns:
+        repeat(3,minmax(150px,1fr));
+
+      gap:8px;
+    }
+
+    .cgweb123-fix1-summary article {
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      gap:3px;
+
+      min-height:68px;
+
+      padding:9px 11px;
+
+      border:
+        1px solid
+        rgba(167,255,42,.18);
+
+      border-radius:12px;
+
+      background:
+        rgba(255,255,255,.018);
+    }
+
+    .cgweb123-fix1-summary span {
+      opacity:.72;
+      font-size:.82rem;
+    }
+
+    .cgweb123-fix1-summary strong {
+      font-size:1.28rem;
+    }
+
+    #cgweb123Fix1Status {
+      min-height:1.4em;
+    }
+
+    .cgweb123-fix1-list {
+      display:grid;
+      gap:10px;
+    }
+
+    .cgweb123-fix1-empty {
+      padding:18px;
+
+      border:
+        1px solid
+        rgba(255,255,255,.10);
+
+      border-radius:14px;
+
+      text-align:center;
+    }
+
+    .cgweb123-fix1-group {
+      display:grid;
+      gap:8px;
+
+      padding:11px 12px;
+
+      border:
+        1px solid
+        rgba(167,255,42,.18);
+
+      border-radius:14px;
+
+      background:
+        rgba(255,255,255,.016);
+    }
+
+    .cgweb123-fix1-group-head {
+      display:flex;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:9px;
+    }
+
+    .cgweb123-fix1-group-date {
+      font-weight:800;
+    }
+
+    .cgweb123-fix1-group-equipment {
+      color:
+        var(--accent,#a7ff2a);
+
+      font-weight:700;
+    }
+
+    .cgweb123-fix1-group-count {
+      margin-left:auto;
+    }
+
+    .cgweb123-fix1-rows {
+      display:grid;
+      gap:4px;
+    }
+
+    .cgweb123-fix1-row {
+      display:grid;
+
+      grid-template-columns:
+        34px
+        86px
+        minmax(160px,1.25fr)
+        105px
+        85px
+        94px
+        auto;
+
+      gap:8px;
+      align-items:center;
+
+      padding:6px 8px;
+
+      border-top:
+        1px solid
+        rgba(255,255,255,.07);
+    }
+
+    .cgweb123-fix1-row input {
+      width:17px;
+      height:17px;
+      margin:0;
+    }
+
+    .cgweb123-fix1-role {
+      font-size:.74rem;
+      opacity:.72;
+    }
+
+    .cgweb123-fix1-title {
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+
+    .cgweb123-fix1-group-actions {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .cgweb123-fix1-preview {
+      display:none;
+    }
+
+    .cgweb123-fix1-preview[data-visible="1"] {
+      display:grid;
+      gap:7px;
+
+      padding:9px 11px;
+
+      border:
+        1px solid
+        rgba(167,255,42,.22);
+
+      border-radius:11px;
+
+      background:
+        rgba(167,255,42,.025);
+    }
+
+    .cgweb123-fix1-preview-line {
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px 18px;
+    }
+
+    .cgweb123-fix1-preview-segments {
+      display:grid;
+      gap:3px;
+    }
+
+    .cgweb123-fix1-preview-segment {
+      display:grid;
+
+      grid-template-columns:
+        90px
+        minmax(150px,1fr)
+        110px;
+
+      gap:8px;
+
+      padding-top:3px;
+    }
+
+    .cgweb123-fix1-auto-area {
+      display:grid;
+      gap:8px;
+
+      margin-top:4px;
+      padding-top:12px;
+
+      border-top:
+        1px solid
+        rgba(255,255,255,.10);
+    }
+
+    .cgweb123-fix1-auto-title h3 {
+      margin:0 0 3px;
+    }
+
+    .cgweb123-fix1-auto-title p {
+      margin:0;
+    }
+
+    #cgweb123Fix1AutoHost
+    > #cgweb123BulkPanel {
+      display:block !important;
+      margin-top:0 !important;
+    }
+
+    @media(max-width:900px) {
+      .cgweb123-fix1-row {
+        grid-template-columns:
+          30px
+          78px
+          1fr
+          90px;
+      }
+
+      .cgweb123-fix1-row
+      > :nth-child(5),
+      .cgweb123-fix1-row
+      > :nth-child(6) {
+        display:none;
+      }
+
+      .cgweb123-fix1-group-count {
+        margin-left:0;
+      }
+    }
+
+    @media(max-width:650px) {
+      .cgweb123-fix1-head {
+        flex-direction:column;
+      }
+
+      .cgweb123-fix1-summary {
+        grid-template-columns:1fr;
+      }
+
+      .cgweb123-fix1-row {
+        grid-template-columns:
+          28px
+          74px
+          1fr;
+      }
+
+      .cgweb123-fix1-row
+      > :nth-child(4),
+      .cgweb123-fix1-row
+      > :nth-child(5),
+      .cgweb123-fix1-row
+      > :nth-child(6) {
+        display:none;
+      }
+
+      .cgweb123-fix1-row button {
+        grid-column:
+          2 / -1;
+        justify-self:start;
+      }
+    }
+  `;
+
+  document.head.appendChild(
+    style
+  );
+}
+
+
+/* ==========================================================
+   OUTILS DE VÉRITÉ PARTAGÉE
+   ========================================================== */
+
+function cgweb123Fix1Norm(value) {
+  return String(
+    value ?? ""
+  )
+    .trim()
+    .normalize("NFD")
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    )
+    .replace(/\s+/g," ")
+    .toLocaleLowerCase(
+      "fr-FR"
+    );
+}
+
+
+function cgweb123Fix1DateKey(
+  activity
+) {
+  const ms =
+    Number(
+      activity?.start_time_ms
+    );
+
+  if (
+    !Number.isFinite(ms) ||
+    ms <= 0
+  ) {
+    return "";
+  }
+
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        timeZone:
+          "Europe/Paris",
+
+        year:"numeric",
+        month:"2-digit",
+        day:"2-digit"
+      }
+    )
+    .formatToParts(
+      new Date(ms)
+    );
+
+  const values = {};
+
+  for (const part of parts) {
+    if (
+      part.type !==
+      "literal"
+    ) {
+      values[part.type] =
+        part.value;
+    }
+  }
+
+  return (
+    values.year +
+    "-" +
+    values.month +
+    "-" +
+    values.day
+  );
+}
+
+
+function cgweb123Fix1Equipment(
+  activity
+) {
+  return {
+    id:
+      String(
+        activity?.equipment_id ??
+        activity?.gear_id ??
+        activity?.material_id ??
+        activity?.equipmentId ??
+        activity?.gearId ??
+        ""
+      ).trim(),
+
+    name:
+      cgweb123Fix1Norm(
+        activity?.equipment_name ??
+        activity?.equipment ??
+        activity?.gear_name ??
+        activity?.material_name ??
+        ""
+      ),
+
+    label:
+      String(
+        activity?.equipment_name ??
+        activity?.equipment ??
+        activity?.gear_name ??
+        activity?.material_name ??
+        ""
+      ).trim()
+  };
+}
+
+
+function cgweb123Fix1SameEquipment(
+  leftActivity,
+  rightActivity
+) {
+  const left =
+    cgweb123Fix1Equipment(
+      leftActivity
+    );
+
+  const right =
+    cgweb123Fix1Equipment(
+      rightActivity
+    );
+
+  if (
+    left.id &&
+    right.id
+  ) {
+    return left.id === right.id;
+  }
+
+  return Boolean(
+    left.name &&
+    right.name &&
+    left.name === right.name
+  );
+}
+
+
+function cgweb123Fix1SplitRelated(
+  activity
+) {
+  if (!activity) {
+    return false;
+  }
+
+  if (
+    String(
+      activity
+        .split_parent_activity_id ||
+      ""
+    ).trim()
+  ) {
+    return true;
+  }
+
+  if (
+    Array.isArray(
+      activity.split_children_ids
+    ) &&
+    activity
+      .split_children_ids
+      .length
+  ) {
+    return true;
+  }
+
+  if (
+    String(
+      activity.split_status ||
+      ""
+    ).trim()
+  ) {
+    return true;
+  }
+
+  if (
+    String(
+      activity.import_source ||
+      ""
+    ).trim()
+      .toUpperCase() ===
+      "WEB_SPLIT"
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+
+function cgweb123Fix1StrictBaseKey(
+  activity
+) {
+  const day =
+    cgweb123Fix1DateKey(
+      activity
+    );
+
+  const sport =
+    Number(
+      activity?.sport
+    );
+
+  const subSport =
+    Number(
+      activity?.sub_sport ??
+      activity?.subSport ??
+      0
+    );
+
+  if (
+    !day ||
+    !Number.isFinite(sport) ||
+    !Number.isFinite(subSport)
+  ) {
+    return "";
+  }
+
+  return (
+    day +
+    "|" +
+    sport +
+    "|" +
+    subSport
+  );
+}
+
+
+function cgweb123Fix1Time(ms) {
+  const n =
+    Number(ms);
+
+  if (
+    !Number.isFinite(n) ||
+    n <= 0
+  ) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat(
+    "fr-FR",
+    {
+      timeZone:
+        "Europe/Paris",
+      hour:"2-digit",
+      minute:"2-digit",
+      second:"2-digit"
+    }
+  ).format(
+    new Date(n)
+  );
+}
+
+
+function cgweb123Fix1DateLabel(
+  key
+) {
+  const match =
+    String(key || "")
+      .match(
+        /^(\d{4})-(\d{2})-(\d{2})$/
+      );
+
+  if (!match) {
+    return key || "—";
+  }
+
+  return (
+    match[3] +
+    "/" +
+    match[2] +
+    "/" +
+    match[1]
+  );
+}
+
+
+function cgweb123Fix1Distance(
+  meters
+) {
+  return (
+    (
+      Math.max(
+        0,
+        Number(meters) || 0
+      ) / 1000
+    ).toLocaleString(
+      "fr-FR",
+      {
+        minimumFractionDigits:2,
+        maximumFractionDigits:2
+      }
+    ) +
+    " km"
+  );
+}
+
+
+function cgweb123Fix1Ascent(
+  meters
+) {
+  return (
+    Math.round(
+      Math.max(
+        0,
+        Number(meters) || 0
+      )
+    ).toLocaleString(
+      "fr-FR"
+    ) +
+    " m"
+  );
+}
+
+
+function cgweb123Fix1Duration(
+  ms
+) {
+  const total =
+    Math.max(
+      0,
+      Math.round(
+        (
+          Number(ms) || 0
+        ) / 1000
+      )
+    );
+
+  const h =
+    Math.floor(
+      total / 3600
+    );
+
+  const m =
+    Math.floor(
+      (
+        total -
+        h * 3600
+      ) / 60
+    );
+
+  const s =
+    total % 60;
+
+  if (h > 0) {
+    return (
+      h +
+      " h " +
+      String(m)
+        .padStart(2,"0") +
+      " min"
+    );
+  }
+
+  return (
+    m +
+    " min " +
+    String(s)
+      .padStart(2,"0") +
+    " s"
+  );
+}
+
+
+function cgweb123Fix1Title(
+  activity
+) {
+  return String(
+    activity?.custom_title ??
+    activity?.title ??
+    activity?.name ??
+    activity?.file_name ??
+    sportName(
+      activity?.sport
+    ) ??
+    "Activité"
+  ).trim();
+}
+
+
+/* ==========================================================
+   ANALOG_ONLY_DIRECTORY001
+   ========================================================== */
+
+async function cgweb123Fix1LoadAllActivities() {
+  if (!currentUser) {
+    throw new Error(
+      "Connexion SPORT requise."
+    );
+  }
+
+  const snapshot =
+    await getDocs(
+      userCollection(
+        "activities"
+      )
+    );
+
+  const rows = [];
+
+  snapshot.forEach(
+    item => {
+      const activity = {
+        __docId:
+          String(item.id),
+        ...(item.data() || {})
+      };
+
+      if (
+        activity.deleted_at_ms != null
+      ) {
+        return;
+      }
+
+      rows.push(
+        activity
+      );
+    }
+  );
+
+  return rows;
+}
+
+
+function cgweb123Fix1BuildGroups(
+  allRows
+) {
+  const active =
+    (
+      Array.isArray(allRows)
+        ? allRows
+        : []
+    )
+    .filter(
+      activity =>
+        activity &&
+        activity.deleted_at_ms == null
+    );
+
+  const eligible = [];
+
+  let excludedSplit = 0;
+
+  for (const activity of active) {
+    if (
+      cgweb123Fix1SplitRelated(
+        activity
+      )
+    ) {
+      excludedSplit += 1;
+      continue;
+    }
+
+    const equipment =
+      cgweb123Fix1Equipment(
+        activity
+      );
+
+    const baseKey =
+      cgweb123Fix1StrictBaseKey(
+        activity
+      );
+
+    if (
+      !baseKey ||
+      (
+        !equipment.id &&
+        !equipment.name
+      )
+    ) {
+      continue;
+    }
+
+    eligible.push(
+      activity
+    );
+  }
+
+  /*
+   * Premier niveau :
+   * même jour + même sport + même sous-sport.
+   */
+  const buckets =
+    new Map();
+
+  for (const activity of eligible) {
+    const key =
+      cgweb123Fix1StrictBaseKey(
+        activity
+      );
+
+    const list =
+      buckets.get(key) ||
+      [];
+
+    list.push(
+      activity
+    );
+
+    buckets.set(
+      key,
+      list
+    );
+  }
+
+  const groups = [];
+
+  /*
+   * Deuxième niveau :
+   * matériel pair-à-pair compatible avec TOUS
+   * les membres du groupe.
+   *
+   * Les lignes possédant un ID matériel sont traitées
+   * en premier afin d'éviter d'associer deux IDs différents
+   * via une ligne historique qui ne posséderait qu'un nom.
+   */
+  for (
+    const [
+      baseKey,
+      bucket
+    ]
+    of buckets
+  ) {
+    const ordered =
+      [...bucket]
+        .sort(
+          (a,b) => {
+            const aEquipment =
+              cgweb123Fix1Equipment(a);
+
+            const bEquipment =
+              cgweb123Fix1Equipment(b);
+
+            const idPriority =
+              Number(
+                Boolean(
+                  bEquipment.id
+                )
+              ) -
+              Number(
+                Boolean(
+                  aEquipment.id
+                )
+              );
+
+            if (idPriority) {
+              return idPriority;
+            }
+
+            return (
+              Number(
+                a.start_time_ms || 0
+              ) -
+              Number(
+                b.start_time_ms || 0
+              )
+            );
+          }
+        );
+
+    const partitions = [];
+
+    for (
+      const activity
+      of ordered
+    ) {
+      let target = null;
+
+      for (
+        const partition
+        of partitions
+      ) {
+        if (
+          partition.every(
+            member =>
+              cgweb123Fix1SameEquipment(
+                member,
+                activity
+              )
+          )
+        ) {
+          target =
+            partition;
+
+          break;
+        }
+      }
+
+      if (!target) {
+        target = [];
+        partitions.push(
+          target
+        );
+      }
+
+      target.push(
+        activity
+      );
+    }
+
+    for (
+      let partitionIndex = 0;
+      partitionIndex <
+        partitions.length;
+      partitionIndex += 1
+    ) {
+      const partition =
+        partitions[
+          partitionIndex
+        ];
+
+      if (
+        partition.length < 2
+      ) {
+        continue;
+      }
+
+      partition.sort(
+        (a,b) =>
+          Number(
+            a.start_time_ms || 0
+          ) -
+          Number(
+            b.start_time_ms || 0
+          )
+      );
+
+      const first =
+        partition[0];
+
+      const equipment =
+        cgweb123Fix1Equipment(
+          first
+        );
+
+      const [
+        day,
+        sport,
+        subSport
+      ] =
+        baseKey.split("|");
+
+      groups.push({
+        key:
+          baseKey +
+          "|" +
+          (
+            equipment.id ||
+            equipment.name
+          ) +
+          "|" +
+          partitionIndex,
+
+        day,
+
+        sport:
+          Number(sport),
+
+        sub_sport:
+          Number(subSport),
+
+        equipment,
+
+        activities:
+          partition,
+
+        preview:
+          null
+      });
+    }
+  }
+
+  groups.sort(
+    (a,b) => {
+      const dayOrder =
+        String(b.day)
+          .localeCompare(
+            String(a.day)
+          );
+
+      if (dayOrder) {
+        return dayOrder;
+      }
+
+      return (
+        Number(
+          a.activities[0]
+            ?.start_time_ms || 0
+        ) -
+        Number(
+          b.activities[0]
+            ?.start_time_ms || 0
+        )
+      );
+    }
+  );
+
+  const analogActivityIds =
+    new Set();
+
+  for (const group of groups) {
+    for (
+      const activity
+      of group.activities
+    ) {
+      analogActivityIds.add(
+        String(
+          activityKey(
+            activity
+          )
+        )
+      );
+    }
+  }
+
+  return {
+    groups,
+
+    activeCount:
+      active.length,
+
+    analogActivityCount:
+      analogActivityIds.size,
+
+    isolatedCount:
+      Math.max(
+        0,
+        eligible.length -
+        analogActivityIds.size
+      ),
+
+    excludedSplitCount:
+      excludedSplit
+  };
+}
+
+
+/* ==========================================================
+   AFFICHAGE
+   ========================================================== */
+
+function cgweb123Fix1SetStatus(
+  text,
+  state = "neutral"
+) {
+  const node =
+    document.getElementById(
+      "cgweb123Fix1Status"
+    );
+
+  if (!node) {
+    return;
+  }
+
+  node.textContent =
+    text;
+
+  node.dataset.state =
+    state;
+}
+
+
+function cgweb123Fix1UpdateSummary() {
+  const groupCount =
+    document.getElementById(
+      "cgweb123Fix1GroupCount"
+    );
+
+  const activityCount =
+    document.getElementById(
+      "cgweb123Fix1ActivityCount"
+    );
+
+  const isolatedCount =
+    document.getElementById(
+      "cgweb123Fix1IsolatedCount"
+    );
+
+  if (groupCount) {
+    groupCount.textContent =
+      cgweb123Fix1State
+        .groups
+        .length
+        .toLocaleString(
+          "fr-FR"
+        );
+  }
+
+  if (activityCount) {
+    activityCount.textContent =
+      cgweb123Fix1State
+        .activityCount
+        .toLocaleString(
+          "fr-FR"
+        );
+  }
+
+  if (isolatedCount) {
+    isolatedCount.textContent =
+      cgweb123Fix1State
+        .isolatedCount
+        .toLocaleString(
+          "fr-FR"
+        );
+  }
+}
+
+
+function cgweb123Fix1CheckedIds(
+  card
+) {
+  return [
+    ...card.querySelectorAll(
+      ".cgweb123-fix1-select:checked"
+    )
+  ]
+    .map(
+      input =>
+        String(
+          input.dataset
+            .activityId ||
+          ""
+        )
+        .trim()
+    )
+    .filter(Boolean);
+}
+
+
+function cgweb123Fix1InvalidatePreview(
+  group,
+  card
+) {
+  group.preview = null;
+
+  const preview =
+    card.querySelector(
+      ".cgweb123-fix1-preview"
+    );
+
+  if (preview) {
+    preview.dataset.visible =
+      "0";
+
+    preview.innerHTML =
+      "";
+  }
+}
+
+
+function cgweb123Fix1UpdateRoles(
+  group,
+  card
+) {
+  const checked =
+    new Set(
+      cgweb123Fix1CheckedIds(
+        card
+      )
+    );
+
+  let destinationAssigned =
+    false;
+
+  for (
+    const activity
+    of group.activities
+  ) {
+    const id =
+      String(
+        activityKey(
+          activity
+        )
+      );
+
+    const row =
+      card.querySelector(
+        '[data-row-activity-id="' +
+        CSS.escape(id) +
+        '"]'
+      );
+
+    const role =
+      row?.querySelector(
+        ".cgweb123-fix1-role"
+      );
+
+    if (!role) {
+      continue;
+    }
+
+    if (!checked.has(id)) {
+      role.textContent =
+        "Ignorée";
+
+      continue;
+    }
+
+    if (!destinationAssigned) {
+      role.textContent =
+        "Destination";
+
+      destinationAssigned =
+        true;
+    } else {
+      role.textContent =
+        "Source";
+    }
+  }
+
+  const selectedCount =
+    checked.size;
+
+  const previewButton =
+    card.querySelector(
+      ".cgweb123-fix1-preview-button"
+    );
+
+  if (previewButton) {
+    previewButton.disabled =
+      selectedCount < 2 ||
+      selectedCount > 12 ||
+      Boolean(
+        cgweb123Fix1State
+          .busyGroupKey
+      );
+
+    previewButton.textContent =
+      selectedCount > 12
+        ? (
+            "Maximum 12 activités"
+          )
+        : (
+            "Prévisualiser la fusion (" +
+            selectedCount +
+            ")"
+          );
+  }
+}
+
+
+function cgweb123Fix1RenderGroup(
+  group
+) {
+  const card =
+    document.createElement(
+      "article"
+    );
+
+  card.className =
+    "cgweb123-fix1-group";
+
+  card.dataset.groupKey =
+    group.key;
+
+  const equipmentLabel =
+    group.equipment.label ||
+    group.equipment.id ||
+    "Matériel";
+
+  const rowsHtml =
+    group.activities
+      .map(
+        activity => {
+          const id =
+            String(
+              activityKey(
+                activity
+              )
+            );
+
+          return `
+            <div
+              class="cgweb123-fix1-row"
+              data-row-activity-id="${escapeHtml(id)}">
+
+              <input
+                class="cgweb123-fix1-select"
+                type="checkbox"
+                data-activity-id="${escapeHtml(id)}"
+                checked>
+
+              <div>
+                <strong>
+                  ${escapeHtml(
+                    cgweb123Fix1Time(
+                      activity
+                        .start_time_ms
+                    )
+                  )}
+                </strong>
+
+                <div
+                  class="cgweb123-fix1-role">
+                  Source
+                </div>
+              </div>
+
+              <strong
+                class="cgweb123-fix1-title"
+                title="${escapeHtml(
+                  cgweb123Fix1Title(
+                    activity
+                  )
+                )}">
+                ${escapeHtml(
+                  cgweb123Fix1Title(
+                    activity
+                  )
+                )}
+              </strong>
+
+              <span>
+                ${escapeHtml(
+                  cgweb123Fix1Distance(
+                    activity.distance_m
+                  )
+                )}
+              </span>
+
+              <span>
+                D+
+                ${escapeHtml(
+                  cgweb123Fix1Ascent(
+                    activity.ascent_m
+                  )
+                )}
+              </span>
+
+              <span class="muted">
+                #${escapeHtml(id)}
+              </span>
+
+              <button
+                type="button"
+                class="secondary cgweb123-fix1-open"
+                data-activity-id="${escapeHtml(id)}">
+                Ouvrir
+              </button>
+            </div>
+          `;
+        }
+      )
+      .join("");
+
+  card.innerHTML = `
+    <div class="cgweb123-fix1-group-head">
+      <span class="cgweb123-fix1-group-date">
+        ${escapeHtml(
+          cgweb123Fix1DateLabel(
+            group.day
+          )
+        )}
+      </span>
+
+      <span class="muted">
+        ${escapeHtml(
+          sportName(
+            group.sport
+          )
+        )}
+        · sous-sport
+        ${escapeHtml(
+          String(
+            group.sub_sport
+          )
+        )}
+      </span>
+
+      <span class="cgweb123-fix1-group-equipment">
+        ${escapeHtml(
+          equipmentLabel
+        )}
+      </span>
+
+      <span class="cgweb123-fix1-group-count muted">
+        ${group.activities.length}
+        activités analogues
+      </span>
+    </div>
+
+    <div class="cgweb123-fix1-rows">
+      ${rowsHtml}
+    </div>
+
+    <div class="cgweb123-fix1-group-actions">
+      <button
+        type="button"
+        class="secondary cgweb123-fix1-preview-button">
+        Prévisualiser la fusion
+      </button>
+
+      <span class="muted">
+        La première activité cochée devient la destination.
+      </span>
+    </div>
+
+    <div
+      class="cgweb123-fix1-preview"
+      data-visible="0">
+    </div>
+  `;
+
+  card
+    .querySelectorAll(
+      ".cgweb123-fix1-select"
+    )
+    .forEach(
+      checkbox => {
+        checkbox.addEventListener(
+          "change",
+          () => {
+            cgweb123Fix1InvalidatePreview(
+              group,
+              card
+            );
+
+            cgweb123Fix1UpdateRoles(
+              group,
+              card
+            );
+          }
+        );
+      }
+    );
+
+  card
+    .querySelectorAll(
+      ".cgweb123-fix1-open"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            const id =
+              String(
+                button.dataset
+                  .activityId ||
+                ""
+              );
+
+            if (
+              typeof cgweb099OpenActivity ===
+              "function"
+            ) {
+              void cgweb099OpenActivity(
+                id
+              );
+            }
+          }
+        );
+      }
+    );
+
+  card
+    .querySelector(
+      ".cgweb123-fix1-preview-button"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        void cgweb123Fix1PrepareGroup(
+          group,
+          card
+        );
+      }
+    );
+
+  cgweb123Fix1UpdateRoles(
+    group,
+    card
+  );
+
+  return card;
+}
+
+
+function cgweb123Fix1RenderGroups() {
+  const host =
+    document.getElementById(
+      "cgweb123Fix1AnalogList"
+    );
+
+  if (!host) {
+    return;
+  }
+
+  host.innerHTML =
+    "";
+
+  if (
+    !cgweb123Fix1State
+      .groups
+      .length
+  ) {
+    host.innerHTML = `
+      <div class="cgweb123-fix1-empty">
+        <strong>
+          Aucune activité analogue
+        </strong>
+
+        <p class="muted">
+          Toutes les activités actuellement joignables sont isolées.
+        </p>
+      </div>
+    `;
+
+    return;
+  }
+
+  for (
+    const group
+    of cgweb123Fix1State.groups
+  ) {
+    host.appendChild(
+      cgweb123Fix1RenderGroup(
+        group
+      )
+    );
+  }
+}
+
+
+/* ==========================================================
+   CGWEB122 COMME UNIQUE MOTEUR DE FUSION
+   SHARED_ACTIVITY_TRUTH001
+   ========================================================== */
+
+async function cgweb123Fix1JoinApi() {
+  const startedAt =
+    Date.now();
+
+  while (
+    Date.now() -
+    startedAt <
+    6000
+  ) {
+    const api =
+      window
+        .SPORT_FIT_JOIN_REPLACE;
+
+    if (
+      api &&
+      typeof api.plan ===
+        "function" &&
+      typeof api.execute ===
+        "function"
+    ) {
+      return api;
+    }
+
+    await new Promise(
+      resolve =>
+        setTimeout(
+          resolve,
+          80
+        )
+    );
+  }
+
+  throw new Error(
+    "FIT_JOIN_REPLACE001 non chargé."
+  );
+}
+
+
+async function cgweb123Fix1PrepareGroup(
+  group,
+  card
+) {
+  if (
+    cgweb123Fix1State
+      .busyGroupKey
+  ) {
+    return;
+  }
+
+  const ids =
+    cgweb123Fix1CheckedIds(
+      card
+    );
+
+  if (
+    ids.length < 2
+  ) {
+    return;
+  }
+
+  if (
+    ids.length > 12
+  ) {
+    cgweb123Fix1SetStatus(
+      "CGWEB122 accepte au maximum 12 activités par fusion.",
+      "error"
+    );
+
+    return;
+  }
+
+  cgweb123Fix1State
+    .busyGroupKey =
+      group.key;
+
+  cgweb123Fix1UpdateRoles(
+    group,
+    card
+  );
+
+  const button =
+    card.querySelector(
+      ".cgweb123-fix1-preview-button"
+    );
+
+  const preview =
+    card.querySelector(
+      ".cgweb123-fix1-preview"
+    );
+
+  if (button) {
+    button.disabled = true;
+
+    button.textContent =
+      "Préparation…";
+  }
+
+  if (preview) {
+    preview.dataset.visible =
+      "1";
+
+    preview.innerHTML =
+      '<span class="muted">Validation CGWEB122 en cours…</span>';
+  }
+
+  try {
+    const api =
+      await cgweb123Fix1JoinApi();
+
+    /*
+     * Les activités du groupe sont déjà ordonnées
+     * chronologiquement. La première cochée est
+     * donc la destination conservée.
+     */
+    const orderedSelected =
+      group.activities
+        .map(
+          activity =>
+            String(
+              activityKey(
+                activity
+              )
+            )
+        )
+        .filter(
+          id =>
+            ids.includes(id)
+        );
+
+    const destinationId =
+      orderedSelected[0];
+
+    const sourceIds =
+      orderedSelected.slice(1);
+
+    const response =
+      await api.plan(
+        destinationId,
+        sourceIds
+      );
+
+    const plan =
+      response?.plan;
+
+    if (
+      !response?.ok ||
+      !plan?.plan_token
+    ) {
+      throw new Error(
+        response?.error ||
+        "Prévisualisation CGWEB122 invalide."
+      );
+    }
+
+    group.preview = {
+      destinationId,
+      sourceIds,
+      plan
+    };
+
+    const segments =
+      Array.isArray(
+        plan.ordered_segments
+      )
+        ? plan.ordered_segments
+        : [];
+
+    const segmentsHtml =
+      segments
+        .map(
+          segment => `
+            <div class="cgweb123-fix1-preview-segment">
+              <strong>
+                ${escapeHtml(
+                  cgweb123Fix1Time(
+                    segment
+                      .start_time_ms
+                  )
+                )}
+              </strong>
+
+              <span>
+                ${escapeHtml(
+                  segment.label ||
+                  segment.activity_id
+                )}
+              </span>
+
+              <span>
+                ${escapeHtml(
+                  cgweb123Fix1Distance(
+                    segment
+                      .distance_m
+                  )
+                )}
+              </span>
+            </div>
+          `
+        )
+        .join("");
+
+    if (preview) {
+      preview.innerHTML = `
+        <strong>
+          Prévisualisation CGWEB122 validée
+        </strong>
+
+        <div class="cgweb123-fix1-preview-line">
+          <span>
+            Distance finale :
+            <strong>
+              ${escapeHtml(
+                cgweb123Fix1Distance(
+                  plan.distance_m
+                )
+              )}
+            </strong>
+          </span>
+
+          <span>
+            D+ :
+            <strong>
+              ${escapeHtml(
+                cgweb123Fix1Ascent(
+                  plan.ascent_m
+                )
+              )}
+            </strong>
+          </span>
+
+          <span>
+            Temps total :
+            <strong>
+              ${escapeHtml(
+                cgweb123Fix1Duration(
+                  plan.elapsed_time_ms
+                )
+              )}
+            </strong>
+          </span>
+        </div>
+
+        <div class="cgweb123-fix1-preview-segments">
+          ${segmentsHtml}
+        </div>
+
+        <div>
+          <button
+            type="button"
+            class="primary cgweb123-fix1-apply-preview">
+            Appliquer cette fusion
+          </button>
+        </div>
+
+        <span class="muted">
+          FIT destination construit et validé avant traitement des sources.
+        </span>
+      `;
+
+      preview.dataset.visible =
+        "1";
+
+      preview
+        .querySelector(
+          ".cgweb123-fix1-apply-preview"
+        )
+        ?.addEventListener(
+          "click",
+          () => {
+            void cgweb123Fix1ApplyGroup(
+              group,
+              card
+            );
+          }
+        );
+    }
+
+    cgweb123Fix1SetStatus(
+      "Prévisualisation validée · aucune modification appliquée.",
+      "success"
+    );
+  } catch (error) {
+    console.error(
+      "CGWEB123 FIX1 preview",
+      error
+    );
+
+    group.preview =
+      null;
+
+    if (preview) {
+      preview.dataset.visible =
+        "1";
+
+      preview.innerHTML = `
+        <strong>
+          Fusion refusée par les garde-fous
+        </strong>
+
+        <span class="muted">
+          ${escapeHtml(
+            error?.message ||
+            String(error)
+          )}
+        </span>
+      `;
+    }
+
+    cgweb123Fix1SetStatus(
+      "Prévisualisation refusée : " +
+      (
+        error?.message ||
+        error
+      ),
+      "error"
+    );
+  } finally {
+    cgweb123Fix1State
+      .busyGroupKey =
+        "";
+
+    cgweb123Fix1UpdateRoles(
+      group,
+      card
+    );
+  }
+}
+
+
+async function cgweb123Fix1ApplyGroup(
+  group,
+  card
+) {
+  const preview =
+    group.preview;
+
+  if (
+    !preview?.plan?.plan_token
+  ) {
+    return;
+  }
+
+  if (
+    cgweb123Fix1State
+      .busyGroupKey
+  ) {
+    return;
+  }
+
+  const confirmApply =
+    window.confirm(
+      "Appliquer cette fusion ?\n\n" +
+      preview.plan
+        .ordered_segments
+        .length +
+      " activités → 1 activité\n" +
+      cgweb123Fix1Distance(
+        preview.plan
+          .distance_m
+      ) +
+      "\n\n" +
+      "La modification sera immédiatement visible dans Activités et dans Jonctions."
+    );
+
+  if (!confirmApply) {
+    return;
+  }
+
+  cgweb123Fix1State
+    .busyGroupKey =
+      group.key;
+
+  const applyButton =
+    card.querySelector(
+      ".cgweb123-fix1-apply-preview"
+    );
+
+  if (applyButton) {
+    applyButton.disabled =
+      true;
+
+    applyButton.textContent =
+      "Fusion…";
+  }
+
+  try {
+    const api =
+      await cgweb123Fix1JoinApi();
+
+    const result =
+      await api.execute(
+        preview.destinationId,
+        preview.sourceIds,
+        preview.plan.plan_token
+      );
+
+    if (!result?.ok) {
+      throw new Error(
+        result?.error ||
+        "Fusion CGWEB122 non validée."
+      );
+    }
+
+    cgweb123Fix1SetStatus(
+      "Fusion appliquée · synchronisation du répertoire et des groupes…",
+      "pending"
+    );
+
+    /*
+     * SHARED_ACTIVITY_TRUTH001 :
+     * aucune donnée propre à Jonctions.
+     *
+     * On recharge exactement les collections normales
+     * utilisées par l'onglet Activités.
+     */
+    await reloadAll();
+
+    await cgweb123Fix1RefreshWorkspace({
+      silent:true
+    });
+
+    cgweb123Fix1SetStatus(
+      "Fusion terminée · Activités et Jonctions réconciliées.",
+      "success"
+    );
+
+    setMessage(
+      "CGWEB123 FIX1 · fusion appliquée aux activités SPORT.",
+      "success"
+    );
+  } catch (error) {
+    console.error(
+      "CGWEB123 FIX1 apply",
+      error
+    );
+
+    cgweb123Fix1SetStatus(
+      "Fusion interrompue : " +
+      (
+        error?.message ||
+        error
+      ),
+      "error"
+    );
+
+    setMessage(
+      "CGWEB123 FIX1 · fusion non appliquée.",
+      "error"
+    );
+  } finally {
+    cgweb123Fix1State
+      .busyGroupKey =
+        "";
+  }
+}
+
+
+/* ==========================================================
+   DÉPLACEMENT DU CGWEB123 EXISTANT
+   ========================================================== */
+
+function cgweb123Fix1MoveLegacyBulkPanel() {
+  const panel =
+    document.getElementById(
+      "cgweb123BulkPanel"
+    );
+
+  const host =
+    document.getElementById(
+      "cgweb123Fix1AutoHost"
+    );
+
+  if (
+    !panel ||
+    !host
+  ) {
+    return false;
+  }
+
+  if (
+    panel.parentElement !==
+    host
+  ) {
+    host.appendChild(
+      panel
+    );
+  }
+
+  const summary =
+    panel.querySelector(
+      ":scope > summary"
+    );
+
+  if (summary) {
+    summary.textContent =
+      "Chaînes automatiques ≤ 200 m";
+  }
+
+  return true;
+}
+
+
+/* ==========================================================
+   LIVE_JOIN_RECONCILE001
+   ========================================================== */
+
+function cgweb123Fix1ScheduleLiveRefresh() {
+  if (
+    document.body
+      .dataset
+      .uxPage !==
+    "joins"
+  ) {
+    return;
+  }
+
+  if (
+    cgweb123Fix1LiveTimer
+  ) {
+    clearTimeout(
+      cgweb123Fix1LiveTimer
+    );
+  }
+
+  cgweb123Fix1LiveTimer =
+    setTimeout(
+      () => {
+        cgweb123Fix1LiveTimer =
+          null;
+
+        void cgweb123Fix1RefreshWorkspace({
+          silent:true
+        });
+      },
+      350
+    );
+}
+
+
+async function cgweb123Fix1RefreshWorkspace(
+  options = {}
+) {
+  const workspace =
+    document.getElementById(
+      "cgweb123JoinWorkspace"
+    );
+
+  if (!workspace) {
+    return;
+  }
+
+  cgweb123Fix1InstallStyle();
+
+  cgweb123Fix1MoveLegacyBulkPanel();
+
+  if (
+    !currentUser
+  ) {
+    cgweb123Fix1SetStatus(
+      "Connexion SPORT requise.",
+      "neutral"
+    );
+
+    return;
+  }
+
+  if (
+    cgweb123Fix1State.loading
+  ) {
+    return;
+  }
+
+  cgweb123Fix1State.loading =
+    true;
+
+  const refreshButton =
+    document.getElementById(
+      "cgweb123Fix1Refresh"
+    );
+
+  if (refreshButton) {
+    refreshButton.disabled =
+      true;
+  }
+
+  if (!options.silent) {
+    cgweb123Fix1SetStatus(
+      "Recherche des activités analogues…",
+      "pending"
+    );
+  }
+
+  try {
+    const allRows =
+      await cgweb123Fix1LoadAllActivities();
+
+    const result =
+      cgweb123Fix1BuildGroups(
+        allRows
+      );
+
+    cgweb123Fix1State.groups =
+      result.groups;
+
+    cgweb123Fix1State.activityCount =
+      result.analogActivityCount;
+
+    cgweb123Fix1State.isolatedCount =
+      result.isolatedCount;
+
+    cgweb123Fix1State.excludedSplitCount =
+      result.excludedSplitCount;
+
+    cgweb123Fix1State.refreshedAt =
+      Date.now();
+
+    cgweb123Fix1UpdateSummary();
+
+    cgweb123Fix1RenderGroups();
+
+    cgweb123Fix1MoveLegacyBulkPanel();
+
+    cgweb123Fix1SetStatus(
+      result.groups.length
+        ? (
+            result.groups.length +
+            " groupe(s) analogue(s) · " +
+            result.analogActivityCount +
+            " activité(s) concernée(s)." +
+            (
+              result.excludedSplitCount
+                ? (
+                    " · " +
+                    result.excludedSplitCount +
+                    " activité(s) WEBSPLIT exclue(s) par les garde-fous de jonction."
+                  )
+                : ""
+            )
+          )
+        : (
+            "Aucun groupe analogue actuellement."
+          ),
+      result.groups.length
+        ? "success"
+        : "neutral"
+    );
+  } catch (error) {
+    console.error(
+      "CGWEB123 FIX1 refresh",
+      error
+    );
+
+    cgweb123Fix1SetStatus(
+      "Chargement impossible : " +
+      (
+        error?.message ||
+        error
+      ),
+      "error"
+    );
+  } finally {
+    cgweb123Fix1State.loading =
+      false;
+
+    if (refreshButton) {
+      refreshButton.disabled =
+        false;
+    }
+  }
+}
+
+
+/* ==========================================================
+   INSTALLATION
+   ========================================================== */
+
+function cgweb123Fix1Install() {
+  cgweb123Fix1InstallStyle();
+
+  const refreshButton =
+    document.getElementById(
+      "cgweb123Fix1Refresh"
+    );
+
+  if (
+    refreshButton &&
+    refreshButton
+      .dataset
+      .cgweb123Fix1 !== "1"
+  ) {
+    refreshButton
+      .dataset
+      .cgweb123Fix1 =
+        "1";
+
+    refreshButton
+      .addEventListener(
+        "click",
+        () => {
+          void cgweb123Fix1RefreshWorkspace();
+        }
+      );
+  }
+
+  cgweb123Fix1MoveLegacyBulkPanel();
+}
+
+
+/*
+ * Le CGWEB123 initial possède son propre MutationObserver.
+ * On surveille simplement la création tardive de son panneau
+ * pour le déplacer dans le workspace au lieu de le laisser
+ * sous Activités.
+ */
+const cgweb123Fix1Observer =
+  new MutationObserver(
+    () => {
+      cgweb123Fix1MoveLegacyBulkPanel();
+    }
+  );
+
+cgweb123Fix1Observer.observe(
+  document.body,
+  {
+    childList:true,
+    subtree:true
+  }
+);
+
+
+/*
+ * Seconde écoute auth uniquement pour le workspace.
+ * Aucun changement de données.
+ */
+onAuthStateChanged(
+  auth,
+  user => {
+    if (
+      user &&
+      document.body
+        .dataset
+        .uxPage ===
+      "joins"
+    ) {
+      setTimeout(
+        () => {
+          void cgweb123Fix1RefreshWorkspace({
+            silent:true
+          });
+        },
+        0
+      );
+    }
+  }
+);
+
+
+window.CGWEB123_FIX1_STATUS =
+  function() {
+    return {
+      build:
+        CGWEB123_FIX1_VERSION,
+
+      join_workspace_tab:
+        Boolean(
+          document.querySelector(
+            '[data-ux-page="joins"]'
+          )
+        ),
+
+      workspace_present:
+        Boolean(
+          document.getElementById(
+            "cgweb123JoinWorkspace"
+          )
+        ),
+
+      analog_only_directory:
+        true,
+
+      shared_activity_truth:
+        true,
+
+      dedicated_join_collection:
+        false,
+
+      join_engine:
+        "CGWEB122/FIT_JOIN_REPLACE001",
+
+      group_count:
+        cgweb123Fix1State
+          .groups
+          .length,
+
+      analog_activity_count:
+        cgweb123Fix1State
+          .activityCount,
+
+      isolated_activity_count:
+        cgweb123Fix1State
+          .isolatedCount,
+
+      split_related_excluded:
+        cgweb123Fix1State
+          .excludedSplitCount,
+
+      live_join_reconcile:
+        true,
+
+      legacy_bulk_panel_parent:
+        document
+          .getElementById(
+            "cgweb123BulkPanel"
+          )
+          ?.parentElement
+          ?.id ||
+        null,
+
+      refreshed_at_ms:
+        cgweb123Fix1State
+          .refreshedAt
+    };
+  };
+
+
+queueMicrotask(
+  cgweb123Fix1Install
+);
+
+requestAnimationFrame(
+  cgweb123Fix1Install
+);
+
+setTimeout(
+  cgweb123Fix1Install,
+  500
+);
+
+console.info(
+  "CGWEB123 FIX1 actif · JOIN_WORKSPACE_TAB001 / ANALOG_ONLY_DIRECTORY001 / SHARED_ACTIVITY_TRUTH001 / LIVE_JOIN_RECONCILE001"
+);
+
+/* CGWEB123_FIX1_END */

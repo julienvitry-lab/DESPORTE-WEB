@@ -8491,6 +8491,7 @@ div.cgweb099-filter-grid
     <div class="ux-primary-nav-inner">
       <button type="button" class="ux-nav-button active" data-ux-page="home">Accueil</button>
       <button type="button" class="ux-nav-button" data-ux-page="activities">Activités</button>
+      <button type="button" class="ux-nav-button" data-ux-page="joins">Jonctions</button>
       <button type="button" class="ux-nav-button" data-ux-page="analysis">Analyse</button>
 <button type="button" class="ux-nav-button" data-ux-page="equipment">Matériel</button>
       <button type="button" class="ux-nav-button" data-ux-page="more">Plus</button>
@@ -8601,7 +8602,81 @@ div.cgweb099-filter-grid
           </div>
         </section>
 
-        <section id="personalSyncSection" class="panel personal-sync-panel">
+        
+        <!-- CGWEB123_FIX1_JOIN_WORKSPACE_START -->
+        <section
+          id="cgweb123JoinWorkspace"
+          class="panel hidden"
+          aria-label="Jonctions d'activités">
+
+          <div class="cgweb123-fix1-head">
+            <div>
+              <h2>Jonctions</h2>
+              <p class="muted">
+                Seules les activités possédant au moins une activité analogue
+                sont affichées ici.
+              </p>
+            </div>
+
+            <button
+              id="cgweb123Fix1Refresh"
+              type="button"
+              class="secondary">
+              Actualiser
+            </button>
+          </div>
+
+          <div
+            id="cgweb123Fix1Summary"
+            class="cgweb123-fix1-summary">
+
+            <article>
+              <span>Groupes analogues</span>
+              <strong id="cgweb123Fix1GroupCount">—</strong>
+            </article>
+
+            <article>
+              <span>Activités concernées</span>
+              <strong id="cgweb123Fix1ActivityCount">—</strong>
+            </article>
+
+            <article>
+              <span>Activités isolées</span>
+              <strong id="cgweb123Fix1IsolatedCount">—</strong>
+            </article>
+          </div>
+
+          <div
+            id="cgweb123Fix1Status"
+            class="muted">
+            Chargement…
+          </div>
+
+          <div
+            id="cgweb123Fix1AnalogList"
+            class="cgweb123-fix1-list">
+          </div>
+
+          <div
+            id="cgweb123Fix1AutoArea"
+            class="cgweb123-fix1-auto-area">
+
+            <div class="cgweb123-fix1-auto-title">
+              <div>
+                <h3>Chaînes automatiques ≤ 200 m</h3>
+                <p class="muted">
+                  Détection géographique CGWEB123.
+                  Cette partie réutilise également les vraies activités SPORT.
+                </p>
+              </div>
+            </div>
+
+            <div id="cgweb123Fix1AutoHost"></div>
+          </div>
+        </section>
+        <!-- CGWEB123_FIX1_JOIN_WORKSPACE_END -->
+
+<section id="personalSyncSection" class="panel personal-sync-panel">
           <div class="panel-title-row">
             <div>
               <p class="eyebrow">WEB018 · PERSONAL001</p>
@@ -11147,7 +11222,7 @@ div.cgweb099-filter-grid
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB124-MANUAL-FIT-SPLIT001"></script>
-<script type="module" src="./app.js?v=CGWEB123-124-BULK-JOIN-MANUAL-SPLIT001"></script>
+<script type="module" src="./app.js?v=CGWEB123-FIX1-JOIN-WORKSPACE001"></script>
 
       <!-- Héritage WEB032 : Données techniques et source déplacées hors fiche -->
       <button id="detailTechnicalButton" class="hidden" type="button" aria-hidden="true"></button>
