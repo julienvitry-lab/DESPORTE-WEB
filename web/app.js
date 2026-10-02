@@ -56590,3 +56590,618 @@ console.info(
   }
 })();
 /* CGWEB122_FIX1_END */
+
+/* CGWEB122_FIX2_START
+   ACTIVITY_ACTION_BAR001
+   QUICK_MARKER_EDIT001
+   QUICK_JOIN_OPEN001
+   DETAIL_GAP_2MM001
+   TRASH_RELOCATE001
+*/
+(() => {
+  const state = { markerOpen: false };
+
+  const norm = v =>
+    String(v ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+
+  const equipment = a =>
+    String(
+      a?.equipment_name ??
+      a?.equipmentName ??
+      a?.gear_name ??
+      a?.gearName ??
+      ""
+    ).trim();
+
+  function current() {
+    try {
+      return currentDetailActivity();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function installStyle() {
+    if (document.getElementById("cg122Fix2Style")) return;
+
+    const style = document.createElement("style");
+    style.id = "cg122Fix2Style";
+
+    style.textContent = `
+      #web065DetailStickySpacer,
+      .web072-fix11-toolbar-placeholder {
+        display:none!important;
+        height:0!important;
+        min-height:0!important;
+        margin:0!important;
+        padding:0!important;
+      }
+
+      #detailView {
+        padding-top:0!important;
+      }
+
+      #detailView > * {
+        margin-top:0!important;
+        margin-bottom:0!important;
+      }
+
+      #detailView > * + * {
+        margin-top:2mm!important;
+      }
+
+      #web064DirectDetailToolbar {
+        margin:0!important;
+      }
+
+      #web065ToolbarCenter {
+        display:flex!important;
+        align-items:center!important;
+        gap:2mm!important;
+        flex-wrap:wrap!important;
+      }
+
+      #cg122MarkerPanel {
+        border:1px solid rgba(167,255,42,.22);
+        border-radius:12px;
+        padding:10px 12px;
+        background:rgba(255,255,255,.015);
+      }
+
+      #cg122MarkerPanel.hidden {
+        display:none!important;
+      }
+
+      .cg122-marker-head {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+        margin-bottom:8px;
+      }
+
+      .cg122-marker-row {
+        display:grid;
+        grid-template-columns:70px minmax(160px,1fr) 45px 40px 40px;
+        gap:7px;
+        align-items:center;
+        padding:6px 8px;
+        margin-top:5px;
+        border:1px solid rgba(255,255,255,.08);
+        border-radius:9px;
+      }
+
+      .cg122-marker-code {
+        color:#a7ff2a;
+        font-weight:700;
+      }
+
+      .cg122-marker-count {
+        text-align:center;
+      }
+
+      .cg122-mini {
+        min-width:36px!important;
+        min-height:30px!important;
+        padding:3px 7px!important;
+      }
+
+      #cg122Management {
+        border:1px solid rgba(255,255,255,.10);
+        border-radius:12px;
+        overflow:hidden;
+      }
+
+      #cg122Management > summary {
+        cursor:pointer;
+        padding:10px 12px;
+        font-weight:650;
+      }
+
+      #cg122ManagementBody {
+        padding:0 12px 12px;
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function ensureManagement() {
+    if (!ui?.detailView || !ui?.trashCurrentActivityButton) return;
+
+    let details = document.getElementById("cg122Management");
+
+    if (!details) {
+      details = document.createElement("details");
+      details.id = "cg122Management";
+
+      const summary = document.createElement("summary");
+      summary.textContent = "Gestion de l’activité";
+
+      const body = document.createElement("div");
+      body.id = "cg122ManagementBody";
+
+      details.append(summary, body);
+      ui.detailView.appendChild(details);
+    }
+
+    const body =
+      document.getElementById("cg122ManagementBody");
+
+    if (
+      body &&
+      ui.trashCurrentActivityButton.parentElement !== body
+    ) {
+      body.appendChild(ui.trashCurrentActivityButton);
+    }
+  }
+
+  function ensureMarkerPanel() {
+    let panel = document.getElementById("cg122MarkerPanel");
+
+    if (!panel) {
+      panel = document.createElement("section");
+      panel.id = "cg122MarkerPanel";
+      panel.className = "hidden";
+    }
+
+    const toolbar =
+      document.getElementById("web064DirectDetailToolbar");
+
+    if (
+      toolbar &&
+      panel.parentElement !== ui.detailView
+    ) {
+      toolbar.insertAdjacentElement("afterend", panel);
+    }
+
+    return panel;
+  }
+
+  function markerRows() {
+    return [...landmarks.entries()]
+      .map(([key, row]) => ({
+        code: String(
+          row?.code ??
+          row?.landmark_code ??
+          key ??
+          ""
+        ).trim(),
+
+        name: String(
+          row?.name ??
+          row?.label ??
+          row?.title ??
+          ""
+        ).trim(),
+
+        sort: Number(
+          row?.sort_order ??
+          row?.sortOrder ??
+          9999
+        )
+      }))
+      .filter(row => row.code)
+      .sort(
+        (a, b) =>
+          a.sort - b.sort ||
+          a.code.localeCompare(b.code, "fr")
+      );
+  }
+
+  function occurrence(activity, code) {
+    const row =
+      linksForActivity(activity)
+        .find(
+          x =>
+            String(x?.landmark_code ?? "") ===
+            String(code)
+        );
+
+    return row
+      ? Math.max(1, Number(row.occurrences) || 1)
+      : 0;
+  }
+
+  function renderMarkers() {
+    const panel = ensureMarkerPanel();
+    const activity = current();
+
+    if (!panel || !activity) return;
+
+    panel.classList.toggle(
+      "hidden",
+      !state.markerOpen
+    );
+
+    if (!state.markerOpen) return;
+
+    panel.replaceChildren();
+
+    const head = document.createElement("div");
+    head.className = "cg122-marker-head";
+    head.innerHTML =
+      '<strong>Repères de l’activité</strong>' +
+      '<span class="muted">− retire · + ajoute</span>';
+
+    panel.appendChild(head);
+
+    for (const row of markerRows()) {
+      const count =
+        occurrence(activity, row.code);
+
+      const line =
+        document.createElement("div");
+
+      line.className =
+        "cg122-marker-row";
+
+      const code =
+        document.createElement("span");
+
+      code.className =
+        "cg122-marker-code";
+
+      code.textContent =
+        row.code;
+
+      const name =
+        document.createElement("span");
+
+      name.textContent =
+        row.name || "—";
+
+      const qty =
+        document.createElement("span");
+
+      qty.className =
+        "cg122-marker-count";
+
+      qty.textContent =
+        String(count);
+
+      const minus =
+        document.createElement("button");
+
+      minus.type = "button";
+      minus.className =
+        "secondary cg122-mini";
+      minus.textContent = "−";
+      minus.disabled = count <= 0;
+
+      const plus =
+        document.createElement("button");
+
+      plus.type = "button";
+      plus.className =
+        "secondary cg122-mini";
+      plus.textContent = "+";
+
+      const change = async delta => {
+        minus.disabled = true;
+        plus.disabled = true;
+
+        try {
+          await changeLandmarkOccurrence(
+            activity,
+            row.code,
+            delta
+          );
+        } finally {
+          renderMarkers();
+        }
+      };
+
+      minus.addEventListener(
+        "click",
+        () => void change(-1)
+      );
+
+      plus.addEventListener(
+        "click",
+        () => void change(1)
+      );
+
+      line.append(
+        code,
+        name,
+        qty,
+        minus,
+        plus
+      );
+
+      panel.appendChild(line);
+    }
+  }
+
+  /*
+   * Même jour + même matériel.
+   * Les autres sécurités CGWEB122 restent intactes.
+   */
+  if (
+    typeof cgweb122Candidates === "function" &&
+    !window.__cg122Fix2CandidateFilter
+  ) {
+    const previousCandidates =
+      cgweb122Candidates;
+
+    cgweb122Candidates =
+      function(destination) {
+        const target =
+          norm(equipment(destination));
+
+        if (!target) return [];
+
+        return previousCandidates(destination)
+          .filter(
+            candidate =>
+              norm(equipment(candidate)) === target
+          );
+      };
+
+    window.__cg122Fix2CandidateFilter = true;
+  }
+
+  function openJoin() {
+    const activity = current();
+    if (!activity) return;
+
+    if (!equipment(activity)) {
+      setMessage(
+        "Aucun matériel affecté : la jonction rapide exige le même matériel.",
+        "error"
+      );
+      return;
+    }
+
+    try {
+      cgweb122Mount();
+    } catch (_) {}
+
+    const details =
+      typeof cgweb122FindDetails === "function"
+        ? cgweb122FindDetails()
+        : null;
+
+    if (details) {
+      details.open = true;
+
+      details.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }
+  }
+
+  function ensureButton(id, label, action) {
+    let button =
+      document.getElementById(id);
+
+    if (!button) {
+      button =
+        document.createElement("button");
+
+      button.id = id;
+      button.type = "button";
+      button.className = "secondary";
+      button.textContent = label;
+      button.addEventListener("click", action);
+    }
+
+    return button;
+  }
+
+  function arrangeToolbar() {
+    const toolbar =
+      document.getElementById(
+        "web064DirectDetailToolbar"
+      );
+
+    if (!toolbar) return;
+
+    /*
+     * Neutralise définitivement les anciens mécanismes
+     * qui créaient plusieurs cm de blanc.
+     */
+    toolbar.classList.remove(
+      "web072-fix9-toolbar-sticky",
+      "web072-fix10-toolbar-fixed",
+      "web072-fix11-toolbar-fixed"
+    );
+
+    toolbar.style.setProperty(
+      "position",
+      "static",
+      "important"
+    );
+
+    toolbar.style.setProperty(
+      "top",
+      "auto",
+      "important"
+    );
+
+    toolbar.style.setProperty(
+      "left",
+      "auto",
+      "important"
+    );
+
+    toolbar.style.setProperty(
+      "width",
+      "auto",
+      "important"
+    );
+
+    const center =
+      document.getElementById(
+        "web065ToolbarCenter"
+      ) || toolbar;
+
+    const marker =
+      ensureButton(
+        "cg122MarkerButton",
+        "Repères",
+        () => {
+          state.markerOpen =
+            !state.markerOpen;
+
+          renderMarkers();
+        }
+      );
+
+    const join =
+      ensureButton(
+        "cg122JoinButton",
+        "Joindre",
+        openJoin
+      );
+
+    const manual =
+      toolbar.querySelector(
+        ".web072-manual-add-btn"
+      );
+
+    if (manual) {
+      center.insertBefore(join, manual);
+      center.insertBefore(marker, join);
+    } else {
+      center.append(marker, join);
+    }
+
+    ensureManagement();
+  }
+
+  /*
+   * WEB072 FIX11 voulait remettre le bandeau en fixed.
+   * FIX2 le remplace par une version statique.
+   */
+  if (
+    typeof web072Fix11FixToolbarImmediately ===
+    "function"
+  ) {
+    web072Fix11FixToolbarImmediately =
+      arrangeToolbar;
+  }
+
+  const previousRenderDetail =
+    renderDetail;
+
+  renderDetail =
+    function(...args) {
+      state.markerOpen = false;
+
+      const result =
+        previousRenderDetail.apply(
+          this,
+          args
+        );
+
+      const refresh = () => {
+        installStyle();
+        arrangeToolbar();
+        ensureManagement();
+        renderMarkers();
+      };
+
+      queueMicrotask(refresh);
+      requestAnimationFrame(refresh);
+      setTimeout(refresh, 80);
+      setTimeout(refresh, 250);
+
+      return result;
+    };
+
+  window.CGWEB122_FIX2_STATUS =
+    function() {
+      const activity = current();
+
+      return {
+        build:
+          "CGWEB122_FIX2",
+
+        activity_action_bar:
+          Boolean(
+            document.getElementById(
+              "cg122MarkerButton"
+            ) &&
+            document.getElementById(
+              "cg122JoinButton"
+            )
+          ),
+
+        quick_marker_edit:
+          true,
+
+        quick_join_open:
+          true,
+
+        same_day_same_equipment:
+          true,
+
+        detail_gap:
+          "2mm",
+
+        trash_relocated:
+          Boolean(
+            document
+              .getElementById(
+                "cg122ManagementBody"
+              )
+              ?.contains(
+                ui?.trashCurrentActivityButton
+              )
+          ),
+
+        current_equipment:
+          activity
+            ? equipment(activity)
+            : null,
+
+        join_candidate_count:
+          activity &&
+          typeof cgweb122Candidates ===
+          "function"
+            ? cgweb122Candidates(
+                activity
+              ).length
+            : 0
+      };
+    };
+
+  installStyle();
+
+  queueMicrotask(() => {
+    arrangeToolbar();
+    ensureManagement();
+  });
+
+  console.info(
+    "CGWEB122 FIX2 actif"
+  );
+})();
+/* CGWEB122_FIX2_END */
