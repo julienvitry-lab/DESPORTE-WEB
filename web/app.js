@@ -67928,3 +67928,154 @@ console.info(
 );
 
 /* CGWEB123_FIX2_FIX2_END */
+
+/* CGWEB123_FIX3_START
+   MASS_JOIN_MANAGER001 / HIGH_CONFIDENCE_AUTOJOIN001
+   RESUMABLE_BATCH001 / FAILURE_CONTINUE001 / JOIN_AUDIT_LOG001
+*/
+const CGWEB123_FIX3_VERSION="CGWEB123_FIX3";
+const cgweb123Fix3Runtime={running:false,stop:false};
+const cgweb123Fix3Key=n=>`SPORT_${CGWEB123_FIX3_VERSION}_${currentUser?.uid||"anonymous"}_${n}`;
+function cgweb123Fix3Read(n,d){try{const x=localStorage.getItem(cgweb123Fix3Key(n));return x?JSON.parse(x):d;}catch(e){console.warn("CGWEB123 FIX3 read",e);return d;}}
+function cgweb123Fix3Write(n,v){try{localStorage.setItem(cgweb123Fix3Key(n),JSON.stringify(v));}catch(e){console.warn("CGWEB123 FIX3 write",e);}}
+function cgweb123Fix3State(){return cgweb123Fix3Read("STATE",null);}
+function cgweb123Fix3Save(s){s.updated_at_ms=Date.now();cgweb123Fix3Write("STATE",s);}
+function cgweb123Fix3Audit(type,data={}){
+  const rows=cgweb123Fix3Read("AUDIT",[]);
+  rows.push({at_ms:Date.now(),type,...data});
+  if(rows.length>3000) rows.splice(0,rows.length-3000);
+  cgweb123Fix3Write("AUDIT",rows);
+}
+function cgweb123Fix3Duration(a){
+  for(const x of [a?.elapsed_time_ms,a?.duration_ms,a?.timer_time_ms,a?.moving_time_ms]){const n=Number(x);if(Number.isFinite(n)&&n>=0)return n;}
+  const s=Number(a?.start_time_ms),e=Number(a?.end_time_ms);return Number.isFinite(s)&&Number.isFinite(e)&&e>=s?e-s:0;
+}
+function cgweb123Fix3Candidate(group){
+  const rows=Array.isArray(group?.activities)?[...group.activities]:[];
+  if(rows.length<2||rows.length>12||group?.ambiguous_missing_equipment===true)return null;
+  const key=cgweb123Fix1StrictBaseKey(rows[0]);
+  if(!key)return null;
+  for(const row of rows){
+    if(row?.deleted_at_ms!=null||cgweb123Fix1SplitRelated(row)||cgweb123Fix1StrictBaseKey(row)!==key)return null;
+  }
+  for(let i=0;i<rows.length;i++)for(let j=i+1;j<rows.length;j++)if(!cgweb123Fix1SameEquipment(rows[i],rows[j]))return null;
+  rows.sort((a,b)=>Number(a?.start_time_ms||0)-Number(b?.start_time_ms||0));
+  for(let i=1;i<rows.length;i++){
+    const p=Number(rows[i-1]?.start_time_ms),c=Number(rows[i]?.start_time_ms);
+    if(!Number.isFinite(p)||!Number.isFinite(c)||c<p+cgweb123Fix3Duration(rows[i-1])-1000)return null;
+  }
+  const ids=rows.map(x=>String(activityKey(x)||"").trim());
+  if(ids.some(x=>!x)||new Set(ids).size!==ids.length)return null;
+  return {group_key:String(group.key||""),day:String(group.day||""),destination_id:ids[0],source_ids:ids.slice(1),segment_count:ids.length};
+}
+function cgweb123Fix3Queue(){
+  const all=Array.isArray(cgweb123Fix1State?.groups)?cgweb123Fix1State.groups:[];
+  const queue=all.map(cgweb123Fix3Candidate).filter(Boolean).sort((a,b)=>a.day.localeCompare(b.day)||a.group_key.localeCompare(b.group_key));
+  return {queue,skipped:all.length-queue.length,total:all.length};
+}
+function cgweb123Fix3SetStatus(text){
+  const n=document.getElementById("cgweb123Fix3Status");if(n)n.textContent=String(text||"");
+}
+function cgweb123Fix3EnsurePanel(){
+  const host=document.getElementById("cgweb123Fix1AnalogList"),workspace=document.getElementById("cgweb123JoinWorkspace");
+  if(!host||!workspace)return null;
+  let p=document.getElementById("cgweb123Fix3MassManager");if(p)return p;
+  p=document.createElement("section");p.id="cgweb123Fix3MassManager";
+  p.style.cssText="display:grid;gap:8px;padding:11px 12px;border:1px solid rgba(167,255,42,.22);border-radius:14px;background:rgba(255,255,255,.018)";
+  p.innerHTML=`
+    <div><strong>Fusion en masse · haute confiance</strong><div class="muted">2–12 activités · mêmes jour/sport/sous-sport/matériel · hors split · PLAN CGWEB122 obligatoire avant chaque EXECUTE.</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button id="cgweb123Fix3Start" class="primary" type="button">Lancer le lot</button>
+      <button id="cgweb123Fix3Resume" class="secondary" type="button">Reprendre</button>
+      <button id="cgweb123Fix3Pause" class="secondary" type="button">Pause après la fusion en cours</button>
+      <button id="cgweb123Fix3Export" class="secondary" type="button">Exporter l’audit</button>
+    </div>
+    <div id="cgweb123Fix3Status" class="muted">Aucun lot en cours.</div>`;
+  workspace.insertBefore(p,host);
+  p.querySelector("#cgweb123Fix3Start")?.addEventListener("click",()=>void cgweb123Fix3Start());
+  p.querySelector("#cgweb123Fix3Resume")?.addEventListener("click",()=>void cgweb123Fix3Resume());
+  p.querySelector("#cgweb123Fix3Pause")?.addEventListener("click",()=>{cgweb123Fix3Runtime.stop=true;cgweb123Fix3SetStatus("Pause demandée · l’EXECUTE en cours sera laissé se terminer.");});
+  p.querySelector("#cgweb123Fix3Export")?.addEventListener("click",cgweb123Fix3Export);
+  return p;
+}
+function cgweb123Fix3Render(){
+  const p=cgweb123Fix3EnsurePanel();if(!p)return;
+  const s=cgweb123Fix3State(),q=cgweb123Fix3Queue();
+  if(s)cgweb123Fix3SetStatus(`${s.status} · ${Math.min(s.cursor,s.queue.length)} / ${s.queue.length} · ${s.success_count} réussie(s) · ${s.failure_count} échec(s) · ${s.recovered_count} récupérée(s)`);
+  p.querySelector("#cgweb123Fix3Start").disabled=cgweb123Fix3Runtime.running;
+  p.querySelector("#cgweb123Fix3Resume").disabled=cgweb123Fix3Runtime.running||!s||s.cursor>=s.queue.length||s.status==="COMPLETE";
+  p.querySelector("#cgweb123Fix3Pause").disabled=!cgweb123Fix3Runtime.running;
+  p.dataset.candidates=String(q.queue.length);
+}
+function cgweb123Fix3Export(){
+  const body={build:CGWEB123_FIX3_VERSION,exported_at_ms:Date.now(),state:cgweb123Fix3State(),audit:cgweb123Fix3Read("AUDIT",[])};
+  const url=URL.createObjectURL(new Blob([JSON.stringify(body,null,2)],{type:"application/json"})),a=document.createElement("a");
+  a.href=url;a.download=`CGWEB123_FIX3_JOIN_AUDIT_${new Date().toISOString().replace(/[:.]/g,"-")}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),0);
+}
+async function cgweb123Fix3Presence(task){
+  const rows=await cgweb123Fix1LoadAllActivities(),ids=new Set(rows.filter(x=>x?.deleted_at_ms==null).map(x=>String(activityKey(x)||"").trim()).filter(Boolean));
+  const src=task.source_ids.map(id=>ids.has(id));
+  return {dest:ids.has(task.destination_id),all:src.every(Boolean),none:src.every(x=>!x)};
+}
+async function cgweb123Fix3Recover(s){
+  if(s.phase==="PLANNING"){s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);return;}
+  if(s.phase!=="EXECUTING")return;
+  const task=s.queue[s.cursor];if(!task)return;
+  const p=await cgweb123Fix3Presence(task);
+  if(p.dest&&p.none){s.success_count++;s.recovered_count++;s.cursor++;s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);cgweb123Fix3Audit("RECOVERED_SUCCESS",{group_key:task.group_key,message:"Fusion déjà terminée confirmée."});return;}
+  if(p.dest&&p.all){s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);return;}
+  s.failure_count++;s.cursor++;s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);cgweb123Fix3Audit("RECOVERY_PARTIAL_STATE",{group_key:task.group_key,message:"État partiel : contrôle manuel requis."});
+}
+async function cgweb123Fix3Run(s){
+  if(cgweb123Fix3Runtime.running||!currentUser)return;
+  cgweb123Fix3Runtime.running=true;cgweb123Fix3Runtime.stop=false;s.status="RUNNING";s.started_at_ms ||= Date.now();cgweb123Fix3Save(s);cgweb123Fix3Render();
+  try{
+    await cgweb123Fix3Recover(s);
+    const api=await cgweb123Fix1JoinApi();
+    while(s.cursor<s.queue.length){
+      if(cgweb123Fix3Runtime.stop){s.status="PAUSED";s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);cgweb123Fix3Audit("BATCH_PAUSED",{cursor:s.cursor});cgweb123Fix3Render();return;}
+      const task=s.queue[s.cursor];s.phase="PLANNING";s.current_group_key=task.group_key;cgweb123Fix3Save(s);
+      cgweb123Fix3SetStatus(`PLAN ${s.cursor+1} / ${s.queue.length} · ${task.group_key}`);
+      try{
+        const response=await api.plan(task.destination_id,task.source_ids),plan=response?.plan;
+        if(!response?.ok||!plan?.plan_token)throw new Error(response?.error||"PLAN CGWEB122 invalide.");
+        if(!Array.isArray(plan.ordered_segments)||plan.ordered_segments.length!==task.segment_count)throw new Error("HIGH_CONFIDENCE_AUTOJOIN001 · nombre de segments inattendu.");
+        s.phase="EXECUTING";cgweb123Fix3Save(s);
+        const result=await api.execute(task.destination_id,task.source_ids,plan.plan_token);
+        if(!result?.ok)throw new Error(result?.error||"Exécution CGWEB122 non validée.");
+        s.success_count++;s.cursor++;s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);
+        cgweb123Fix3Audit("JOIN_SUCCESS",{group_key:task.group_key,destination_id:task.destination_id,source_ids:task.source_ids,plan_token_prefix:String(plan.plan_token).slice(0,16),message:"Fusion validée."});
+      }catch(error){
+        const phase=s.phase;
+        if(phase==="EXECUTING"){
+          let p;try{p=await cgweb123Fix3Presence(task);}catch(e){s.status="PAUSED";cgweb123Fix3Save(s);throw new Error(`Résultat indéterminable pour ${task.group_key} : ${e?.message||e}`);}
+          if(p.dest&&p.none){s.success_count++;s.recovered_count++;s.cursor++;s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);cgweb123Fix3Audit("JOIN_SUCCESS_RECOVERED",{group_key:task.group_key,message:"Réponse perdue, fusion confirmée par l’état réel."});cgweb123Fix3Render();continue;}
+        }
+        s.failure_count++;s.cursor++;s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);
+        cgweb123Fix3Audit("JOIN_FAILURE_CONTINUE",{group_key:task.group_key,stage:phase,error:error?.message||String(error),message:error?.message||String(error)});
+      }
+      cgweb123Fix3Render();await new Promise(r=>setTimeout(r,100));
+    }
+    s.status="COMPLETE";s.phase="IDLE";s.completed_at_ms=Date.now();cgweb123Fix3Save(s);cgweb123Fix3Audit("BATCH_COMPLETE",{success_count:s.success_count,failure_count:s.failure_count});
+    await reloadAll();await cgweb123Fix1RefreshWorkspace({silent:true});cgweb123Fix3Render();
+  }catch(error){
+    console.error("CGWEB123 FIX3 batch",error);s.status="PAUSED";cgweb123Fix3Save(s);cgweb123Fix3Audit("BATCH_PAUSED_ERROR",{error:error?.message||String(error),message:error?.message||String(error)});cgweb123Fix3SetStatus(`PAUSED · ${error?.message||error}`);
+  }finally{cgweb123Fix3Runtime.running=false;cgweb123Fix3Runtime.stop=false;cgweb123Fix3Render();}
+}
+async function cgweb123Fix3Start(){
+  if(cgweb123Fix3Runtime.running)return;
+  await cgweb123Fix1RefreshWorkspace({silent:true});
+  const snap=cgweb123Fix3Queue();if(!snap.queue.length){cgweb123Fix3SetStatus("Aucun groupe haute confiance disponible.");return;}
+  if(!window.confirm(`Lancer ${snap.queue.length} fusion(s) haute confiance ?\n${snap.skipped} groupe(s) resteront hors automatisation.\n\nChaque groupe repassera par le PLAN CGWEB122 ; un échec isolé sera journalisé puis le lot continuera.`))return;
+  const s={version:1,build:CGWEB123_FIX3_VERSION,status:"READY",queue:snap.queue,cursor:0,success_count:0,failure_count:0,recovered_count:0,phase:"IDLE",current_group_key:"",started_at_ms:null,completed_at_ms:null};
+  cgweb123Fix3Save(s);cgweb123Fix3Audit("BATCH_CREATED",{queue_count:s.queue.length,skipped:snap.skipped,message:`${s.queue.length} groupe(s) en file.`});void cgweb123Fix3Run(s);
+}
+async function cgweb123Fix3Resume(){const s=cgweb123Fix3State();if(!cgweb123Fix3Runtime.running&&s&&s.cursor<s.queue.length)void cgweb123Fix3Run(s);}
+function cgweb123Fix3Install(){cgweb123Fix3EnsurePanel();const s=cgweb123Fix3State();if(s?.status==="RUNNING"&&!cgweb123Fix3Runtime.running){s.status="PAUSED";cgweb123Fix3Save(s);}cgweb123Fix3Render();}
+
+onAuthStateChanged(auth,()=>setTimeout(cgweb123Fix3Install,0));
+window.CGWEB123_FIX3_STATUS=()=>{const q=cgweb123Fix3Queue(),s=cgweb123Fix3State();return {build:CGWEB123_FIX3_VERSION,mass_join_manager:"MASS_JOIN_MANAGER001",high_confidence_autojoin:"HIGH_CONFIDENCE_AUTOJOIN001",resumable_batch:"RESUMABLE_BATCH001",failure_continue:"FAILURE_CONTINUE001",join_audit_log:"JOIN_AUDIT_LOG001",engine:"CGWEB122/FIT_JOIN_REPLACE001",source_fit_policy:"SOURCE_FIT_PURGE_AFTER_VALIDATE001",candidate_groups_now:q.queue.length,batch_status:s?.status||null,batch_cursor:s?.cursor||0,batch_total:s?.queue?.length||0,success_count:s?.success_count||0,failure_count:s?.failure_count||0,recovered_count:s?.recovered_count||0,audit_rows:cgweb123Fix3Read("AUDIT",[]).length};};
+window.CGWEB123_FIX3_AUDIT=()=>({state:cgweb123Fix3State(),audit:cgweb123Fix3Read("AUDIT",[])});
+queueMicrotask(cgweb123Fix3Install);requestAnimationFrame(cgweb123Fix3Install);setTimeout(cgweb123Fix3Install,500);
+console.info("CGWEB123 FIX3 actif · MASS_JOIN_MANAGER001 / HIGH_CONFIDENCE_AUTOJOIN001 / RESUMABLE_BATCH001 / FAILURE_CONTINUE001 / JOIN_AUDIT_LOG001");
+/* CGWEB123_FIX3_END */
