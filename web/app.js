@@ -60954,6 +60954,21 @@ console.info(
     const right =
       equipmentIdentity(b);
 
+    const leftMissing =
+      !left.id &&
+      !left.name;
+
+    const rightMissing =
+      !right.id &&
+      !right.name;
+
+    if (
+      leftMissing ||
+      rightMissing
+    ) {
+      return true;
+    }
+
     if (
       left.id &&
       right.id
@@ -60961,11 +60976,14 @@ console.info(
       return left.id === right.id;
     }
 
-    return Boolean(
+    if (
       left.name &&
-      right.name &&
-      left.name === right.name
-    );
+      right.name
+    ) {
+      return left.name === right.name;
+    }
+
+    return false;
   }
 
   /*
@@ -61014,10 +61032,16 @@ console.info(
 
       if (
         !day ||
-        !Number.isFinite(sport) ||
-        (
-          !equipment.id &&
-          !equipment.name
+        !Number.isFinite(sport)
+      ) {
+        return [];
+      }
+
+      if (
+        typeof cgweb123Fix1SplitRelated ===
+          "function" &&
+        cgweb123Fix1SplitRelated(
+          destination
         )
       ) {
         return [];
@@ -61039,6 +61063,16 @@ console.info(
 
           if (
             activity?.deleted_at_ms != null
+          ) {
+            return false;
+          }
+
+          if (
+            typeof cgweb123Fix1SplitRelated ===
+              "function" &&
+            cgweb123Fix1SplitRelated(
+              activity
+            )
           ) {
             return false;
           }
@@ -61318,6 +61352,21 @@ console.info(
     const right =
       cgweb123124Equipment(b);
 
+    const leftMissing =
+      !left.id &&
+      !left.name;
+
+    const rightMissing =
+      !right.id &&
+      !right.name;
+
+    if (
+      leftMissing ||
+      rightMissing
+    ) {
+      return true;
+    }
+
     if (
       left.id &&
       right.id
@@ -61325,11 +61374,14 @@ console.info(
       return left.id === right.id;
     }
 
-    return Boolean(
+    if (
       left.name &&
-      right.name &&
-      left.name === right.name
-    );
+      right.name
+    ) {
+      return left.name === right.name;
+    }
+
+    return false;
   }
 
   function cgweb123124IsSplitRelated(
@@ -61340,7 +61392,9 @@ console.info(
     if (
       String(
         activity
-          .split_parent_activity_id ||
+          .split_parent_activity_id ??
+        activity
+          .split_parent_id ??
         ""
       ).trim()
     ) {
@@ -61368,13 +61422,65 @@ console.info(
     }
 
     if (
-      String(
-        activity.import_source ||
-        ""
-      ).toUpperCase() ===
-      "WEB_SPLIT"
+      activity.split_part != null ||
+      activity.split_total != null
     ) {
       return true;
+    }
+
+    const lineageText =
+      [
+        activity.import_source,
+        activity.import_profile,
+        activity.split_profile,
+        activity.route_format
+      ]
+        .map(
+          value =>
+            String(value ?? "")
+              .trim()
+        )
+        .join("|")
+        .toUpperCase();
+
+    if (
+      /WEB[_-]?SPLIT|WEBSPLIT/.test(
+        lineageText
+      )
+    ) {
+      return true;
+    }
+
+    const title =
+      String(
+        activity.custom_title ??
+        activity.title ??
+        activity.name ??
+        ""
+      ).trim();
+
+    const match =
+      title.match(
+        /(?:^|[\s·•\-–—])(\d{1,2})\s*\/\s*(\d{1,2})\s*$/i
+      );
+
+    if (match) {
+      const part =
+        Number(match[1]);
+
+      const total =
+        Number(match[2]);
+
+      if (
+        Number.isInteger(part) &&
+        Number.isInteger(total) &&
+        part >= 1 &&
+        total >= 2 &&
+        total <= 20 &&
+        part <= total
+      ) {
+        return true;
+      }
     }
 
     return false;
@@ -62209,18 +62315,10 @@ console.info(
       return false;
     }
 
-    const equipment =
-      cgweb123124Equipment(
-        activity
-      );
-
-    if (
-      !equipment.id &&
-      !equipment.name
-    ) {
-      return false;
-    }
-
+    /*
+     * Le matériel peut être absent sur les activités historiques.
+     * Les critères date + sport + sous-sport restent obligatoires.
+     */
     return Boolean(
       cgweb123CandidateGroupKey(
         activity
@@ -62414,9 +62512,12 @@ console.info(
           );
 
         const compatible =
-          cgweb123124SameEquipment(
-            base,
-            activity
+          chain.every(
+            member =>
+              cgweb123124SameEquipment(
+                member.activity,
+                activity
+              )
           ) &&
           Number(
             base?.sport
@@ -65327,6 +65428,21 @@ function cgweb123Fix1SameEquipment(
       rightActivity
     );
 
+  const leftMissing =
+    !left.id &&
+    !left.name;
+
+  const rightMissing =
+    !right.id &&
+    !right.name;
+
+  if (
+    leftMissing ||
+    rightMissing
+  ) {
+    return true;
+  }
+
   if (
     left.id &&
     right.id
@@ -65334,11 +65450,14 @@ function cgweb123Fix1SameEquipment(
     return left.id === right.id;
   }
 
-  return Boolean(
+  if (
     left.name &&
-    right.name &&
-    left.name === right.name
-  );
+    right.name
+  ) {
+    return left.name === right.name;
+  }
+
+  return false;
 }
 
 
@@ -65352,7 +65471,9 @@ function cgweb123Fix1SplitRelated(
   if (
     String(
       activity
-        .split_parent_activity_id ||
+        .split_parent_activity_id ??
+      activity
+        .split_parent_id ??
       ""
     ).trim()
   ) {
@@ -65380,14 +65501,72 @@ function cgweb123Fix1SplitRelated(
   }
 
   if (
-    String(
-      activity.import_source ||
-      ""
-    ).trim()
-      .toUpperCase() ===
-      "WEB_SPLIT"
+    activity.split_part != null ||
+    activity.split_total != null
   ) {
     return true;
+  }
+
+  const lineageText =
+    [
+      activity.import_source,
+      activity.import_profile,
+      activity.split_profile,
+      activity.route_format
+    ]
+      .map(
+        value =>
+          String(value ?? "")
+            .trim()
+      )
+      .join("|")
+      .toUpperCase();
+
+  if (
+    /WEB[_-]?SPLIT|WEBSPLIT/.test(
+      lineageText
+    )
+  ) {
+    return true;
+  }
+
+  /*
+   * LEGACY_SPLIT_EXCLUDE001
+   *
+   * Exemple réel :
+   *   Trail le matin · 1/2
+   *   Trail le matin · 2/2
+   */
+  const title =
+    String(
+      activity.custom_title ??
+      activity.title ??
+      activity.name ??
+      ""
+    ).trim();
+
+  const match =
+    title.match(
+      /(?:^|[\s·•\-–—])(\d{1,2})\s*\/\s*(\d{1,2})\s*$/i
+    );
+
+  if (match) {
+    const part =
+      Number(match[1]);
+
+    const total =
+      Number(match[2]);
+
+    if (
+      Number.isInteger(part) &&
+      Number.isInteger(total) &&
+      part >= 1 &&
+      total >= 2 &&
+      total <= 20 &&
+      part <= total
+    ) {
+      return true;
+    }
   }
 
   return false;
@@ -65647,7 +65826,10 @@ function cgweb123Fix1BuildGroups(
 
   let excludedSplit = 0;
 
-  for (const activity of active) {
+  for (
+    const activity
+    of active
+  ) {
     if (
       cgweb123Fix1SplitRelated(
         activity
@@ -65657,23 +65839,12 @@ function cgweb123Fix1BuildGroups(
       continue;
     }
 
-    const equipment =
-      cgweb123Fix1Equipment(
-        activity
-      );
-
     const baseKey =
       cgweb123Fix1StrictBaseKey(
         activity
       );
 
-    if (
-      !baseKey ||
-      (
-        !equipment.id &&
-        !equipment.name
-      )
-    ) {
+    if (!baseKey) {
       continue;
     }
 
@@ -65682,14 +65853,13 @@ function cgweb123Fix1BuildGroups(
     );
   }
 
-  /*
-   * Premier niveau :
-   * même jour + même sport + même sous-sport.
-   */
   const buckets =
     new Map();
 
-  for (const activity of eligible) {
+  for (
+    const activity
+    of eligible
+  ) {
     const key =
       cgweb123Fix1StrictBaseKey(
         activity
@@ -65711,15 +65881,6 @@ function cgweb123Fix1BuildGroups(
 
   const groups = [];
 
-  /*
-   * Deuxième niveau :
-   * matériel pair-à-pair compatible avec TOUS
-   * les membres du groupe.
-   *
-   * Les lignes possédant un ID matériel sont traitées
-   * en premier afin d'éviter d'associer deux IDs différents
-   * via une ligne historique qui ne posséderait qu'un nom.
-   */
   for (
     const [
       baseKey,
@@ -65727,54 +65888,57 @@ function cgweb123Fix1BuildGroups(
     ]
     of buckets
   ) {
-    const ordered =
-      [...bucket]
-        .sort(
-          (a,b) => {
-            const aEquipment =
-              cgweb123Fix1Equipment(a);
-
-            const bEquipment =
-              cgweb123Fix1Equipment(b);
-
-            const idPriority =
-              Number(
-                Boolean(
-                  bEquipment.id
-                )
-              ) -
-              Number(
-                Boolean(
-                  aEquipment.id
-                )
-              );
-
-            if (idPriority) {
-              return idPriority;
-            }
-
-            return (
-              Number(
-                a.start_time_ms || 0
-              ) -
-              Number(
-                b.start_time_ms || 0
-              )
-            );
-          }
-        );
-
-    const partitions = [];
+    const known = [];
+    const missing = [];
 
     for (
       const activity
-      of ordered
+      of bucket
+    ) {
+      const equipment =
+        cgweb123Fix1Equipment(
+          activity
+        );
+
+      if (
+        equipment.id ||
+        equipment.name
+      ) {
+        known.push(
+          activity
+        );
+      } else {
+        missing.push(
+          activity
+        );
+      }
+    }
+
+    /*
+     * Création des partitions de matériels CONNUS.
+     * Ici la compatibilité est strictement pair-à-pair.
+     */
+    const knownPartitions = [];
+
+    known.sort(
+      (a,b) =>
+        Number(
+          a.start_time_ms || 0
+        ) -
+        Number(
+          b.start_time_ms || 0
+        )
+    );
+
+    for (
+      const activity
+      of known
     ) {
       let target = null;
 
       for (
         const partition
-        of partitions
+        of knownPartitions
       ) {
         if (
           partition.every(
@@ -65794,7 +65958,8 @@ function cgweb123Fix1BuildGroups(
 
       if (!target) {
         target = [];
-        partitions.push(
+
+        knownPartitions.push(
           target
         );
       }
@@ -65804,20 +65969,116 @@ function cgweb123Fix1BuildGroups(
       );
     }
 
+    /*
+     * Matériel absent :
+     *
+     * - aucun matériel connu => groupe historique sans matériel ;
+     * - un seul matériel connu => les lignes sans matériel rejoignent
+     *   naturellement ce groupe ;
+     * - plusieurs matériels connus => les lignes sans matériel sont
+     *   proposées dans chaque possibilité compatible.
+     *
+     * Ainsi aucune chaussure connue X ne sera jamais mélangée avec Y,
+     * mais une activité historique sans matériel n'est pas bloquée.
+     */
+    const partitions = [];
+
+    if (
+      knownPartitions.length === 0
+    ) {
+      if (missing.length) {
+        partitions.push({
+          rows:
+            [...missing],
+          knownEquipment:
+            null,
+          ambiguousMissing:
+            false
+        });
+      }
+    } else {
+      for (
+        const knownPartition
+        of knownPartitions
+      ) {
+        partitions.push({
+          rows: [
+            ...knownPartition,
+            ...missing
+          ],
+
+          knownEquipment:
+            cgweb123Fix1Equipment(
+              knownPartition[0]
+            ),
+
+          ambiguousMissing:
+            knownPartitions.length > 1 &&
+            missing.length > 0
+        });
+      }
+    }
+
     for (
       let partitionIndex = 0;
       partitionIndex <
         partitions.length;
       partitionIndex += 1
     ) {
-      const partition =
+      const descriptor =
         partitions[
           partitionIndex
         ];
 
+      const partition =
+        descriptor.rows
+          .filter(
+            activity =>
+              !cgweb123Fix1SplitRelated(
+                activity
+              )
+          );
+
+      /*
+       * SANITIZE final :
+       * un groupe ne peut jamais survivre avec moins de deux activités.
+       */
       if (
         partition.length < 2
       ) {
+        continue;
+      }
+
+      /*
+       * Contrôle pair-à-pair final.
+       * Les absences passent, deux matériels connus différents non.
+       */
+      let compatible =
+        true;
+
+      for (
+        let i = 0;
+        i < partition.length;
+        i += 1
+      ) {
+        for (
+          let j = i + 1;
+          j < partition.length;
+          j += 1
+        ) {
+          if (
+            !cgweb123Fix1SameEquipment(
+              partition[i],
+              partition[j]
+            )
+          ) {
+            compatible =
+              false;
+          }
+        }
+      }
+
+      if (!compatible) {
         continue;
       }
 
@@ -65831,13 +66092,15 @@ function cgweb123Fix1BuildGroups(
           )
       );
 
-      const first =
-        partition[0];
-
       const equipment =
-        cgweb123Fix1Equipment(
-          first
-        );
+        descriptor
+          .knownEquipment ||
+        {
+          id: "",
+          name: "",
+          label:
+            "Matériel non renseigné"
+        };
 
       const [
         day,
@@ -65852,7 +66115,8 @@ function cgweb123Fix1BuildGroups(
           "|" +
           (
             equipment.id ||
-            equipment.name
+            equipment.name ||
+            "NO_EQUIPMENT"
           ) +
           "|" +
           partitionIndex,
@@ -65866,6 +66130,25 @@ function cgweb123Fix1BuildGroups(
           Number(subSport),
 
         equipment,
+
+        missing_equipment_count:
+          partition.filter(
+            activity => {
+              const identity =
+                cgweb123Fix1Equipment(
+                  activity
+                );
+
+              return (
+                !identity.id &&
+                !identity.name
+              );
+            }
+          ).length,
+
+        ambiguous_missing_equipment:
+          descriptor
+            .ambiguousMissing,
 
         activities:
           partition,
@@ -65904,7 +66187,10 @@ function cgweb123Fix1BuildGroups(
   const analogActivityIds =
     new Set();
 
-  for (const group of groups) {
+  for (
+    const group
+    of groups
+  ) {
     for (
       const activity
       of group.activities
@@ -66159,10 +66445,25 @@ function cgweb123Fix1RenderGroup(
   card.dataset.groupKey =
     group.key;
 
-  const equipmentLabel =
+  const baseEquipmentLabel =
     group.equipment.label ||
     group.equipment.id ||
-    "Matériel";
+    "Matériel non renseigné";
+
+  const equipmentLabel =
+    group.missing_equipment_count
+      ? (
+          baseEquipmentLabel +
+          " · " +
+          group.missing_equipment_count +
+          " sans matériel renseigné" +
+          (
+            group.ambiguous_missing_equipment
+              ? " · plusieurs matériels possibles"
+              : ""
+          )
+        )
+      : baseEquipmentLabel;
 
   const rowsHtml =
     group.activities
@@ -67350,3 +67651,72 @@ console.info(
    - suppression de la récursion MutationObserver -> textContent -> MutationObserver.
 */
 /* CGWEB123_FIX1_FIX1_END */
+
+/* CGWEB123_FIX2_START
+   SPLIT_LINEAGE_DETECTION002
+   LEGACY_SPLIT_EXCLUDE001
+   ANALOG_GROUP_SANITIZE001
+   MISSING_EQUIPMENT_ALLOWED001
+   KNOWN_EQUIPMENT_MATCH001
+   SOURCE_FIT_PURGE_AFTER_VALIDATE001
+*/
+
+window.CGWEB123_FIX2_STATUS =
+  function() {
+    return {
+      build:
+        "CGWEB123_FIX2",
+
+      split_lineage_detection:
+        "SPLIT_LINEAGE_DETECTION002",
+
+      legacy_split_exclude:
+        true,
+
+      analog_group_sanitize:
+        true,
+
+      equipment_policy: {
+        both_known:
+          "MUST_MATCH",
+        one_or_both_missing:
+          "ALLOWED",
+        pairwise_check:
+          true
+      },
+
+      source_fit_policy: {
+        new_fit_first:
+          true,
+        validate_new_fit_first:
+          true,
+        source_fit_objects:
+          "PERMANENT_DELETE",
+        source_fit_metadata:
+          "PERMANENT_DELETE",
+        source_activities:
+          "PERMANENT_DELETE_AFTER_FIT_PURGE"
+      },
+
+      group_count:
+        typeof cgweb123Fix1State !==
+          "undefined"
+          ? cgweb123Fix1State
+              .groups
+              .length
+          : null,
+
+      split_excluded:
+        typeof cgweb123Fix1State !==
+          "undefined"
+          ? cgweb123Fix1State
+              .excludedSplitCount
+          : null
+    };
+  };
+
+console.info(
+  "CGWEB123 FIX2 actif · SPLIT_LINEAGE_DETECTION002 / LEGACY_SPLIT_EXCLUDE001 / ANALOG_GROUP_SANITIZE001"
+);
+
+/* CGWEB123_FIX2_END */

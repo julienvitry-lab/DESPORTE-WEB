@@ -434,6 +434,24 @@ function createFitVault() {
   }
 
   function cg122SameEquipmentIdentity(a, b) {
+    const leftMissing =
+      !a?.id &&
+      !a?.name;
+
+    const rightMissing =
+      !b?.id &&
+      !b?.name;
+
+    /*
+     * MISSING_EQUIPMENT_ALLOWED001
+     */
+    if (
+      leftMissing ||
+      rightMissing
+    ) {
+      return true;
+    }
+
     if (
       a?.id &&
       b?.id
@@ -441,10 +459,112 @@ function createFitVault() {
       return a.id === b.id;
     }
 
-    return Boolean(
+    if (
       a?.name &&
-      b?.name &&
-      a.name === b.name
+      b?.name
+    ) {
+      return a.name === b.name;
+    }
+
+    return false;
+  }
+
+  function cg122LegacySplitTitle(activity) {
+    const title =
+      String(
+        activity?.custom_title ??
+        activity?.title ??
+        activity?.name ??
+        ""
+      ).trim();
+
+    const match =
+      title.match(
+        /(?:^|[\s·•\-–—])(\d{1,2})\s*\/\s*(\d{1,2})\s*$/i
+      );
+
+    if (!match) {
+      return false;
+    }
+
+    const part = Number(match[1]);
+    const total = Number(match[2]);
+
+    return (
+      Number.isInteger(part) &&
+      Number.isInteger(total) &&
+      part >= 1 &&
+      total >= 2 &&
+      total <= 20 &&
+      part <= total
+    );
+  }
+
+  function cg122IsSplitRelated(activity) {
+    if (!activity) {
+      return false;
+    }
+
+    if (
+      String(
+        activity?.split_parent_activity_id ??
+        activity?.split_parent_id ??
+        ""
+      ).trim()
+    ) {
+      return true;
+    }
+
+    if (
+      Array.isArray(
+        activity?.split_children_ids
+      ) &&
+      activity.split_children_ids.length
+    ) {
+      return true;
+    }
+
+    if (
+      String(
+        activity?.split_status ??
+        ""
+      ).trim()
+    ) {
+      return true;
+    }
+
+    if (
+      activity?.split_part != null ||
+      activity?.split_total != null
+    ) {
+      return true;
+    }
+
+    const lineageText =
+      [
+        activity?.import_source,
+        activity?.import_profile,
+        activity?.split_profile,
+        activity?.route_format
+      ]
+        .map(
+          value =>
+            String(value ?? "")
+              .trim()
+        )
+        .join("|")
+        .toUpperCase();
+
+    if (
+      /WEB[_-]?SPLIT|WEBSPLIT/.test(
+        lineageText
+      )
+    ) {
+      return true;
+    }
+
+    return cg122LegacySplitTitle(
+      activity
     );
   }
 
@@ -482,6 +602,19 @@ function createFitVault() {
     if (activity.deleted_at_ms != null) {
       throw Object.assign(
         new Error(`CGWEB122 : activité ${id} supprimée.`),
+        {status: 409}
+      );
+    }
+
+    if (
+      cg122IsSplitRelated(
+        activity
+      )
+    ) {
+      throw Object.assign(
+        new Error(
+          `CGWEB123 FIX2 · LEGACY_SPLIT_EXCLUDE001 : ${cg122Label(activity,id)} appartient à une lignée de découpe.`
+        ),
         {status: 409}
       );
     }
@@ -593,17 +726,11 @@ function createFitVault() {
     const equipment =
       destinationSegment.equipment;
 
-    if (
-      !equipment?.id &&
-      !equipment?.name
-    ) {
-      throw Object.assign(
-        new Error(
-          "CGWEB122 · SAME_EQUIPMENT_STRICT001 : matériel de destination indéterminable."
-        ),
-        {status: 409}
-      );
-    }
+    /*
+     * MISSING_EQUIPMENT_ALLOWED001 :
+     * l'absence de matériel sur la destination historique
+     * ne bloque plus le plan.
+     */
 
     for (const segment of segments) {
       if (cg122DayKey(segment.startMs) !== dayKey) {
@@ -639,6 +766,45 @@ function createFitVault() {
           ),
           {status: 409}
         );
+      }
+    }
+
+    /*
+     * CGWEB123 FIX2 · KNOWN_EQUIPMENT_MATCH001
+     *
+     * Contrôle pair-à-pair :
+     *
+     * A sans matériel + B chaussure X => autorisé
+     * A chaussure X + B chaussure X   => autorisé
+     * A chaussure X + B chaussure Y   => REFUSÉ
+     *
+     * Cela empêche notamment :
+     *   X -> matériel absent -> Y
+     * d'être accepté comme un seul groupe.
+     */
+    for (
+      let i = 0;
+      i < segments.length;
+      i += 1
+    ) {
+      for (
+        let j = i + 1;
+        j < segments.length;
+        j += 1
+      ) {
+        if (
+          !cg122SameEquipmentIdentity(
+            segments[i].equipment,
+            segments[j].equipment
+          )
+        ) {
+          throw Object.assign(
+            new Error(
+              `CGWEB123 FIX2 · KNOWN_EQUIPMENT_MATCH001 : matériels connus incompatibles entre ${segments[i].label} et ${segments[j].label}.`
+            ),
+            {status: 409}
+          );
+        }
       }
     }
 
@@ -773,10 +939,16 @@ function createFitVault() {
           "SAME_DAY_STRICT001",
         same_sport:
           "SAME_SPORT_STRICT001",
-        same_equipment:
-          "SAME_EQUIPMENT_STRICT001",
+        same_equipment_when_known:
+          "KNOWN_EQUIPMENT_MATCH001",
+        missing_equipment_allowed:
+          "MISSING_EQUIPMENT_ALLOWED001",
         candidate_truth:
-          "JOIN_CANDIDATE_TRUTH001"
+          "JOIN_CANDIDATE_TRUTH002",
+        split_exclusion:
+          "SPLIT_LINEAGE_DETECTION002",
+        source_fit_cleanup:
+          "SOURCE_FIT_PURGE_AFTER_VALIDATE001"
       },
       start_time_ms: plan.startMs,
       end_time_ms: plan.endMs,
@@ -1100,7 +1272,17 @@ function createFitVault() {
       join_segment_count: plan.ordered.length,
       join_plan_token: plan.planToken,
       join_replaced_at_ms: now,
-      join_source_delete_state: "PENDING"
+      join_source_delete_state: "PENDING",
+
+      /*
+       * Le nouveau FIT est déjà écrit et validé à ce stade.
+       * Les FIT des sources seront ensuite supprimés physiquement.
+       */
+      join_source_fit_delete_mode:
+        "PERMANENT_AFTER_VALIDATE",
+
+      join_source_fit_purge_version:
+        "SOURCE_FIT_PURGE_AFTER_VALIDATE001"
     };
 
     const routePatch = cg122RouteFromPayload(payload);
@@ -1225,6 +1407,13 @@ function createFitVault() {
       deleted_source_activity_ids: deletedSources,
       destination_cleanup: destinationCleanup,
       source_cleanup: sourceCleanup,
+
+      source_fit_purge_mode:
+        "PERMANENT_AFTER_VALIDATE",
+
+      source_fit_purge_version:
+        "SOURCE_FIT_PURGE_AFTER_VALIDATE001",
+
       validation,
       fit: decoded
     };
@@ -10713,9 +10902,29 @@ async function c102FilterByFitProvenance(
     const right=
       c105EquipmentIdentity(b);
 
+    const leftMissing=
+      !left.id &&
+      !left.name;
+
+    const rightMissing=
+      !right.id &&
+      !right.name;
+
     /*
-     * Si les deux activités possèdent un ID matériel,
-     * l'ID constitue l'autorité.
+     * CGWEB123 FIX2 · MISSING_EQUIPMENT_ALLOWED001
+     *
+     * L'absence historique de matériel n'est PAS une contradiction.
+     * Elle laisse les autres critères décider.
+     */
+    if(
+      leftMissing ||
+      rightMissing
+    ){
+      return true;
+    }
+
+    /*
+     * Si les deux IDs existent, ils font autorité.
      */
     if(
       left.id &&
@@ -10725,17 +10934,57 @@ async function c102FilterByFitProvenance(
     }
 
     /*
-     * Sinon : repli sur le nom normalisé exact.
-     * Un nom absent ne constitue jamais une preuve d'identité.
+     * Sinon, comparaison exacte du nom normalisé
+     * lorsque les deux noms existent.
      */
-    return Boolean(
+    if(
       left.name &&
-      right.name &&
-      left.name===right.name
-    );
+      right.name
+    ){
+      return left.name===right.name;
+    }
+
+    /*
+     * Les deux matériels sont renseignés mais sous des formes
+     * incompatibles et non comparables.
+     */
+    return false;
   }
 
   /* CGWEB122_FIX6_STRICT_JOIN_HELPERS_END */
+
+  function c105LegacySplitTitle(row){
+    const title=
+      c105Text(
+        row?.custom_title ??
+        row?.title ??
+        row?.name
+      );
+
+    const match=
+      title.match(
+        /(?:^|[\s·•\-–—])(\d{1,2})\s*\/\s*(\d{1,2})\s*$/i
+      );
+
+    if(!match){
+      return false;
+    }
+
+    const part=
+      Number(match[1]);
+
+    const total=
+      Number(match[2]);
+
+    return (
+      Number.isInteger(part) &&
+      Number.isInteger(total) &&
+      part>=1 &&
+      total>=2 &&
+      total<=20 &&
+      part<=total
+    );
+  }
 
   function c105IsSplitRelated(row){
     if(!row){
@@ -10744,7 +10993,8 @@ async function c102FilterByFitProvenance(
 
     if(
       c105Text(
-        row.split_parent_activity_id
+        row.split_parent_activity_id ??
+        row.split_parent_id
       )
     ){
       return true;
@@ -10778,10 +11028,39 @@ async function c102FilterByFitProvenance(
       return true;
     }
 
+    const lineageText=
+      [
+        row.import_source,
+        row.import_profile,
+        row.split_profile,
+        row.route_format
+      ]
+        .map(c105Text)
+        .join("|")
+        .toUpperCase();
+
     if(
-      c105Text(
-        row.import_source
-      ).toUpperCase()==="WEB_SPLIT"
+      /WEB[_-]?SPLIT|WEBSPLIT/.test(
+        lineageText
+      )
+    ){
+      return true;
+    }
+
+    /*
+     * LEGACY_SPLIT_EXCLUDE001
+     *
+     * Pour les anciennes découpes qui ne possèdent plus
+     * forcément les champs de filiation modernes.
+     *
+     * Exemples :
+     *   Trail le matin · 1/2
+     *   Trail le matin · 2/2
+     */
+    if(
+      c105LegacySplitTitle(
+        row
+      )
     ){
       return true;
     }
@@ -10987,17 +11266,11 @@ async function c102FilterByFitProvenance(
       );
     }
 
-    if(
-      !sourceEquipment.id &&
-      !sourceEquipment.name
-    ){
-      throw Object.assign(
-        new Error(
-          "SAME_EQUIPMENT_STRICT001 : matériel de l'activité source indéterminable."
-        ),
-        {status:409}
-      );
-    }
+    /*
+     * CGWEB123 FIX2 :
+     * l'absence de matériel historique est autorisée.
+     * Si deux matériels sont connus, ils restent obligatoirement identiques.
+     */
 
     const fitState=
       activityId =>
@@ -11224,10 +11497,11 @@ async function c102FilterByFitProvenance(
         same_day_strict:true,
         same_sport_strict:true,
         same_sub_sport_strict:true,
-        same_equipment_strict:true,
+        same_equipment_when_known:true,
+        missing_equipment_allowed:true,
         base_activity_counted:false,
         version:
-          "JOIN_CANDIDATE_TRUTH001"
+          "JOIN_CANDIDATE_TRUTH002"
       },
       candidates,
       join_lineage_preview:{
