@@ -66874,7 +66874,7 @@ async function cgweb123Fix1PrepareGroup(
     button.disabled = true;
 
     button.textContent =
-      "Préparation…";
+      "Prévisualisation…";
   }
 
   if (preview) {
@@ -66882,7 +66882,7 @@ async function cgweb123Fix1PrepareGroup(
       "1";
 
     preview.innerHTML =
-      '<span class="muted">Validation CGWEB122 en cours…</span>';
+      '<span class="muted">Validation rapide des métadonnées…</span>';
   }
 
   try {
@@ -67874,3 +67874,57 @@ console.info(
 );
 
 /* CGWEB123_FIX2_FIX1_END */
+
+/* CGWEB123_FIX2_FIX2_START
+   FAST_JOIN_PREVIEW001
+   METADATA_ONLY_PLAN001
+   NO_ROUTE_ON_PREVIEW001
+   JOIN_REQUEST_TIMEOUT001
+*/
+
+window.CGWEB123_FIX2_FIX2_STATUS =
+  function() {
+    return {
+      build:
+        "CGWEB123_FIX2_FIX2",
+
+      fast_join_preview:
+        "FAST_JOIN_PREVIEW001",
+
+      preview_plan:
+        "METADATA_ONLY",
+
+      preview_reads_activity:
+        true,
+
+      preview_reads_activity_route:
+        false,
+
+      preview_builds_fit:
+        false,
+
+      preview_timeout_ms:
+        20000,
+
+      execute_reads_activity_route:
+        true,
+
+      execute_builds_fit:
+        true,
+
+      execute_validates_fit_before_delete:
+        true,
+
+      execute_client_abort:
+        false,
+
+      source_fit_purge:
+        "SOURCE_FIT_PURGE_AFTER_VALIDATE001"
+    };
+  };
+
+console.info(
+  "CGWEB123 FIX2 FIX2 actif · FAST_JOIN_PREVIEW001 / METADATA_ONLY_PLAN001 / NO_ROUTE_ON_PREVIEW001 / JOIN_REQUEST_TIMEOUT001"
+);
+
+/* CGWEB123_FIX2_FIX2_END */

@@ -67,7 +67,8 @@ async function request(action, options = {}) {
   const response = await fetch(url.toString(), {
     method: options.method || "GET",
     headers: {Authorization: `Bearer ${token}`, ...(options.headers || {})},
-    body: options.body
+    body: options.body,
+    signal: options.signal
   });
   if (options.binaryResponse) {
     if (!response.ok) throw new Error((await response.text()) || `FIT Cloud ${response.status}`);
@@ -6236,27 +6237,79 @@ console.info(
 /* CGWEB122_FITCLOUD_START
    FIT_JOIN_REPLACE001
 */
+const CGWEB122_JOIN_PLAN_TIMEOUT_MS =
+  20000;
+
 async function cgweb122JoinReplacePlan(
   destinationActivityId,
   sourceActivityIds
 ) {
-  return request(
-    "join_replace_plan",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
+  const controller =
+    new AbortController();
+
+  let timedOut =
+    false;
+
+  const timer =
+    setTimeout(
+      () => {
+        timedOut =
+          true;
+
+        controller.abort();
       },
-      body: JSON.stringify({
-        destination_activity_id:
-          String(destinationActivityId || "").trim(),
-        source_activity_ids:
-          Array.isArray(sourceActivityIds)
-            ? sourceActivityIds
-            : []
-      })
+      CGWEB122_JOIN_PLAN_TIMEOUT_MS
+    );
+
+  try {
+    return await request(
+      "join_replace_plan",
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+
+        signal:
+          controller.signal,
+
+        body: JSON.stringify({
+          destination_activity_id:
+            String(
+              destinationActivityId ||
+              ""
+            ).trim(),
+
+          source_activity_ids:
+            Array.isArray(
+              sourceActivityIds
+            )
+              ? sourceActivityIds
+              : []
+        })
+      }
+    );
+  } catch (error) {
+    if (
+      timedOut ||
+      error?.name ===
+        "AbortError"
+    ) {
+      throw new Error(
+        "JOIN_REQUEST_TIMEOUT001 · " +
+        "prévisualisation interrompue après 20 s. " +
+        "Aucune fusion ni suppression n'a été appliquée."
+      );
     }
-  );
+
+    throw error;
+  } finally {
+    clearTimeout(
+      timer
+    );
+  }
 }
 
 async function cgweb122JoinReplaceExecute(
@@ -6286,9 +6339,17 @@ async function cgweb122JoinReplaceExecute(
 }
 
 window.SPORT_FIT_JOIN_REPLACE = Object.freeze({
-  version: "FIT_JOIN_REPLACE001",
-  plan: cgweb122JoinReplacePlan,
-  execute: cgweb122JoinReplaceExecute
+  version:
+    "FIT_JOIN_REPLACE001/FAST_JOIN_PREVIEW001",
+
+  plan:
+    cgweb122JoinReplacePlan,
+
+  execute:
+    cgweb122JoinReplaceExecute,
+
+  preview_timeout_ms:
+    CGWEB122_JOIN_PLAN_TIMEOUT_MS
 });
 
 window.dispatchEvent(
@@ -6418,3 +6479,33 @@ console.info(
 );
 
 /* CGWEB124_MANUAL_FIT_SPLIT_CLIENT_END */
+
+/* CGWEB123_FIX2_FIX2_FITCLOUD_START */
+
+window.CGWEB123_FIX2_FIX2_FITCLOUD_STATUS =
+  function() {
+    return {
+      build:
+        "CGWEB123_FIX2_FIX2",
+
+      fast_join_preview:
+        true,
+
+      metadata_only_plan:
+        true,
+
+      no_route_on_preview:
+        true,
+
+      preview_timeout_ms:
+        CGWEB122_JOIN_PLAN_TIMEOUT_MS,
+
+      execute_client_abort:
+        false,
+
+      execute_reason:
+        "Une fusion destructive ne doit pas être abandonnée artificiellement côté navigateur."
+    };
+  };
+
+/* CGWEB123_FIX2_FIX2_FITCLOUD_END */

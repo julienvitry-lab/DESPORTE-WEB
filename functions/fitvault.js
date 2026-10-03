@@ -584,7 +584,155 @@ function createFitVault() {
     ).trim();
   }
 
-  async function cg122LoadSegment(uid, id) {
+  /*
+   * CGWEB123 FIX2 FIX2
+   * METADATA_ONLY_PLAN001
+   *
+   * Les informations nécessaires au PLAN proviennent uniquement
+   * du document activité.
+   *
+   * activity_routes n'est lu que pendant l'exécution réelle.
+   */
+
+  function cg122FirstFinite(...values) {
+    for (const value of values) {
+      const n = cg122Finite(value);
+
+      if (n != null) {
+        return n;
+      }
+    }
+
+    return null;
+  }
+
+  function cg122ActivitySummary(activity) {
+    const startMs =
+      cg122Finite(
+        activity?.start_time_ms
+      );
+
+    if (
+      startMs == null ||
+      startMs <= 0
+    ) {
+      throw Object.assign(
+        new Error(
+          "CGWEB123 FIX2 FIX2 : start_time_ms absent."
+        ),
+        {status: 422}
+      );
+    }
+
+    const sport =
+      cg122Finite(
+        activity?.sport
+      );
+
+    if (sport == null) {
+      throw Object.assign(
+        new Error(
+          "CGWEB123 FIX2 FIX2 : sport absent."
+        ),
+        {status: 422}
+      );
+    }
+
+    const subSport =
+      cg122FirstFinite(
+        activity?.sub_sport,
+        activity?.subSport,
+        0
+      ) ?? 0;
+
+    let durationMs =
+      cg122FirstFinite(
+        activity?.elapsed_time_ms,
+        activity?.duration_ms,
+        activity?.timer_time_ms,
+        activity?.moving_time_ms
+      );
+
+    if (
+      durationMs == null ||
+      durationMs < 0
+    ) {
+      const endMs =
+        cg122Finite(
+          activity?.end_time_ms
+        );
+
+      durationMs =
+        endMs != null &&
+        endMs >= startMs
+          ? endMs - startMs
+          : 0;
+    }
+
+    durationMs =
+      Math.max(
+        0,
+        durationMs
+      );
+
+    const timerMs =
+      Math.max(
+        0,
+        cg122FirstFinite(
+          activity?.timer_time_ms,
+          activity?.moving_time_ms,
+          durationMs
+        ) ?? durationMs
+      );
+
+    const distance =
+      Math.max(
+        0,
+        cg122FirstFinite(
+          activity?.distance_m,
+          0
+        ) ?? 0
+      );
+
+    const ascent =
+      Math.max(
+        0,
+        cg122FirstFinite(
+          activity?.ascent_m,
+          0
+        ) ?? 0
+      );
+
+    return {
+      startMs,
+      durationMs,
+      timerMs,
+      distance,
+      ascent,
+
+      avgHr:
+        cg122Finite(
+          activity?.avg_hr
+        ),
+
+      maxHr:
+        cg122Finite(
+          activity?.max_hr
+        ),
+
+      sport:
+        Number(sport),
+
+      subSport:
+        Number(subSport)
+    };
+  }
+
+  async function cg122LoadSegment(
+    uid,
+    id,
+    options = {}
+  ) {
     const activityRef = db.doc(
       `${ROOT}/${uid}/activities/${id}`
     );
@@ -592,9 +740,29 @@ function createFitVault() {
       `${ROOT}/${uid}/activity_routes/${id}`
     );
 
-    const [activitySnap, routeSnap] = await Promise.all([
-      activityRef.get(),
-      routeRef.get()
+    const includeRoute =
+      options?.includeRoute === true;
+
+    const activityPromise =
+      activityRef.get();
+
+    /*
+     * NO_ROUTE_ON_PREVIEW001
+     *
+     * En mode PLAN :
+     * aucune lecture de activity_routes.
+     */
+    const routePromise =
+      includeRoute
+        ? routeRef.get()
+        : Promise.resolve(null);
+
+    const [
+      activitySnap,
+      routeSnap
+    ] = await Promise.all([
+      activityPromise,
+      routePromise
     ]);
 
     if (!activitySnap.exists) {
@@ -625,18 +793,36 @@ function createFitVault() {
       );
     }
 
-    const route = routeSnap.exists
-      ? routeSnap.data() || {}
-      : {};
+    const route =
+      routeSnap?.exists
+        ? routeSnap.data() || {}
+        : {};
 
-    const prepared = v078BuildPayload(
-      activity,
-      route
-    );
+    /*
+     * Le payload complet n'est préparé que pendant EXECUTE.
+     */
+    const prepared =
+      includeRoute
+        ? v078BuildPayload(
+            activity,
+            route
+          )
+        : null;
 
-    const startMs = Number(prepared.source.startMs);
-    const durationMs = Number(prepared.source.durationMs || 0);
-    const endMs = startMs + durationMs;
+    const summary =
+      cg122ActivitySummary(
+        activity
+      );
+
+    const startMs =
+      summary.startMs;
+
+    const durationMs =
+      summary.durationMs;
+
+    const endMs =
+      startMs +
+      durationMs;
 
     return {
       id,
@@ -648,22 +834,26 @@ function createFitVault() {
       startMs,
       durationMs,
       endMs,
-      timerMs: Math.max(
-        0,
-        Number(prepared.source.timerMs || durationMs || 0)
-      ),
-      distance: Math.max(
-        0,
-        Number(prepared.source.distance || 0)
-      ),
-      ascent: Math.max(
-        0,
-        Number(prepared.source.ascent || 0)
-      ),
-      avgHr: cg122Finite(prepared.source.avgHr),
-      maxHr: cg122Finite(prepared.source.maxHr),
-      sport: Number(prepared.source.sport),
-      subSport: Number(prepared.source.subSport || 0),
+      timerMs:
+        summary.timerMs,
+
+      distance:
+        summary.distance,
+
+      ascent:
+        summary.ascent,
+
+      avgHr:
+        summary.avgHr,
+
+      maxHr:
+        summary.maxHr,
+
+      sport:
+        summary.sport,
+
+      subSport:
+        summary.subSport,
       equipment:
         cg122EquipmentIdentity(
           activity
@@ -675,8 +865,11 @@ function createFitVault() {
   async function cg122BuildPlan(
     uid,
     destinationId,
-    sourceIds
+    sourceIds,
+    options = {}
   ) {
+    const includeRoute =
+      options?.includeRoute === true;
     const destination = String(destinationId || "").trim();
     const cleanSources = [
       ...new Set(
@@ -712,7 +905,16 @@ function createFitVault() {
 
     const ids = [destination, ...cleanSources];
     const segments = await Promise.all(
-      ids.map((id) => cg122LoadSegment(uid, id))
+      ids.map(
+        id =>
+          cg122LoadSegment(
+            uid,
+            id,
+            {
+              includeRoute
+            }
+          )
+      )
     );
 
     const destinationSegment = segments.find(
@@ -929,7 +1131,10 @@ function createFitVault() {
       endMs: last.endMs,
       elapsedMs: Math.max(0, last.endMs - first.startMs),
       gaps,
-      planToken
+      planToken,
+
+      metadataOnly:
+        !includeRoute
     };
   }
 
@@ -938,6 +1143,15 @@ function createFitVault() {
       destination_id: plan.destinationId,
       source_ids: plan.sourceIds,
       plan_token: plan.planToken,
+
+      plan_mode:
+        plan.metadataOnly
+          ? "METADATA_ONLY"
+          : "FULL_EXECUTION",
+
+      route_loaded:
+        !plan.metadataOnly,
+
       day_key: plan.dayKey,
       sport: plan.sport,
       sub_sport: plan.subSport,
@@ -1145,6 +1359,17 @@ function createFitVault() {
   }
 
   async function cg122ExecuteJoin(uid, plan) {
+    if (
+      plan?.metadataOnly === true
+    ) {
+      throw Object.assign(
+        new Error(
+          "CGWEB123 FIX2 FIX2 : exécution refusée avec un plan métadonnées."
+        ),
+        {status: 500}
+      );
+    }
+
     const payload = cg122MergePayload(plan);
     const generated = await encodeCanonicalFit(payload);
     const validation = await inspectFitBuffer(generated.buffer);
@@ -14216,10 +14441,27 @@ async function c099GlobalDirectoryQuery(
             : [];
 
           try {
+            /*
+             * FAST_JOIN_PREVIEW001
+             *
+             * PLAN :
+             *   documents activities uniquement.
+             *
+             * EXECUTE :
+             *   activities + activity_routes + FIT.
+             *
+             * Le plan_token reste fondé sur les mêmes métadonnées,
+             * ce qui permet au backend de vérifier que rien n'a changé.
+             */
             const plan = await cg122BuildPlan(
               uid,
               destinationId,
-              sourceIds
+              sourceIds,
+              {
+                includeRoute:
+                  action ===
+                  "join_replace"
+              }
             );
 
             if (action === "join_replace_plan") {
@@ -16916,3 +17158,23 @@ module.exports = {createFitVault};
    nouveau FIT validé avant suppression physique des FIT sources.
 */
 /* CGWEB123_FIX2_FIX1_BACKEND_END */
+
+/* CGWEB123_FIX2_FIX2_BACKEND_START
+   FAST_JOIN_PREVIEW001
+   METADATA_ONLY_PLAN001
+   NO_ROUTE_ON_PREVIEW001
+   JOIN_REQUEST_TIMEOUT001
+
+   join_replace_plan :
+     activities       = OUI
+     activity_routes  = NON
+     FIT construction = NON
+
+   join_replace :
+     activities       = OUI
+     activity_routes  = OUI
+     FIT construction = OUI
+     FIT validation   = OUI
+     source purge     = après validation uniquement
+*/
+/* CGWEB123_FIX2_FIX2_BACKEND_END */
