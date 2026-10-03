@@ -6312,6 +6312,39 @@ async function cgweb122JoinReplacePlan(
   }
 }
 
+/* CGWEB123_FIX3_FIX1_MASS_PLAN_START
+   MASS_PLAN_NO_ABORT001
+*/
+async function cgweb122JoinReplaceMassPlan(
+  destinationActivityId,
+  sourceActivityIds
+) {
+  return request(
+    "join_replace_plan",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json"
+      },
+      body: JSON.stringify({
+        destination_activity_id:
+          String(
+            destinationActivityId ||
+            ""
+          ).trim(),
+        source_activity_ids:
+          Array.isArray(
+            sourceActivityIds
+          )
+            ? sourceActivityIds
+            : []
+      })
+    }
+  );
+}
+/* CGWEB123_FIX3_FIX1_MASS_PLAN_END */
+
 async function cgweb122JoinReplaceExecute(
   destinationActivityId,
   sourceActivityIds,
@@ -6344,6 +6377,9 @@ window.SPORT_FIT_JOIN_REPLACE = Object.freeze({
 
   plan:
     cgweb122JoinReplacePlan,
+
+  massPlan:
+    cgweb122JoinReplaceMassPlan,
 
   execute:
     cgweb122JoinReplaceExecute,
@@ -6509,3 +6545,31 @@ window.CGWEB123_FIX2_FIX2_FITCLOUD_STATUS =
   };
 
 /* CGWEB123_FIX2_FIX2_FITCLOUD_END */
+
+/* CGWEB123_FIX3_FIX1_FITCLOUD_START
+   MASS_PLAN_NO_ABORT001
+*/
+window.CGWEB123_FIX3_FIX1_FITCLOUD_STATUS =
+  function() {
+    return {
+      build:
+        "CGWEB123_FIX3_FIX1",
+
+      manual_plan_timeout_ms:
+        CGWEB122_JOIN_PLAN_TIMEOUT_MS,
+
+      mass_plan_abort_controller:
+        false,
+
+      mass_plan_timeout_ms:
+        null,
+
+      execute_client_abort:
+        false
+    };
+  };
+
+console.info(
+  "CGWEB123 FIX3 FIX1 actif dans fitcloud.js · MASS_PLAN_NO_ABORT001"
+);
+/* CGWEB123_FIX3_FIX1_FITCLOUD_END */

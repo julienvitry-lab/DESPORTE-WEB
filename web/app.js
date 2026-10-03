@@ -67302,6 +67302,12 @@ function cgweb123Fix1MoveLegacyBulkPanel() {
 
 function cgweb123Fix1ScheduleLiveRefresh() {
   if (
+    window.CGWEB123_FIX3_MASS_RUNNING === true
+  ) {
+    return;
+  }
+
+  if (
     document.body
       .dataset
       .uxPage !==
@@ -67929,153 +67935,2443 @@ console.info(
 
 /* CGWEB123_FIX2_FIX2_END */
 
-/* CGWEB123_FIX3_START
-   MASS_JOIN_MANAGER001 / HIGH_CONFIDENCE_AUTOJOIN001
-   RESUMABLE_BATCH001 / FAILURE_CONTINUE001 / JOIN_AUDIT_LOG001
+/* CGWEB123_FIX3_FIX1_START
+   MASS_PLAN_NO_ABORT001 / FRESH_QUEUE_SNAPSHOT001
+   SINGLE_BATCH_LEASE001 / STALE_RUN_WRITE_GUARD001
+   TIMEOUT_FAILURE_REQUEUE001
 */
-const CGWEB123_FIX3_VERSION="CGWEB123_FIX3";
-const cgweb123Fix3Runtime={running:false,stop:false};
-const cgweb123Fix3Key=n=>`SPORT_${CGWEB123_FIX3_VERSION}_${currentUser?.uid||"anonymous"}_${n}`;
-function cgweb123Fix3Read(n,d){try{const x=localStorage.getItem(cgweb123Fix3Key(n));return x?JSON.parse(x):d;}catch(e){console.warn("CGWEB123 FIX3 read",e);return d;}}
-function cgweb123Fix3Write(n,v){try{localStorage.setItem(cgweb123Fix3Key(n),JSON.stringify(v));}catch(e){console.warn("CGWEB123 FIX3 write",e);}}
-function cgweb123Fix3State(){return cgweb123Fix3Read("STATE",null);}
-function cgweb123Fix3Save(s){s.updated_at_ms=Date.now();cgweb123Fix3Write("STATE",s);}
-function cgweb123Fix3Audit(type,data={}){
-  const rows=cgweb123Fix3Read("AUDIT",[]);
-  rows.push({at_ms:Date.now(),type,...data});
-  if(rows.length>3000) rows.splice(0,rows.length-3000);
-  cgweb123Fix3Write("AUDIT",rows);
-}
-function cgweb123Fix3Duration(a){
-  for(const x of [a?.elapsed_time_ms,a?.duration_ms,a?.timer_time_ms,a?.moving_time_ms]){const n=Number(x);if(Number.isFinite(n)&&n>=0)return n;}
-  const s=Number(a?.start_time_ms),e=Number(a?.end_time_ms);return Number.isFinite(s)&&Number.isFinite(e)&&e>=s?e-s:0;
-}
-function cgweb123Fix3Candidate(group){
-  const rows=Array.isArray(group?.activities)?[...group.activities]:[];
-  if(rows.length<2||rows.length>12||group?.ambiguous_missing_equipment===true)return null;
-  const key=cgweb123Fix1StrictBaseKey(rows[0]);
-  if(!key)return null;
-  for(const row of rows){
-    if(row?.deleted_at_ms!=null||cgweb123Fix1SplitRelated(row)||cgweb123Fix1StrictBaseKey(row)!==key)return null;
-  }
-  for(let i=0;i<rows.length;i++)for(let j=i+1;j<rows.length;j++)if(!cgweb123Fix1SameEquipment(rows[i],rows[j]))return null;
-  rows.sort((a,b)=>Number(a?.start_time_ms||0)-Number(b?.start_time_ms||0));
-  for(let i=1;i<rows.length;i++){
-    const p=Number(rows[i-1]?.start_time_ms),c=Number(rows[i]?.start_time_ms);
-    if(!Number.isFinite(p)||!Number.isFinite(c)||c<p+cgweb123Fix3Duration(rows[i-1])-1000)return null;
-  }
-  const ids=rows.map(x=>String(activityKey(x)||"").trim());
-  if(ids.some(x=>!x)||new Set(ids).size!==ids.length)return null;
-  return {group_key:String(group.key||""),day:String(group.day||""),destination_id:ids[0],source_ids:ids.slice(1),segment_count:ids.length};
-}
-function cgweb123Fix3Queue(){
-  const all=Array.isArray(cgweb123Fix1State?.groups)?cgweb123Fix1State.groups:[];
-  const queue=all.map(cgweb123Fix3Candidate).filter(Boolean).sort((a,b)=>a.day.localeCompare(b.day)||a.group_key.localeCompare(b.group_key));
-  return {queue,skipped:all.length-queue.length,total:all.length};
-}
-function cgweb123Fix3SetStatus(text){
-  const n=document.getElementById("cgweb123Fix3Status");if(n)n.textContent=String(text||"");
-}
-function cgweb123Fix3EnsurePanel(){
-  const host=document.getElementById("cgweb123Fix1AnalogList"),workspace=document.getElementById("cgweb123JoinWorkspace");
-  if(!host||!workspace)return null;
-  let p=document.getElementById("cgweb123Fix3MassManager");if(p)return p;
-  p=document.createElement("section");p.id="cgweb123Fix3MassManager";
-  p.style.cssText="display:grid;gap:8px;padding:11px 12px;border:1px solid rgba(167,255,42,.22);border-radius:14px;background:rgba(255,255,255,.018)";
-  p.innerHTML=`
-    <div><strong>Fusion en masse · haute confiance</strong><div class="muted">2–12 activités · mêmes jour/sport/sous-sport/matériel · hors split · PLAN CGWEB122 obligatoire avant chaque EXECUTE.</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button id="cgweb123Fix3Start" class="primary" type="button">Lancer le lot</button>
-      <button id="cgweb123Fix3Resume" class="secondary" type="button">Reprendre</button>
-      <button id="cgweb123Fix3Pause" class="secondary" type="button">Pause après la fusion en cours</button>
-      <button id="cgweb123Fix3Export" class="secondary" type="button">Exporter l’audit</button>
-    </div>
-    <div id="cgweb123Fix3Status" class="muted">Aucun lot en cours.</div>`;
-  workspace.insertBefore(p,host);
-  p.querySelector("#cgweb123Fix3Start")?.addEventListener("click",()=>void cgweb123Fix3Start());
-  p.querySelector("#cgweb123Fix3Resume")?.addEventListener("click",()=>void cgweb123Fix3Resume());
-  p.querySelector("#cgweb123Fix3Pause")?.addEventListener("click",()=>{cgweb123Fix3Runtime.stop=true;cgweb123Fix3SetStatus("Pause demandée · l’EXECUTE en cours sera laissé se terminer.");});
-  p.querySelector("#cgweb123Fix3Export")?.addEventListener("click",cgweb123Fix3Export);
-  return p;
-}
-function cgweb123Fix3Render(){
-  const p=cgweb123Fix3EnsurePanel();if(!p)return;
-  const s=cgweb123Fix3State(),q=cgweb123Fix3Queue();
-  if(s)cgweb123Fix3SetStatus(`${s.status} · ${Math.min(s.cursor,s.queue.length)} / ${s.queue.length} · ${s.success_count} réussie(s) · ${s.failure_count} échec(s) · ${s.recovered_count} récupérée(s)`);
-  p.querySelector("#cgweb123Fix3Start").disabled=cgweb123Fix3Runtime.running;
-  p.querySelector("#cgweb123Fix3Resume").disabled=cgweb123Fix3Runtime.running||!s||s.cursor>=s.queue.length||s.status==="COMPLETE";
-  p.querySelector("#cgweb123Fix3Pause").disabled=!cgweb123Fix3Runtime.running;
-  p.dataset.candidates=String(q.queue.length);
-}
-function cgweb123Fix3Export(){
-  const body={build:CGWEB123_FIX3_VERSION,exported_at_ms:Date.now(),state:cgweb123Fix3State(),audit:cgweb123Fix3Read("AUDIT",[])};
-  const url=URL.createObjectURL(new Blob([JSON.stringify(body,null,2)],{type:"application/json"})),a=document.createElement("a");
-  a.href=url;a.download=`CGWEB123_FIX3_JOIN_AUDIT_${new Date().toISOString().replace(/[:.]/g,"-")}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),0);
-}
-async function cgweb123Fix3Presence(task){
-  const rows=await cgweb123Fix1LoadAllActivities(),ids=new Set(rows.filter(x=>x?.deleted_at_ms==null).map(x=>String(activityKey(x)||"").trim()).filter(Boolean));
-  const src=task.source_ids.map(id=>ids.has(id));
-  return {dest:ids.has(task.destination_id),all:src.every(Boolean),none:src.every(x=>!x)};
-}
-async function cgweb123Fix3Recover(s){
-  if(s.phase==="PLANNING"){s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);return;}
-  if(s.phase!=="EXECUTING")return;
-  const task=s.queue[s.cursor];if(!task)return;
-  const p=await cgweb123Fix3Presence(task);
-  if(p.dest&&p.none){s.success_count++;s.recovered_count++;s.cursor++;s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);cgweb123Fix3Audit("RECOVERED_SUCCESS",{group_key:task.group_key,message:"Fusion déjà terminée confirmée."});return;}
-  if(p.dest&&p.all){s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);return;}
-  s.failure_count++;s.cursor++;s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);cgweb123Fix3Audit("RECOVERY_PARTIAL_STATE",{group_key:task.group_key,message:"État partiel : contrôle manuel requis."});
-}
-async function cgweb123Fix3Run(s){
-  if(cgweb123Fix3Runtime.running||!currentUser)return;
-  cgweb123Fix3Runtime.running=true;cgweb123Fix3Runtime.stop=false;s.status="RUNNING";s.started_at_ms ||= Date.now();cgweb123Fix3Save(s);cgweb123Fix3Render();
-  try{
-    await cgweb123Fix3Recover(s);
-    const api=await cgweb123Fix1JoinApi();
-    while(s.cursor<s.queue.length){
-      if(cgweb123Fix3Runtime.stop){s.status="PAUSED";s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);cgweb123Fix3Audit("BATCH_PAUSED",{cursor:s.cursor});cgweb123Fix3Render();return;}
-      const task=s.queue[s.cursor];s.phase="PLANNING";s.current_group_key=task.group_key;cgweb123Fix3Save(s);
-      cgweb123Fix3SetStatus(`PLAN ${s.cursor+1} / ${s.queue.length} · ${task.group_key}`);
-      try{
-        const response=await api.plan(task.destination_id,task.source_ids),plan=response?.plan;
-        if(!response?.ok||!plan?.plan_token)throw new Error(response?.error||"PLAN CGWEB122 invalide.");
-        if(!Array.isArray(plan.ordered_segments)||plan.ordered_segments.length!==task.segment_count)throw new Error("HIGH_CONFIDENCE_AUTOJOIN001 · nombre de segments inattendu.");
-        s.phase="EXECUTING";cgweb123Fix3Save(s);
-        const result=await api.execute(task.destination_id,task.source_ids,plan.plan_token);
-        if(!result?.ok)throw new Error(result?.error||"Exécution CGWEB122 non validée.");
-        s.success_count++;s.cursor++;s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);
-        cgweb123Fix3Audit("JOIN_SUCCESS",{group_key:task.group_key,destination_id:task.destination_id,source_ids:task.source_ids,plan_token_prefix:String(plan.plan_token).slice(0,16),message:"Fusion validée."});
-      }catch(error){
-        const phase=s.phase;
-        if(phase==="EXECUTING"){
-          let p;try{p=await cgweb123Fix3Presence(task);}catch(e){s.status="PAUSED";cgweb123Fix3Save(s);throw new Error(`Résultat indéterminable pour ${task.group_key} : ${e?.message||e}`);}
-          if(p.dest&&p.none){s.success_count++;s.recovered_count++;s.cursor++;s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);cgweb123Fix3Audit("JOIN_SUCCESS_RECOVERED",{group_key:task.group_key,message:"Réponse perdue, fusion confirmée par l’état réel."});cgweb123Fix3Render();continue;}
-        }
-        s.failure_count++;s.cursor++;s.phase="IDLE";s.current_group_key="";cgweb123Fix3Save(s);
-        cgweb123Fix3Audit("JOIN_FAILURE_CONTINUE",{group_key:task.group_key,stage:phase,error:error?.message||String(error),message:error?.message||String(error)});
-      }
-      cgweb123Fix3Render();await new Promise(r=>setTimeout(r,100));
-    }
-    s.status="COMPLETE";s.phase="IDLE";s.completed_at_ms=Date.now();cgweb123Fix3Save(s);cgweb123Fix3Audit("BATCH_COMPLETE",{success_count:s.success_count,failure_count:s.failure_count});
-    await reloadAll();await cgweb123Fix1RefreshWorkspace({silent:true});cgweb123Fix3Render();
-  }catch(error){
-    console.error("CGWEB123 FIX3 batch",error);s.status="PAUSED";cgweb123Fix3Save(s);cgweb123Fix3Audit("BATCH_PAUSED_ERROR",{error:error?.message||String(error),message:error?.message||String(error)});cgweb123Fix3SetStatus(`PAUSED · ${error?.message||error}`);
-  }finally{cgweb123Fix3Runtime.running=false;cgweb123Fix3Runtime.stop=false;cgweb123Fix3Render();}
-}
-async function cgweb123Fix3Start(){
-  if(cgweb123Fix3Runtime.running)return;
-  await cgweb123Fix1RefreshWorkspace({silent:true});
-  const snap=cgweb123Fix3Queue();if(!snap.queue.length){cgweb123Fix3SetStatus("Aucun groupe haute confiance disponible.");return;}
-  if(!window.confirm(`Lancer ${snap.queue.length} fusion(s) haute confiance ?\n${snap.skipped} groupe(s) resteront hors automatisation.\n\nChaque groupe repassera par le PLAN CGWEB122 ; un échec isolé sera journalisé puis le lot continuera.`))return;
-  const s={version:1,build:CGWEB123_FIX3_VERSION,status:"READY",queue:snap.queue,cursor:0,success_count:0,failure_count:0,recovered_count:0,phase:"IDLE",current_group_key:"",started_at_ms:null,completed_at_ms:null};
-  cgweb123Fix3Save(s);cgweb123Fix3Audit("BATCH_CREATED",{queue_count:s.queue.length,skipped:snap.skipped,message:`${s.queue.length} groupe(s) en file.`});void cgweb123Fix3Run(s);
-}
-async function cgweb123Fix3Resume(){const s=cgweb123Fix3State();if(!cgweb123Fix3Runtime.running&&s&&s.cursor<s.queue.length)void cgweb123Fix3Run(s);}
-function cgweb123Fix3Install(){cgweb123Fix3EnsurePanel();const s=cgweb123Fix3State();if(s?.status==="RUNNING"&&!cgweb123Fix3Runtime.running){s.status="PAUSED";cgweb123Fix3Save(s);}cgweb123Fix3Render();}
+const CGWEB123_FIX3_FIX1_VERSION = "CGWEB123_FIX3_FIX1";
+const CGWEB123_FIX3_FIX1_STORAGE = "SPORT_CGWEB123_FIX3_FIX1";
+const CGWEB123_FIX3_LEGACY_STORAGE = "SPORT_CGWEB123_FIX3";
+const CGWEB123_FIX3_FIX1_LEASE_TTL_MS = 45000;
+const CGWEB123_FIX3_FIX1_HEARTBEAT_MS = 10000;
 
-onAuthStateChanged(auth,()=>setTimeout(cgweb123Fix3Install,0));
-window.CGWEB123_FIX3_STATUS=()=>{const q=cgweb123Fix3Queue(),s=cgweb123Fix3State();return {build:CGWEB123_FIX3_VERSION,mass_join_manager:"MASS_JOIN_MANAGER001",high_confidence_autojoin:"HIGH_CONFIDENCE_AUTOJOIN001",resumable_batch:"RESUMABLE_BATCH001",failure_continue:"FAILURE_CONTINUE001",join_audit_log:"JOIN_AUDIT_LOG001",engine:"CGWEB122/FIT_JOIN_REPLACE001",source_fit_policy:"SOURCE_FIT_PURGE_AFTER_VALIDATE001",candidate_groups_now:q.queue.length,batch_status:s?.status||null,batch_cursor:s?.cursor||0,batch_total:s?.queue?.length||0,success_count:s?.success_count||0,failure_count:s?.failure_count||0,recovered_count:s?.recovered_count||0,audit_rows:cgweb123Fix3Read("AUDIT",[]).length};};
-window.CGWEB123_FIX3_AUDIT=()=>({state:cgweb123Fix3State(),audit:cgweb123Fix3Read("AUDIT",[])});
-queueMicrotask(cgweb123Fix3Install);requestAnimationFrame(cgweb123Fix3Install);setTimeout(cgweb123Fix3Install,500);
-console.info("CGWEB123 FIX3 actif · MASS_JOIN_MANAGER001 / HIGH_CONFIDENCE_AUTOJOIN001 / RESUMABLE_BATCH001 / FAILURE_CONTINUE001 / JOIN_AUDIT_LOG001");
-/* CGWEB123_FIX3_END */
+function cgweb123Fix3Fix1Id(prefix) {
+  const uuid =
+    globalThis.crypto?.randomUUID?.();
+  return (
+    String(prefix || "id") +
+    ":" +
+    (
+      uuid ||
+      (
+        Date.now().toString(36) +
+        ":" +
+        Math.random()
+          .toString(36)
+          .slice(2)
+      )
+    )
+  );
+}
+
+const cgweb123Fix3Fix1Runtime = {
+  running: false,
+  stop: false,
+  leaseLost: false,
+  ownerId:
+    cgweb123Fix3Fix1Id("owner"),
+  heartbeatTimer: null
+};
+
+const cgweb123Fix3Fix1Key =
+  name =>
+    `${CGWEB123_FIX3_FIX1_STORAGE}_${currentUser?.uid || "anonymous"}_${name}`;
+
+const cgweb123Fix3LegacyKey =
+  name =>
+    `${CGWEB123_FIX3_LEGACY_STORAGE}_${currentUser?.uid || "anonymous"}_${name}`;
+
+function cgweb123Fix3Fix1ReadKey(
+  key,
+  fallback
+) {
+  try {
+    const raw =
+      localStorage.getItem(
+        key
+      );
+
+    return raw
+      ? JSON.parse(raw)
+      : fallback;
+  } catch (error) {
+    console.warn(
+      "CGWEB123 FIX3 FIX1 read",
+      error
+    );
+
+    return fallback;
+  }
+}
+
+function cgweb123Fix3Fix1WriteKey(
+  key,
+  value
+) {
+  localStorage.setItem(
+    key,
+    JSON.stringify(value)
+  );
+}
+
+function cgweb123Fix3Fix1RemoveKey(
+  key
+) {
+  try {
+    localStorage.removeItem(
+      key
+    );
+  } catch (_) {}
+}
+
+function cgweb123Fix3Fix1Read(
+  name,
+  fallback
+) {
+  return cgweb123Fix3Fix1ReadKey(
+    cgweb123Fix3Fix1Key(name),
+    fallback
+  );
+}
+
+function cgweb123Fix3LegacyRead(
+  name,
+  fallback
+) {
+  return cgweb123Fix3Fix1ReadKey(
+    cgweb123Fix3LegacyKey(name),
+    fallback
+  );
+}
+
+function cgweb123Fix3Fix1Write(
+  name,
+  value
+) {
+  cgweb123Fix3Fix1WriteKey(
+    cgweb123Fix3Fix1Key(name),
+    value
+  );
+}
+
+function cgweb123Fix3Fix1State() {
+  return cgweb123Fix3Fix1Read(
+    "STATE",
+    null
+  );
+}
+
+function cgweb123Fix3Fix1Audit(
+  type,
+  data = {}
+) {
+  const rows =
+    cgweb123Fix3Fix1Read(
+      "AUDIT",
+      []
+    );
+
+  rows.push({
+    at_ms:
+      Date.now(),
+    type,
+    ...data
+  });
+
+  if (
+    rows.length >
+    5000
+  ) {
+    rows.splice(
+      0,
+      rows.length -
+      5000
+    );
+  }
+
+  cgweb123Fix3Fix1Write(
+    "AUDIT",
+    rows
+  );
+}
+
+function cgweb123Fix3Fix1Lease() {
+  return cgweb123Fix3Fix1Read(
+    "LEASE",
+    null
+  );
+}
+
+function cgweb123Fix3Fix1LeaseActive(
+  lease = cgweb123Fix3Fix1Lease()
+) {
+  return Boolean(
+    lease?.owner_id &&
+    Number(
+      lease?.expires_at_ms
+    ) >
+      Date.now()
+  );
+}
+
+function cgweb123Fix3Fix1LeaseHeldByOther() {
+  const lease =
+    cgweb123Fix3Fix1Lease();
+
+  return Boolean(
+    cgweb123Fix3Fix1LeaseActive(
+      lease
+    ) &&
+    lease.owner_id !==
+      cgweb123Fix3Fix1Runtime
+        .ownerId
+  );
+}
+
+function cgweb123Fix3Fix1RenewLease(
+  batchId
+) {
+  const lease =
+    cgweb123Fix3Fix1Lease();
+
+  if (
+    !lease ||
+    lease.owner_id !==
+      cgweb123Fix3Fix1Runtime
+        .ownerId ||
+    lease.batch_id !==
+      batchId
+  ) {
+    return false;
+  }
+
+  const next = {
+    ...lease,
+    renewed_at_ms:
+      Date.now(),
+    expires_at_ms:
+      Date.now() +
+      CGWEB123_FIX3_FIX1_LEASE_TTL_MS
+  };
+
+  cgweb123Fix3Fix1Write(
+    "LEASE",
+    next
+  );
+
+  const check =
+    cgweb123Fix3Fix1Lease();
+
+  return Boolean(
+    check?.owner_id ===
+      cgweb123Fix3Fix1Runtime
+        .ownerId &&
+    check?.batch_id ===
+      batchId
+  );
+}
+
+function cgweb123Fix3Fix1StartHeartbeat(
+  batchId
+) {
+  if (
+    cgweb123Fix3Fix1Runtime
+      .heartbeatTimer
+  ) {
+    clearInterval(
+      cgweb123Fix3Fix1Runtime
+        .heartbeatTimer
+    );
+  }
+
+  cgweb123Fix3Fix1Runtime
+    .heartbeatTimer =
+      setInterval(
+        () => {
+          if (
+            !cgweb123Fix3Fix1RenewLease(
+              batchId
+            )
+          ) {
+            cgweb123Fix3Fix1Runtime
+              .leaseLost =
+                true;
+
+            cgweb123Fix3Fix1Runtime
+              .stop =
+                true;
+
+            cgweb123Fix3Fix1SetStatus(
+              "LEASE LOST · arrêt sécurisé demandé."
+            );
+          }
+        },
+        CGWEB123_FIX3_FIX1_HEARTBEAT_MS
+      );
+}
+
+function cgweb123Fix3Fix1StopHeartbeat() {
+  if (
+    cgweb123Fix3Fix1Runtime
+      .heartbeatTimer
+  ) {
+    clearInterval(
+      cgweb123Fix3Fix1Runtime
+        .heartbeatTimer
+    );
+
+    cgweb123Fix3Fix1Runtime
+      .heartbeatTimer =
+        null;
+  }
+}
+
+function cgweb123Fix3Fix1AcquireLease(
+  batchId
+) {
+  const now =
+    Date.now();
+
+  const existing =
+    cgweb123Fix3Fix1Lease();
+
+  if (
+    cgweb123Fix3Fix1LeaseActive(
+      existing
+    ) &&
+    existing.owner_id !==
+      cgweb123Fix3Fix1Runtime
+        .ownerId
+  ) {
+    return false;
+  }
+
+  const candidate = {
+    version: 1,
+    owner_id:
+      cgweb123Fix3Fix1Runtime
+        .ownerId,
+    batch_id:
+      batchId,
+    acquired_at_ms:
+      existing?.owner_id ===
+        cgweb123Fix3Fix1Runtime
+          .ownerId
+        ? (
+            existing
+              .acquired_at_ms ||
+            now
+          )
+        : now,
+    renewed_at_ms:
+      now,
+    expires_at_ms:
+      now +
+      CGWEB123_FIX3_FIX1_LEASE_TTL_MS
+  };
+
+  cgweb123Fix3Fix1Write(
+    "LEASE",
+    candidate
+  );
+
+  const check =
+    cgweb123Fix3Fix1Lease();
+
+  const ok =
+    check?.owner_id ===
+      cgweb123Fix3Fix1Runtime
+        .ownerId &&
+    check?.batch_id ===
+      batchId;
+
+  if (ok) {
+    cgweb123Fix3Fix1Runtime
+      .leaseLost =
+        false;
+
+    cgweb123Fix3Fix1StartHeartbeat(
+      batchId
+    );
+  }
+
+  return ok;
+}
+
+function cgweb123Fix3Fix1ReleaseLease(
+  batchId
+) {
+  cgweb123Fix3Fix1StopHeartbeat();
+
+  const lease =
+    cgweb123Fix3Fix1Lease();
+
+  if (
+    lease?.owner_id ===
+      cgweb123Fix3Fix1Runtime
+        .ownerId &&
+    (
+      !batchId ||
+      lease?.batch_id ===
+        batchId
+    )
+  ) {
+    cgweb123Fix3Fix1RemoveKey(
+      cgweb123Fix3Fix1Key(
+        "LEASE"
+      )
+    );
+  }
+}
+
+function cgweb123Fix3Fix1AssertLease(
+  batchId
+) {
+  const lease =
+    cgweb123Fix3Fix1Lease();
+
+  if (
+    !cgweb123Fix3Fix1LeaseActive(
+      lease
+    ) ||
+    lease?.owner_id !==
+      cgweb123Fix3Fix1Runtime
+        .ownerId ||
+    lease?.batch_id !==
+      batchId
+  ) {
+    throw new Error(
+      "SINGLE_BATCH_LEASE001 · lease absent, expiré ou détenu par un autre onglet."
+    );
+  }
+}
+
+function cgweb123Fix3Fix1GuardedSave(
+  state
+) {
+  cgweb123Fix3Fix1AssertLease(
+    state.batch_id
+  );
+
+  const current =
+    cgweb123Fix3Fix1State();
+
+  if (
+    current?.batch_id &&
+    current.batch_id !==
+      state.batch_id &&
+    ![
+      "COMPLETE",
+      "CANCELLED"
+    ].includes(
+      current?.status
+    )
+  ) {
+    throw new Error(
+      "STALE_RUN_WRITE_GUARD001 · un ancien runner ne peut pas écraser le lot courant."
+    );
+  }
+
+  const nextRevision =
+    Number(
+      current?.batch_id ===
+        state.batch_id
+        ? current?.revision
+        : state?.revision
+    ) || 0;
+
+  state.revision =
+    nextRevision + 1;
+
+  state.writer_owner_id =
+    cgweb123Fix3Fix1Runtime
+      .ownerId;
+
+  state.updated_at_ms =
+    Date.now();
+
+  cgweb123Fix3Fix1Write(
+    "STATE",
+    state
+  );
+
+  const check =
+    cgweb123Fix3Fix1State();
+
+  if (
+    check?.batch_id !==
+      state.batch_id ||
+    check?.revision !==
+      state.revision ||
+    check?.writer_owner_id !==
+      cgweb123Fix3Fix1Runtime
+        .ownerId
+  ) {
+    throw new Error(
+      "STALE_RUN_WRITE_GUARD001 · écriture concurrente détectée."
+    );
+  }
+}
+
+function cgweb123Fix3Fix1Duration(
+  activity
+) {
+  for (
+    const value
+    of [
+      activity?.elapsed_time_ms,
+      activity?.duration_ms,
+      activity?.timer_time_ms,
+      activity?.moving_time_ms
+    ]
+  ) {
+    const number =
+      Number(value);
+
+    if (
+      Number.isFinite(number) &&
+      number >= 0
+    ) {
+      return number;
+    }
+  }
+
+  const start =
+    Number(
+      activity?.start_time_ms
+    );
+
+  const end =
+    Number(
+      activity?.end_time_ms
+    );
+
+  return (
+    Number.isFinite(start) &&
+    Number.isFinite(end) &&
+    end >= start
+  )
+    ? end - start
+    : 0;
+}
+
+function cgweb123Fix3Fix1Candidate(
+  group
+) {
+  const rows =
+    Array.isArray(
+      group?.activities
+    )
+      ? [
+          ...group.activities
+        ]
+      : [];
+
+  if (
+    rows.length < 2 ||
+    rows.length > 12 ||
+    group
+      ?.ambiguous_missing_equipment ===
+      true
+  ) {
+    return null;
+  }
+
+  const baseKey =
+    cgweb123Fix1StrictBaseKey(
+      rows[0]
+    );
+
+  if (!baseKey) {
+    return null;
+  }
+
+  for (
+    const row
+    of rows
+  ) {
+    if (
+      row?.deleted_at_ms != null ||
+      cgweb123Fix1SplitRelated(
+        row
+      ) ||
+      cgweb123Fix1StrictBaseKey(
+        row
+      ) !==
+        baseKey
+    ) {
+      return null;
+    }
+  }
+
+  for (
+    let i = 0;
+    i < rows.length;
+    i += 1
+  ) {
+    for (
+      let j = i + 1;
+      j < rows.length;
+      j += 1
+    ) {
+      if (
+        !cgweb123Fix1SameEquipment(
+          rows[i],
+          rows[j]
+        )
+      ) {
+        return null;
+      }
+    }
+  }
+
+  rows.sort(
+    (a,b) =>
+      Number(
+        a?.start_time_ms ||
+        0
+      ) -
+      Number(
+        b?.start_time_ms ||
+        0
+      )
+  );
+
+  for (
+    let i = 1;
+    i < rows.length;
+    i += 1
+  ) {
+    const previousStart =
+      Number(
+        rows[i - 1]
+          ?.start_time_ms
+      );
+
+    const currentStart =
+      Number(
+        rows[i]
+          ?.start_time_ms
+      );
+
+    if (
+      !Number.isFinite(
+        previousStart
+      ) ||
+      !Number.isFinite(
+        currentStart
+      ) ||
+      currentStart <
+        previousStart +
+        cgweb123Fix3Fix1Duration(
+          rows[i - 1]
+        ) -
+        1000
+    ) {
+      return null;
+    }
+  }
+
+  const ids =
+    rows
+      .map(
+        row =>
+          String(
+            activityKey(
+              row
+            ) ||
+            ""
+          ).trim()
+      );
+
+  if (
+    ids.some(
+      id => !id
+    ) ||
+    new Set(ids).size !==
+      ids.length
+  ) {
+    return null;
+  }
+
+  return {
+    group_key:
+      String(
+        group?.key ||
+        ""
+      ),
+    day:
+      String(
+        group?.day ||
+        ""
+      ),
+    destination_id:
+      ids[0],
+    source_ids:
+      ids.slice(1),
+    segment_count:
+      ids.length,
+    timeout_requeues:
+      0
+  };
+}
+
+function cgweb123Fix3Fix1QueueFromGroups(
+  groups
+) {
+  const all =
+    Array.isArray(groups)
+      ? groups
+      : [];
+
+  const queue =
+    all
+      .map(
+        cgweb123Fix3Fix1Candidate
+      )
+      .filter(Boolean)
+      .sort(
+        (a,b) =>
+          a.day.localeCompare(
+            b.day
+          ) ||
+          a.group_key.localeCompare(
+            b.group_key
+          )
+      );
+
+  return {
+    queue,
+    skipped:
+      all.length -
+      queue.length,
+    total:
+      all.length
+  };
+}
+
+async function cgweb123Fix3Fix1FreshQueue() {
+  const rows =
+    await cgweb123Fix1LoadAllActivities();
+
+  const grouped =
+    cgweb123Fix1BuildGroups(
+      rows
+    );
+
+  return {
+    ...cgweb123Fix3Fix1QueueFromGroups(
+      grouped.groups
+    ),
+    firestore_activity_count:
+      rows.length,
+    analog_activity_count:
+      grouped
+        .analogActivityCount,
+    isolated_activity_count:
+      grouped
+        .isolatedCount,
+    split_related_excluded:
+      grouped
+        .excludedSplitCount,
+    snapshot_at_ms:
+      Date.now()
+  };
+}
+
+function cgweb123Fix3Fix1UiQueue() {
+  const groups =
+    Array.isArray(
+      cgweb123Fix1State
+        ?.groups
+    )
+      ? cgweb123Fix1State
+          .groups
+      : [];
+
+  return cgweb123Fix3Fix1QueueFromGroups(
+    groups
+  );
+}
+
+function cgweb123Fix3Fix1SetStatus(
+  text
+) {
+  const node =
+    document.getElementById(
+      "cgweb123Fix3Status"
+    );
+
+  if (node) {
+    node.textContent =
+      String(
+        text ||
+        ""
+      );
+  }
+}
+
+function cgweb123Fix3Fix1Pending(
+  state
+) {
+  return Boolean(
+    state &&
+    ![
+      "COMPLETE",
+      "CANCELLED"
+    ].includes(
+      state.status
+    )
+  );
+}
+
+function cgweb123Fix3Fix1BootstrapLegacy() {
+  if (!currentUser) {
+    return;
+  }
+
+  if (
+    cgweb123Fix3Fix1State()
+  ) {
+    return;
+  }
+
+  const legacyState =
+    cgweb123Fix3LegacyRead(
+      "STATE",
+      null
+    );
+
+  if (!legacyState) {
+    return;
+  }
+
+  const legacyAudit =
+    cgweb123Fix3LegacyRead(
+      "AUDIT",
+      []
+    );
+
+  const timeoutFailures =
+    legacyAudit.filter(
+      row =>
+        row?.type ===
+          "JOIN_FAILURE_CONTINUE" &&
+        row?.stage ===
+          "PLANNING" &&
+        String(
+          row?.error ||
+          ""
+        ).includes(
+          "JOIN_REQUEST_TIMEOUT001"
+        )
+    );
+
+  cgweb123Fix3Fix1Write(
+    "AUDIT",
+    legacyAudit.map(
+      row => ({
+        ...row,
+        imported_from:
+          "CGWEB123_FIX3"
+      })
+    )
+  );
+
+  const state = {
+    version: 2,
+    build:
+      CGWEB123_FIX3_FIX1_VERSION,
+    status:
+      "REBUILD_REQUIRED",
+    batch_id:
+      "",
+    queue: [],
+    cursor: 0,
+    success_count: 0,
+    failure_count: 0,
+    recovered_count: 0,
+    requeued_timeout_count: 0,
+    prior_success_count:
+      Number(
+        legacyState
+          ?.success_count ||
+        0
+      ),
+    prior_failure_count:
+      Number(
+        legacyState
+          ?.failure_count ||
+        0
+      ),
+    legacy_timeout_failure_count:
+      timeoutFailures.length,
+    phase:
+      "IDLE",
+    current_group_key:
+      "",
+    started_at_ms:
+      null,
+    completed_at_ms:
+      null,
+    migrated_at_ms:
+      Date.now(),
+    revision: 0
+  };
+
+  cgweb123Fix3Fix1Write(
+    "STATE",
+    state
+  );
+
+  cgweb123Fix3Fix1Audit(
+    "LEGACY_BATCH_FENCED",
+    {
+      prior_success_count:
+        state.prior_success_count,
+      prior_failure_count:
+        state.prior_failure_count,
+      timeout_failures_to_requeue:
+        timeoutFailures.length,
+      message:
+        "Ancien lot isolé dans le stockage FIX3 ; reprise via snapshot Firestore frais."
+    }
+  );
+}
+
+function cgweb123Fix3Fix1EnsurePanel() {
+  const host =
+    document.getElementById(
+      "cgweb123Fix1AnalogList"
+    );
+
+  const workspace =
+    document.getElementById(
+      "cgweb123JoinWorkspace"
+    );
+
+  if (
+    !host ||
+    !workspace
+  ) {
+    return null;
+  }
+
+  let panel =
+    document.getElementById(
+      "cgweb123Fix3MassManager"
+    );
+
+  if (panel) {
+    return panel;
+  }
+
+  panel =
+    document.createElement(
+      "section"
+    );
+
+  panel.id =
+    "cgweb123Fix3MassManager";
+
+  panel.style.cssText =
+    "display:grid;gap:8px;padding:11px 12px;border:1px solid rgba(167,255,42,.22);border-radius:14px;background:rgba(255,255,255,.018)";
+
+  panel.innerHTML = `
+    <div>
+      <strong>Fusion en masse · haute confiance · FIX3 FIX1</strong>
+      <div class="muted">
+        File reconstruite depuis Firestore · PLAN de masse sans timeout navigateur · lease inter-onglets.
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button id="cgweb123Fix3Start" class="primary" type="button">
+        Lancer un nouveau lot
+      </button>
+      <button id="cgweb123Fix3Resume" class="secondary" type="button">
+        Reprendre
+      </button>
+      <button id="cgweb123Fix3Pause" class="secondary" type="button">
+        Pause après la fusion en cours
+      </button>
+      <button id="cgweb123Fix3Export" class="secondary" type="button">
+        Exporter l’audit
+      </button>
+    </div>
+    <div id="cgweb123Fix3Status" class="muted">
+      Aucun lot en cours.
+    </div>
+  `;
+
+  workspace.insertBefore(
+    panel,
+    host
+  );
+
+  panel
+    .querySelector(
+      "#cgweb123Fix3Start"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        void cgweb123Fix3Fix1Start();
+      }
+    );
+
+  panel
+    .querySelector(
+      "#cgweb123Fix3Resume"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        void cgweb123Fix3Fix1Resume();
+      }
+    );
+
+  panel
+    .querySelector(
+      "#cgweb123Fix3Pause"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        cgweb123Fix3Fix1Runtime
+          .stop =
+            true;
+
+        cgweb123Fix3Fix1SetStatus(
+          "Pause demandée · l’EXECUTE en cours sera laissé se terminer."
+        );
+      }
+    );
+
+  panel
+    .querySelector(
+      "#cgweb123Fix3Export"
+    )
+    ?.addEventListener(
+      "click",
+      cgweb123Fix3Fix1Export
+    );
+
+  return panel;
+}
+
+function cgweb123Fix3Fix1Render() {
+  const panel =
+    cgweb123Fix3Fix1EnsurePanel();
+
+  if (!panel) {
+    return;
+  }
+
+  const state =
+    cgweb123Fix3Fix1State();
+
+  const uiQueue =
+    cgweb123Fix3Fix1UiQueue();
+
+  const otherLease =
+    cgweb123Fix3Fix1LeaseHeldByOther();
+
+  if (state) {
+    if (
+      state.status ===
+      "REBUILD_REQUIRED"
+    ) {
+      cgweb123Fix3Fix1SetStatus(
+        "REBUILD_REQUIRED · ancien lot : " +
+        state.prior_success_count +
+        " réussie(s) · " +
+        state.prior_failure_count +
+        " échec(s) · " +
+        state.legacy_timeout_failure_count +
+        " timeout(s) seront rééligibles via un snapshot Firestore frais."
+      );
+    } else {
+      cgweb123Fix3Fix1SetStatus(
+        `${state.status} · ${Math.min(state.cursor || 0,state.queue?.length || 0)} / ${state.queue?.length || 0}` +
+        ` · ${state.success_count || 0} réussie(s)` +
+        ` · ${state.failure_count || 0} échec(s)` +
+        ` · ${state.recovered_count || 0} récupérée(s)` +
+        (
+          state.prior_success_count
+            ? ` · ${state.prior_success_count} réussite(s) avant FIX1`
+            : ""
+        ) +
+        (
+          state.requeued_timeout_count
+            ? ` · ${state.requeued_timeout_count} timeout(s) réinjecté(s)`
+            : ""
+        )
+      );
+    }
+  } else {
+    cgweb123Fix3Fix1SetStatus(
+      "Aucun lot FIX3 FIX1 · " +
+      uiQueue.queue.length +
+      " candidat(s) visibles. Le lancement reconstruira la file depuis Firestore."
+    );
+  }
+
+  const pending =
+    cgweb123Fix3Fix1Pending(
+      state
+    );
+
+  const start =
+    panel.querySelector(
+      "#cgweb123Fix3Start"
+    );
+
+  const resume =
+    panel.querySelector(
+      "#cgweb123Fix3Resume"
+    );
+
+  const pause =
+    panel.querySelector(
+      "#cgweb123Fix3Pause"
+    );
+
+  if (start) {
+    start.disabled =
+      cgweb123Fix3Fix1Runtime
+        .running ||
+      pending ||
+      otherLease;
+  }
+
+  if (resume) {
+    resume.disabled =
+      cgweb123Fix3Fix1Runtime
+        .running ||
+      !state ||
+      state.status ===
+        "COMPLETE" ||
+      otherLease;
+  }
+
+  if (pause) {
+    pause.disabled =
+      !cgweb123Fix3Fix1Runtime
+        .running;
+  }
+
+  panel.dataset.candidates =
+    String(
+      uiQueue.queue.length
+    );
+
+  panel.dataset.leaseOwner =
+    otherLease
+      ? "OTHER"
+      : (
+          cgweb123Fix3Fix1LeaseActive()
+            ? "THIS_TAB"
+            : "NONE"
+        );
+}
+
+function cgweb123Fix3Fix1Export() {
+  const body = {
+    build:
+      CGWEB123_FIX3_FIX1_VERSION,
+    exported_at_ms:
+      Date.now(),
+    state:
+      cgweb123Fix3Fix1State(),
+    lease:
+      cgweb123Fix3Fix1Lease(),
+    audit:
+      cgweb123Fix3Fix1Read(
+        "AUDIT",
+        []
+      )
+  };
+
+  const url =
+    URL.createObjectURL(
+      new Blob(
+        [
+          JSON.stringify(
+            body,
+            null,
+            2
+          )
+        ],
+        {
+          type:
+            "application/json"
+        }
+      )
+    );
+
+  const link =
+    document.createElement(
+      "a"
+    );
+
+  link.href =
+    url;
+
+  link.download =
+    `CGWEB123_FIX3_FIX1_JOIN_AUDIT_${new Date().toISOString().replace(/[:.]/g,"-")}.json`;
+
+  document.body.appendChild(
+    link
+  );
+
+  link.click();
+  link.remove();
+
+  setTimeout(
+    () =>
+      URL.revokeObjectURL(
+        url
+      ),
+    0
+  );
+}
+
+async function cgweb123Fix3Fix1Presence(
+  task
+) {
+  const rows =
+    await cgweb123Fix1LoadAllActivities();
+
+  const byId =
+    new Map(
+      rows
+        .filter(
+          row =>
+            row?.deleted_at_ms ==
+            null
+        )
+        .map(
+          row => [
+            String(
+              activityKey(
+                row
+              ) ||
+              ""
+            ).trim(),
+            row
+          ]
+        )
+        .filter(
+          ([id]) =>
+            Boolean(id)
+        )
+    );
+
+  const destination =
+    byId.get(
+      task.destination_id
+    ) ||
+    null;
+
+  const sourcePresence =
+    task.source_ids.map(
+      id =>
+        byId.has(id)
+    );
+
+  const joinedSources =
+    Array.isArray(
+      destination
+        ?.join_source_activity_ids
+    )
+      ? destination
+          .join_source_activity_ids
+          .map(
+            value =>
+              String(value)
+          )
+      : [];
+
+  return {
+    dest:
+      Boolean(destination),
+    all:
+      sourcePresence.every(
+        Boolean
+      ),
+    none:
+      sourcePresence.every(
+        value => !value
+      ),
+    any:
+      sourcePresence.some(
+        Boolean
+      ),
+    destination_join_matches:
+      task.source_ids.length >
+        0 &&
+      task.source_ids.every(
+        id =>
+          joinedSources.includes(
+            id
+          )
+      )
+  };
+}
+
+async function cgweb123Fix3Fix1Recover(
+  state
+) {
+  if (
+    state.phase ===
+    "PLANNING"
+  ) {
+    state.phase =
+      "IDLE";
+
+    state.current_group_key =
+      "";
+
+    cgweb123Fix3Fix1GuardedSave(
+      state
+    );
+
+    cgweb123Fix3Fix1Audit(
+      "RECOVERED_PLANNING_RETRY",
+      {
+        batch_id:
+          state.batch_id,
+        cursor:
+          state.cursor,
+        message:
+          "PLAN non destructif interrompu : même groupe conservé pour nouvelle tentative."
+      }
+    );
+
+    return;
+  }
+
+  if (
+    state.phase !==
+    "EXECUTING"
+  ) {
+    return;
+  }
+
+  const task =
+    state.queue[
+      state.cursor
+    ];
+
+  if (!task) {
+    return;
+  }
+
+  const presence =
+    await cgweb123Fix3Fix1Presence(
+      task
+    );
+
+  if (
+    presence.dest &&
+    presence.none
+  ) {
+    state.success_count +=
+      1;
+
+    state.recovered_count +=
+      1;
+
+    state.cursor +=
+      1;
+
+    state.phase =
+      "IDLE";
+
+    state.current_group_key =
+      "";
+
+    cgweb123Fix3Fix1GuardedSave(
+      state
+    );
+
+    cgweb123Fix3Fix1Audit(
+      "RECOVERED_SUCCESS",
+      {
+        batch_id:
+          state.batch_id,
+        group_key:
+          task.group_key,
+        message:
+          "Fusion déjà terminée confirmée par l’état réel."
+      }
+    );
+
+    return;
+  }
+
+  if (
+    presence.dest &&
+    presence.all &&
+    !presence
+      .destination_join_matches
+  ) {
+    state.phase =
+      "IDLE";
+
+    state.current_group_key =
+      "";
+
+    cgweb123Fix3Fix1GuardedSave(
+      state
+    );
+
+    cgweb123Fix3Fix1Audit(
+      "RECOVERED_EXECUTE_RETRY_SAFE",
+      {
+        batch_id:
+          state.batch_id,
+        group_key:
+          task.group_key,
+        message:
+          "Aucune suppression source ni signature de jonction détectée ; groupe conservé pour nouvelle tentative."
+      }
+    );
+
+    return;
+  }
+
+  throw new Error(
+    "RECOVERY_PARTIAL_STATE · état d’exécution partiel ou ambigu ; contrôle manuel requis."
+  );
+}
+
+async function cgweb123Fix3Fix1JoinApi() {
+  const api =
+    await cgweb123Fix1JoinApi();
+
+  if (
+    typeof api?.massPlan !==
+    "function"
+  ) {
+    throw new Error(
+      "MASS_PLAN_NO_ABORT001 non chargé dans fitcloud.js."
+    );
+  }
+
+  return api;
+}
+
+function cgweb123Fix3Fix1IsTimeout(
+  error
+) {
+  return String(
+    error?.message ||
+    error ||
+    ""
+  ).includes(
+    "JOIN_REQUEST_TIMEOUT001"
+  );
+}
+
+async function cgweb123Fix3Fix1Run(
+  state
+) {
+  if (
+    cgweb123Fix3Fix1Runtime
+      .running ||
+    !currentUser
+  ) {
+    return;
+  }
+
+  if (
+    !state?.batch_id
+  ) {
+    cgweb123Fix3Fix1SetStatus(
+      "Lot sans batch_id · reconstruction requise."
+    );
+    return;
+  }
+
+  if (
+    !cgweb123Fix3Fix1AcquireLease(
+      state.batch_id
+    )
+  ) {
+    cgweb123Fix3Fix1SetStatus(
+      "SINGLE_BATCH_LEASE001 · ce lot est déjà détenu par un autre onglet."
+    );
+
+    cgweb123Fix3Fix1Render();
+    return;
+  }
+
+  cgweb123Fix3Fix1Runtime
+    .running =
+      true;
+
+  cgweb123Fix3Fix1Runtime
+    .stop =
+      false;
+
+  cgweb123Fix3Fix1Runtime
+    .leaseLost =
+      false;
+
+  window.CGWEB123_FIX3_MASS_RUNNING =
+    true;
+
+  state.status =
+    "RUNNING";
+
+  state.started_at_ms ||=
+    Date.now();
+
+  cgweb123Fix3Fix1GuardedSave(
+    state
+  );
+
+  cgweb123Fix3Fix1Render();
+
+  try {
+    await cgweb123Fix3Fix1Recover(
+      state
+    );
+
+    const api =
+      await cgweb123Fix3Fix1JoinApi();
+
+    while (
+      state.cursor <
+      state.queue.length
+    ) {
+      if (
+        cgweb123Fix3Fix1Runtime
+          .leaseLost
+      ) {
+        throw new Error(
+          "SINGLE_BATCH_LEASE001 · lease perdu pendant le traitement."
+        );
+      }
+
+      if (
+        cgweb123Fix3Fix1Runtime
+          .stop
+      ) {
+        state.status =
+          "PAUSED";
+
+        state.phase =
+          "IDLE";
+
+        state.current_group_key =
+          "";
+
+        cgweb123Fix3Fix1GuardedSave(
+          state
+        );
+
+        cgweb123Fix3Fix1Audit(
+          "BATCH_PAUSED",
+          {
+            batch_id:
+              state.batch_id,
+            cursor:
+              state.cursor
+          }
+        );
+
+        cgweb123Fix3Fix1Render();
+        return;
+      }
+
+      const task =
+        state.queue[
+          state.cursor
+        ];
+
+      state.phase =
+        "PLANNING";
+
+      state.current_group_key =
+        task.group_key;
+
+      cgweb123Fix3Fix1GuardedSave(
+        state
+      );
+
+      cgweb123Fix3Fix1SetStatus(
+        `PLAN MASS ${state.cursor + 1} / ${state.queue.length} · ${task.group_key}`
+      );
+
+      try {
+        const response =
+          await api.massPlan(
+            task.destination_id,
+            task.source_ids
+          );
+
+        const plan =
+          response?.plan;
+
+        if (
+          !response?.ok ||
+          !plan?.plan_token
+        ) {
+          throw new Error(
+            response?.error ||
+            "PLAN CGWEB122 invalide."
+          );
+        }
+
+        if (
+          !Array.isArray(
+            plan.ordered_segments
+          ) ||
+          plan
+            .ordered_segments
+            .length !==
+            task.segment_count
+        ) {
+          throw new Error(
+            "HIGH_CONFIDENCE_AUTOJOIN001 · nombre de segments inattendu."
+          );
+        }
+
+        state.phase =
+          "EXECUTING";
+
+        cgweb123Fix3Fix1GuardedSave(
+          state
+        );
+
+        const result =
+          await api.execute(
+            task.destination_id,
+            task.source_ids,
+            plan.plan_token
+          );
+
+        if (!result?.ok) {
+          throw new Error(
+            result?.error ||
+            "Exécution CGWEB122 non validée."
+          );
+        }
+
+        state.success_count +=
+          1;
+
+        state.cursor +=
+          1;
+
+        state.phase =
+          "IDLE";
+
+        state.current_group_key =
+          "";
+
+        cgweb123Fix3Fix1GuardedSave(
+          state
+        );
+
+        cgweb123Fix3Fix1Audit(
+          "JOIN_SUCCESS",
+          {
+            batch_id:
+              state.batch_id,
+            group_key:
+              task.group_key,
+            destination_id:
+              task.destination_id,
+            source_ids:
+              task.source_ids,
+            plan_token_prefix:
+              String(
+                plan.plan_token
+              ).slice(
+                0,
+                16
+              ),
+            message:
+              "Fusion validée."
+          }
+        );
+      } catch (error) {
+        const phase =
+          state.phase;
+
+        if (
+          phase ===
+          "PLANNING" &&
+          cgweb123Fix3Fix1IsTimeout(
+            error
+          )
+        ) {
+          const retries =
+            Number(
+              task
+                .timeout_requeues ||
+              0
+            ) + 1;
+
+          state.cursor +=
+            1;
+
+          state.phase =
+            "IDLE";
+
+          state.current_group_key =
+            "";
+
+          if (
+            retries <= 2
+          ) {
+            state.queue.push({
+              ...task,
+              timeout_requeues:
+                retries
+            });
+
+            state.requeued_timeout_count +=
+              1;
+
+            cgweb123Fix3Fix1GuardedSave(
+              state
+            );
+
+            cgweb123Fix3Fix1Audit(
+              "TIMEOUT_FAILURE_REQUEUED",
+              {
+                batch_id:
+                  state.batch_id,
+                group_key:
+                  task.group_key,
+                retry:
+                  retries,
+                message:
+                  "Timeout PLAN réinjecté en fin de file."
+              }
+            );
+
+            cgweb123Fix3Fix1Render();
+            continue;
+          }
+        }
+
+        if (
+          phase ===
+          "EXECUTING"
+        ) {
+          let presence;
+
+          try {
+            presence =
+              await cgweb123Fix3Fix1Presence(
+                task
+              );
+          } catch (
+            presenceError
+          ) {
+            throw new Error(
+              `Résultat indéterminable pour ${task.group_key} : ${presenceError?.message || presenceError}`
+            );
+          }
+
+          if (
+            presence.dest &&
+            presence.none
+          ) {
+            state.success_count +=
+              1;
+
+            state.recovered_count +=
+              1;
+
+            state.cursor +=
+              1;
+
+            state.phase =
+              "IDLE";
+
+            state.current_group_key =
+              "";
+
+            cgweb123Fix3Fix1GuardedSave(
+              state
+            );
+
+            cgweb123Fix3Fix1Audit(
+              "JOIN_SUCCESS_RECOVERED",
+              {
+                batch_id:
+                  state.batch_id,
+                group_key:
+                  task.group_key,
+                message:
+                  "Réponse perdue, fusion confirmée par l’état réel."
+              }
+            );
+
+            cgweb123Fix3Fix1Render();
+            continue;
+          }
+
+          if (
+            !(
+              presence.dest &&
+              presence.all &&
+              !presence
+                .destination_join_matches
+            )
+          ) {
+            throw new Error(
+              `RECOVERY_PARTIAL_STATE · ${task.group_key} présente un état partiel ou ambigu après EXECUTE.`
+            );
+          }
+        }
+
+        state.failure_count +=
+          1;
+
+        state.cursor +=
+          1;
+
+        state.phase =
+          "IDLE";
+
+        state.current_group_key =
+          "";
+
+        cgweb123Fix3Fix1GuardedSave(
+          state
+        );
+
+        cgweb123Fix3Fix1Audit(
+          "JOIN_FAILURE_CONTINUE",
+          {
+            batch_id:
+              state.batch_id,
+            group_key:
+              task.group_key,
+            stage:
+              phase,
+            error:
+              error?.message ||
+              String(error),
+            message:
+              error?.message ||
+              String(error)
+          }
+        );
+      }
+
+      cgweb123Fix3Fix1Render();
+
+      await new Promise(
+        resolve =>
+          setTimeout(
+            resolve,
+            150
+          )
+      );
+    }
+
+    state.status =
+      "COMPLETE";
+
+    state.phase =
+      "IDLE";
+
+    state.completed_at_ms =
+      Date.now();
+
+    cgweb123Fix3Fix1GuardedSave(
+      state
+    );
+
+    cgweb123Fix3Fix1Audit(
+      "BATCH_COMPLETE",
+      {
+        batch_id:
+          state.batch_id,
+        success_count:
+          state.success_count,
+        failure_count:
+          state.failure_count,
+        recovered_count:
+          state.recovered_count,
+        requeued_timeout_count:
+          state.requeued_timeout_count
+      }
+    );
+
+    await reloadAll();
+
+    await cgweb123Fix1RefreshWorkspace({
+      silent: true
+    });
+  } catch (error) {
+    console.error(
+      "CGWEB123 FIX3 FIX1 batch",
+      error
+    );
+
+    if (
+      !cgweb123Fix3Fix1Runtime
+        .leaseLost
+    ) {
+      try {
+        state.status =
+          "PAUSED";
+
+        cgweb123Fix3Fix1GuardedSave(
+          state
+        );
+
+        cgweb123Fix3Fix1Audit(
+          "BATCH_PAUSED_ERROR",
+          {
+            batch_id:
+              state.batch_id,
+            error:
+              error?.message ||
+              String(error),
+            message:
+              error?.message ||
+              String(error)
+          }
+        );
+      } catch (
+        saveError
+      ) {
+        console.error(
+          "CGWEB123 FIX3 FIX1 pause save",
+          saveError
+        );
+      }
+    }
+
+    cgweb123Fix3Fix1SetStatus(
+      `PAUSED · ${error?.message || error}`
+    );
+  } finally {
+    cgweb123Fix3Fix1Runtime
+      .running =
+        false;
+
+    cgweb123Fix3Fix1Runtime
+      .stop =
+        false;
+
+    window.CGWEB123_FIX3_MASS_RUNNING =
+      false;
+
+    cgweb123Fix3Fix1ReleaseLease(
+      state.batch_id
+    );
+
+    cgweb123Fix3Fix1Render();
+
+    if (
+      document.body
+        ?.dataset
+        ?.uxPage ===
+      "joins"
+    ) {
+      cgweb123Fix1ScheduleLiveRefresh();
+    }
+  }
+}
+
+function cgweb123Fix3Fix1LegacyTimeoutKeys() {
+  return new Set(
+    cgweb123Fix3Fix1Read(
+      "AUDIT",
+      []
+    )
+    .filter(
+      row =>
+        row?.imported_from ===
+          "CGWEB123_FIX3" &&
+        row?.type ===
+          "JOIN_FAILURE_CONTINUE" &&
+        row?.stage ===
+          "PLANNING" &&
+        String(
+          row?.error ||
+          ""
+        ).includes(
+          "JOIN_REQUEST_TIMEOUT001"
+        )
+    )
+    .map(
+      row =>
+        String(
+          row?.group_key ||
+          ""
+        )
+    )
+    .filter(Boolean)
+  );
+}
+
+async function cgweb123Fix3Fix1BuildAndRun(
+  mode
+) {
+  if (
+    cgweb123Fix3Fix1Runtime
+      .running
+  ) {
+    return;
+  }
+
+  const existing =
+    cgweb123Fix3Fix1State();
+
+  if (
+    mode ===
+      "NEW" &&
+    cgweb123Fix3Fix1Pending(
+      existing
+    )
+  ) {
+    cgweb123Fix3Fix1SetStatus(
+      "Un lot est déjà en attente : utilisez Reprendre."
+    );
+
+    return;
+  }
+
+  const batchId =
+    cgweb123Fix3Fix1Id(
+      "batch"
+    );
+
+  if (
+    !cgweb123Fix3Fix1AcquireLease(
+      batchId
+    )
+  ) {
+    cgweb123Fix3Fix1SetStatus(
+      "SINGLE_BATCH_LEASE001 · un autre onglet prépare ou exécute déjà un lot."
+    );
+
+    cgweb123Fix3Fix1Render();
+    return;
+  }
+
+  try {
+    cgweb123Fix3Fix1SetStatus(
+      "FRESH_QUEUE_SNAPSHOT001 · lecture Firestore en cours…"
+    );
+
+    const snapshot =
+      await cgweb123Fix3Fix1FreshQueue();
+
+    if (
+      !snapshot.queue.length
+    ) {
+      cgweb123Fix3Fix1SetStatus(
+        "Aucun groupe haute confiance disponible dans le snapshot Firestore."
+      );
+
+      return;
+    }
+
+    const timeoutKeys =
+      cgweb123Fix3Fix1LegacyTimeoutKeys();
+
+    const requeuedTimeouts =
+      snapshot.queue.filter(
+        task =>
+          timeoutKeys.has(
+            task.group_key
+          )
+      ).length;
+
+    const priorSuccess =
+      Number(
+        existing
+          ?.prior_success_count ??
+        existing
+          ?.success_count ??
+        0
+      );
+
+    const priorFailure =
+      Number(
+        existing
+          ?.prior_failure_count ??
+        existing
+          ?.failure_count ??
+        0
+      );
+
+    const actionLabel =
+      mode ===
+        "REBUILD"
+        ? "Reconstruire et reprendre"
+        : "Lancer";
+
+    const confirmed =
+      window.confirm(
+        `${actionLabel} ${snapshot.queue.length} fusion(s) haute confiance ?
+` +
+        `${snapshot.skipped} groupe(s) resteront hors automatisation.
+` +
+        `${requeuedTimeouts} ancien(s) timeout(s) PLAN sont de nouveau éligibles.
+
+` +
+        "La file provient d’un snapshot Firestore frais. Le PLAN de masse n’utilise aucun timeout navigateur."
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const state = {
+      version: 2,
+      build:
+        CGWEB123_FIX3_FIX1_VERSION,
+      status:
+        "READY",
+      batch_id:
+        batchId,
+      queue:
+        snapshot.queue,
+      cursor: 0,
+      success_count: 0,
+      failure_count: 0,
+      recovered_count: 0,
+      requeued_timeout_count:
+        requeuedTimeouts,
+      prior_success_count:
+        priorSuccess,
+      prior_failure_count:
+        priorFailure,
+      phase:
+        "IDLE",
+      current_group_key:
+        "",
+      started_at_ms:
+        null,
+      completed_at_ms:
+        null,
+      snapshot_at_ms:
+        snapshot.snapshot_at_ms,
+      snapshot_group_count:
+        snapshot.total,
+      snapshot_skipped:
+        snapshot.skipped,
+      snapshot_firestore_activity_count:
+        snapshot
+          .firestore_activity_count,
+      revision: 0
+    };
+
+    cgweb123Fix3Fix1GuardedSave(
+      state
+    );
+
+    cgweb123Fix3Fix1Audit(
+      mode ===
+        "REBUILD"
+        ? "BATCH_REBUILT_FROM_FRESH_SNAPSHOT"
+        : "BATCH_CREATED_FROM_FRESH_SNAPSHOT",
+      {
+        batch_id:
+          batchId,
+        queue_count:
+          state.queue.length,
+        skipped:
+          snapshot.skipped,
+        requeued_timeout_count:
+          requeuedTimeouts,
+        prior_success_count:
+          priorSuccess,
+        prior_failure_count:
+          priorFailure,
+        message:
+          `${state.queue.length} groupe(s) en file depuis Firestore.`
+      }
+    );
+
+    void cgweb123Fix3Fix1Run(
+      state
+    );
+  } catch (error) {
+    console.error(
+      "CGWEB123 FIX3 FIX1 build batch",
+      error
+    );
+
+    cgweb123Fix3Fix1SetStatus(
+      "Préparation impossible : " +
+      (
+        error?.message ||
+        error
+      )
+    );
+  } finally {
+    if (
+      !cgweb123Fix3Fix1Runtime
+        .running
+    ) {
+      cgweb123Fix3Fix1ReleaseLease(
+        batchId
+      );
+
+      cgweb123Fix3Fix1Render();
+    }
+  }
+}
+
+async function cgweb123Fix3Fix1Start() {
+  await cgweb123Fix3Fix1BuildAndRun(
+    "NEW"
+  );
+}
+
+async function cgweb123Fix3Fix1Resume() {
+  if (
+    cgweb123Fix3Fix1Runtime
+      .running
+  ) {
+    return;
+  }
+
+  const state =
+    cgweb123Fix3Fix1State();
+
+  if (!state) {
+    return;
+  }
+
+  if (
+    state.status ===
+    "REBUILD_REQUIRED"
+  ) {
+    await cgweb123Fix3Fix1BuildAndRun(
+      "REBUILD"
+    );
+
+    return;
+  }
+
+  if (
+    state.status ===
+      "COMPLETE" ||
+    state.cursor >=
+      state.queue.length
+  ) {
+    return;
+  }
+
+  void cgweb123Fix3Fix1Run(
+    state
+  );
+}
+
+function cgweb123Fix3Fix1Install() {
+  if (!currentUser) {
+    cgweb123Fix3Fix1EnsurePanel();
+    cgweb123Fix3Fix1Render();
+    return;
+  }
+
+  cgweb123Fix3Fix1BootstrapLegacy();
+  cgweb123Fix3Fix1EnsurePanel();
+  cgweb123Fix3Fix1Render();
+}
+
+window.addEventListener(
+  "storage",
+  event => {
+    if (
+      event.key ===
+        cgweb123Fix3Fix1Key(
+          "LEASE"
+        ) &&
+      cgweb123Fix3Fix1Runtime
+        .running &&
+      cgweb123Fix3Fix1LeaseHeldByOther()
+    ) {
+      cgweb123Fix3Fix1Runtime
+        .leaseLost =
+          true;
+
+      cgweb123Fix3Fix1Runtime
+        .stop =
+          true;
+    }
+
+    if (
+      event.key ===
+        cgweb123Fix3Fix1Key(
+          "STATE"
+        ) ||
+      event.key ===
+        cgweb123Fix3Fix1Key(
+          "LEASE"
+        )
+    ) {
+      cgweb123Fix3Fix1Render();
+    }
+  }
+);
+
+onAuthStateChanged(
+  auth,
+  () =>
+    setTimeout(
+      cgweb123Fix3Fix1Install,
+      0
+    )
+);
+
+window.CGWEB123_FIX3_FIX1_STATUS =
+  function() {
+    const uiQueue =
+      cgweb123Fix3Fix1UiQueue();
+
+    const state =
+      cgweb123Fix3Fix1State();
+
+    const lease =
+      cgweb123Fix3Fix1Lease();
+
+    return {
+      build:
+        CGWEB123_FIX3_FIX1_VERSION,
+
+      mass_plan_no_abort:
+        "MASS_PLAN_NO_ABORT001",
+
+      fresh_queue_snapshot:
+        "FRESH_QUEUE_SNAPSHOT001",
+
+      single_batch_lease:
+        "SINGLE_BATCH_LEASE001",
+
+      stale_run_write_guard:
+        "STALE_RUN_WRITE_GUARD001",
+
+      timeout_failure_requeue:
+        "TIMEOUT_FAILURE_REQUEUE001",
+
+      engine:
+        "CGWEB122/FIT_JOIN_REPLACE001",
+
+      source_fit_policy:
+        "SOURCE_FIT_PURGE_AFTER_VALIDATE001",
+
+      ui_candidate_groups_now:
+        uiQueue.queue.length,
+
+      batch_status:
+        state?.status ||
+        null,
+
+      batch_id:
+        state?.batch_id ||
+        null,
+
+      batch_cursor:
+        state?.cursor ||
+        0,
+
+      batch_total:
+        state?.queue
+          ?.length ||
+        0,
+
+      success_count:
+        state?.success_count ||
+        0,
+
+      failure_count:
+        state?.failure_count ||
+        0,
+
+      recovered_count:
+        state?.recovered_count ||
+        0,
+
+      prior_success_count:
+        state
+          ?.prior_success_count ||
+        0,
+
+      prior_failure_count:
+        state
+          ?.prior_failure_count ||
+        0,
+
+      requeued_timeout_count:
+        state
+          ?.requeued_timeout_count ||
+        0,
+
+      lease_active:
+        cgweb123Fix3Fix1LeaseActive(
+          lease
+        ),
+
+      lease_owner:
+        lease?.owner_id ===
+          cgweb123Fix3Fix1Runtime
+            .ownerId
+          ? "THIS_TAB"
+          : (
+              cgweb123Fix3Fix1LeaseActive(
+                lease
+              )
+                ? "OTHER_TAB"
+                : "NONE"
+            ),
+
+      audit_rows:
+        cgweb123Fix3Fix1Read(
+          "AUDIT",
+          []
+        ).length
+    };
+  };
+
+window.CGWEB123_FIX3_STATUS =
+  window.CGWEB123_FIX3_FIX1_STATUS;
+
+window.CGWEB123_FIX3_AUDIT =
+  () => ({
+    state:
+      cgweb123Fix3Fix1State(),
+    lease:
+      cgweb123Fix3Fix1Lease(),
+    audit:
+      cgweb123Fix3Fix1Read(
+        "AUDIT",
+        []
+      )
+  });
+
+queueMicrotask(
+  cgweb123Fix3Fix1Install
+);
+
+requestAnimationFrame(
+  cgweb123Fix3Fix1Install
+);
+
+setTimeout(
+  cgweb123Fix3Fix1Install,
+  500
+);
+
+console.info(
+  "CGWEB123 FIX3 FIX1 actif · MASS_PLAN_NO_ABORT001 / FRESH_QUEUE_SNAPSHOT001 / SINGLE_BATCH_LEASE001 / STALE_RUN_WRITE_GUARD001 / TIMEOUT_FAILURE_REQUEUE001"
+);
+
+/* CGWEB123_FIX3_FIX1_END */
