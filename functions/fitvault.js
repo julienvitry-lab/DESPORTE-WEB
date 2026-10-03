@@ -443,13 +443,19 @@ function createFitVault() {
       !b?.name;
 
     /*
-     * MISSING_EQUIPMENT_ALLOWED001
+     * CGWEB123 FIX2 FIX1
+     * EQUIPMENT_STATE_PARITY001
+     *
+     * Aucun mélange matériel connu / matériel absent.
      */
     if (
       leftMissing ||
       rightMissing
     ) {
-      return true;
+      return (
+        leftMissing &&
+        rightMissing
+      );
     }
 
     if (
@@ -727,9 +733,13 @@ function createFitVault() {
       destinationSegment.equipment;
 
     /*
-     * MISSING_EQUIPMENT_ALLOWED001 :
-     * l'absence de matériel sur la destination historique
-     * ne bloque plus le plan.
+     * EQUIPMENT_STATE_PARITY001 :
+     *
+     * une destination sans matériel peut être fusionnée uniquement
+     * avec des sources également sans matériel.
+     *
+     * une destination avec matériel peut être fusionnée uniquement
+     * avec le même matériel connu.
      */
 
     for (const segment of segments) {
@@ -770,17 +780,18 @@ function createFitVault() {
     }
 
     /*
-     * CGWEB123 FIX2 · KNOWN_EQUIPMENT_MATCH001
+     * CGWEB123 FIX2 FIX1
+     * EQUIPMENT_MILEAGE_INTEGRITY001
      *
      * Contrôle pair-à-pair :
      *
-     * A sans matériel + B chaussure X => autorisé
-     * A chaussure X + B chaussure X   => autorisé
-     * A chaussure X + B chaussure Y   => REFUSÉ
+     * sans matériel + sans matériel => autorisé
+     * chaussure X + chaussure X     => autorisé
+     * chaussure X + chaussure Y     => REFUSÉ
+     * chaussure X + sans matériel   => REFUSÉ
      *
-     * Cela empêche notamment :
-     *   X -> matériel absent -> Y
-     * d'être accepté comme un seul groupe.
+     * Aucun kilomètre d'une activité au matériel inconnu ne peut donc
+     * être attribué indirectement à un matériel connu.
      */
     for (
       let i = 0;
@@ -800,7 +811,7 @@ function createFitVault() {
         ) {
           throw Object.assign(
             new Error(
-              `CGWEB123 FIX2 · KNOWN_EQUIPMENT_MATCH001 : matériels connus incompatibles entre ${segments[i].label} et ${segments[j].label}.`
+              `CGWEB123 FIX2 FIX1 · EQUIPMENT_STATE_PARITY001 : état matériel ou matériel incompatible entre ${segments[i].label} et ${segments[j].label}.`
             ),
             {status: 409}
           );
@@ -939,12 +950,18 @@ function createFitVault() {
           "SAME_DAY_STRICT001",
         same_sport:
           "SAME_SPORT_STRICT001",
-        same_equipment_when_known:
+        equipment_state_parity:
+          "EQUIPMENT_STATE_PARITY001",
+        both_missing_allowed:
+          "BOTH_MISSING_ALLOWED001",
+        mixed_known_missing_rejected:
+          "MIXED_EQUIPMENT_REJECT001",
+        known_equipment_must_match:
           "KNOWN_EQUIPMENT_MATCH001",
-        missing_equipment_allowed:
-          "MISSING_EQUIPMENT_ALLOWED001",
+        equipment_mileage_integrity:
+          "EQUIPMENT_MILEAGE_INTEGRITY001",
         candidate_truth:
-          "JOIN_CANDIDATE_TRUTH002",
+          "JOIN_CANDIDATE_TRUTH003",
         split_exclusion:
           "SPLIT_LINEAGE_DETECTION002",
         source_fit_cleanup:
@@ -10911,20 +10928,27 @@ async function c102FilterByFitProvenance(
       !right.name;
 
     /*
-     * CGWEB123 FIX2 · MISSING_EQUIPMENT_ALLOWED001
+     * CGWEB123 FIX2 FIX1
+     * EQUIPMENT_STATE_PARITY001
      *
-     * L'absence historique de matériel n'est PAS une contradiction.
-     * Elle laisse les autres critères décider.
+     * Les deux activités doivent avoir le même ETAT matériel :
+     *
+     * - toutes deux sans matériel => compatible ;
+     * - une seule sans matériel   => incompatible.
      */
     if(
       leftMissing ||
       rightMissing
     ){
-      return true;
+      return (
+        leftMissing &&
+        rightMissing
+      );
     }
 
     /*
-     * Si les deux IDs existent, ils font autorité.
+     * Les deux matériels sont connus.
+     * L'ID fait autorité lorsqu'il existe des deux côtés.
      */
     if(
       left.id &&
@@ -10934,8 +10958,7 @@ async function c102FilterByFitProvenance(
     }
 
     /*
-     * Sinon, comparaison exacte du nom normalisé
-     * lorsque les deux noms existent.
+     * Sinon, comparaison exacte du nom normalisé.
      */
     if(
       left.name &&
@@ -10945,8 +10968,7 @@ async function c102FilterByFitProvenance(
     }
 
     /*
-     * Les deux matériels sont renseignés mais sous des formes
-     * incompatibles et non comparables.
+     * Matériels renseignés mais identité impossible à prouver.
      */
     return false;
   }
@@ -11497,11 +11519,14 @@ async function c102FilterByFitProvenance(
         same_day_strict:true,
         same_sport_strict:true,
         same_sub_sport_strict:true,
-        same_equipment_when_known:true,
-        missing_equipment_allowed:true,
+        equipment_state_parity:true,
+        both_missing_allowed:true,
+        mixed_known_missing_rejected:true,
+        known_equipment_must_match:true,
+        equipment_mileage_integrity:true,
         base_activity_counted:false,
         version:
-          "JOIN_CANDIDATE_TRUTH002"
+          "JOIN_CANDIDATE_TRUTH003"
       },
       candidates,
       join_lineage_preview:{
@@ -16873,3 +16898,21 @@ module.exports = {createFitVault};
    FITEDITOR_RUNTIME_UNBLOCK001
 */
 /* CGWEB121_FIX8_FIX9_BACKEND_END */
+
+/* CGWEB123_FIX2_FIX1_BACKEND_START
+   EQUIPMENT_STATE_PARITY001
+   BOTH_MISSING_ALLOWED001
+   MIXED_EQUIPMENT_REJECT001
+   EQUIPMENT_MILEAGE_INTEGRITY001
+
+   Vérité métier :
+     connu X + connu X = OUI
+     connu X + connu Y = NON
+     connu X + absent  = NON
+     absent  + connu X = NON
+     absent  + absent  = OUI
+
+   SOURCE_FIT_PURGE_AFTER_VALIDATE001 reste inchangé :
+   nouveau FIT validé avant suppression physique des FIT sources.
+*/
+/* CGWEB123_FIX2_FIX1_BACKEND_END */

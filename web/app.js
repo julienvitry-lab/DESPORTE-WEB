@@ -60966,7 +60966,10 @@ console.info(
       leftMissing ||
       rightMissing
     ) {
-      return true;
+      return (
+        leftMissing &&
+        rightMissing
+      );
     }
 
     if (
@@ -61364,7 +61367,10 @@ console.info(
       leftMissing ||
       rightMissing
     ) {
-      return true;
+      return (
+        leftMissing &&
+        rightMissing
+      );
     }
 
     if (
@@ -65440,7 +65446,10 @@ function cgweb123Fix1SameEquipment(
     leftMissing ||
     rightMissing
   ) {
-    return true;
+    return (
+      leftMissing &&
+      rightMissing
+    );
   }
 
   if (
@@ -65853,6 +65862,10 @@ function cgweb123Fix1BuildGroups(
     );
   }
 
+  /*
+   * Premier niveau :
+   * même jour + même sport + même sous-sport.
+   */
   const buckets =
     new Map();
 
@@ -65860,21 +65873,22 @@ function cgweb123Fix1BuildGroups(
     const activity
     of eligible
   ) {
-    const key =
+    const baseKey =
       cgweb123Fix1StrictBaseKey(
         activity
       );
 
     const list =
-      buckets.get(key) ||
-      [];
+      buckets.get(
+        baseKey
+      ) || [];
 
     list.push(
       activity
     );
 
     buckets.set(
-      key,
+      baseKey,
       list
     );
   }
@@ -65891,18 +65905,21 @@ function cgweb123Fix1BuildGroups(
     const known = [];
     const missing = [];
 
+    /*
+     * Séparation absolue des deux états matériel.
+     */
     for (
       const activity
       of bucket
     ) {
-      const equipment =
+      const identity =
         cgweb123Fix1Equipment(
           activity
         );
 
       if (
-        equipment.id ||
-        equipment.name
+        identity.id ||
+        identity.name
       ) {
         known.push(
           activity
@@ -65915,8 +65932,12 @@ function cgweb123Fix1BuildGroups(
     }
 
     /*
-     * Création des partitions de matériels CONNUS.
-     * Ici la compatibilité est strictement pair-à-pair.
+     * ----------------------------------------------------------
+     * A. Matériel CONNU
+     * ----------------------------------------------------------
+     *
+     * Groupement strict par identité compatible.
+     * Aucun membre sans matériel n'est ajouté.
      */
     const knownPartitions = [];
 
@@ -65934,7 +65955,8 @@ function cgweb123Fix1BuildGroups(
       const activity
       of known
     ) {
-      let target = null;
+      let target =
+        null;
 
       for (
         const partition
@@ -65969,66 +65991,72 @@ function cgweb123Fix1BuildGroups(
       );
     }
 
-    /*
-     * Matériel absent :
-     *
-     * - aucun matériel connu => groupe historique sans matériel ;
-     * - un seul matériel connu => les lignes sans matériel rejoignent
-     *   naturellement ce groupe ;
-     * - plusieurs matériels connus => les lignes sans matériel sont
-     *   proposées dans chaque possibilité compatible.
-     *
-     * Ainsi aucune chaussure connue X ne sera jamais mélangée avec Y,
-     * mais une activité historique sans matériel n'est pas bloquée.
-     */
-    const partitions = [];
-
-    if (
-      knownPartitions.length === 0
-    ) {
-      if (missing.length) {
-        partitions.push({
-          rows:
-            [...missing],
-          knownEquipment:
-            null,
-          ambiguousMissing:
-            false
-        });
-      }
-    } else {
-      for (
-        const knownPartition
-        of knownPartitions
-      ) {
-        partitions.push({
-          rows: [
-            ...knownPartition,
-            ...missing
-          ],
-
-          knownEquipment:
-            cgweb123Fix1Equipment(
-              knownPartition[0]
-            ),
-
-          ambiguousMissing:
-            knownPartitions.length > 1 &&
-            missing.length > 0
-        });
-      }
-    }
+    const descriptors = [];
 
     for (
-      let partitionIndex = 0;
-      partitionIndex <
-        partitions.length;
-      partitionIndex += 1
+      const partition
+      of knownPartitions
+    ) {
+      if (
+        partition.length < 2
+      ) {
+        continue;
+      }
+
+      descriptors.push({
+        rows:
+          partition,
+
+        equipment:
+          cgweb123Fix1Equipment(
+            partition[0]
+          ),
+
+        equipmentState:
+          "KNOWN"
+      });
+    }
+
+    /*
+     * ----------------------------------------------------------
+     * B. Matériel ABSENT
+     * ----------------------------------------------------------
+     *
+     * Les activités sans matériel ne peuvent être regroupées
+     * qu'entre elles.
+     */
+    if (
+      missing.length >= 2
+    ) {
+      descriptors.push({
+        rows:
+          missing,
+
+        equipment: {
+          id: "",
+          name: "",
+          label:
+            "Matériel non renseigné"
+        },
+
+        equipmentState:
+          "MISSING"
+      });
+    }
+
+    /*
+     * ----------------------------------------------------------
+     * C. Sanitize final
+     * ----------------------------------------------------------
+     */
+    for (
+      let index = 0;
+      index <
+        descriptors.length;
+      index += 1
     ) {
       const descriptor =
-        partitions[
-          partitionIndex
-        ];
+        descriptors[index];
 
       const partition =
         descriptor.rows
@@ -66037,12 +66065,17 @@ function cgweb123Fix1BuildGroups(
               !cgweb123Fix1SplitRelated(
                 activity
               )
+          )
+          .sort(
+            (a,b) =>
+              Number(
+                a.start_time_ms || 0
+              ) -
+              Number(
+                b.start_time_ms || 0
+              )
           );
 
-      /*
-       * SANITIZE final :
-       * un groupe ne peut jamais survivre avec moins de deux activités.
-       */
       if (
         partition.length < 2
       ) {
@@ -66050,20 +66083,21 @@ function cgweb123Fix1BuildGroups(
       }
 
       /*
-       * Contrôle pair-à-pair final.
-       * Les absences passent, deux matériels connus différents non.
+       * Contrôle pair-à-pair définitif.
        */
       let compatible =
         true;
 
       for (
         let i = 0;
-        i < partition.length;
+        i <
+          partition.length;
         i += 1
       ) {
         for (
           let j = i + 1;
-          j < partition.length;
+          j <
+            partition.length;
           j += 1
         ) {
           if (
@@ -66082,25 +66116,40 @@ function cgweb123Fix1BuildGroups(
         continue;
       }
 
-      partition.sort(
-        (a,b) =>
-          Number(
-            a.start_time_ms || 0
-          ) -
-          Number(
-            b.start_time_ms || 0
-          )
-      );
+      /*
+       * Vérification explicite de l'état matériel.
+       */
+      const missingCount =
+        partition.filter(
+          activity => {
+            const identity =
+              cgweb123Fix1Equipment(
+                activity
+              );
 
-      const equipment =
-        descriptor
-          .knownEquipment ||
-        {
-          id: "",
-          name: "",
-          label:
-            "Matériel non renseigné"
-        };
+            return (
+              !identity.id &&
+              !identity.name
+            );
+          }
+        ).length;
+
+      if (
+        descriptor.equipmentState ===
+          "KNOWN" &&
+        missingCount !== 0
+      ) {
+        continue;
+      }
+
+      if (
+        descriptor.equipmentState ===
+          "MISSING" &&
+        missingCount !==
+          partition.length
+      ) {
+        continue;
+      }
 
       const [
         day,
@@ -66114,12 +66163,16 @@ function cgweb123Fix1BuildGroups(
           baseKey +
           "|" +
           (
-            equipment.id ||
-            equipment.name ||
+            descriptor
+              .equipment
+              .id ||
+            descriptor
+              .equipment
+              .name ||
             "NO_EQUIPMENT"
           ) +
           "|" +
-          partitionIndex,
+          index,
 
         day,
 
@@ -66129,26 +66182,19 @@ function cgweb123Fix1BuildGroups(
         sub_sport:
           Number(subSport),
 
-        equipment,
+        equipment:
+          descriptor
+            .equipment,
+
+        equipment_state:
+          descriptor
+            .equipmentState,
 
         missing_equipment_count:
-          partition.filter(
-            activity => {
-              const identity =
-                cgweb123Fix1Equipment(
-                  activity
-                );
-
-              return (
-                !identity.id &&
-                !identity.name
-              );
-            }
-          ).length,
+          missingCount,
 
         ambiguous_missing_equipment:
-          descriptor
-            .ambiguousMissing,
+          false,
 
         activities:
           partition,
@@ -67677,11 +67723,17 @@ window.CGWEB123_FIX2_STATUS =
         true,
 
       equipment_policy: {
-        both_known:
-          "MUST_MATCH",
-        one_or_both_missing:
+        known_known_same:
           "ALLOWED",
+        known_known_different:
+          "REJECTED",
+        both_missing:
+          "ALLOWED",
+        mixed_known_missing:
+          "REJECTED",
         pairwise_check:
+          true,
+        mileage_integrity:
           true
       },
 
@@ -67720,3 +67772,105 @@ console.info(
 );
 
 /* CGWEB123_FIX2_END */
+
+/* CGWEB123_FIX2_FIX1_START
+   EQUIPMENT_STATE_PARITY001
+   BOTH_MISSING_ALLOWED001
+   MIXED_EQUIPMENT_REJECT001
+   EQUIPMENT_MILEAGE_INTEGRITY001
+*/
+
+window.CGWEB123_FIX2_FIX1_STATUS =
+  function() {
+    const groups =
+      typeof cgweb123Fix1State !==
+        "undefined"
+        ? cgweb123Fix1State.groups
+        : [];
+
+    const knownGroups =
+      groups.filter(
+        group =>
+          group
+            .equipment_state ===
+          "KNOWN"
+      );
+
+    const missingGroups =
+      groups.filter(
+        group =>
+          group
+            .equipment_state ===
+          "MISSING"
+      );
+
+    const mixedGroups =
+      groups.filter(
+        group => {
+          const states =
+            new Set(
+              group.activities.map(
+                activity => {
+                  const identity =
+                    cgweb123Fix1Equipment(
+                      activity
+                    );
+
+                  return (
+                    identity.id ||
+                    identity.name
+                  )
+                    ? "KNOWN"
+                    : "MISSING";
+                }
+              )
+            );
+
+          return states.size > 1;
+        }
+      );
+
+    return {
+      build:
+        "CGWEB123_FIX2_FIX1",
+
+      equipment_state_parity:
+        "EQUIPMENT_STATE_PARITY001",
+
+      both_missing_allowed:
+        true,
+
+      mixed_known_missing_rejected:
+        true,
+
+      known_equipment_must_match:
+        true,
+
+      equipment_mileage_integrity:
+        true,
+
+      group_count:
+        groups.length,
+
+      known_equipment_groups:
+        knownGroups.length,
+
+      missing_equipment_groups:
+        missingGroups.length,
+
+      mixed_state_groups:
+        mixedGroups.length,
+
+      expected_mixed_state_groups:
+        0,
+
+      source_fit_purge:
+        "SOURCE_FIT_PURGE_AFTER_VALIDATE001"
+    };
+  };
+
+console.info(
+  "CGWEB123 FIX2 FIX1 actif · EQUIPMENT_STATE_PARITY001 / BOTH_MISSING_ALLOWED001 / MIXED_EQUIPMENT_REJECT001 / EQUIPMENT_MILEAGE_INTEGRITY001"
+);
+
+/* CGWEB123_FIX2_FIX1_END */
