@@ -1278,8 +1278,16 @@ exports.stravaBridge = onRequest(
 
 
 /* WEB074_FITCLOUD001_INDEX_START */
-const {createFitVault} = require("./fitvault");
+const {
+  createFitVault,
+  createServerJoinBatchWorker
+} = require("./fitvault");
+
 exports.fitVault = createFitVault();
+
+/* CGWEB123 FIX4 · SERVER_BATCH_ORCHESTRATOR001 */
+exports.joinBatchWorker =
+  createServerJoinBatchWorker();
 /* WEB074_FITCLOUD001_INDEX_END */
 
 /* CGWEB094B_AUTOEQUIP_WRITEWATCH001_INDEX_START */

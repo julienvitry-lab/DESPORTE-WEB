@@ -6573,3 +6573,101 @@ console.info(
   "CGWEB123 FIX3 FIX1 actif dans fitcloud.js · MASS_PLAN_NO_ABORT001"
 );
 /* CGWEB123_FIX3_FIX1_FITCLOUD_END */
+
+/* CGWEB123_FIX4_SERVER_CLIENT_START
+   CLIENT_PROGRESS_ONLY001
+*/
+async function cgweb123Fix4ServerRequest(
+  action,
+  {
+    method = "GET",
+    body = null,
+    query = null
+  } = {}
+) {
+  const options = {
+    method,
+    query: query || {}
+  };
+
+  if (body != null) {
+    options.headers = {
+      "Content-Type": "application/json"
+    };
+
+    options.body =
+      JSON.stringify(body);
+  }
+
+  return request(
+    action,
+    options
+  );
+}
+
+window.SPORT_SERVER_JOIN_BATCH =
+  Object.freeze({
+    version: "CGWEB123_FIX4",
+
+    importBatch(state) {
+      return cgweb123Fix4ServerRequest(
+        "server_join_batch_import",
+        {
+          method: "POST",
+          body: {state}
+        }
+      );
+    },
+
+    status(batchId = "") {
+      return cgweb123Fix4ServerRequest(
+        "server_join_batch_status",
+        {
+          query:
+            batchId
+              ? {batch_id: batchId}
+              : {}
+        }
+      );
+    },
+
+    pause(batchId) {
+      return cgweb123Fix4ServerRequest(
+        "server_join_batch_pause",
+        {
+          method: "POST",
+          body: {batch_id: batchId}
+        }
+      );
+    },
+
+    resume(batchId) {
+      return cgweb123Fix4ServerRequest(
+        "server_join_batch_resume",
+        {
+          method: "POST",
+          body: {batch_id: batchId}
+        }
+      );
+    },
+
+    reviews(batchId) {
+      return cgweb123Fix4ServerRequest(
+        "server_join_batch_reviews",
+        {
+          query: {batch_id: batchId}
+        }
+      );
+    }
+  });
+
+window.dispatchEvent(
+  new CustomEvent(
+    "sport-server-join-batch-ready"
+  )
+);
+
+console.info(
+  "CGWEB123 FIX4 actif dans fitcloud.js · CLIENT_PROGRESS_ONLY001"
+);
+/* CGWEB123_FIX4_SERVER_CLIENT_END */

@@ -14,6 +14,8 @@ const {
 
 /* WEB074_FIX6_SELFCONTAINED_DEPS_START */
 const {onRequest} = require("firebase-functions/v2/https");
+const {onTaskDispatched} = require("firebase-functions/v2/tasks");
+const {getFunctions} = require("firebase-admin/functions");
 const {getApps, initializeApp} = require("firebase-admin/app");
 const {getAuth} = require("firebase-admin/auth");
 const {getFirestore, FieldPath} = require("firebase-admin/firestore");
@@ -25,6 +27,7 @@ if (!getApps().length) initializeApp();
 const db = getFirestore();
 const ROOT = "sport_users";
 const REGION = "europe-west1";
+let cgweb123Fix4JoinInternals = null;
 
 async function requireUser(req) {
   const auth = String(req.headers.authorization || "");
@@ -13905,6 +13908,15 @@ async function c099GlobalDirectoryQuery(
 
   /* CGWEB099_GLOBAL_DIRECTORY_HELPERS_END */
 
+  /*
+   * CGWEB123 FIX4
+   * Exposition interne serveur uniquement. Rien n'est envoyé au navigateur.
+   */
+  cgweb123Fix4JoinInternals = {
+    buildPlan: cg122BuildPlan,
+    executeJoin: cg122ExecuteJoin
+  };
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -13915,6 +13927,61 @@ async function c099GlobalDirectoryQuery(
         const decoded = await requireUser(req);
         const uid = decoded.uid;
         const action = String(req.query.action || "health").trim();
+
+        /* CGWEB123_FIX4_CONTROL_ACTIONS_START */
+        if (action === "server_join_batch_import") {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+          return res.json(
+            await cgweb123Fix4ImportBatch(uid, cgweb123Fix4RequestBody(req))
+          );
+        }
+
+        if (action === "server_join_batch_status") {
+          return res.json(
+            await cgweb123Fix4BatchStatus(
+              uid,
+              String(req.query.batch_id || "").trim()
+            )
+          );
+        }
+
+        if (action === "server_join_batch_pause") {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+          const body = cgweb123Fix4RequestBody(req);
+          return res.json(
+            await cgweb123Fix4PauseBatch(
+              uid,
+              String(body.batch_id || "").trim()
+            )
+          );
+        }
+
+        if (action === "server_join_batch_resume") {
+          if (req.method !== "POST") {
+            return res.status(405).json({error: "POST requis."});
+          }
+          const body = cgweb123Fix4RequestBody(req);
+          return res.json(
+            await cgweb123Fix4ResumeBatch(
+              uid,
+              String(body.batch_id || "").trim()
+            )
+          );
+        }
+
+        if (action === "server_join_batch_reviews") {
+          return res.json(
+            await cgweb123Fix4BatchReviews(
+              uid,
+              String(req.query.batch_id || "").trim()
+            )
+          );
+        }
+        /* CGWEB123_FIX4_CONTROL_ACTIONS_END */
 
         if (action === "fit_filename_repair_preview") {
           if (req.method !== "POST") {
@@ -17121,7 +17188,1406 @@ if (action === "transfer_audit") {
   );
 }
 
-module.exports = {createFitVault};
+
+/* CGWEB123_FIX4_SERVER_BACKEND_START
+   SERVER_BATCH_ORCHESTRATOR001
+   FIRESTORE_QUEUE001
+   SERVER_AUTORESUME001
+   CRASH_SAFE_CURSOR001
+   CLIENT_PROGRESS_ONLY001
+*/
+
+const CGWEB123_FIX4_VERSION = "CGWEB123_FIX4";
+const CGWEB123_FIX4_TASK_FUNCTION = "joinBatchWorker";
+const CGWEB123_FIX4_MAX_QUEUE = 5000;
+const CGWEB123_FIX4_ITEM_WRITE_CHUNK = 400;
+const CGWEB123_FIX4_LEASE_MS = 20 * 60 * 1000;
+
+function cgweb123Fix4RequestBody(req) {
+  let body = req?.body;
+
+  if (Buffer.isBuffer(body)) {
+    try {
+      body = JSON.parse(body.toString("utf8"));
+    } catch {
+      body = {};
+    }
+  }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    body = {};
+  }
+
+  return body;
+}
+
+function cgweb123Fix4BatchRef(uid, batchId) {
+  return db.doc(
+    `${ROOT}/${uid}/join_batches/${String(batchId)}`
+  );
+}
+
+function cgweb123Fix4ControlRef(uid) {
+  return db.doc(`${ROOT}/${uid}/join_batch_control/current`);
+}
+
+function cgweb123Fix4ItemRef(uid, batchId, index) {
+  return cgweb123Fix4BatchRef(uid, batchId)
+    .collection("items")
+    .doc(String(index).padStart(6, "0"));
+}
+
+function cgweb123Fix4ReviewRef(uid, batchId, index) {
+  return cgweb123Fix4BatchRef(uid, batchId)
+    .collection("reviews")
+    .doc(String(index).padStart(6, "0"));
+}
+
+function cgweb123Fix4CleanTask(raw, index) {
+  const task = raw && typeof raw === "object" ? raw : {};
+  const destinationId = String(task.destination_id || "").trim();
+  const sourceIds = Array.isArray(task.source_ids)
+    ? [...new Set(task.source_ids.map(v => String(v || "").trim()).filter(Boolean))]
+    : [];
+  const groupKey = String(task.group_key || "").trim();
+
+  if (
+    !destinationId ||
+    destinationId.includes("/") ||
+    sourceIds.length < 1 ||
+    sourceIds.length > 11 ||
+    sourceIds.includes(destinationId)
+  ) {
+    throw Object.assign(
+      new Error(`FIX4 : tâche ${index} invalide.`),
+      {status: 400}
+    );
+  }
+
+  return {
+    index,
+    group_key: groupKey || `queue:${index}`,
+    day: String(task.day || ""),
+    destination_id: destinationId,
+    source_ids: sourceIds,
+    segment_count: Math.max(
+      2,
+      Number(task.segment_count || (sourceIds.length + 1))
+    ),
+    timeout_requeues: Number(task.timeout_requeues || 0)
+  };
+}
+
+function cgweb123Fix4BatchId(sourceBatchId) {
+  const seed = String(sourceBatchId || "").trim();
+
+  if (!seed) {
+    return `srv_${crypto.randomUUID()}`;
+  }
+
+  return (
+    "srv_" +
+    crypto
+      .createHash("sha256")
+      .update(seed)
+      .digest("hex")
+      .slice(0, 24)
+  );
+}
+
+function cgweb123Fix4PublicBatch(id, row) {
+  if (!row) {
+    return {
+      ok: false,
+      service: CGWEB123_FIX4_VERSION,
+      found: false
+    };
+  }
+
+  return {
+    ok: true,
+    service: CGWEB123_FIX4_VERSION,
+    found: true,
+    batch_id: id,
+    source_batch_id: row.source_batch_id || null,
+    status: row.status || "UNKNOWN",
+    desired_status: row.desired_status || "RUNNING",
+    cursor: Number(row.cursor || 0),
+    total: Number(row.total || 0),
+    success_count: Number(row.success_count || 0),
+    failure_count: Number(row.failure_count || 0),
+    recovered_count: Number(row.recovered_count || 0),
+    review_count: Number(row.review_count || 0),
+    prior_success_count: Number(row.prior_success_count || 0),
+    prior_failure_count: Number(row.prior_failure_count || 0),
+    current_phase: row.current_phase || "IDLE",
+    current_group_key: row.current_group_key || "",
+    current_index:
+      row.current_index == null ? null : Number(row.current_index),
+    last_group_key: row.last_group_key || "",
+    last_error: row.last_error || "",
+    last_outcome: row.last_outcome || "",
+    created_at_ms: Number(row.created_at_ms || 0),
+    updated_at_ms: Number(row.updated_at_ms || 0),
+    completed_at_ms: Number(row.completed_at_ms || 0) || null,
+    source_cursor: Number(row.source_cursor || 0),
+    source_phase: row.source_phase || ""
+  };
+}
+
+async function cgweb123Fix4ResolveBatchId(uid, requested = "") {
+  const explicit = String(requested || "").trim();
+  if (explicit) return explicit;
+
+  const snap = await cgweb123Fix4ControlRef(uid).get();
+  if (!snap.exists) return "";
+
+  return String(snap.data()?.batch_id || "").trim();
+}
+
+async function cgweb123Fix4BatchStatus(uid, requested = "") {
+  const batchId = await cgweb123Fix4ResolveBatchId(uid, requested);
+
+  if (!batchId) {
+    return {
+      ok: true,
+      service: CGWEB123_FIX4_VERSION,
+      found: false
+    };
+  }
+
+  const snap = await cgweb123Fix4BatchRef(uid, batchId).get();
+
+  if (!snap.exists) {
+    return {
+      ok: true,
+      service: CGWEB123_FIX4_VERSION,
+      found: false,
+      batch_id: batchId
+    };
+  }
+
+  return cgweb123Fix4PublicBatch(
+    batchId,
+    snap.data() || {}
+  );
+}
+
+async function cgweb123Fix4Enqueue(uid, batchId, delaySeconds = 0) {
+  const queue = getFunctions().taskQueue(
+    `locations/${REGION}/functions/${CGWEB123_FIX4_TASK_FUNCTION}`
+  );
+
+  await queue.enqueue(
+    {
+      uid: String(uid),
+      batch_id: String(batchId)
+    },
+    {
+      scheduleDelaySeconds: Math.max(0, Number(delaySeconds) || 0),
+      dispatchDeadlineSeconds: 15 * 60
+    }
+  );
+}
+
+async function cgweb123Fix4ImportBatch(uid, body) {
+  const state =
+    body?.state && typeof body.state === "object"
+      ? body.state
+      : body;
+
+  const queue = Array.isArray(state?.queue)
+    ? state.queue
+    : [];
+
+  const total = queue.length;
+  const cursor = Math.max(
+    0,
+    Math.min(total, Math.floor(Number(state?.cursor || 0)))
+  );
+
+  const sourceBatchId = String(
+    state?.batch_id ||
+    body?.source_batch_id ||
+    ""
+  ).trim();
+
+  if (!sourceBatchId) {
+    throw Object.assign(
+      new Error("FIX4 : batch_id source absent."),
+      {status: 400}
+    );
+  }
+
+  if (!total || total > CGWEB123_FIX4_MAX_QUEUE) {
+    throw Object.assign(
+      new Error(
+        `FIX4 : file invalide (${total}); maximum ${CGWEB123_FIX4_MAX_QUEUE}.`
+      ),
+      {status: 400}
+    );
+  }
+
+  const serverBatchId =
+    cgweb123Fix4BatchId(sourceBatchId);
+
+  const batchRef =
+    cgweb123Fix4BatchRef(uid, serverBatchId);
+
+  const existing = await batchRef.get();
+
+  if (existing.exists) {
+    const current = existing.data() || {};
+
+    if (
+      String(current.source_batch_id || "") !==
+      sourceBatchId
+    ) {
+      throw Object.assign(
+        new Error("FIX4 : collision de batch_id serveur."),
+        {status: 409}
+      );
+    }
+
+    if (
+      current.status !== "COMPLETE" &&
+      current.status !== "CANCELLED" &&
+      current.desired_status === "RUNNING"
+    ) {
+      await cgweb123Fix4Enqueue(
+        uid,
+        serverBatchId,
+        0
+      );
+    }
+
+    await cgweb123Fix4ControlRef(uid).set(
+      {
+        batch_id: serverBatchId,
+        source_batch_id: sourceBatchId,
+        updated_at_ms: Date.now()
+      },
+      {merge: true}
+    );
+
+    return cgweb123Fix4PublicBatch(
+      serverBatchId,
+      current
+    );
+  }
+
+  const now = Date.now();
+
+  const batchRow = {
+    version: 1,
+    build: CGWEB123_FIX4_VERSION,
+    source_batch_id: sourceBatchId,
+    status: "IMPORTING",
+    desired_status: "RUNNING",
+    cursor,
+    total,
+    success_count: Number(state?.success_count || 0),
+    failure_count: Number(state?.failure_count || 0),
+    recovered_count: Number(state?.recovered_count || 0),
+    review_count: 0,
+    prior_success_count: Number(state?.prior_success_count || 0),
+    prior_failure_count: Number(state?.prior_failure_count || 0),
+    source_cursor: cursor,
+    source_phase: String(state?.phase || ""),
+    source_current_group_key: String(state?.current_group_key || ""),
+    current_phase: "IMPORTING",
+    current_group_key: "",
+    current_index: null,
+    last_group_key: "",
+    last_error: "",
+    last_outcome: "",
+    created_at_ms: now,
+    updated_at_ms: now,
+    completed_at_ms: null,
+    worker_token: null,
+    worker_lease_until_ms: 0
+  };
+
+  await batchRef.set(batchRow);
+
+  for (
+    let start = cursor;
+    start < total;
+    start += CGWEB123_FIX4_ITEM_WRITE_CHUNK
+  ) {
+    const write = db.batch();
+    const end = Math.min(
+      total,
+      start + CGWEB123_FIX4_ITEM_WRITE_CHUNK
+    );
+
+    for (let i = start; i < end; i += 1) {
+      const task = cgweb123Fix4CleanTask(
+        queue[i],
+        i
+      );
+
+      write.set(
+        cgweb123Fix4ItemRef(
+          uid,
+          serverBatchId,
+          i
+        ),
+        {
+          ...task,
+          status: "QUEUED",
+          created_at_ms: now,
+          updated_at_ms: now
+        }
+      );
+    }
+
+    await write.commit();
+  }
+
+  await Promise.all([
+    batchRef.set(
+      {
+        status:
+          cursor >= total
+            ? "COMPLETE"
+            : "RUNNING",
+        desired_status:
+          cursor >= total
+            ? "COMPLETE"
+            : "RUNNING",
+        current_phase: "IDLE",
+        completed_at_ms:
+          cursor >= total
+            ? Date.now()
+            : null,
+        updated_at_ms: Date.now()
+      },
+      {merge: true}
+    ),
+
+    cgweb123Fix4ControlRef(uid).set(
+      {
+        batch_id: serverBatchId,
+        source_batch_id: sourceBatchId,
+        updated_at_ms: Date.now()
+      },
+      {merge: true}
+    )
+  ]);
+
+  if (cursor < total) {
+    await cgweb123Fix4Enqueue(
+      uid,
+      serverBatchId,
+      0
+    );
+  }
+
+  const snap = await batchRef.get();
+
+  return cgweb123Fix4PublicBatch(
+    serverBatchId,
+    snap.data() || batchRow
+  );
+}
+
+async function cgweb123Fix4PauseBatch(uid, requested) {
+  const batchId =
+    await cgweb123Fix4ResolveBatchId(
+      uid,
+      requested
+    );
+
+  if (!batchId) {
+    throw Object.assign(
+      new Error("FIX4 : aucun lot serveur."),
+      {status: 404}
+    );
+  }
+
+  await cgweb123Fix4BatchRef(uid, batchId).set(
+    {
+      desired_status: "PAUSED",
+      status: "PAUSING",
+      updated_at_ms: Date.now()
+    },
+    {merge: true}
+  );
+
+  return cgweb123Fix4BatchStatus(
+    uid,
+    batchId
+  );
+}
+
+async function cgweb123Fix4ResumeBatch(uid, requested) {
+  const batchId =
+    await cgweb123Fix4ResolveBatchId(
+      uid,
+      requested
+    );
+
+  if (!batchId) {
+    throw Object.assign(
+      new Error("FIX4 : aucun lot serveur."),
+      {status: 404}
+    );
+  }
+
+  const ref =
+    cgweb123Fix4BatchRef(uid, batchId);
+
+  const snap = await ref.get();
+
+  if (!snap.exists) {
+    throw Object.assign(
+      new Error("FIX4 : lot serveur introuvable."),
+      {status: 404}
+    );
+  }
+
+  const row = snap.data() || {};
+
+  if (
+    Number(row.cursor || 0) >=
+    Number(row.total || 0)
+  ) {
+    await ref.set(
+      {
+        status: "COMPLETE",
+        desired_status: "COMPLETE",
+        completed_at_ms: Number(
+          row.completed_at_ms || Date.now()
+        ),
+        updated_at_ms: Date.now()
+      },
+      {merge: true}
+    );
+
+    return cgweb123Fix4BatchStatus(
+      uid,
+      batchId
+    );
+  }
+
+  await ref.set(
+    {
+      desired_status: "RUNNING",
+      status: "RUNNING",
+      last_error: "",
+      updated_at_ms: Date.now()
+    },
+    {merge: true}
+  );
+
+  await cgweb123Fix4Enqueue(
+    uid,
+    batchId,
+    0
+  );
+
+  return cgweb123Fix4BatchStatus(
+    uid,
+    batchId
+  );
+}
+
+async function cgweb123Fix4BatchReviews(uid, requested) {
+  const batchId =
+    await cgweb123Fix4ResolveBatchId(
+      uid,
+      requested
+    );
+
+  if (!batchId) {
+    return {
+      ok: true,
+      service: CGWEB123_FIX4_VERSION,
+      batch_id: null,
+      rows: []
+    };
+  }
+
+  const snap =
+    await cgweb123Fix4BatchRef(uid, batchId)
+      .collection("reviews")
+      .orderBy("created_at_ms", "asc")
+      .limit(100)
+      .get();
+
+  return {
+    ok: true,
+    service: CGWEB123_FIX4_VERSION,
+    batch_id: batchId,
+    rows: snap.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...(docSnap.data() || {})
+    }))
+  };
+}
+
+async function cgweb123Fix4Presence(uid, task) {
+  const ids = [
+    String(task.destination_id),
+    ...task.source_ids.map(String)
+  ];
+
+  const refs = ids.map(id =>
+    db.doc(`${ROOT}/${uid}/activities/${id}`)
+  );
+
+  const snaps = await db.getAll(...refs);
+  const byId = new Map();
+
+  snaps.forEach((snap, i) => {
+    const row =
+      snap.exists &&
+      snap.data()?.deleted_at_ms == null
+        ? snap.data() || {}
+        : null;
+
+    byId.set(ids[i], row);
+  });
+
+  const destination =
+    byId.get(String(task.destination_id)) ||
+    null;
+
+  const sourcePresence =
+    task.source_ids.map(id =>
+      Boolean(byId.get(String(id)))
+    );
+
+  const joinedSources = Array.isArray(
+    destination?.join_source_activity_ids
+  )
+    ? destination.join_source_activity_ids.map(String)
+    : [];
+
+  return {
+    dest: Boolean(destination),
+    all: sourcePresence.every(Boolean),
+    none: sourcePresence.every(value => !value),
+    any: sourcePresence.some(Boolean),
+    source_presence: sourcePresence,
+    destination_join_matches:
+      task.source_ids.length > 0 &&
+      task.source_ids.every(id =>
+        joinedSources.includes(String(id))
+      )
+  };
+}
+
+function cgweb123Fix4Transient(error) {
+  const text = String(
+    error?.message ||
+    error?.code ||
+    error ||
+    ""
+  ).toLowerCase();
+
+  return [
+    "unavailable",
+    "deadline",
+    "timeout",
+    "temporar",
+    "resource-exhausted",
+    "429",
+    "502",
+    "503",
+    "504",
+    "econnreset",
+    "socket hang up",
+    "network",
+    "connection reset"
+  ].some(token => text.includes(token));
+}
+
+async function cgweb123Fix4Claim(
+  uid,
+  batchId,
+  token
+) {
+  const ref =
+    cgweb123Fix4BatchRef(uid, batchId);
+
+  const now = Date.now();
+
+  return db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+
+    if (!snap.exists) {
+      return {skip: "NOT_FOUND"};
+    }
+
+    const row = snap.data() || {};
+    const cursor = Number(row.cursor || 0);
+    const total = Number(row.total || 0);
+
+    if (
+      cursor >= total ||
+      row.status === "COMPLETE"
+    ) {
+      tx.set(
+        ref,
+        {
+          status: "COMPLETE",
+          desired_status: "COMPLETE",
+          completed_at_ms: Number(
+            row.completed_at_ms || now
+          ),
+          worker_token: null,
+          worker_lease_until_ms: 0,
+          current_phase: "IDLE",
+          current_group_key: "",
+          current_index: null,
+          updated_at_ms: now
+        },
+        {merge: true}
+      );
+
+      return {skip: "COMPLETE"};
+    }
+
+    if (row.desired_status === "PAUSED") {
+      tx.set(
+        ref,
+        {
+          status: "PAUSED",
+          worker_token: null,
+          worker_lease_until_ms: 0,
+          current_phase: "IDLE",
+          updated_at_ms: now
+        },
+        {merge: true}
+      );
+
+      return {skip: "PAUSED"};
+    }
+
+    const leaseUntil =
+      Number(row.worker_lease_until_ms || 0);
+
+    const owner =
+      String(row.worker_token || "");
+
+    if (
+      leaseUntil > now &&
+      owner &&
+      owner !== token
+    ) {
+      return {skip: "LEASED"};
+    }
+
+    tx.set(
+      ref,
+      {
+        status: "RUNNING",
+        desired_status: "RUNNING",
+        worker_token: token,
+        worker_lease_until_ms:
+          now + CGWEB123_FIX4_LEASE_MS,
+        current_phase: "CLAIMED",
+        current_index: cursor,
+        updated_at_ms: now
+      },
+      {merge: true}
+    );
+
+    return {
+      skip: null,
+      row: {
+        ...row,
+        cursor,
+        total
+      }
+    };
+  });
+}
+
+async function cgweb123Fix4CommitOutcome(
+  uid,
+  batchId,
+  token,
+  index,
+  task,
+  outcome
+) {
+  const ref =
+    cgweb123Fix4BatchRef(uid, batchId);
+
+  const itemRef =
+    cgweb123Fix4ItemRef(
+      uid,
+      batchId,
+      index
+    );
+
+  const reviewRef =
+    cgweb123Fix4ReviewRef(
+      uid,
+      batchId,
+      index
+    );
+
+  const now = Date.now();
+
+  return db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+
+    if (!snap.exists) {
+      return {
+        advanced: false,
+        done: true,
+        desired: "CANCELLED"
+      };
+    }
+
+    const row = snap.data() || {};
+    const current = Number(row.cursor || 0);
+
+    if (current !== index) {
+      return {
+        advanced: false,
+        done:
+          current >= Number(row.total || 0),
+        desired:
+          row.desired_status || "RUNNING"
+      };
+    }
+
+    if (
+      row.worker_token &&
+      String(row.worker_token) !==
+      String(token)
+    ) {
+      return {
+        advanced: false,
+        done: false,
+        desired:
+          row.desired_status || "RUNNING"
+      };
+    }
+
+    const next = index + 1;
+    const total = Number(row.total || 0);
+    const done = next >= total;
+
+    const desired =
+      row.desired_status === "PAUSED"
+        ? "PAUSED"
+        : "RUNNING";
+
+    const patch = {
+      cursor: next,
+      status: done
+        ? "COMPLETE"
+        : (
+            desired === "PAUSED"
+              ? "PAUSED"
+              : "RUNNING"
+          ),
+      desired_status:
+        done ? "COMPLETE" : desired,
+      current_phase: "IDLE",
+      current_group_key: "",
+      current_index: null,
+      last_group_key:
+        task.group_key || "",
+      last_error:
+        String(outcome.error || ""),
+      last_outcome:
+        String(outcome.type || ""),
+      worker_token: null,
+      worker_lease_until_ms: 0,
+      updated_at_ms: now,
+      completed_at_ms:
+        done ? now : null
+    };
+
+    if (outcome.type === "SUCCESS") {
+      patch.success_count =
+        Number(row.success_count || 0) + 1;
+    } else if (
+      outcome.type === "RECOVERED_SUCCESS"
+    ) {
+      patch.success_count =
+        Number(row.success_count || 0) + 1;
+
+      patch.recovered_count =
+        Number(row.recovered_count || 0) + 1;
+    } else if (
+      outcome.type === "REVIEW"
+    ) {
+      patch.review_count =
+        Number(row.review_count || 0) + 1;
+    } else {
+      patch.failure_count =
+        Number(row.failure_count || 0) + 1;
+    }
+
+    tx.set(ref, patch, {merge: true});
+
+    tx.set(
+      itemRef,
+      {
+        status: outcome.type,
+        outcome: outcome.type,
+        error: String(outcome.error || ""),
+        presence: outcome.presence || null,
+        finished_at_ms: now,
+        updated_at_ms: now
+      },
+      {merge: true}
+    );
+
+    if (outcome.type === "REVIEW") {
+      tx.set(
+        reviewRef,
+        {
+          index,
+          group_key:
+            task.group_key || "",
+          destination_id:
+            task.destination_id,
+          source_ids:
+            task.source_ids,
+          reason:
+            String(
+              outcome.error ||
+              "État ambigu"
+            ),
+          presence:
+            outcome.presence || null,
+          created_at_ms: now,
+          status: "OPEN",
+          version:
+            CGWEB123_FIX4_VERSION
+        },
+        {merge: true}
+      );
+    }
+
+    return {
+      advanced: true,
+      done,
+      desired
+    };
+  });
+}
+
+async function cgweb123Fix4ReleaseForRetry(
+  uid,
+  batchId,
+  token,
+  index,
+  task,
+  error
+) {
+  const ref =
+    cgweb123Fix4BatchRef(uid, batchId);
+
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+
+    if (!snap.exists) return;
+
+    const row = snap.data() || {};
+
+    if (
+      Number(row.cursor || 0) !== index ||
+      String(row.worker_token || "") !==
+        String(token)
+    ) {
+      return;
+    }
+
+    tx.set(
+      ref,
+      {
+        status: "RETRYING",
+        current_phase: "RETRYING",
+        current_group_key:
+          task.group_key || "",
+        last_error:
+          error?.message ||
+          String(error),
+        worker_token: null,
+        worker_lease_until_ms: 0,
+        updated_at_ms: Date.now()
+      },
+      {merge: true}
+    );
+  });
+}
+
+async function cgweb123Fix4ProcessOne(
+  uid,
+  batchId
+) {
+  if (!cgweb123Fix4JoinInternals) {
+    throw new Error(
+      "FIX4 : primitives FIT_JOIN_REPLACE001 non initialisées."
+    );
+  }
+
+  const token = crypto.randomUUID();
+
+  const claim =
+    await cgweb123Fix4Claim(
+      uid,
+      batchId,
+      token
+    );
+
+  if (claim.skip) {
+    return {
+      ok: true,
+      skipped: claim.skip
+    };
+  }
+
+  const batch = claim.row;
+  const index = Number(batch.cursor || 0);
+
+  const itemRef =
+    cgweb123Fix4ItemRef(
+      uid,
+      batchId,
+      index
+    );
+
+  const itemSnap =
+    await itemRef.get();
+
+  if (!itemSnap.exists) {
+    const ghostTask = {
+      group_key: `missing:${index}`,
+      destination_id: "",
+      source_ids: []
+    };
+
+    const committed =
+      await cgweb123Fix4CommitOutcome(
+        uid,
+        batchId,
+        token,
+        index,
+        ghostTask,
+        {
+          type: "FAILURE",
+          error:
+            `FIX4 : item Firestore ${index} absent.`
+        }
+      );
+
+    if (
+      !committed.done &&
+      committed.desired === "RUNNING"
+    ) {
+      await cgweb123Fix4Enqueue(
+        uid,
+        batchId,
+        0
+      );
+    }
+
+    return {
+      ok: true,
+      outcome: "FAILURE_MISSING_ITEM"
+    };
+  }
+
+  const task = itemSnap.data() || {};
+
+  await Promise.all([
+    cgweb123Fix4BatchRef(
+      uid,
+      batchId
+    ).set(
+      {
+        current_phase: "RECOVERY_CHECK",
+        current_group_key:
+          task.group_key || "",
+        current_index: index,
+        updated_at_ms: Date.now()
+      },
+      {merge: true}
+    ),
+
+    itemRef.set(
+      {
+        status: "RUNNING",
+        started_at_ms: Date.now(),
+        updated_at_ms: Date.now()
+      },
+      {merge: true}
+    )
+  ]);
+
+  let presence =
+    await cgweb123Fix4Presence(
+      uid,
+      task
+    );
+
+  if (
+    presence.dest &&
+    presence.none
+  ) {
+    const committed =
+      await cgweb123Fix4CommitOutcome(
+        uid,
+        batchId,
+        token,
+        index,
+        task,
+        {
+          type: "RECOVERED_SUCCESS",
+          error: "",
+          presence
+        }
+      );
+
+    if (
+      !committed.done &&
+      committed.desired === "RUNNING"
+    ) {
+      await cgweb123Fix4Enqueue(
+        uid,
+        batchId,
+        0
+      );
+    }
+
+    return {
+      ok: true,
+      outcome: "RECOVERED_SUCCESS"
+    };
+  }
+
+  if (
+    !(
+      presence.dest &&
+      presence.all &&
+      !presence.destination_join_matches
+    )
+  ) {
+    const committed =
+      await cgweb123Fix4CommitOutcome(
+        uid,
+        batchId,
+        token,
+        index,
+        task,
+        {
+          type: "REVIEW",
+          error:
+            "CRASH_SAFE_CURSOR001 · état partiel ou ambigu : aucune nouvelle mutation appliquée.",
+          presence
+        }
+      );
+
+    if (
+      !committed.done &&
+      committed.desired === "RUNNING"
+    ) {
+      await cgweb123Fix4Enqueue(
+        uid,
+        batchId,
+        0
+      );
+    }
+
+    return {
+      ok: true,
+      outcome: "REVIEW"
+    };
+  }
+
+  try {
+    await cgweb123Fix4BatchRef(
+      uid,
+      batchId
+    ).set(
+      {
+        current_phase: "PLANNING",
+        current_group_key:
+          task.group_key || "",
+        updated_at_ms: Date.now()
+      },
+      {merge: true}
+    );
+
+    const planMeta =
+      await cgweb123Fix4JoinInternals
+        .buildPlan(
+          uid,
+          task.destination_id,
+          task.source_ids,
+          {includeRoute: false}
+        );
+
+    await cgweb123Fix4BatchRef(
+      uid,
+      batchId
+    ).set(
+      {
+        current_phase: "EXECUTING",
+        updated_at_ms: Date.now()
+      },
+      {merge: true}
+    );
+
+    const planExecute =
+      await cgweb123Fix4JoinInternals
+        .buildPlan(
+          uid,
+          task.destination_id,
+          task.source_ids,
+          {includeRoute: true}
+        );
+
+    if (
+      !planMeta?.planToken ||
+      planMeta.planToken !==
+        planExecute?.planToken
+    ) {
+      throw Object.assign(
+        new Error(
+          "FIX4 : le plan a changé entre PLAN et EXECUTE."
+        ),
+        {status: 409}
+      );
+    }
+
+    const result =
+      await cgweb123Fix4JoinInternals
+        .executeJoin(
+          uid,
+          planExecute
+        );
+
+    if (!result?.ok) {
+      throw new Error(
+        result?.error ||
+        "FIX4 : exécution JOIN non validée."
+      );
+    }
+
+    const committed =
+      await cgweb123Fix4CommitOutcome(
+        uid,
+        batchId,
+        token,
+        index,
+        task,
+        {
+          type: "SUCCESS",
+          error: ""
+        }
+      );
+
+    if (
+      !committed.done &&
+      committed.desired === "RUNNING"
+    ) {
+      await cgweb123Fix4Enqueue(
+        uid,
+        batchId,
+        0
+      );
+    }
+
+    return {
+      ok: true,
+      outcome: "SUCCESS"
+    };
+  } catch (error) {
+    presence =
+      await cgweb123Fix4Presence(
+        uid,
+        task
+      );
+
+    if (
+      presence.dest &&
+      presence.none
+    ) {
+      const committed =
+        await cgweb123Fix4CommitOutcome(
+          uid,
+          batchId,
+          token,
+          index,
+          task,
+          {
+            type: "RECOVERED_SUCCESS",
+            error:
+              error?.message ||
+              String(error),
+            presence
+          }
+        );
+
+      if (
+        !committed.done &&
+        committed.desired === "RUNNING"
+      ) {
+        await cgweb123Fix4Enqueue(
+          uid,
+          batchId,
+          0
+        );
+      }
+
+      return {
+        ok: true,
+        outcome:
+          "RECOVERED_SUCCESS_AFTER_ERROR"
+      };
+    }
+
+    if (
+      !(
+        presence.dest &&
+        presence.all &&
+        !presence.destination_join_matches
+      )
+    ) {
+      const committed =
+        await cgweb123Fix4CommitOutcome(
+          uid,
+          batchId,
+          token,
+          index,
+          task,
+          {
+            type: "REVIEW",
+            error:
+              `CRASH_SAFE_CURSOR001 · état ambigu après erreur EXECUTE : ${error?.message || error}`,
+            presence
+          }
+        );
+
+      if (
+        !committed.done &&
+        committed.desired === "RUNNING"
+      ) {
+        await cgweb123Fix4Enqueue(
+          uid,
+          batchId,
+          0
+        );
+      }
+
+      return {
+        ok: true,
+        outcome: "REVIEW_AFTER_ERROR"
+      };
+    }
+
+    if (
+      cgweb123Fix4Transient(error)
+    ) {
+      await cgweb123Fix4ReleaseForRetry(
+        uid,
+        batchId,
+        token,
+        index,
+        task,
+        error
+      );
+
+      /*
+       * SERVER_AUTORESUME001 :
+       * Cloud Tasks réessaie automatiquement.
+       */
+      throw error;
+    }
+
+    const committed =
+      await cgweb123Fix4CommitOutcome(
+        uid,
+        batchId,
+        token,
+        index,
+        task,
+        {
+          type: "FAILURE",
+          error:
+            error?.message ||
+            String(error),
+          presence
+        }
+      );
+
+    if (
+      !committed.done &&
+      committed.desired === "RUNNING"
+    ) {
+      await cgweb123Fix4Enqueue(
+        uid,
+        batchId,
+        0
+      );
+    }
+
+    return {
+      ok: true,
+      outcome: "FAILURE_CONTINUE"
+    };
+  }
+}
+
+function createServerJoinBatchWorker() {
+  return onTaskDispatched(
+    {
+      region: REGION,
+      timeoutSeconds: 900,
+      memory: "1GiB",
+      retryConfig: {
+        maxAttempts: 100,
+        minBackoffSeconds: 5,
+        maxBackoffSeconds: 60,
+        maxDoublings: 5
+      },
+      rateLimits: {
+        maxConcurrentDispatches: 1,
+        maxDispatchesPerSecond: 1
+      }
+    },
+
+    async request => {
+      const uid =
+        String(
+          request?.data?.uid || ""
+        ).trim();
+
+      const batchId =
+        String(
+          request?.data?.batch_id || ""
+        ).trim();
+
+      if (!uid || !batchId) {
+        throw new Error(
+          "FIX4 : uid/batch_id manquant dans Cloud Tasks."
+        );
+      }
+
+      await cgweb123Fix4ProcessOne(
+        uid,
+        batchId
+      );
+    }
+  );
+}
+
+/* CGWEB123_FIX4_SERVER_BACKEND_END */
+
+
+module.exports = {createFitVault, createServerJoinBatchWorker};
 
 /* CGWEB121_FIX8_FIX7_BACKEND_START
    ABSOLUTE_TARGET_TIME001
