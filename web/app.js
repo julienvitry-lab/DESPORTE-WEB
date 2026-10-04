@@ -1690,7 +1690,8 @@ onAuthStateChanged(auth, async (user) => {
     );
     return;
   }
-ui.authState.textContent = "Non connecté";
+/* CGWEB125 FIX1 · AUTH_BADGE_CORRECTION001 */
+  ui.authState.textContent = "Connecté";
   ui.authState.className = "pill ok auth-pill";
   ui.loginButton.classList.add("hidden");
   ui.logoutButton.classList.remove("hidden");
@@ -15110,7 +15111,10 @@ function renderUnifiedConnectionBadgeWeb055() {
   const firestoreOk = Boolean(web055FirestoreConnected);
   const stravaOk = Boolean(webStravaConnected);
   const networkOk = navigator.onLine !== false;
-  const connected = googleOk && firestoreOk && stravaOk && networkOk;
+  /* CGWEB125 FIX1 · AUTH_BADGE_CORRECTION001
+   Le badge principal représente SPORT Web (Google + Firestore + réseau).
+   Strava reste une intégration optionnelle avec son propre badge. */
+  const connected = googleOk && firestoreOk && networkOk;
 
   ui.authState.textContent = connected ? "Connecté" : "Non connecté";
   ui.authState.className = connected
@@ -71279,3 +71283,21 @@ console.info(
 );
 
 /* CGWEB125_END */
+/* CGWEB125_FIX1_START
+   AUTH_BADGE_CORRECTION001
+   COMPLETED_BATCH_FREEZE001
+   GPS_INDEX_UNLOCK001
+*/
+
+window.CGWEB125_FIX1_STATUS = () => ({
+  build: "CGWEB125_FIX1",
+  auth_badge_correction: "AUTH_BADGE_CORRECTION001",
+  completed_batch_freeze: "COMPLETED_BATCH_FREEZE001",
+  gps_index_unlock: "GPS_INDEX_UNLOCK001"
+});
+
+console.info(
+  "CGWEB125 FIX1 actif · AUTH_BADGE_CORRECTION001 / COMPLETED_BATCH_FREEZE001 / GPS_INDEX_UNLOCK001"
+);
+
+/* CGWEB125_FIX1_END */

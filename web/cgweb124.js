@@ -1605,3 +1605,126 @@ window.CGWEB124_STATUS = () => {
 console.info(
   "CGWEB124 actif · GPS_MARKER_CATALOG001 / MULTIPASS_DETECTOR001 / HYSTERESIS_REARM001 / SEGMENT_PROXIMITY001 / HISTORICAL_MARKER_INDEX001 / INCREMENTAL_MARKER_REFRESH001"
 );
+/* CGWEB125_FIX1_GPS_INDEX_UNLOCK_START
+   GPS_INDEX_UNLOCK001
+*/
+
+const cgweb125Fix1BaseGpsJoinBusy = cg124JoinBusy;
+const cgweb125Fix1BaseGpsLockedReason = cg124IndexLockedReason;
+const cgweb125Fix1BaseGpsRender = cg124Render;
+
+function cgweb125Fix1ServerJoinStatus() {
+  try {
+    return window.CGWEB123_FIX4_STATUS?.() || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function cgweb125Fix1ServerStatusName() {
+  return String(
+    cgweb125Fix1ServerJoinStatus()?.batch_status || ""
+  ).toUpperCase();
+}
+
+cg124JoinBusy = function() {
+  const server = cgweb125Fix1ServerJoinStatus();
+  const status = String(server?.batch_status || "").toUpperCase();
+
+  if (server?.completed === true || status === "COMPLETE") {
+    return false;
+  }
+
+  if (
+    ["IMPORTING", "RUNNING", "RETRYING", "PAUSING", "PAUSED", "READY"]
+      .includes(status)
+  ) {
+    return true;
+  }
+
+  const local = cg124JoinStatus();
+  const localStatus = String(local?.batch_status || "").toUpperCase();
+
+  if (
+    localStatus === "SERVER_HANDOFF" &&
+    server?.server_batch_id &&
+    !status
+  ) {
+    return true;
+  }
+
+  return cgweb125Fix1BaseGpsJoinBusy();
+};
+
+cg124IndexLockedReason = function() {
+  const server = cgweb125Fix1ServerJoinStatus();
+  const status = String(server?.batch_status || "").toUpperCase();
+
+  if (server?.completed === true || status === "COMPLETE") {
+    return "";
+  }
+
+  if (cg124JoinBusy()) {
+    if (status) {
+      return (
+        "Indexation historique verrouillée pendant le lot serveur de jonctions" +
+        ` (${status}).`
+      );
+    }
+
+    if (server?.server_batch_id) {
+      return "Vérification du lot serveur de jonctions avant déverrouillage GPS…";
+    }
+  }
+
+  return cgweb125Fix1BaseGpsLockedReason();
+};
+
+cg124Render = function() {
+  cgweb125Fix1BaseGpsRender();
+
+  const server = cgweb125Fix1ServerJoinStatus();
+  const complete =
+    server?.completed === true ||
+    String(server?.batch_status || "").toUpperCase() === "COMPLETE";
+
+  if (!complete) return;
+
+  const state = cg124ReadHistory();
+  const meta = document.getElementById("cg124IndexMeta");
+
+  if (meta && !state) {
+    meta.textContent =
+      "Jonctions serveur terminées · indexation GPS historique disponible.";
+  }
+
+  if (!state && !cg124HistoryRunning) {
+    cg124SetIndexStatus(
+      cg124Markers.size
+        ? "GPS_INDEX_UNLOCK001 · prêt à indexer l’historique."
+        : "GPS_INDEX_UNLOCK001 · ajoute au moins un repère GPS pour lancer l’indexation."
+    );
+  }
+};
+
+window.addEventListener(
+  "sport-server-join-batch-status",
+  () => queueMicrotask(() => cg124Render())
+);
+
+window.CGWEB124_GPS_INDEX_UNLOCK_STATUS = () => ({
+  build: "CGWEB125_FIX1",
+  marker: "GPS_INDEX_UNLOCK001",
+  server_status: cgweb125Fix1ServerStatusName() || null,
+  join_busy: cg124JoinBusy(),
+  index_unlocked: !cg124JoinBusy(),
+  marker_count: cg124Markers.size
+});
+
+queueMicrotask(() => cg124Render());
+
+console.info(
+  "CGWEB125 FIX1 · GPS_INDEX_UNLOCK001 actif"
+);
+
+/* CGWEB125_FIX1_GPS_INDEX_UNLOCK_END */

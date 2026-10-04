@@ -932,3 +932,142 @@ console.info(
 );
 
 /* CGWEB123_FIX4_CLIENT_END */
+/* CGWEB125_FIX1_COMPLETED_BATCH_FREEZE_START
+   COMPLETED_BATCH_FREEZE001
+*/
+
+let cgweb125Fix1BatchFrozen = false;
+let cgweb125Fix1BatchSnapshot = null;
+
+function cgweb125Fix1PublishServerBatch(row) {
+  if (row?.found) {
+    window.CGWEB123_FIX4_LAST_BATCH = {...row};
+  } else if (!cgweb125Fix1BatchSnapshot) {
+    window.CGWEB123_FIX4_LAST_BATCH = null;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(
+      "sport-server-join-batch-status",
+      {detail: window.CGWEB123_FIX4_LAST_BATCH}
+    )
+  );
+}
+
+function cgweb125Fix1BatchIsComplete(row) {
+  return Boolean(
+    row?.found &&
+    String(row.status || "").toUpperCase() === "COMPLETE" &&
+    Number(row.cursor || 0) >= Number(row.total || 0)
+  );
+}
+
+function cgweb125Fix1FreezeCompletedBatch(row) {
+  if (!cgweb125Fix1BatchIsComplete(row)) return false;
+
+  cgweb125Fix1BatchFrozen = true;
+  cgweb125Fix1BatchSnapshot = {...row};
+  window.CGWEB123_FIX4_LAST_BATCH = {...row};
+
+  if (cgweb123Fix4PollTimer) {
+    clearInterval(cgweb123Fix4PollTimer);
+    cgweb123Fix4PollTimer = null;
+  }
+
+  const {panel, start, resume, pause} = cgweb123Fix4Nodes();
+
+  if (panel) {
+    panel.dataset.cgweb123Fix4Completed = "true";
+
+    const title = panel.querySelector("strong");
+    if (title) {
+      title.textContent = "Fusion en masse · serveur · TERMINÉE";
+    }
+
+    const description = title?.parentElement?.querySelector(".muted");
+    if (description) {
+      description.textContent =
+        "Lot serveur terminé et figé · aucun polling périodique supplémentaire.";
+    }
+  }
+
+  if (start) {
+    start.textContent = "Lot serveur terminé";
+    start.disabled = true;
+  }
+
+  if (resume) resume.disabled = true;
+  if (pause) pause.disabled = true;
+
+  cgweb125Fix1PublishServerBatch(row);
+  return true;
+}
+
+const cgweb125Fix1BaseRender = cgweb123Fix4Render;
+
+cgweb123Fix4Render = function(row = null) {
+  const effective =
+    cgweb125Fix1BatchFrozen && cgweb125Fix1BatchSnapshot
+      ? cgweb125Fix1BatchSnapshot
+      : row;
+
+  cgweb125Fix1BaseRender(effective);
+  cgweb125Fix1PublishServerBatch(effective);
+  cgweb125Fix1FreezeCompletedBatch(effective);
+};
+
+const cgweb125Fix1BasePollOnce = cgweb123Fix4PollOnce;
+
+cgweb123Fix4PollOnce = async function() {
+  if (cgweb125Fix1BatchFrozen && cgweb125Fix1BatchSnapshot) {
+    cgweb123Fix4Render(cgweb125Fix1BatchSnapshot);
+    return cgweb125Fix1BatchSnapshot;
+  }
+
+  return cgweb125Fix1BasePollOnce();
+};
+
+const cgweb125Fix1BaseStartPolling = cgweb123Fix4StartPolling;
+
+cgweb123Fix4StartPolling = function() {
+  if (cgweb125Fix1BatchFrozen) return;
+  return cgweb125Fix1BaseStartPolling();
+};
+
+window.CGWEB123_FIX4_STATUS = function() {
+  const row =
+    cgweb125Fix1BatchSnapshot ||
+    window.CGWEB123_FIX4_LAST_BATCH ||
+    null;
+
+  return {
+    build: "CGWEB123_FIX4_CGWEB125_FIX1",
+    server_batch_orchestrator: "SERVER_BATCH_ORCHESTRATOR001",
+    firestore_queue: "FIRESTORE_QUEUE001",
+    server_autoresume: "SERVER_AUTORESUME001",
+    crash_safe_cursor: "CRASH_SAFE_CURSOR001",
+    client_progress_only: "CLIENT_PROGRESS_ONLY001",
+    completed_batch_freeze: "COMPLETED_BATCH_FREEZE001",
+    server_batch_id:
+      String(row?.batch_id || cgweb123Fix4ServerBatchId || "") || null,
+    found: Boolean(row?.found),
+    batch_status: row?.status || null,
+    cursor: Number(row?.cursor || 0),
+    total: Number(row?.total || 0),
+    success_count: Number(row?.success_count || 0),
+    failure_count: Number(row?.failure_count || 0),
+    review_count: Number(row?.review_count || 0),
+    recovered_count: Number(row?.recovered_count || 0),
+    completed: cgweb125Fix1BatchIsComplete(row),
+    frozen: cgweb125Fix1BatchFrozen
+  };
+};
+
+window.CGWEB123_FIX4_COMPLETED = () =>
+  Boolean(window.CGWEB123_FIX4_STATUS?.()?.completed);
+
+console.info(
+  "CGWEB125 FIX1 · COMPLETED_BATCH_FREEZE001 actif"
+);
+
+/* CGWEB125_FIX1_COMPLETED_BATCH_FREEZE_END */
