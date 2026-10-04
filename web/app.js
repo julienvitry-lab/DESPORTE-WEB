@@ -70375,3 +70375,610 @@ console.info(
 );
 
 /* CGWEB123_FIX3_FIX1_END */
+
+/* CGWEB123_FIX3_FIX2_START
+   LEASE_SELF_HEAL001 / GHOST_RUNNING_REPAIR001 / WAKE_AUTORESUME001
+   TRANSIENT_BACKOFF001 / USER_PAUSE_RESPECT001
+
+   IMPORTANT :
+   - conserve volontairement le stockage SPORT_CGWEB123_FIX3_FIX1 pour reprendre
+     le lot existant sans reconstruction ni perte de curseur ;
+   - ne modifie pas FIT_JOIN_REPLACE001 ;
+   - ne relance jamais une pause demandée explicitement par l'utilisateur.
+*/
+const CGWEB123_FIX3_FIX2_VERSION = "CGWEB123_FIX3_FIX2";
+const CGWEB123_FIX3_FIX2_LEASE_TTL_MS = 5 * 60 * 1000;
+const CGWEB123_FIX3_FIX2_HEARTBEAT_MS = 15 * 1000;
+const CGWEB123_FIX3_FIX2_WATCHDOG_MS = 12 * 1000;
+const CGWEB123_FIX3_FIX2_MAX_TRANSIENT_RETRIES = 20;
+
+function cgweb123Fix3Fix2UserPause() {
+  return cgweb123Fix3Fix1Read("USER_PAUSE", null);
+}
+
+function cgweb123Fix3Fix2UserPauseActive(state = cgweb123Fix3Fix1State()) {
+  const pause = cgweb123Fix3Fix2UserPause();
+  return Boolean(
+    state?.batch_id &&
+    pause?.requested === true &&
+    pause?.batch_id === state.batch_id
+  );
+}
+
+function cgweb123Fix3Fix2ClearUserPause() {
+  cgweb123Fix3Fix1RemoveKey(
+    cgweb123Fix3Fix1Key("USER_PAUSE")
+  );
+}
+
+function cgweb123Fix3Fix2RequestUserPause() {
+  const state = cgweb123Fix3Fix1State();
+  if (!state?.batch_id) return;
+
+  cgweb123Fix3Fix1Write("USER_PAUSE", {
+    requested: true,
+    batch_id: state.batch_id,
+    requested_at_ms: Date.now()
+  });
+
+  cgweb123Fix3Fix1Audit("USER_PAUSE_REQUESTED", {
+    batch_id: state.batch_id,
+    cursor: Number(state.cursor || 0),
+    message: "Pause explicite utilisateur : aucune auto-reprise ne sera déclenchée."
+  });
+}
+
+function cgweb123Fix3Fix2OtherActiveLease(batchId = "") {
+  const lease = cgweb123Fix3Fix1Lease();
+
+  return Boolean(
+    cgweb123Fix3Fix1LeaseActive(lease) &&
+    (
+      lease.owner_id !== cgweb123Fix3Fix1Runtime.ownerId ||
+      (batchId && lease.batch_id !== batchId)
+    )
+  );
+}
+
+function cgweb123Fix3Fix2EnsureLease(batchId) {
+  if (!batchId) return false;
+
+  const now = Date.now();
+  const existing = cgweb123Fix3Fix1Lease();
+
+  if (
+    cgweb123Fix3Fix1LeaseActive(existing) &&
+    (
+      existing.owner_id !== cgweb123Fix3Fix1Runtime.ownerId ||
+      existing.batch_id !== batchId
+    )
+  ) {
+    return false;
+  }
+
+  const candidate = {
+    version: 2,
+    owner_id: cgweb123Fix3Fix1Runtime.ownerId,
+    batch_id: batchId,
+    acquired_at_ms:
+      existing?.owner_id === cgweb123Fix3Fix1Runtime.ownerId &&
+      existing?.batch_id === batchId
+        ? Number(existing.acquired_at_ms || now)
+        : now,
+    renewed_at_ms: now,
+    expires_at_ms: now + CGWEB123_FIX3_FIX2_LEASE_TTL_MS,
+    self_heal_count:
+      Number(existing?.self_heal_count || 0) +
+      (
+        existing && Number(existing.expires_at_ms || 0) <= now
+          ? 1
+          : 0
+      )
+  };
+
+  cgweb123Fix3Fix1Write("LEASE", candidate);
+
+  const check = cgweb123Fix3Fix1Lease();
+
+  return Boolean(
+    check?.owner_id === cgweb123Fix3Fix1Runtime.ownerId &&
+    check?.batch_id === batchId &&
+    Number(check?.expires_at_ms || 0) > Date.now()
+  );
+}
+
+/* LEASE_SELF_HEAL001 */
+cgweb123Fix3Fix1RenewLease = function(batchId) {
+  return cgweb123Fix3Fix2EnsureLease(batchId);
+};
+
+cgweb123Fix3Fix1AcquireLease = function(batchId) {
+  const ok = cgweb123Fix3Fix2EnsureLease(batchId);
+
+  if (ok) {
+    cgweb123Fix3Fix1Runtime.leaseLost = false;
+    cgweb123Fix3Fix1StartHeartbeat(batchId);
+  }
+
+  return ok;
+};
+
+cgweb123Fix3Fix1AssertLease = function(batchId) {
+  if (!cgweb123Fix3Fix2EnsureLease(batchId)) {
+    throw new Error(
+      "SINGLE_BATCH_LEASE001 · lease détenu par un autre onglet actif."
+    );
+  }
+};
+
+cgweb123Fix3Fix1StartHeartbeat = function(batchId) {
+  cgweb123Fix3Fix1StopHeartbeat();
+
+  cgweb123Fix3Fix1Runtime.heartbeatTimer = setInterval(
+    () => {
+      if (cgweb123Fix3Fix2EnsureLease(batchId)) {
+        cgweb123Fix3Fix1Runtime.leaseLost = false;
+        return;
+      }
+
+      if (cgweb123Fix3Fix2OtherActiveLease(batchId)) {
+        cgweb123Fix3Fix1Runtime.leaseLost = true;
+        cgweb123Fix3Fix1Runtime.stop = true;
+
+        cgweb123Fix3Fix1SetStatus(
+          "LEASE CONFLICT · un autre onglet actif détient ce lot."
+        );
+      }
+    },
+    CGWEB123_FIX3_FIX2_HEARTBEAT_MS
+  );
+};
+
+function cgweb123Fix3Fix2TransientError(error) {
+  if (navigator.onLine === false) return true;
+
+  const message = String(
+    error?.message ||
+    error?.code ||
+    error ||
+    ""
+  ).toLowerCase();
+
+  return [
+    "failed to fetch",
+    "networkerror",
+    "network error",
+    "network request",
+    "load failed",
+    "connection",
+    "connexion",
+    "unavailable",
+    "deadline",
+    "timeout",
+    "temporar",
+    "resource-exhausted",
+    "too many requests",
+    "429",
+    "502",
+    "503",
+    "504",
+    "econnreset",
+    "socket hang up",
+    "internal server error"
+  ].some(token => message.includes(token));
+}
+
+function cgweb123Fix3Fix2Sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function cgweb123Fix3Fix2TransientRetry(operation, stage) {
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (
+        !cgweb123Fix3Fix2TransientError(error) ||
+        attempt >= CGWEB123_FIX3_FIX2_MAX_TRANSIENT_RETRIES
+      ) {
+        throw error;
+      }
+
+      attempt += 1;
+
+      const delayMs = Math.min(
+        60_000,
+        2_000 * (2 ** Math.min(attempt - 1, 5))
+      );
+
+      const state = cgweb123Fix3Fix1State();
+
+      cgweb123Fix3Fix1Audit("TRANSIENT_BACKOFF_RETRY", {
+        batch_id: state?.batch_id || "",
+        cursor: Number(state?.cursor || 0),
+        stage: String(stage || "API"),
+        attempt,
+        delay_ms: delayMs,
+        error: error?.message || String(error),
+        message:
+          `Incident transitoire ${stage || "API"} · tentative ${attempt} dans ${Math.round(delayMs / 1000)} s.`
+      });
+
+      cgweb123Fix3Fix1SetStatus(
+        `ATTENTE TRANSITOIRE · ${stage || "API"} · tentative ${attempt}` +
+        ` dans ${Math.round(delayMs / 1000)} s · le lot reprendra automatiquement`
+      );
+
+      await cgweb123Fix3Fix2Sleep(delayMs);
+    }
+  }
+}
+
+/* TRANSIENT_BACKOFF001 */
+const cgweb123Fix3Fix2BaseJoinApi = cgweb123Fix3Fix1JoinApi;
+
+cgweb123Fix3Fix1JoinApi = async function() {
+  const api = await cgweb123Fix3Fix2TransientRetry(
+    () => cgweb123Fix3Fix2BaseJoinApi(),
+    "API"
+  );
+
+  return {
+    ...api,
+
+    massPlan: (...args) =>
+      cgweb123Fix3Fix2TransientRetry(
+        () => api.massPlan(...args),
+        "PLAN"
+      ),
+
+    execute: (...args) =>
+      cgweb123Fix3Fix2TransientRetry(
+        () => api.execute(...args),
+        "EXECUTE"
+      )
+  };
+};
+
+function cgweb123Fix3Fix2LatestPauseError(state) {
+  if (!state?.batch_id) return null;
+
+  const audit = cgweb123Fix3Fix1Read("AUDIT", []);
+
+  for (let i = audit.length - 1; i >= 0; i -= 1) {
+    const row = audit[i];
+
+    if (row?.batch_id !== state.batch_id) continue;
+
+    if (row?.type === "BATCH_PAUSED") return null;
+    if (row?.type === "BATCH_PAUSED_ERROR") return row;
+  }
+
+  return null;
+}
+
+function cgweb123Fix3Fix2AutoResumeEligible(state) {
+  if (
+    !state ||
+    !state.batch_id ||
+    state.status === "COMPLETE" ||
+    state.status === "CANCELLED" ||
+    state.status === "REBUILD_REQUIRED" ||
+    Number(state.cursor || 0) >= Number(state.queue?.length || 0) ||
+    cgweb123Fix3Fix2UserPauseActive(state)
+  ) {
+    return false;
+  }
+
+  if (
+    state.status === "RUNNING" ||
+    state.status === "READY"
+  ) {
+    return true;
+  }
+
+  if (state.status === "PAUSED") {
+    const pausedError = cgweb123Fix3Fix2LatestPauseError(state);
+    if (!pausedError) return false;
+
+    const message = String(
+      pausedError.error ||
+      pausedError.message ||
+      ""
+    );
+
+    return (
+      cgweb123Fix3Fix2TransientError(message) ||
+      message.includes("SINGLE_BATCH_LEASE001") ||
+      message.toLowerCase().includes("lease")
+    );
+  }
+
+  return false;
+}
+
+let cgweb123Fix3Fix2AutoResumeTimer = null;
+let cgweb123Fix3Fix2AutoResumeBusy = false;
+
+async function cgweb123Fix3Fix2FinalizeGhostComplete(state) {
+  if (
+    !state?.batch_id ||
+    state.status === "COMPLETE" ||
+    Number(state.cursor || 0) < Number(state.queue?.length || 0) ||
+    cgweb123Fix3Fix2OtherActiveLease(state.batch_id)
+  ) {
+    return false;
+  }
+
+  if (!cgweb123Fix3Fix1AcquireLease(state.batch_id)) {
+    return false;
+  }
+
+  try {
+    const fresh = cgweb123Fix3Fix1State();
+
+    if (
+      !fresh ||
+      fresh.batch_id !== state.batch_id ||
+      Number(fresh.cursor || 0) < Number(fresh.queue?.length || 0)
+    ) {
+      return false;
+    }
+
+    fresh.status = "COMPLETE";
+    fresh.phase = "IDLE";
+    fresh.current_group_key = "";
+    fresh.completed_at_ms ||= Date.now();
+
+    cgweb123Fix3Fix1GuardedSave(fresh);
+
+    cgweb123Fix3Fix1Audit("GHOST_COMPLETE_REPAIRED", {
+      batch_id: fresh.batch_id,
+      cursor: Number(fresh.cursor || 0),
+      message: "Curseur arrivé en fin de file : état COMPLETE restauré."
+    });
+
+    return true;
+  } finally {
+    cgweb123Fix3Fix1ReleaseLease(state.batch_id);
+    cgweb123Fix3Fix1Render();
+  }
+}
+
+function cgweb123Fix3Fix2ScheduleAutoResume(trigger = "WATCHDOG", delayMs = 600) {
+  if (!currentUser || cgweb123Fix3Fix1Runtime.running) return;
+
+  const state = cgweb123Fix3Fix1State();
+  if (!state) return;
+
+  if (
+    Number(state.cursor || 0) >= Number(state.queue?.length || 0) &&
+    state.status !== "COMPLETE"
+  ) {
+    void cgweb123Fix3Fix2FinalizeGhostComplete(state);
+    return;
+  }
+
+  if (!cgweb123Fix3Fix2AutoResumeEligible(state)) return;
+
+  if (cgweb123Fix3Fix2OtherActiveLease(state.batch_id)) {
+    const lease = cgweb123Fix3Fix1Lease();
+    const remaining = Math.max(
+      1,
+      Math.ceil((Number(lease?.expires_at_ms || 0) - Date.now()) / 1000)
+    );
+
+    cgweb123Fix3Fix1SetStatus(
+      `AUTO-REPRISE EN ATTENTE · lease d'un autre onglet encore actif · ${remaining} s max`
+    );
+    return;
+  }
+
+  if (cgweb123Fix3Fix2AutoResumeTimer) {
+    clearTimeout(cgweb123Fix3Fix2AutoResumeTimer);
+  }
+
+  cgweb123Fix3Fix2AutoResumeTimer = setTimeout(
+    () => {
+      cgweb123Fix3Fix2AutoResumeTimer = null;
+
+      if (
+        cgweb123Fix3Fix2AutoResumeBusy ||
+        cgweb123Fix3Fix1Runtime.running
+      ) {
+        return;
+      }
+
+      const fresh = cgweb123Fix3Fix1State();
+
+      if (
+        !cgweb123Fix3Fix2AutoResumeEligible(fresh) ||
+        cgweb123Fix3Fix2OtherActiveLease(fresh?.batch_id)
+      ) {
+        return;
+      }
+
+      cgweb123Fix3Fix2AutoResumeBusy = true;
+
+      try {
+        cgweb123Fix3Fix1Audit("AUTORESUME_TRIGGERED", {
+          batch_id: fresh.batch_id,
+          cursor: Number(fresh.cursor || 0),
+          trigger,
+          message: `Reprise automatique après ${trigger}.`
+        });
+
+        cgweb123Fix3Fix1SetStatus(
+          `AUTO-REPRISE · ${trigger} · reprise à ${Number(fresh.cursor || 0) + 1} / ${fresh.queue?.length || 0}`
+        );
+
+        void cgweb123Fix3Fix1Run(fresh);
+      } finally {
+        cgweb123Fix3Fix2AutoResumeBusy = false;
+      }
+    },
+    Math.max(0, Number(delayMs) || 0)
+  );
+}
+
+/* USER_PAUSE_RESPECT001 */
+document.addEventListener(
+  "click",
+  event => {
+    const id = event.target?.closest?.("button")?.id || "";
+
+    if (id === "cgweb123Fix3Pause") {
+      cgweb123Fix3Fix2RequestUserPause();
+      return;
+    }
+
+    if (
+      id === "cgweb123Fix3Resume" ||
+      id === "cgweb123Fix3Start"
+    ) {
+      cgweb123Fix3Fix2ClearUserPause();
+    }
+  },
+  true
+);
+
+const cgweb123Fix3Fix2BaseResume = cgweb123Fix3Fix1Resume;
+cgweb123Fix3Fix1Resume = async function() {
+  cgweb123Fix3Fix2ClearUserPause();
+  return cgweb123Fix3Fix2BaseResume();
+};
+
+const cgweb123Fix3Fix2BaseStart = cgweb123Fix3Fix1Start;
+cgweb123Fix3Fix1Start = async function() {
+  cgweb123Fix3Fix2ClearUserPause();
+  return cgweb123Fix3Fix2BaseStart();
+};
+
+function cgweb123Fix3Fix2DecoratePanel() {
+  const panel = document.getElementById("cgweb123Fix3MassManager");
+  if (!panel) return;
+
+  const title = panel.querySelector("strong");
+  if (title) {
+    title.textContent =
+      "Fusion en masse · haute confiance · FIX3 FIX2";
+  }
+
+  const description = title?.parentElement?.querySelector(".muted");
+  if (description) {
+    description.textContent =
+      "Auto-reprise veille/réseau · lease auto-réparable · pause utilisateur respectée · PLAN de masse sans timeout navigateur.";
+  }
+}
+
+const cgweb123Fix3Fix2BaseRender = cgweb123Fix3Fix1Render;
+cgweb123Fix3Fix1Render = function() {
+  cgweb123Fix3Fix2BaseRender();
+  cgweb123Fix3Fix2DecoratePanel();
+};
+
+/* GHOST_RUNNING_REPAIR001 + WAKE_AUTORESUME001 */
+function cgweb123Fix3Fix2Wake(trigger) {
+  const state = cgweb123Fix3Fix1State();
+
+  if (
+    cgweb123Fix3Fix1Runtime.running &&
+    state?.batch_id
+  ) {
+    cgweb123Fix3Fix2EnsureLease(state.batch_id);
+    return;
+  }
+
+  cgweb123Fix3Fix2ScheduleAutoResume(trigger, 400);
+}
+
+document.addEventListener(
+  "visibilitychange",
+  () => {
+    if (document.visibilityState === "visible") {
+      cgweb123Fix3Fix2Wake("VISIBILITY");
+    }
+  }
+);
+
+window.addEventListener(
+  "focus",
+  () => cgweb123Fix3Fix2Wake("FOCUS")
+);
+
+window.addEventListener(
+  "pageshow",
+  () => cgweb123Fix3Fix2Wake("PAGESHOW")
+);
+
+window.addEventListener(
+  "online",
+  () => cgweb123Fix3Fix2Wake("ONLINE")
+);
+
+setInterval(
+  () => {
+    if (!document.hidden) {
+      cgweb123Fix3Fix2Wake("WATCHDOG");
+    }
+  },
+  CGWEB123_FIX3_FIX2_WATCHDOG_MS
+);
+
+onAuthStateChanged(
+  auth,
+  user => {
+    if (!user) return;
+
+    setTimeout(
+      () => {
+        cgweb123Fix3Fix2DecoratePanel();
+        cgweb123Fix3Fix2ScheduleAutoResume("AUTH_READY", 900);
+      },
+      0
+    );
+  }
+);
+
+window.CGWEB123_FIX3_FIX2_STATUS = function() {
+  const base =
+    typeof window.CGWEB123_FIX3_FIX1_STATUS === "function"
+      ? window.CGWEB123_FIX3_FIX1_STATUS()
+      : {};
+
+  const state = cgweb123Fix3Fix1State();
+
+  return {
+    ...base,
+    build: CGWEB123_FIX3_FIX2_VERSION,
+    lease_self_heal: "LEASE_SELF_HEAL001",
+    ghost_running_repair: "GHOST_RUNNING_REPAIR001",
+    wake_autoresume: "WAKE_AUTORESUME001",
+    transient_backoff: "TRANSIENT_BACKOFF001",
+    user_pause_respect: "USER_PAUSE_RESPECT001",
+    user_pause_active: cgweb123Fix3Fix2UserPauseActive(state),
+    runtime_running: Boolean(cgweb123Fix3Fix1Runtime.running),
+    auto_resume_eligible: cgweb123Fix3Fix2AutoResumeEligible(state),
+    lease_ttl_ms: CGWEB123_FIX3_FIX2_LEASE_TTL_MS,
+    heartbeat_ms: CGWEB123_FIX3_FIX2_HEARTBEAT_MS
+  };
+};
+
+window.CGWEB123_FIX3_STATUS =
+  window.CGWEB123_FIX3_FIX2_STATUS;
+
+queueMicrotask(() => {
+  cgweb123Fix3Fix2DecoratePanel();
+  cgweb123Fix3Fix2ScheduleAutoResume("BOOT", 1200);
+});
+
+requestAnimationFrame(
+  cgweb123Fix3Fix2DecoratePanel
+);
+
+console.info(
+  "CGWEB123 FIX3 FIX2 actif · LEASE_SELF_HEAL001 / GHOST_RUNNING_REPAIR001 / WAKE_AUTORESUME001 / TRANSIENT_BACKOFF001 / USER_PAUSE_RESPECT001"
+);
+/* CGWEB123_FIX3_FIX2_END */
