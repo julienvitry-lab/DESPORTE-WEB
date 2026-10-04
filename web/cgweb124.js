@@ -602,6 +602,17 @@ function cg124EnsureStyle() {
     .cg124-progress>i{display:block;height:100%;width:0;background:currentColor}
     .cg124-warning{padding:9px 10px;border-radius:10px;background:rgba(255,190,80,.08);border:1px solid rgba(255,190,80,.22)}
     .cg124-error{color:#ff8d8d}
+    .cg124-picker-backdrop{position:fixed;inset:0;z-index:10050;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.74)}
+    .cg124-picker-backdrop[hidden]{display:none!important}
+    .cg124-picker-dialog{width:min(1040px,96vw);max-height:94vh;overflow:auto;border:1px solid rgba(167,255,42,.28);border-radius:16px;background:#0d120f;padding:14px;box-shadow:0 22px 70px rgba(0,0,0,.55)}
+    .cg124-picker-head,.cg124-picker-footer{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+    .cg124-picker-head{margin-bottom:10px;align-items:flex-start}
+    .cg124-picker-head h3{margin:0 0 4px}
+    .cg124-picker-map{height:min(64vh,650px);min-height:420px;border:1px solid rgba(255,255,255,.12);border-radius:12px;overflow:hidden;background:#111}
+    .cg124-picker-footer{margin-top:10px}
+    .cg124-picker-coord{font-variant-numeric:tabular-nums;opacity:.84}
+    .cg124-picker-actions{display:flex;gap:8px;flex-wrap:wrap}
+    @media(max-width:700px){.cg124-picker-backdrop{padding:7px}.cg124-picker-dialog{width:100%;max-height:98vh;padding:9px}.cg124-picker-map{height:60vh;min-height:350px}}
     @media(max-width:900px){
       .cg124-grid{grid-template-columns:1fr 1fr}
       .cg124-card{grid-template-columns:72px 1fr auto}
@@ -660,6 +671,7 @@ function cg124EnsurePanel() {
         </label>
       </div>
       <div class="cg124-actions">
+        <button id="cg124MapPickerOpen" class="secondary" type="button">Choisir sur la carte</button>
         <button id="cg124SaveMarker" class="primary" type="button">Enregistrer le GPS</button>
         <button id="cg124DisableMarker" class="secondary" type="button">Désactiver ce GPS</button>
         <span id="cg124EditorStatus" class="muted">50 m d’entrée · 75 m de réarmement par défaut.</span>
@@ -688,6 +700,7 @@ function cg124EnsurePanel() {
   anchor.insertAdjacentElement("afterend", panel);
 
   panel.querySelector("#cg124MarkerSelect")?.addEventListener("change", cg124PopulateEditor);
+  panel.querySelector("#cg124MapPickerOpen")?.addEventListener("click", () => cg124MapPickerOpen());
   panel.querySelector("#cg124SaveMarker")?.addEventListener("click", () => void cg124SaveMarker());
   panel.querySelector("#cg124DisableMarker")?.addEventListener("click", () => void cg124DisableMarker());
   panel.querySelector("#cg124StartHistory")?.addEventListener("click", () => void cg124StartHistory());
@@ -1728,3 +1741,338 @@ console.info(
 );
 
 /* CGWEB125_FIX1_GPS_INDEX_UNLOCK_END */
+/* CGWEB124_FIX1_MAP_PICKER_START
+   MAP_PICKER001 / CLICK_TO_COORDINATES001 / DRAGGABLE_MARKER001
+   ACTIVITY_TRACE_PICKER_PREP001
+*/
+
+const CGWEB124_FIX1_MAP_PICKER_VERSION = "CGWEB124_FIX1";
+
+const cg124Picker = {
+  backdrop: null,
+  map: null,
+  marker: null,
+  entryCircle: null,
+  rearmCircle: null,
+  candidate: null,
+  source: "map",
+  activityId: null
+};
+
+function cg124PickerEditorCoord() {
+  const a = String(document.getElementById("cg124Lat")?.value || "").trim();
+  const b = String(document.getElementById("cg124Lon")?.value || "").trim();
+  if (!a || !b) return null;
+  const lat = Number(a), lon = Number(b);
+  return cg124ValidCoord(lat, lon) ? {lat, lon} : null;
+}
+
+function cg124PickerRadius() {
+  const r = Number(document.getElementById("cg124Radius")?.value);
+  const rr = Number(document.getElementById("cg124Rearm")?.value);
+  const entry = Number.isFinite(r) && r > 0 ? r : CGWEB124_DEFAULT_RADIUS_M;
+  const rearm = Number.isFinite(rr) && rr > entry
+    ? rr
+    : Math.max(CGWEB124_DEFAULT_REARM_M, entry + 25);
+  return {entry, rearm};
+}
+
+function cg124PickerDefaultView() {
+  const editor = cg124PickerEditorCoord();
+  if (editor) return {...editor, zoom: 16};
+
+  const code = String(document.getElementById("cg124MarkerSelect")?.value || "").trim();
+  const existing = code ? cg124ReferenceCoord(cg124References.get(code)) : null;
+  if (existing) return {lat: existing.lat, lon: existing.lon, zoom: 16};
+
+  const marker = [...cg124Markers.values()].find((m) =>
+    cg124ValidCoord(m.latitude, m.longitude)
+  );
+  if (marker) return {lat: marker.latitude, lon: marker.longitude, zoom: 13};
+
+  return {lat: 46.6, lon: 2.5, zoom: 6};
+}
+
+function cg124PickerEnsureDialog() {
+  if (cg124Picker.backdrop && document.body.contains(cg124Picker.backdrop)) {
+    return cg124Picker.backdrop;
+  }
+
+  const node = document.createElement("div");
+  node.id = "cg124PickerBackdrop";
+  node.className = "cg124-picker-backdrop";
+  node.hidden = true;
+  node.innerHTML = `
+    <div class="cg124-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="cg124PickerTitle">
+      <div class="cg124-picker-head">
+        <div>
+          <h3 id="cg124PickerTitle">Choisir le repère sur la carte</h3>
+          <div class="muted">Clique sur la carte ou déplace le marqueur.</div>
+        </div>
+        <button id="cg124PickerClose" class="secondary" type="button">Fermer</button>
+      </div>
+      <div id="cg124PickerMap" class="cg124-picker-map"></div>
+      <div class="cg124-picker-footer">
+        <div id="cg124PickerCoord" class="cg124-picker-coord">Aucun point sélectionné.</div>
+        <div class="cg124-picker-actions">
+          <button id="cg124PickerCancel" class="secondary" type="button">Annuler</button>
+          <button id="cg124PickerUse" class="primary" type="button" disabled>Utiliser ce point</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(node);
+  node.querySelector("#cg124PickerClose")?.addEventListener("click", cg124MapPickerClose);
+  node.querySelector("#cg124PickerCancel")?.addEventListener("click", cg124MapPickerClose);
+  node.querySelector("#cg124PickerUse")?.addEventListener("click", cg124MapPickerCommit);
+  node.addEventListener("click", (event) => {
+    if (event.target === node) cg124MapPickerClose();
+  });
+
+  cg124Picker.backdrop = node;
+  return node;
+}
+
+function cg124PickerUpdateText() {
+  const out = document.getElementById("cg124PickerCoord");
+  const use = document.getElementById("cg124PickerUse");
+  const p = cg124Picker.candidate;
+
+  if (!p) {
+    if (out) out.textContent = "Aucun point sélectionné.";
+    if (use) use.disabled = true;
+    return;
+  }
+
+  if (out) out.textContent = `${p.lat.toFixed(7)}, ${p.lon.toFixed(7)}`;
+  if (use) use.disabled = false;
+}
+
+function cg124PickerRefreshCircles() {
+  if (!cg124Picker.map || !cg124Picker.candidate || !window.L) return;
+
+  const p = cg124Picker.candidate;
+  const {entry, rearm} = cg124PickerRadius();
+
+  if (cg124Picker.entryCircle) {
+    cg124Picker.entryCircle.setLatLng([p.lat, p.lon]).setRadius(entry);
+  } else {
+    cg124Picker.entryCircle = window.L.circle([p.lat, p.lon], {
+      radius: entry,
+      weight: 2,
+      opacity: .92,
+      fillOpacity: .08,
+      interactive: false
+    }).addTo(cg124Picker.map);
+  }
+
+  if (cg124Picker.rearmCircle) {
+    cg124Picker.rearmCircle.setLatLng([p.lat, p.lon]).setRadius(rearm);
+  } else {
+    cg124Picker.rearmCircle = window.L.circle([p.lat, p.lon], {
+      radius: rearm,
+      weight: 1,
+      opacity: .55,
+      fillOpacity: .03,
+      dashArray: "5 5",
+      interactive: false
+    }).addTo(cg124Picker.map);
+  }
+}
+
+function cg124MapPickerSetCandidate(latitude, longitude, options = {}) {
+  const lat = Number(latitude), lon = Number(longitude);
+  if (!cg124ValidCoord(lat, lon)) return false;
+
+  cg124Picker.candidate = {lat, lon};
+  cg124Picker.source = String(options.source || "map");
+  cg124Picker.activityId = options.activityId == null ? null : String(options.activityId);
+
+  if (cg124Picker.map && window.L) {
+    if (cg124Picker.marker) {
+      cg124Picker.marker.setLatLng([lat, lon]);
+    } else {
+      cg124Picker.marker = window.L.marker([lat, lon], {
+        draggable: true,
+        autoPan: true,
+        title: "Déplace-moi pour ajuster le repère"
+      }).addTo(cg124Picker.map);
+
+      cg124Picker.marker.on("drag", (event) => {
+        const pos = event.target.getLatLng();
+        cg124Picker.candidate = {lat: pos.lat, lon: pos.lng};
+        cg124Picker.source = "drag";
+        cg124PickerUpdateText();
+        cg124PickerRefreshCircles();
+      });
+    }
+
+    if (options.pan) cg124Picker.map.panTo([lat, lon]);
+  }
+
+  cg124PickerUpdateText();
+  cg124PickerRefreshCircles();
+  return true;
+}
+
+function cg124MapPickerDestroyMap() {
+  if (cg124Picker.map) {
+    try { cg124Picker.map.remove(); } catch (_) {}
+  }
+  cg124Picker.map = null;
+  cg124Picker.marker = null;
+  cg124Picker.entryCircle = null;
+  cg124Picker.rearmCircle = null;
+}
+
+function cg124MapPickerClose() {
+  if (cg124Picker.backdrop) cg124Picker.backdrop.hidden = true;
+  cg124MapPickerDestroyMap();
+}
+
+function cg124MapPickerOpen(options = {}) {
+  const code = String(document.getElementById("cg124MarkerSelect")?.value || "").trim();
+
+  if (!code) {
+    cg124SetEditorStatus("Choisis d’abord le repère à positionner sur la carte.", true);
+    return false;
+  }
+
+  if (!window.L) {
+    cg124SetEditorStatus("Leaflet n’est pas disponible : impossible d’ouvrir la carte.", true);
+    return false;
+  }
+
+  const backdrop = cg124PickerEnsureDialog();
+  const title = document.getElementById("cg124PickerTitle");
+  const landmark = cg124Landmarks.get(code);
+  if (title) title.textContent = `Choisir sur la carte · ${code} · ${landmark?.name || "Repère"}`;
+
+  backdrop.hidden = false;
+  cg124MapPickerDestroyMap();
+
+  const host = document.getElementById("cg124PickerMap");
+  const view = cg124PickerDefaultView();
+  host.innerHTML = "";
+
+  const map = window.L.map(host, {preferCanvas: true, zoomControl: true});
+  cg124Picker.map = map;
+
+  window.L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+    maxZoom: 17,
+    attribution: "© OpenStreetMap · SRTM · OpenTopoMap"
+  }).addTo(map);
+
+  map.setView([view.lat, view.lon], view.zoom);
+  map.on("click", (event) => {
+    cg124MapPickerSetCandidate(event.latlng.lat, event.latlng.lng, {source: "click"});
+  });
+
+  cg124Picker.candidate = null;
+  cg124PickerUpdateText();
+
+  const supplied =
+    options.latitude != null && options.longitude != null
+      ? {lat: Number(options.latitude), lon: Number(options.longitude)}
+      : cg124PickerEditorCoord();
+
+  if (supplied && cg124ValidCoord(supplied.lat, supplied.lon)) {
+    cg124MapPickerSetCandidate(supplied.lat, supplied.lon, {
+      source: options.source || "existing",
+      activityId: options.activity_id ?? null
+    });
+    map.setView([supplied.lat, supplied.lon], Math.max(15, view.zoom));
+  }
+
+  requestAnimationFrame(() => map.invalidateSize());
+  setTimeout(() => map.invalidateSize(), 80);
+  return true;
+}
+
+function cg124MapPickerCommit() {
+  const p = cg124Picker.candidate;
+  if (!p) return;
+
+  const lat = document.getElementById("cg124Lat");
+  const lon = document.getElementById("cg124Lon");
+  if (lat) lat.value = p.lat.toFixed(7);
+  if (lon) lon.value = p.lon.toFixed(7);
+
+  const origin = cg124Picker.source === "activity_trace" ? "la trace d’activité" : "la carte";
+  cg124SetEditorStatus(
+    `Coordonnées choisies sur ${origin} · clique maintenant sur « Enregistrer le GPS ».`
+  );
+
+  cg124MapPickerClose();
+}
+
+for (const id of ["cg124Radius", "cg124Rearm"]) {
+  document.getElementById(id)?.addEventListener("input", cg124PickerRefreshCircles);
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && cg124Picker.backdrop && !cg124Picker.backdrop.hidden) {
+    cg124MapPickerClose();
+  }
+});
+
+/* ACTIVITY_TRACE_PICKER_PREP001 */
+function cg124ApplyActivityTracePoint({
+  latitude,
+  longitude,
+  activity_id = null,
+  open_picker = true
+} = {}) {
+  const lat = Number(latitude), lon = Number(longitude);
+
+  if (!cg124ValidCoord(lat, lon)) {
+    throw new Error("ACTIVITY_TRACE_PICKER_PREP001 · coordonnées de trace invalides.");
+  }
+
+  if (open_picker) {
+    return cg124MapPickerOpen({
+      latitude: lat,
+      longitude: lon,
+      source: "activity_trace",
+      activity_id
+    });
+  }
+
+  const latInput = document.getElementById("cg124Lat");
+  const lonInput = document.getElementById("cg124Lon");
+  if (latInput) latInput.value = lat.toFixed(7);
+  if (lonInput) lonInput.value = lon.toFixed(7);
+  cg124SetEditorStatus("Point issu d’une trace d’activité prêt à être enregistré.");
+  return true;
+}
+
+window.CGWEB124_MAP_PICKER = Object.freeze({
+  version: CGWEB124_FIX1_MAP_PICKER_VERSION,
+  open: cg124MapPickerOpen,
+  close: cg124MapPickerClose,
+  setCoordinates: cg124MapPickerSetCandidate,
+  applyActivityTracePoint: cg124ApplyActivityTracePoint
+});
+
+window.addEventListener("sport-activity-trace-point-picked", (event) => {
+  try {
+    cg124ApplyActivityTracePoint({...(event.detail || {}), open_picker: true});
+  } catch (error) {
+    cg124SetEditorStatus(error?.message || String(error), true);
+  }
+});
+
+window.CGWEB124_FIX1_STATUS = () => ({
+  build: CGWEB124_FIX1_MAP_PICKER_VERSION,
+  map_picker: "MAP_PICKER001",
+  click_to_coordinates: "CLICK_TO_COORDINATES001",
+  draggable_marker: "DRAGGABLE_MARKER001",
+  activity_trace_picker_prep: "ACTIVITY_TRACE_PICKER_PREP001"
+});
+
+console.info(
+  "CGWEB124 FIX1 actif · MAP_PICKER001 / CLICK_TO_COORDINATES001 / DRAGGABLE_MARKER001 / ACTIVITY_TRACE_PICKER_PREP001"
+);
+
+/* CGWEB124_FIX1_MAP_PICKER_END */
