@@ -470,46 +470,85 @@ function cg124DetectAllMarkers(points) {
   return hits;
 }
 
+function cg124SportBucket(sport) {
+  const value = Number(sport || 0);
+  if (value === 1) return "run";
+  if (value === 2) return "bike";
+  return "other";
+}
+
+function cg124NewAggregateRow() {
+  return {
+    total_passages: 0,
+    activity_count: 0,
+    first_passage_ms: null,
+    last_passage_ms: null,
+
+    run_passages: 0,
+    run_activity_count: 0,
+
+    bike_passages: 0,
+    bike_activity_count: 0,
+
+    other_passages: 0,
+    other_activity_count: 0
+  };
+}
+
+function cg124EnsureAggregateRow(row) {
+  const target = row || {};
+
+  for (const [key, value] of Object.entries(cg124NewAggregateRow())) {
+    if (target[key] == null) target[key] = value;
+  }
+
+  return target;
+}
+
 function cg124EmptyAggregate() {
   const aggregate = {};
+
   for (const code of cg124Markers.keys()) {
-    aggregate[code] = {
-      total_passages: 0,
-      activity_count: 0,
-      first_passage_ms: null,
-      last_passage_ms: null
-    };
+    aggregate[code] = cg124NewAggregateRow();
   }
+
   return aggregate;
 }
 
-function cg124MergeAggregate(aggregate, hits) {
+function cg124MergeAggregate(aggregate, hits, sport = 0) {
+  const bucket = cg124SportBucket(sport);
+
   for (const [code, hit] of Object.entries(hits || {})) {
     if (!aggregate[code]) {
-      aggregate[code] = {
-        total_passages: 0,
-        activity_count: 0,
-        first_passage_ms: null,
-        last_passage_ms: null
-      };
+      aggregate[code] = cg124NewAggregateRow();
     }
-    const target = aggregate[code];
+
+    const target = cg124EnsureAggregateRow(aggregate[code]);
     const count = Math.max(0, Number(hit?.passage_count) || 0);
+
     if (count <= 0) continue;
+
     target.total_passages += count;
     target.activity_count += 1;
 
+    target[`${bucket}_passages`] += count;
+    target[`${bucket}_activity_count`] += 1;
+
     const first = Number(hit?.first_passage_ms);
     const last = Number(hit?.last_passage_ms);
+
     if (Number.isFinite(first) && first > 0) {
-      target.first_passage_ms = target.first_passage_ms == null
-        ? first
-        : Math.min(target.first_passage_ms, first);
+      target.first_passage_ms =
+        target.first_passage_ms == null
+          ? first
+          : Math.min(target.first_passage_ms, first);
     }
+
     if (Number.isFinite(last) && last > 0) {
-      target.last_passage_ms = target.last_passage_ms == null
-        ? last
-        : Math.max(target.last_passage_ms, last);
+      target.last_passage_ms =
+        target.last_passage_ms == null
+          ? last
+          : Math.max(target.last_passage_ms, last);
     }
   }
 }
@@ -1165,30 +1204,64 @@ async function cg124FinalizeHistorical(state) {
 
   for (let offset = 0; offset < markerRows.length; offset += batchSize) {
     const batch = writeBatch(db);
+
     for (const marker of markerRows.slice(offset, offset + batchSize)) {
-      const sum = state.aggregate?.[marker.code] || {
-        total_passages: 0,
-        activity_count: 0,
-        first_passage_ms: null,
-        last_passage_ms: null
-      };
+      const sum = cg124EnsureAggregateRow(
+        state.aggregate?.[marker.code] || cg124NewAggregateRow()
+      );
+
       batch.set(
         cg124UserDoc("landmark_references", marker.code),
         {
-          gps_total_passages: Math.max(0, Number(sum.total_passages) || 0),
-          gps_activity_count: Math.max(0, Number(sum.activity_count) || 0),
-          gps_first_passage_ms: Number.isFinite(Number(sum.first_passage_ms)) ? Number(sum.first_passage_ms) : null,
-          gps_last_passage_ms: Number.isFinite(Number(sum.last_passage_ms)) ? Number(sum.last_passage_ms) : null,
+          gps_total_passages:
+            Math.max(0, Number(sum.total_passages) || 0),
+
+          gps_activity_count:
+            Math.max(0, Number(sum.activity_count) || 0),
+
+          gps_run_passages:
+            Math.max(0, Number(sum.run_passages) || 0),
+
+          gps_run_activity_count:
+            Math.max(0, Number(sum.run_activity_count) || 0),
+
+          gps_bike_passages:
+            Math.max(0, Number(sum.bike_passages) || 0),
+
+          gps_bike_activity_count:
+            Math.max(0, Number(sum.bike_activity_count) || 0),
+
+          gps_other_passages:
+            Math.max(0, Number(sum.other_passages) || 0),
+
+          gps_other_activity_count:
+            Math.max(0, Number(sum.other_activity_count) || 0),
+
+          gps_first_passage_ms:
+            Number.isFinite(Number(sum.first_passage_ms))
+              ? Number(sum.first_passage_ms)
+              : null,
+
+          gps_last_passage_ms:
+            Number.isFinite(Number(sum.last_passage_ms))
+              ? Number(sum.last_passage_ms)
+              : null,
+
+          gps_sport_split_version: 1,
+          gps_sport_split_complete: true,
+
           gps_indexed_at_ms: now,
           gps_index_marker_signature: signature,
           gps_index_complete: true,
           gps_summary_dirty: false,
           gps_detector_version: CGWEB124_DETECTOR_VERSION,
-          gps_history_route_missing_count: Math.max(0, Number(state.route_missing_count) || 0)
+          gps_history_route_missing_count:
+            Math.max(0, Number(state.route_missing_count) || 0)
         },
-        { merge: true }
+        {merge: true}
       );
     }
+
     await batch.commit();
   }
 
@@ -1273,7 +1346,11 @@ async function cg124RunHistory(state) {
         if (item.result?.missingRoute) state.route_missing_count += 1;
         else if (!item.result?.skipped) state.indexed_count += 1;
 
-        cg124MergeAggregate(state.aggregate, item.result?.hits || {});
+        cg124MergeAggregate(
+          state.aggregate,
+          item.result?.hits || {},
+          item.result?.row?.sport ?? 0
+        );
       }
 
       state.cursor += ids.length;
@@ -1330,8 +1407,9 @@ async function cg124StartHistory() {
     )) return;
 
     const state = {
-      version: 1,
+      version: 2,
       build: CGWEB124_BUILD,
+      sport_split_version: 1,
       status: "READY",
       marker_signature: cg124MarkerSignature(),
       queue: rows.map((row) => String(row.__docId)),
@@ -1375,6 +1453,13 @@ function cg124HitCount(hits, code) {
 async function cg124UpdateIncrementalSummaries(prior, next, activity) {
   const signature = cg124MarkerSignature();
   const startMs = Number(activity?.start_time_ms || 0);
+
+  const oldSport = Number(prior?.sport ?? activity?.sport ?? 0);
+  const newSport = Number(next?.sport ?? activity?.sport ?? 0);
+
+  const oldBucket = cg124SportBucket(oldSport);
+  const newBucket = cg124SportBucket(newSport);
+
   const codes = new Set([
     ...Object.keys(prior?.hits || {}),
     ...Object.keys(next?.hits || {})
@@ -1386,44 +1471,118 @@ async function cg124UpdateIncrementalSummaries(prior, next, activity) {
 
     const oldCount = cg124HitCount(prior?.hits, code);
     const newCount = cg124HitCount(next?.hits, code);
+
     const oldHit = prior?.hits?.[code] || null;
     const newHit = next?.hits?.[code] || null;
+
     const sameHit =
       oldCount === newCount &&
-      Number(oldHit?.first_passage_ms || 0) === Number(newHit?.first_passage_ms || 0) &&
-      Number(oldHit?.last_passage_ms || 0) === Number(newHit?.last_passage_ms || 0);
+      oldBucket === newBucket &&
+      Number(oldHit?.first_passage_ms || 0) ===
+        Number(newHit?.first_passage_ms || 0) &&
+      Number(oldHit?.last_passage_ms || 0) ===
+        Number(newHit?.last_passage_ms || 0);
+
     if (sameHit) continue;
 
-    const refSnap = await getDoc(cg124UserDoc("landmark_references", code));
+    const refSnap = await getDoc(
+      cg124UserDoc("landmark_references", code)
+    );
+
     if (!refSnap.exists()) continue;
+
     const ref = refSnap.data() || {};
 
     if (
       ref?.gps_index_complete !== true ||
+      ref?.gps_sport_split_complete !== true ||
+      Number(ref?.gps_sport_split_version || 0) !== 1 ||
       String(ref?.gps_index_marker_signature || "") !== signature
     ) {
       await setDoc(
         refSnap.ref,
-        { gps_summary_dirty: true },
-        { merge: true }
+        {gps_summary_dirty: true},
+        {merge: true}
       );
       continue;
     }
 
     const oldActive = oldCount > 0 ? 1 : 0;
     const newActive = newCount > 0 ? 1 : 0;
-    const total = Math.max(0, Number(ref?.gps_total_passages || 0) + (newCount - oldCount));
-    const activityCount = Math.max(0, Number(ref?.gps_activity_count || 0) + (newActive - oldActive));
+
+    const total =
+      Math.max(
+        0,
+        Number(ref?.gps_total_passages || 0) +
+          (newCount - oldCount)
+      );
+
+    const activityCount =
+      Math.max(
+        0,
+        Number(ref?.gps_activity_count || 0) +
+          (newActive - oldActive)
+      );
+
+    const split = {
+      run_passages:
+        Math.max(0, Number(ref?.gps_run_passages || 0)),
+      run_activity_count:
+        Math.max(0, Number(ref?.gps_run_activity_count || 0)),
+
+      bike_passages:
+        Math.max(0, Number(ref?.gps_bike_passages || 0)),
+      bike_activity_count:
+        Math.max(0, Number(ref?.gps_bike_activity_count || 0)),
+
+      other_passages:
+        Math.max(0, Number(ref?.gps_other_passages || 0)),
+      other_activity_count:
+        Math.max(0, Number(ref?.gps_other_activity_count || 0))
+    };
+
+    if (oldCount > 0) {
+      split[`${oldBucket}_passages`] =
+        Math.max(
+          0,
+          split[`${oldBucket}_passages`] - oldCount
+        );
+
+      split[`${oldBucket}_activity_count`] =
+        Math.max(
+          0,
+          split[`${oldBucket}_activity_count`] - 1
+        );
+    }
+
+    if (newCount > 0) {
+      split[`${newBucket}_passages`] += newCount;
+      split[`${newBucket}_activity_count`] += 1;
+    }
 
     let first = Number(ref?.gps_first_passage_ms);
     let last = Number(ref?.gps_last_passage_ms);
-    const nextHit = next?.hits?.[code];
-    const nextFirst = Number(nextHit?.first_passage_ms || startMs);
-    const nextLast = Number(nextHit?.last_passage_ms || startMs);
+
+    const nextFirst =
+      Number(newHit?.first_passage_ms || startMs);
+
+    const nextLast =
+      Number(newHit?.last_passage_ms || startMs);
 
     if (newCount > 0) {
-      if (Number.isFinite(nextFirst) && nextFirst > 0) first = Number.isFinite(first) && first > 0 ? Math.min(first, nextFirst) : nextFirst;
-      if (Number.isFinite(nextLast) && nextLast > 0) last = Number.isFinite(last) && last > 0 ? Math.max(last, nextLast) : nextLast;
+      if (Number.isFinite(nextFirst) && nextFirst > 0) {
+        first =
+          Number.isFinite(first) && first > 0
+            ? Math.min(first, nextFirst)
+            : nextFirst;
+      }
+
+      if (Number.isFinite(nextLast) && nextLast > 0) {
+        last =
+          Number.isFinite(last) && last > 0
+            ? Math.max(last, nextLast)
+            : nextLast;
+      }
     }
 
     await setDoc(
@@ -1431,23 +1590,47 @@ async function cg124UpdateIncrementalSummaries(prior, next, activity) {
       {
         gps_total_passages: total,
         gps_activity_count: activityCount,
-        gps_first_passage_ms: Number.isFinite(first) && first > 0 ? first : null,
-        gps_last_passage_ms: Number.isFinite(last) && last > 0 ? last : null,
+
+        gps_run_passages: split.run_passages,
+        gps_run_activity_count: split.run_activity_count,
+
+        gps_bike_passages: split.bike_passages,
+        gps_bike_activity_count: split.bike_activity_count,
+
+        gps_other_passages: split.other_passages,
+        gps_other_activity_count: split.other_activity_count,
+
+        gps_first_passage_ms:
+          Number.isFinite(first) && first > 0
+            ? first
+            : null,
+
+        gps_last_passage_ms:
+          Number.isFinite(last) && last > 0
+            ? last
+            : null,
+
+        gps_sport_split_version: 1,
+        gps_sport_split_complete: true,
+
         gps_summary_dirty:
           oldCount > newCount ||
           (
             oldCount > 0 &&
             newCount > 0 &&
             (
-              Number(oldHit?.first_passage_ms || 0) !== Number(newHit?.first_passage_ms || 0) ||
-              Number(oldHit?.last_passage_ms || 0) !== Number(newHit?.last_passage_ms || 0)
+              Number(oldHit?.first_passage_ms || 0) !==
+                Number(newHit?.first_passage_ms || 0) ||
+              Number(oldHit?.last_passage_ms || 0) !==
+                Number(newHit?.last_passage_ms || 0)
             )
           ) ||
           Boolean(ref?.gps_summary_dirty),
+
         gps_incremental_updated_at_ms: Date.now(),
         gps_detector_version: CGWEB124_DETECTOR_VERSION
       },
-      { merge: true }
+      {merge: true}
     );
   }
 }
@@ -2076,3 +2259,284 @@ console.info(
 );
 
 /* CGWEB124_FIX1_MAP_PICKER_END */
+/* CGWEB124_FIX2_SPORT_SPLIT_START
+   SPORT_SPLIT_AGGREGATE001
+   RUN_PASSAGE_COUNTER001
+   BIKE_PASSAGE_COUNTER001
+   OTHER_SPORT_FALLBACK001
+   SPORT_SPLIT_UI001
+*/
+
+const CGWEB124_FIX2_SPORT_SPLIT_VERSION = 1;
+
+function cg124Fix2EnsureStyle() {
+  if (document.getElementById("cgweb124Fix2SportStyle")) return;
+
+  const style = document.createElement("style");
+  style.id = "cgweb124Fix2SportStyle";
+  style.textContent = `
+    .cg124-card.cg124-sport-split{
+      grid-template-columns:
+        minmax(70px,.35fr)
+        minmax(220px,1.5fr)
+        repeat(4,minmax(110px,.62fr))
+        auto;
+    }
+    .cg124-sport-run strong{color:#b7ff69}
+    .cg124-sport-bike strong{color:#7ed8ff}
+    .cg124-sport-other strong{color:#d7d7d7}
+    .cg124-sport-total strong{color:#fff}
+    @media(max-width:1100px){
+      .cg124-card.cg124-sport-split{
+        grid-template-columns:72px 1fr repeat(2,minmax(105px,.55fr)) auto;
+      }
+      .cg124-card.cg124-sport-split .cg124-sport-other{display:none}
+    }
+    @media(max-width:900px){
+      .cg124-card.cg124-sport-split{grid-template-columns:72px 1fr auto}
+      .cg124-card.cg124-sport-split .cg124-stat{display:none}
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function cg124Fix2EnsureHeaderBadges() {
+  const panel = document.getElementById("cgweb124GpsMarkerSection");
+  const badges = panel?.querySelector(".cg124-badges");
+  if (!badges) return;
+
+  const specs = [
+    ["cg124RunPassageCount", "🏃 0"],
+    ["cg124BikePassageCount", "🚲 0"],
+    ["cg124OtherPassageCount", "Autres 0"]
+  ];
+
+  for (const [id, text] of specs) {
+    if (document.getElementById(id)) continue;
+    const node = document.createElement("span");
+    node.id = id;
+    node.className = "pill neutral";
+    node.textContent = text;
+    badges.appendChild(node);
+  }
+}
+
+cg124RenderMarkerList = function() {
+  const host = document.getElementById("cg124MarkerList");
+  if (!host) return;
+
+  host.innerHTML = "";
+
+  const rows = [...cg124Markers.values()]
+    .sort(
+      (a, b) =>
+        (Number(cg124Landmarks.get(a.code)?.sort_order) || 9999) -
+          (Number(cg124Landmarks.get(b.code)?.sort_order) || 9999) ||
+        a.code.localeCompare(b.code, "fr")
+    );
+
+  if (!rows.length) {
+    host.innerHTML =
+      '<div class="empty">Aucun repère GPS actif. Sélectionne un repère personnel puis renseigne ses coordonnées.</div>';
+    return;
+  }
+
+  for (const marker of rows) {
+    const ref = cg124References.get(marker.code) || {};
+
+    const card = document.createElement("article");
+    card.className = "cg124-card cg124-sport-split";
+
+    const code = document.createElement("div");
+    code.className = "cg124-code";
+    code.textContent = marker.code;
+
+    const main = document.createElement("div");
+    main.className = "cg124-card-main";
+
+    const title = document.createElement("strong");
+    title.textContent = marker.name;
+
+    const meta = document.createElement("span");
+    meta.textContent =
+      `${marker.latitude.toFixed(6)}, ${marker.longitude.toFixed(6)} · ` +
+      `entrée ${marker.radius_m} m · réarmement ${marker.rearm_radius_m} m` +
+      (ref?.gps_summary_dirty ? " · index à actualiser" : "");
+
+    main.append(title, meta);
+
+    const total = document.createElement("div");
+    total.className = "cg124-stat cg124-sport-total";
+    total.innerHTML =
+      `<strong>${cg124FormatNumber(ref?.gps_total_passages)}</strong>` +
+      `<span>Total · ${cg124FormatNumber(ref?.gps_activity_count)} act.</span>`;
+
+    const run = document.createElement("div");
+    run.className = "cg124-stat cg124-sport-run";
+    run.innerHTML =
+      `<strong>${cg124FormatNumber(ref?.gps_run_passages)}</strong>` +
+      `<span>🏃 Course · ${cg124FormatNumber(ref?.gps_run_activity_count)} act.</span>`;
+
+    const bike = document.createElement("div");
+    bike.className = "cg124-stat cg124-sport-bike";
+    bike.innerHTML =
+      `<strong>${cg124FormatNumber(ref?.gps_bike_passages)}</strong>` +
+      `<span>🚲 Vélo · ${cg124FormatNumber(ref?.gps_bike_activity_count)} act.</span>`;
+
+    const other = document.createElement("div");
+    other.className = "cg124-stat cg124-sport-other";
+    other.innerHTML =
+      `<strong>${cg124FormatNumber(ref?.gps_other_passages)}</strong>` +
+      `<span>Autres · ${cg124FormatNumber(ref?.gps_other_activity_count)} act.</span>`;
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "secondary";
+    edit.textContent = "Modifier";
+
+    edit.addEventListener("click", () => {
+      const select = document.getElementById("cg124MarkerSelect");
+
+      if (select) {
+        select.value = marker.code;
+        cg124PopulateEditor();
+        select.scrollIntoView({
+          behavior: "smooth",
+          block: "center"
+        });
+      }
+    });
+
+    card.append(code, main, total, run, bike, other, edit);
+    host.appendChild(card);
+  }
+};
+
+const cg124Fix2BaseRender = cg124Render;
+
+cg124Render = function() {
+  cg124Fix2EnsureStyle();
+  cg124Fix2EnsureHeaderBadges();
+
+  cg124Fix2BaseRender();
+
+  const refs = [...cg124References.values()]
+    .filter(
+      (ref) =>
+        ref?.gps_enabled !== false &&
+        cg124ReferenceCoord(ref)
+    );
+
+  const totals = refs.reduce(
+    (acc, ref) => {
+      acc.run += Math.max(0, Number(ref?.gps_run_passages) || 0);
+      acc.bike += Math.max(0, Number(ref?.gps_bike_passages) || 0);
+      acc.other += Math.max(0, Number(ref?.gps_other_passages) || 0);
+      return acc;
+    },
+    {run: 0, bike: 0, other: 0}
+  );
+
+  const runNode = document.getElementById("cg124RunPassageCount");
+  const bikeNode = document.getElementById("cg124BikePassageCount");
+  const otherNode = document.getElementById("cg124OtherPassageCount");
+
+  if (runNode) runNode.textContent = `🏃 ${cg124FormatNumber(totals.run)}`;
+  if (bikeNode) bikeNode.textContent = `🚲 ${cg124FormatNumber(totals.bike)}`;
+  if (otherNode) otherNode.textContent = `Autres ${cg124FormatNumber(totals.other)}`;
+
+  const state = cg124ReadHistory();
+
+  if (
+    state &&
+    Number(state.sport_split_version || 0) !==
+      CGWEB124_FIX2_SPORT_SPLIT_VERSION &&
+    !cg124HistoryRunning
+  ) {
+    const meta = document.getElementById("cg124IndexMeta");
+
+    if (meta) {
+      meta.textContent =
+        "SPORT_SPLIT_AGGREGATE001 · ancien index détecté · relance complète requise pour séparer course et vélo.";
+    }
+
+    cg124SetIndexStatus(
+      "Le découpage 🏃 course / 🚲 vélo nécessite une nouvelle indexation complète."
+    );
+  }
+};
+
+const cg124Fix2BaseResumeHistory = cg124ResumeHistory;
+
+cg124ResumeHistory = async function() {
+  const state = cg124ReadHistory();
+
+  if (
+    state &&
+    Number(state.sport_split_version || 0) !==
+      CGWEB124_FIX2_SPORT_SPLIT_VERSION
+  ) {
+    state.status = "STALE";
+    state.stale_reason = "SPORT_SPLIT_VERSION_MISMATCH";
+    state.updated_at_ms = Date.now();
+    cg124WriteHistory(state);
+
+    cg124SetIndexStatus(
+      "Ancien snapshot sans ventilation par sport · utilise « Indexer tout l’historique ».",
+      true
+    );
+
+    cg124Render();
+    return;
+  }
+
+  return cg124Fix2BaseResumeHistory();
+};
+
+window.CGWEB124_FIX2_STATUS = () => {
+  const refs = [...cg124References.values()]
+    .filter(
+      (ref) =>
+        ref?.gps_enabled !== false &&
+        cg124ReferenceCoord(ref)
+    );
+
+  return {
+    build: "CGWEB124_FIX2",
+    sport_split_aggregate: "SPORT_SPLIT_AGGREGATE001",
+    run_passage_counter: "RUN_PASSAGE_COUNTER001",
+    bike_passage_counter: "BIKE_PASSAGE_COUNTER001",
+    other_sport_fallback: "OTHER_SPORT_FALLBACK001",
+    sport_split_ui: "SPORT_SPLIT_UI001",
+
+    run_passages:
+      refs.reduce(
+        (sum, ref) =>
+          sum + Math.max(0, Number(ref?.gps_run_passages) || 0),
+        0
+      ),
+
+    bike_passages:
+      refs.reduce(
+        (sum, ref) =>
+          sum + Math.max(0, Number(ref?.gps_bike_passages) || 0),
+        0
+      ),
+
+    other_passages:
+      refs.reduce(
+        (sum, ref) =>
+          sum + Math.max(0, Number(ref?.gps_other_passages) || 0),
+        0
+      )
+  };
+};
+
+queueMicrotask(() => cg124Render());
+
+console.info(
+  "CGWEB124 FIX2 actif · SPORT_SPLIT_AGGREGATE001 / RUN_PASSAGE_COUNTER001 / BIKE_PASSAGE_COUNTER001 / OTHER_SPORT_FALLBACK001 / SPORT_SPLIT_UI001"
+);
+
+/* CGWEB124_FIX2_SPORT_SPLIT_END */
