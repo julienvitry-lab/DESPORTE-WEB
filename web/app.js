@@ -28,6 +28,10 @@ import {
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
+/* CGWEB125_EVAL_PROBE_START · APP_STARTUP_PROFILING001 */
+const CGWEB125_EVAL_START_MS = performance.now();
+/* CGWEB125_EVAL_PROBE_END */
+
 // WEB018 · EDITION002 : parité d’édition activité Web / téléphone / tablette.
 // Chaque écriture produit aussi un événement /changes consommé par les appareils Android.
 // La clé API Firebase Web identifie le projet ; l'accès dépend de Firebase Auth + règles Firestore.
@@ -1344,6 +1348,9 @@ function navigateUx(page, subpage = null, options = {}) {
     );
   });
 
+  /* CGWEB125 · LAZY_TAB_LOAD001 */
+  cgweb125OnNavigate(page, sub);
+
 }
 
 function initUxNavigation() {
@@ -1692,14 +1699,8 @@ ui.authState.textContent = "Non connecté";
   navigateUx(uxCurrentPage, uxCurrentSubpage, {keepScroll:true});
   queueMicrotask(() => applyWeb049UiContract());
   ui.identityLine.textContent = `${user.email || "Compte Google"} · projet sport-505813`;
-  await reloadAll();
-  await refreshWebStravaStatus({autoSync:true});
-  startWebStravaAutoSync();
-  startInteropWatch();
-  startSyncHistoryWatch();
-  startSyncHealthWatch();
-  startWebHealthHeartbeat();
-  await publishWebHealth(navigator.onLine ? "OK" : "OFFLINE", "");
+  /* CGWEB125 · FIRESTORE_BOOT_REDUCTION001 */
+  await cgweb125Startup();
   if (navigator.onLine) void flushPendingWebMutations();
 });
 
@@ -3848,7 +3849,7 @@ function installWeb055HomeLayout() {
             document.body.dataset.uxPage === "home" &&
             ui.detailView.classList.contains("hidden")
           ) {
-            void reloadAll();
+            void cgweb125RefreshCurrentPage(true);
           }
         }, 0);
       }
@@ -15478,8 +15479,8 @@ function saveWebStravaAutoSuccessMs(value) {
 }
 
 function startWebStravaAutoSync() {
-  stopWebStravaAutoSync();
-  if (!currentUser || webStravaServerAutomatic) return;
+  /* CGWEB125 · LISTENER_DEDUP001 */
+  if (webStravaAutoSyncTimer || !currentUser || webStravaServerAutomatic) return;
   // WEBSTRAVA003 : le polling navigateur n'est plus le moteur principal.
   // Il reste uniquement comme filet de sécurité si le webhook serveur est absent.
   webStravaAutoSyncTimer=window.setInterval(()=>{
@@ -22190,8 +22191,8 @@ function stopSyncHealthWatch() {
 }
 
 function startSyncHealthWatch() {
-  stopSyncHealthWatch();
-  if (!currentUser) return;
+  /* CGWEB125 · LISTENER_DEDUP001 */
+  if (syncHealthUnsubscribe || !currentUser) return;
 
   syncHealthUnsubscribe = onSnapshot(
     userCollection("sync_health"),
@@ -22212,7 +22213,8 @@ function stopWebHealthHeartbeat() {
 }
 
 function startWebHealthHeartbeat() {
-  stopWebHealthHeartbeat();
+  /* CGWEB125 · LISTENER_DEDUP001 */
+  if (syncHealthHeartbeatTimer || !currentUser) return;
   syncHealthHeartbeatTimer = window.setInterval(() => {
     if (!currentUser) return;
     void publishWebHealth(navigator.onLine ? "OK" : "OFFLINE", "");
@@ -22423,8 +22425,8 @@ function stopSyncHistoryWatch() {
 }
 
 function startSyncHistoryWatch() {
-  stopSyncHistoryWatch();
-  if (!currentUser) return;
+  /* CGWEB125 · LISTENER_DEDUP001 */
+  if (syncHistoryUnsubscribe || !currentUser) return;
   const historyQuery = query(userCollection("changes"), orderBy("publishedAt", "desc"), limit(SYNC_HISTORY_LIMIT));
   syncHistoryUnsubscribe = onSnapshot(historyQuery, (snapshot) => {
     syncHistoryEvents = snapshot.docs.map((item) => ({ __eventId: item.id, ...item.data() }));
@@ -22553,8 +22555,8 @@ function stopInteropWatch() {
 }
 
 function startInteropWatch() {
-  stopInteropWatch();
-  if (!currentUser) return;
+  /* CGWEB125 · LISTENER_DEDUP001 */
+  if (interopUnsubscribe || !currentUser) return;
 
   interopWatchStartedAtMs = Date.now() - 4000;
   const watchQuery = query(
@@ -50277,19 +50279,19 @@ console.info(
       cgweb121Fix4AutoDisableKmDefault();
     });
 
-    observer.observe(document.documentElement, {
+    /* CGWEB125 · TIMER_CLEANUP001 */
+    const observerRoot =
+      document.getElementById("detailMapSection") ||
+      document.getElementById("detailView") ||
+      document.body;
+
+    observer.observe(observerRoot, {
       childList: true,
-      subtree: true,
-      attributes: true,
-      characterData: true
+      subtree: true
     });
 
     window.__cgweb121Fix4Observer = observer;
-
-    setInterval(() => {
-      cgweb121Fix4EnsureStyle();
-      cgweb121Fix4AutoDisableKmDefault();
-    }, 1200);
+    window.__cgweb121Fix4PollingRemovedByCGWEB125 = true;
   }
 
   if (document.readyState === "loading") {
@@ -70982,3 +70984,298 @@ console.info(
   "CGWEB123 FIX3 FIX2 actif · LEASE_SELF_HEAL001 / GHOST_RUNNING_REPAIR001 / WAKE_AUTORESUME001 / TRANSIENT_BACKOFF001 / USER_PAUSE_RESPECT001"
 );
 /* CGWEB123_FIX3_FIX2_END */
+/* CGWEB125_START
+   APP_STARTUP_PROFILING001
+   LISTENER_DEDUP001
+   TIMER_CLEANUP001
+   LAZY_TAB_LOAD001
+   FIRESTORE_BOOT_REDUCTION001
+*/
+
+const CGWEB125_VERSION = "CGWEB125";
+
+const cgweb125State = {
+  eval_start_ms:
+    typeof CGWEB125_EVAL_START_MS === "number"
+      ? CGWEB125_EVAL_START_MS
+      : performance.now(),
+  module_eval_ms: 0,
+  stages: [],
+  long_tasks: [],
+  loaded: new Set(),
+  pending: new Map(),
+  startup_count: 0,
+  last_page: "",
+  last_sub: ""
+};
+
+function cgweb125Record(name, startedAt, ok = true, detail = "") {
+  cgweb125State.stages.push({
+    name: String(name || ""),
+    duration_ms: Math.round((performance.now() - startedAt) * 10) / 10,
+    ok: Boolean(ok),
+    detail: String(detail || ""),
+    at_ms: Date.now()
+  });
+  if (cgweb125State.stages.length > 80) {
+    cgweb125State.stages.splice(0, cgweb125State.stages.length - 80);
+  }
+}
+
+async function cgweb125Profile(name, task) {
+  const startedAt = performance.now();
+  try {
+    const result = await task();
+    cgweb125Record(name, startedAt, true);
+    return result;
+  } catch (error) {
+    cgweb125Record(name, startedAt, false, error?.message || String(error));
+    throw error;
+  }
+}
+
+try {
+  if ("PerformanceObserver" in window) {
+    const po = new PerformanceObserver(list => {
+      for (const entry of list.getEntries()) {
+        cgweb125State.long_tasks.push({
+          start_ms: Math.round(entry.startTime),
+          duration_ms: Math.round(entry.duration)
+        });
+      }
+      if (cgweb125State.long_tasks.length > 40) {
+        cgweb125State.long_tasks.splice(0, cgweb125State.long_tasks.length - 40);
+      }
+    });
+    po.observe({type:"longtask", buffered:true});
+    window.__cgweb125LongTaskObserver = po;
+  }
+} catch (_) {}
+
+function cgweb125Idle(callback, timeout = 900) {
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(callback, {timeout});
+  } else {
+    setTimeout(callback, Math.min(timeout, 250));
+  }
+}
+
+function cgweb125Key(page, sub) {
+  return `${String(page || "home")}:${String(sub || "")}`;
+}
+
+function cgweb125StopUnusedServices(page, sub) {
+  const needInterop =
+    ["activities","joins","analysis","equipment"].includes(page) ||
+    (page === "more" && ["manual","trash","sync","health"].includes(sub));
+  const needHistory = page === "more" && ["sync","trash"].includes(sub);
+  const needHealth = page === "more" && sub === "health";
+  const needStrava = page === "more" && sub === "strava";
+
+  if (!needInterop) stopInteropWatch();
+  if (!needHistory) stopSyncHistoryWatch();
+  if (!needHealth) {
+    stopSyncHealthWatch();
+    stopWebHealthHeartbeat();
+  }
+  if (!needStrava) stopWebStravaAutoSync();
+}
+
+async function cgweb125LoadPage(page, sub, force = false) {
+  if (!currentUser) return;
+
+  const key = cgweb125Key(page, sub);
+  if (!force && cgweb125State.loaded.has(key)) return;
+  if (cgweb125State.pending.has(key)) return cgweb125State.pending.get(key);
+
+  const promise = cgweb125Profile(`lazy:${key}`, async () => {
+    cgweb125StopUnusedServices(page, sub);
+
+    if (page === "home") {
+      await loadWebDashboard();
+    } else if (page === "activities") {
+      if (force) {
+        activities = [];
+        filteredActivities = [];
+        lastActivityDoc = null;
+        moreActivities = true;
+        activityVisibleLimit = 100;
+        if (ui.activityList) ui.activityList.innerHTML = "";
+        resetFilterOptions();
+      }
+      await Promise.all([
+        loadReferenceCollections(),
+        activities.length ? Promise.resolve() : loadNextPage()
+      ]);
+      startInteropWatch();
+    } else if (page === "joins") {
+      startInteropWatch();
+      /* Le workspace Jonctions possède déjà sa lecture Firestore dédiée. */
+    } else if (page === "analysis") {
+      startInteropWatch();
+      if (sub === "goals" || sub === "weight") {
+        await loadPersonalSyncData();
+      } else {
+        await loadReferenceCollections();
+      }
+    } else if (page === "equipment") {
+      startInteropWatch();
+      await loadReferenceCollections();
+    } else if (page === "more") {
+      if (sub === "trash") {
+        startInteropWatch();
+        startSyncHistoryWatch();
+        await loadTrashActivities();
+      } else if (sub === "strava") {
+        await refreshWebStravaStatus({autoSync:true});
+        startWebStravaAutoSync();
+      } else if (sub === "health") {
+        startInteropWatch();
+        startSyncHealthWatch();
+        startWebHealthHeartbeat();
+        await publishWebHealth(navigator.onLine ? "OK" : "OFFLINE", "");
+      } else if (sub === "sync") {
+        startInteropWatch();
+        startSyncHistoryWatch();
+      } else if (["manual","equipment-map","landmarks-advanced"].includes(sub)) {
+        startInteropWatch();
+        await loadReferenceCollections();
+        if (sub === "manual") initializeWebManualForm();
+      } else if (sub === "maps" && !activities.length) {
+        await loadNextPage();
+      }
+    }
+
+    cgweb125State.loaded.add(key);
+    cgweb125State.last_page = page;
+    cgweb125State.last_sub = sub;
+  }).finally(() => {
+    cgweb125State.pending.delete(key);
+  });
+
+  cgweb125State.pending.set(key, promise);
+  return promise;
+}
+
+function cgweb125OnNavigate(page, sub) {
+  cgweb125StopUnusedServices(page, sub);
+  if (!currentUser) return;
+
+  cgweb125Idle(() => {
+    if (
+      currentUser &&
+      uxCurrentPage === page &&
+      uxCurrentSubpage === sub
+    ) {
+      void cgweb125LoadPage(page, sub, false);
+    }
+  }, 350);
+}
+
+async function cgweb125Startup() {
+  if (!currentUser) return;
+
+  cgweb125State.startup_count += 1;
+  const startedAt = performance.now();
+  setMessage("Connexion Firestore légère…", "info");
+
+  try {
+    await cgweb125Profile("boot:meta/state", () => loadMeta());
+    web055FirestoreConnected = true;
+    renderUnifiedConnectionBadgeWeb055();
+    setMessage(
+      "SPORT Web prêt · données chargées à la demande.",
+      "success"
+    );
+    cgweb125Record("boot:blocking", startedAt, true, "meta/state uniquement");
+
+    cgweb125Idle(() => {
+      if (currentUser) {
+        void cgweb125LoadPage(uxCurrentPage, uxCurrentSubpage, false);
+      }
+    }, 900);
+  } catch (error) {
+    web055FirestoreConnected = false;
+    renderUnifiedConnectionBadgeWeb055();
+    cgweb125Record("boot:blocking", startedAt, false, error?.message || String(error));
+    handleError(error, "Lecture Firestore initiale impossible");
+  }
+}
+
+async function cgweb125RefreshCurrentPage(force = true) {
+  if (!currentUser) return;
+  const key = cgweb125Key(uxCurrentPage, uxCurrentSubpage);
+  cgweb125State.loaded.delete(key);
+  return cgweb125LoadPage(uxCurrentPage, uxCurrentSubpage, force);
+}
+
+/* Le bouton Actualiser historique devient lui aussi page-scoped. */
+const cgweb125LegacyReloadAll = reloadAll;
+reloadAll = async function() {
+  return cgweb125RefreshCurrentPage(true);
+};
+
+/* Après 30 s caché : pas de heartbeat, polling Strava ou snapshots inutiles. */
+let cgweb125HiddenTimer = null;
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    clearTimeout(cgweb125HiddenTimer);
+    cgweb125HiddenTimer = setTimeout(() => {
+      if (document.visibilityState === "hidden") {
+        stopInteropWatch();
+        stopSyncHistoryWatch();
+        stopSyncHealthWatch();
+        stopWebHealthHeartbeat();
+        stopWebStravaAutoSync();
+      }
+    }, 30000);
+    return;
+  }
+
+  clearTimeout(cgweb125HiddenTimer);
+  cgweb125HiddenTimer = null;
+  if (currentUser) {
+    void cgweb125LoadPage(uxCurrentPage, uxCurrentSubpage, false);
+  }
+}, {passive:true});
+
+window.addEventListener("pagehide", () => {
+  stopInteropWatch();
+  stopSyncHistoryWatch();
+  stopSyncHealthWatch();
+  stopWebHealthHeartbeat();
+  stopWebStravaAutoSync();
+}, {passive:true});
+
+cgweb125State.module_eval_ms =
+  Math.round((performance.now() - cgweb125State.eval_start_ms) * 10) / 10;
+
+window.CGWEB125_STATUS = function() {
+  return {
+    build: CGWEB125_VERSION,
+    app_startup_profiling: "APP_STARTUP_PROFILING001",
+    listener_dedup: "LISTENER_DEDUP001",
+    timer_cleanup: "TIMER_CLEANUP001",
+    lazy_tab_load: "LAZY_TAB_LOAD001",
+    firestore_boot_reduction: "FIRESTORE_BOOT_REDUCTION001",
+    module_eval_ms: cgweb125State.module_eval_ms,
+    startup_count: cgweb125State.startup_count,
+    loaded_tabs: [...cgweb125State.loaded],
+    pending_tabs: [...cgweb125State.pending.keys()],
+    recent_stages: cgweb125State.stages.slice(-20),
+    long_tasks: cgweb125State.long_tasks.slice(-20),
+    map_polling_1200ms_removed:
+      window.__cgweb121Fix4PollingRemovedByCGWEB125 === true,
+    memory: performance?.memory ? {
+      used_js_heap_mb: Math.round(performance.memory.usedJSHeapSize / 1048576),
+      total_js_heap_mb: Math.round(performance.memory.totalJSHeapSize / 1048576)
+    } : null
+  };
+};
+
+console.info(
+  "CGWEB125 actif · APP_STARTUP_PROFILING001 / LISTENER_DEDUP001 / TIMER_CLEANUP001 / LAZY_TAB_LOAD001 / FIRESTORE_BOOT_REDUCTION001"
+);
+
+/* CGWEB125_END */
