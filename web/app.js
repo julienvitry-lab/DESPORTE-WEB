@@ -55873,7 +55873,27 @@ function cgweb122Duration(ms) {
 }
 
 function cgweb122FindDetails() {
-  const summaries = [...document.querySelectorAll("summary")];
+  /*
+   * CGWEB127 FIX2 · FULL_DOM_SCAN_REMOVE001
+   * Le panneau de jonction appartient exclusivement à la fiche activité.
+   */
+  const detail =
+    document.getElementById("detailView");
+
+  if (!detail) return null;
+
+  const canonical =
+    detail.querySelector("#cgweb105JoinPanel");
+
+  const canonicalDetails =
+    canonical?.closest("details");
+
+  if (canonicalDetails) {
+    return canonicalDetails;
+  }
+
+  const summaries =
+    [...detail.querySelectorAll("summary")];
 
   return summaries.find(
     (summary) =>
@@ -56194,7 +56214,18 @@ function cgweb122Mount() {
 let cgweb122MountTimer = null;
 
 function cgweb122ScheduleMount() {
+  const detail =
+    document.getElementById("detailView");
+
+  if (
+    !detail ||
+    detail.classList.contains("hidden")
+  ) {
+    return;
+  }
+
   clearTimeout(cgweb122MountTimer);
+
   cgweb122MountTimer = setTimeout(
     cgweb122Mount,
     80
@@ -56205,13 +56236,21 @@ const cgweb122Observer = new MutationObserver(
   cgweb122ScheduleMount
 );
 
-cgweb122Observer.observe(
-  document.body,
-  {
-    childList: true,
-    subtree: true
-  }
-);
+const cgweb122ObserverRoot =
+  document.getElementById("detailView");
+
+if (cgweb122ObserverRoot) {
+  cgweb122Observer.observe(
+    cgweb122ObserverRoot,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+}
+
+window.__cgweb127Fix2BaseJoinObserverRoot =
+  cgweb122ObserverRoot?.id || null;
 
 window.addEventListener(
   "sport-fit-join-replace-ready",
@@ -56582,26 +56621,82 @@ console.info(
   }
 
   function findJoinPanelRoot() {
-    const headings = Array.from(document.querySelectorAll('*')).filter(el => {
-      if (!el || !el.textContent) return false;
-      const txt = el.textContent.trim();
-      return txt === PANEL_TITLE_TEXT;
-    });
+    /*
+     * CGWEB127 FIX2 · FULL_DOM_SCAN_REMOVE001
+     *
+     * L'ancien code exécutait document.querySelectorAll('*')
+     * à chaque mutation du DOM.
+     *
+     * Le panneau officiel possède maintenant un identifiant stable :
+     * #cgweb105JoinPanel.
+     *
+     * Le fallback historique reste disponible mais uniquement
+     * dans #detailView.
+     */
+    const detail =
+      document.getElementById("detailView");
 
-    if (!headings.length) return null;
+    if (
+      !detail ||
+      detail.classList.contains("hidden")
+    ) {
+      return null;
+    }
+
+    const canonical =
+      detail.querySelector("#cgweb105JoinPanel");
+
+    if (canonical) {
+      return canonical;
+    }
+
+    const headings =
+      Array.from(
+        detail.querySelectorAll(
+          "summary,h1,h2,h3,h4,h5,strong"
+        )
+      ).filter(el => {
+        if (!el?.textContent) return false;
+
+        return (
+          el.textContent.trim() ===
+          PANEL_TITLE_TEXT
+        );
+      });
 
     for (const h of headings) {
       let cur = h;
-      for (let i = 0; i < 6 && cur; i++) {
-        if (cur.querySelector && cur.querySelector('button')) {
-          const txt = cur.textContent || '';
-          if (txt.includes('Rechercher les activités analogues') || txt.includes('Préparer la fusion')) {
+
+      for (
+        let i = 0;
+        i < 6 &&
+        cur &&
+        cur !== detail;
+        i += 1
+      ) {
+        if (
+          cur.querySelector &&
+          cur.querySelector("button")
+        ) {
+          const txt =
+            cur.textContent || "";
+
+          if (
+            txt.includes(
+              "Rechercher les activités analogues"
+            ) ||
+            txt.includes(
+              "Préparer la fusion"
+            )
+          ) {
             return cur;
           }
         }
+
         cur = cur.parentElement;
       }
     }
+
     return null;
   }
 
@@ -56701,22 +56796,91 @@ console.info(
     return true;
   }
 
+  let enhanceScheduled = false;
+
   function scheduleEnhance() {
-    try { enhanceJoinPanel(); } catch (_) {}
+    const detail =
+      document.getElementById("detailView");
+
+    if (
+      !detail ||
+      detail.classList.contains("hidden")
+    ) {
+      return;
+    }
+
+    if (enhanceScheduled) {
+      return;
+    }
+
+    enhanceScheduled = true;
+
+    requestAnimationFrame(() => {
+      enhanceScheduled = false;
+
+      try {
+        enhanceJoinPanel();
+      } catch (_) {}
+    });
   }
 
   let observerInstalled = false;
+
   function installObserver() {
-    if (observerInstalled) return;
+    if (observerInstalled) {
+      return true;
+    }
+
+    const detail =
+      document.getElementById("detailView");
+
+    if (!detail) {
+      return false;
+    }
+
     observerInstalled = true;
-    const obs = new MutationObserver(() => {
-      scheduleEnhance();
-    });
-    obs.observe(document.documentElement || document.body, {
-      childList: true,
-      subtree: true
-    });
-    window.__cgweb122fix1Observer = obs;
+
+    const obs =
+      new MutationObserver(
+        mutations => {
+          const relevant =
+            mutations.some(
+              mutation =>
+                mutation.type ===
+                  "childList" &&
+                (
+                  mutation
+                    .addedNodes
+                    .length > 0 ||
+                  mutation
+                    .removedNodes
+                    .length > 0
+                )
+            );
+
+          if (!relevant) {
+            return;
+          }
+
+          scheduleEnhance();
+        }
+      );
+
+    obs.observe(
+      detail,
+      {
+        childList: true,
+        subtree: true
+      }
+    );
+
+    window.__cgweb122fix1Observer =
+      obs;
+
+    window.__cgweb127Fix2LegacyJoinObserverRoot =
+      detail.id;
+
+    return true;
   }
 
   window.CGWEB122_FIX1_STATUS = function() {
@@ -60656,13 +60820,31 @@ console.info(
       );
 
     /*
-     * Ordre définitif, réimposé à chaque réparation.
+     * CGWEB127 FIX2 · ACTION_BAR_IDEMPOTENT001
+     *
+     * Ne déplacer les boutons que si leur parent ou leur ordre
+     * est réellement incorrect.
+     *
+     * append() sur des nœuds déjà présents crée sinon des mutations
+     * childList inutiles et réveille les observers de la fiche.
      */
-    host.append(
-      marker,
-      join,
-      manual
-    );
+    const orderAlreadyCorrect =
+      marker.parentElement === host &&
+      join.parentElement === host &&
+      manual.parentElement === host &&
+      marker.nextElementSibling === join &&
+      join.nextElementSibling === manual;
+
+    if (!orderAlreadyCorrect) {
+      host.append(
+        marker,
+        join,
+        manual
+      );
+    }
+
+    window.__cgweb127Fix2ActionBarIdempotent =
+      true;
 
     for (
       const button of
@@ -63400,15 +63582,27 @@ console.info(
       manual.parentElement ===
         host
     ) {
-      manual.insertAdjacentElement(
-        "afterend",
-        button
-      );
-    } else {
+      const alreadyPlaced =
+        button.parentElement === host &&
+        manual.nextElementSibling ===
+          button;
+
+      if (!alreadyPlaced) {
+        manual.insertAdjacentElement(
+          "afterend",
+          button
+        );
+      }
+    } else if (
+      button.parentElement !== host
+    ) {
       host.appendChild(
         button
       );
     }
+
+    window.__cgweb127Fix2SplitButtonIdempotent =
+      true;
 
     return true;
   }
@@ -64951,22 +65145,49 @@ console.info(
     cgweb124EnsureToolbarButton();
   }
 
+  let cgweb123124InstallScheduled =
+    false;
+
   const cgweb123124Observer =
     new MutationObserver(
       () => {
-        queueMicrotask(
-          cgweb123124Install
+        if (
+          cgweb123124InstallScheduled
+        ) {
+          return;
+        }
+
+        cgweb123124InstallScheduled =
+          true;
+
+        requestAnimationFrame(
+          () => {
+            cgweb123124InstallScheduled =
+              false;
+
+            cgweb123124Install();
+          }
         );
       }
     );
 
-  cgweb123124Observer.observe(
-    document.body,
-    {
-      childList: true,
-      subtree: true
-    }
-  );
+  const cgweb123124ObserverRoot =
+    document.getElementById(
+      "detailView"
+    );
+
+  if (cgweb123124ObserverRoot) {
+    cgweb123124Observer.observe(
+      cgweb123124ObserverRoot,
+      {
+        childList: true,
+        subtree: true
+      }
+    );
+  }
+
+  window.__cgweb127Fix2Cgweb123124ObserverRoot =
+    cgweb123124ObserverRoot?.id || null;
 
   window.CGWEB123_STATUS =
     function() {
@@ -71596,3 +71817,66 @@ console.info(
   "DETAIL_OBSERVER_SCOPE001"
 );
 /* CGWEB127_FIX1_END */
+
+
+/* CGWEB127_FIX2_START
+   LEGACY_JOIN_OBSERVER_SCOPE001
+   FULL_DOM_SCAN_REMOVE001
+   ACTION_BAR_IDEMPOTENT001
+*/
+window.CGWEB127_FIX2_STATUS = () => ({
+  build:
+    "CGWEB127_FIX2",
+
+  legacy_join_observer_scope:
+    "LEGACY_JOIN_OBSERVER_SCOPE001",
+
+  full_dom_scan_remove:
+    "FULL_DOM_SCAN_REMOVE001",
+
+  action_bar_idempotent:
+    "ACTION_BAR_IDEMPOTENT001",
+
+  base_join_observer_root:
+    window
+      .__cgweb127Fix2BaseJoinObserverRoot ||
+    null,
+
+  legacy_fix1_observer_root:
+    window
+      .__cgweb127Fix2LegacyJoinObserverRoot ||
+    null,
+
+  cgweb123124_observer_root:
+    window
+      .__cgweb127Fix2Cgweb123124ObserverRoot ||
+    null,
+
+  action_bar_idempotent_active:
+    window
+      .__cgweb127Fix2ActionBarIdempotent ===
+      true,
+
+  split_button_idempotent_active:
+    window
+      .__cgweb127Fix2SplitButtonIdempotent ===
+      true,
+
+  global_full_dom_star_scan_removed:
+    true,
+
+  legacy_join_global_body_observers_removed:
+    true,
+
+  cgweb127_fix1_preserved:
+    typeof window.CGWEB127_FIX1_STATUS ===
+      "function"
+});
+
+console.info(
+  "CGWEB127 FIX2 actif · " +
+  "LEGACY_JOIN_OBSERVER_SCOPE001 / " +
+  "FULL_DOM_SCAN_REMOVE001 / " +
+  "ACTION_BAR_IDEMPOTENT001"
+);
+/* CGWEB127_FIX2_END */
