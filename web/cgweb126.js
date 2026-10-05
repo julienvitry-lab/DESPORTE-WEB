@@ -710,24 +710,277 @@ function cg126EffectiveActivity(activity) {
   };
 }
 
+/* ==========================================================
+   CGWEB128 FIX1
+   VISIBLE_SEQUENCE_SECTION001
+   HIDDEN_PARENT_ESCAPE001
+   DETAIL_PANEL_STABLE_ANCHOR001
+   ========================================================== */
+
+function cg126HasHiddenAncestor(
+  node,
+  stopNode
+) {
+  let current =
+    node?.parentElement || null;
+
+  while (
+    current &&
+    current !== stopNode
+  ) {
+    if (
+      current.hidden ||
+      current.classList?.contains(
+        "hidden"
+      ) ||
+      current.getAttribute?.(
+        "aria-hidden"
+      ) === "true"
+    ) {
+      return true;
+    }
+
+    current =
+      current.parentElement;
+  }
+
+  return false;
+}
+
+
+function cg126ResolveDetailAnchor(
+  detail
+) {
+  /*
+   * Ancre prioritaire :
+   * Historique des modifications.
+   *
+   * CGWEB111 peut avoir enveloppé cette section dans un <details>
+   * et déplacé le tout dans sa pile inférieure.
+   *
+   * On remonte donc jusqu'au premier enfant du conteneur visible
+   * concerné, au lieu de s'insérer à l'intérieur du wrapper.
+   */
+  const revision =
+    detail.querySelector(
+      "#cgweb084RevisionSection"
+    );
+
+  if (revision) {
+    let anchor =
+      revision;
+
+    while (
+      anchor.parentElement &&
+      anchor.parentElement !==
+        detail &&
+      anchor.parentElement.id !==
+        "cgweb111Fix3BottomStack"
+    ) {
+      anchor =
+        anchor.parentElement;
+    }
+
+    const parent =
+      anchor.parentElement;
+
+    if (
+      parent &&
+      detail.contains(parent)
+    ) {
+      return {
+        parent,
+        anchor,
+        mode:
+          "before-revision"
+      };
+    }
+  }
+
+  /*
+   * Fallback stable :
+   * juste avant la navigation inférieure.
+   */
+  const bottomNav =
+    detail.querySelector(
+      ".detail-bottom-nav"
+    );
+
+  if (
+    bottomNav &&
+    bottomNav.parentElement
+  ) {
+    return {
+      parent:
+        bottomNav.parentElement,
+
+      anchor:
+        bottomNav,
+
+      mode:
+        "before-bottom-nav"
+    };
+  }
+
+  /*
+   * Dernier recours :
+   * fin de #detailView.
+   */
+  return {
+    parent:
+      detail,
+
+    anchor:
+      null,
+
+    mode:
+      "detail-end"
+  };
+}
+
+
+function cg126PlaceDetailPanel(
+  host,
+  detail
+) {
+  if (
+    !host ||
+    !detail
+  ) {
+    return false;
+  }
+
+  const target =
+    cg126ResolveDetailAnchor(
+      detail
+    );
+
+  if (!target?.parent) {
+    return false;
+  }
+
+  const wasConnected =
+    host.isConnected;
+
+  const correctlyPlaced =
+    target.anchor
+      ? (
+          host.parentElement ===
+            target.parent &&
+          host.nextElementSibling ===
+            target.anchor
+        )
+      : (
+          host.parentElement ===
+            target.parent &&
+          target.parent
+            .lastElementChild ===
+            host
+        );
+
+  if (!correctlyPlaced) {
+    if (target.anchor) {
+      target.parent.insertBefore(
+        host,
+        target.anchor
+      );
+    } else {
+      target.parent.appendChild(
+        host
+      );
+    }
+
+    if (wasConnected) {
+      cg126DetailPanelMoveCount += 1;
+    }
+  }
+
+  /*
+   * Le panneau lui-même ne doit jamais conserver
+   * une ancienne marque d'invisibilité.
+   */
+  host.hidden = false;
+
+  host.classList.remove(
+    "hidden"
+  );
+
+  host.removeAttribute(
+    "aria-hidden"
+  );
+
+  host.dataset.cgweb128Fix1Visible =
+    "1";
+
+  host.dataset.cgweb128Fix1Anchor =
+    target.mode;
+
+  /*
+   * Sécurité HIDDEN_PARENT_ESCAPE001 :
+   * si une transformation historique a malgré tout placé notre
+   * ancre sous un ancêtre caché, on sort immédiatement le panneau
+   * de ce conteneur.
+   */
+  if (
+    cg126HasHiddenAncestor(
+      host,
+      detail
+    )
+  ) {
+    const bottomNav =
+      detail.querySelector(
+        ".detail-bottom-nav"
+      );
+
+    if (
+      bottomNav &&
+      bottomNav.parentElement ===
+        detail
+    ) {
+      detail.insertBefore(
+        host,
+        bottomNav
+      );
+
+      host.dataset
+        .cgweb128Fix1Anchor =
+        "detail-visible-fallback";
+    } else {
+      detail.appendChild(
+        host
+      );
+
+      host.dataset
+        .cgweb128Fix1Anchor =
+        "detail-end-fallback";
+    }
+
+    if (wasConnected) {
+      cg126DetailPanelMoveCount += 1;
+    }
+  }
+
+  window
+    .__cgweb128Fix1LastAnchor =
+    host.dataset
+      .cgweb128Fix1Anchor ||
+    null;
+
+  return true;
+}
+
+
 function cg126EnsureDetailUi() {
   const detail =
     document.getElementById(
       "detailView"
     );
 
-  const grid =
-    document.getElementById(
-      "detailPersonalGrid"
-    );
-
   if (
     !detail ||
     detail.classList.contains(
       "hidden"
-    ) ||
-    !grid ||
-    !detail.contains(grid)
+    )
   ) {
     return null;
   }
@@ -738,42 +991,51 @@ function cg126EnsureDetailUi() {
     );
 
   if (host) {
-    const correctlyPlaced =
-      host.parentElement ===
-        grid.parentElement &&
-      host.previousElementSibling ===
-        grid;
+    /*
+     * Un ancien rendu CGWEB128 peut avoir créé le panneau
+     * sous .detail-edit-panel.hidden.
+     *
+     * On le réutilise : aucune duplication.
+     */
+    host.classList.add(
+      "detail-section",
+      "panel",
+      "cg126-sequence-field"
+    );
 
-    if (!correctlyPlaced) {
-      grid.insertAdjacentElement(
-        "afterend",
-        host
-      );
-
-      cg126DetailPanelMoveCount += 1;
-    }
+    host.dataset
+      .cgweb128Idempotent =
+      "1";
 
     if (
-      host.dataset.cgweb128Idempotent !==
-      "1"
+      !cg126PlaceDetailPanel(
+        host,
+        detail
+      )
     ) {
-      host.dataset.cgweb128Idempotent =
-        "1";
+      return null;
     }
 
     return host;
   }
 
   host =
-    document.createElement("div");
+    document.createElement(
+      "section"
+    );
 
   host.id =
     "cgweb126SequenceField";
 
   host.className =
-    "cg126-sequence-field";
+    "detail-section panel cg126-sequence-field";
 
-  host.dataset.cgweb128Idempotent =
+  host.dataset
+    .cgweb128Idempotent =
+    "1";
+
+  host.dataset
+    .cgweb128Fix1Visible =
     "1";
 
   host.innerHTML = `
@@ -803,16 +1065,23 @@ function cg126EnsureDetailUi() {
         type="button"
       >Revenir au calcul automatique</button>
 
-      <span id="cgweb126SequenceStatus" class="muted">
+      <span
+        id="cgweb126SequenceStatus"
+        class="muted"
+      >
         Valeur automatique tant qu’aucune personnalisation n’est enregistrée.
       </span>
     </div>
   `;
 
-  grid.insertAdjacentElement(
-    "afterend",
-    host
-  );
+  if (
+    !cg126PlaceDetailPanel(
+      host,
+      detail
+    )
+  ) {
+    return null;
+  }
 
   cg126DetailPanelMountCount += 1;
 
@@ -1436,6 +1705,15 @@ window.CGWEB128_STATUS = () => ({
   observer_safe_integration:
     "OBSERVER_SAFE_INTEGRATION001",
 
+  visible_sequence_section:
+    "VISIBLE_SEQUENCE_SECTION001",
+
+  hidden_parent_escape:
+    "HIDDEN_PARENT_ESCAPE001",
+
+  detail_panel_stable_anchor:
+    "DETAIL_PANEL_STABLE_ANCHOR001",
+
   detail_event:
     "sport-activity-detail-render",
 
@@ -1473,6 +1751,48 @@ window.CGWEB128_STATUS = () => ({
       ?.dataset
       ?.cgweb128Idempotent === "1",
 
+  detail_panel_visible:
+    document
+      .getElementById(
+        "cgweb126SequenceField"
+      )
+      ?.dataset
+      ?.cgweb128Fix1Visible === "1",
+
+  detail_panel_anchor:
+    document
+      .getElementById(
+        "cgweb126SequenceField"
+      )
+      ?.dataset
+      ?.cgweb128Fix1Anchor ||
+    null,
+
+  detail_panel_hidden_ancestor:
+    (() => {
+      const detail =
+        document.getElementById(
+          "detailView"
+        );
+
+      const panel =
+        document.getElementById(
+          "cgweb126SequenceField"
+        );
+
+      if (
+        !detail ||
+        !panel
+      ) {
+        return null;
+      }
+
+      return cg126HasHiddenAncestor(
+        panel,
+        detail
+      );
+    })(),
+
   current_activity_id:
     String(
       cg126CurrentActivity?.__docId ??
@@ -1499,10 +1819,13 @@ window.CGWEB128_STATUS = () => ({
 });
 
 console.info(
-  "CGWEB128 actif · " +
+  "CGWEB128 FIX1 actif · " +
   "DETAIL_SEQUENCE_ASYNC001 / " +
   "SEQUENCE_PANEL_IDEMPOTENT001 / " +
-  "OBSERVER_SAFE_INTEGRATION001"
+  "OBSERVER_SAFE_INTEGRATION001 / " +
+  "VISIBLE_SEQUENCE_SECTION001 / " +
+  "HIDDEN_PARENT_ESCAPE001 / " +
+  "DETAIL_PANEL_STABLE_ANCHOR001"
 );
 
 console.info(
