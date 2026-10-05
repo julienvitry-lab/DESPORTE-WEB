@@ -22116,7 +22116,14 @@ async function addSelectedLandmark() {
 async function changeLandmarkOccurrence(activity, code, delta) {
   const current = linksForActivity(activity)
     .find((link) => String(link.landmark_code ?? "") === String(code));
-  const currentCount = current ? Math.max(1, numberOrZero(current.occurrences)) : 0;
+
+  /* CGWEB124 FIX3 · LANDMARK_PROVENANCE001 */
+  const currentCount = current
+    ? current.manual_occurrences != null
+      ? Math.max(0, numberOrZero(current.manual_occurrences))
+      : Math.max(1, numberOrZero(current.occurrences))
+    : 0;
+
   const next = Math.max(0, Math.min(99, currentCount + delta));
   await setLandmarkOccurrence(activity, code, next);
 }
@@ -22127,14 +22134,31 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
 
   const rowKey = `${activityId}:${code}`;
   const now = Date.now();
-  const next = Math.max(0, Math.min(99, Number(occurrences) || 0));
+  const manualNext = Math.max(0, Math.min(99, Number(occurrences) || 0));
+  const current = linksForActivity(activity)
+    .find((link) => String(link.landmark_code ?? "") === String(code)) || null;
 
-  await cgweb084SaveActivityRevision(activity, "LANDMARK", { landmark_code: code, occurrences: next });
+  const gpsCount = Math.max(0, Number(current?.gps_occurrences || 0));
+  const manualSource = String(
+    current?.manual_source ||
+    (current?.gps_managed ? "WEB" : current?.source || "WEB")
+  );
+  const finalCount = Math.max(manualNext, gpsCount);
 
-  setInteropStatus(next > 0 ? "Repère en cours d’envoi…" : "Suppression en cours…", "pending");
+  await cgweb084SaveActivityRevision(activity, "LANDMARK", {
+    landmark_code: code,
+    occurrences: finalCount,
+    manual_occurrences: manualNext,
+    gps_occurrences: gpsCount
+  });
+
+  setInteropStatus(
+    finalCount > 0 ? "Repère en cours d’envoi…" : "Suppression en cours…",
+    "pending"
+  );
 
   try {
-    if (next <= 0) {
+    if (finalCount <= 0) {
       await commitWebMutation({
         table: "activity_landmarks",
         rowKey,
@@ -22145,13 +22169,26 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
       });
       applyActivityLandmarkLocally(activityId, code, null, "DELETE");
     } else {
+      const source = manualNext > 0 && gpsCount > 0
+        ? "MIXED"
+        : gpsCount > 0
+          ? "GPS"
+          : manualSource || "WEB";
+
       const row = {
+        ...(current || {}),
         activity_id: activityId,
         landmark_code: code,
-        occurrences: next,
-        source: "WEB",
-        updated_at_ms: now
+        occurrences: finalCount,
+        manual_occurrences: manualNext,
+        gps_occurrences: gpsCount,
+        gps_managed: gpsCount > 0,
+        manual_source: manualSource,
+        source,
+        updated_at_ms: now,
+        landmark_provenance_version: "LANDMARK_PROVENANCE001"
       };
+
       await commitWebMutation({
         table: "activity_landmarks",
         rowKey,
@@ -22165,8 +22202,18 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
 
     renderPersonal(activity);
     applyFiltersAndRender();
-    setInteropStatus("Repère synchronisé automatiquement", "ok");
-    setMessage("WEB018 · repère synchronisé automatiquement sur les trois plateformes.", "success");
+    setInteropStatus(
+      gpsCount > 0 && manualNext <= 0
+        ? "Couche manuelle retirée · repère GPS conservé"
+        : "Repère synchronisé automatiquement",
+      "ok"
+    );
+    setMessage(
+      gpsCount > 0 && manualNext <= 0
+        ? "CGWEB124 FIX3 · repère manuel retiré ; la détection GPS reste active."
+        : "WEB018 · repère synchronisé automatiquement sur les trois plateformes.",
+      "success"
+    );
   } catch (error) {
     console.error(error);
     setInteropStatus("Échec repère", "error");
@@ -71301,3 +71348,27 @@ console.info(
 );
 
 /* CGWEB125_FIX1_END */
+
+
+/* CGWEB124_FIX3_APP_BRIDGE_START */
+window.addEventListener("sport-gps-backfill-applied", (event) => {
+  const operations = Array.isArray(event.detail?.operations) ? event.detail.operations : [];
+  for (const op of operations) {
+    const activityId = String(op?.activity_id ?? "").trim();
+    const code = String(op?.landmark_code ?? "").trim();
+    if (!activityId || !code) continue;
+    if (op.operation === "DELETE") {
+      applyActivityLandmarkLocally(activityId, code, null, "DELETE");
+    } else if (op.row) {
+      applyActivityLandmarkLocally(activityId, code, op.row, "UPSERT");
+    }
+  }
+  if (operations.length) {
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+    const current = currentDetailActivity();
+    if (current) renderPersonal(current);
+  }
+});
+console.info("CGWEB124 FIX3 bridge actif · LANDMARK_PROVENANCE001");
+/* CGWEB124_FIX3_APP_BRIDGE_END */

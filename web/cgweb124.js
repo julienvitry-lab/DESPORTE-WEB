@@ -9,6 +9,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  where,
   limit,
   serverTimestamp,
   increment,
@@ -1650,6 +1651,13 @@ async function cg124IncrementalIndex(activityDocId, activity) {
     if (priorSnap.exists()) {
       await deleteDoc(indexRef);
       await cg124UpdateIncrementalSummaries(prior, { hits: {} }, activity);
+      await cg124Fix3SyncOneIndexRow({
+        activity_doc_id: String(activityDocId),
+        activity_id: cg124ActivityId(activity, activityDocId),
+        marker_signature: cg124MarkerSignature(),
+        sport: Number(activity?.sport || 0),
+        hits: {}
+      });
     }
     return;
   }
@@ -1667,6 +1675,7 @@ async function cg124IncrementalIndex(activityDocId, activity) {
   const result = await cg124IndexOne(activityDocId, { __docId: activityDocId, ...activity });
   if (result?.row) {
     await cg124UpdateIncrementalSummaries(prior, result.row, activity);
+    await cg124Fix3SyncOneIndexRow(result.row);
   }
 }
 
@@ -2540,3 +2549,593 @@ console.info(
 );
 
 /* CGWEB124_FIX2_SPORT_SPLIT_END */
+/* CGWEB124_FIX3_REINJECT_START
+   GPS_TO_ACTIVITY_BACKFILL001 / LANDMARK_PROVENANCE001
+   MULTIPASS_OCCURRENCE_SYNC001 / IDEMPOTENT_LANDMARK_UPSERT001
+   STALE_GPS_LINK_CLEANUP001 / INCREMENTAL_ACTIVITY_REINJECT001
+*/
+
+const CGWEB124_FIX3_VERSION = "CGWEB124_FIX3";
+const CGWEB124_FIX3_CHUNK = 70;
+let cg124Fix3Plan = null;
+let cg124Fix3Running = false;
+
+function cg124Fix3Key(activityId, code) {
+  return `${String(activityId ?? "").trim()}::${String(code ?? "").trim()}`;
+}
+
+function cg124Fix3ActivityIdValue(value) {
+  const text = String(value ?? "").trim();
+  const numeric = Number(text);
+  return text && Number.isFinite(numeric) && numeric > 0 ? numeric : text;
+}
+
+function cg124Fix3ManualCount(existing) {
+  if (!existing) return 0;
+  if (existing.manual_occurrences != null) {
+    return Math.max(0, Number(existing.manual_occurrences) || 0);
+  }
+  if (existing.gps_managed !== true && !Number(existing.gps_occurrences || 0)) {
+    return Math.max(0, Number(existing.occurrences) || 0);
+  }
+  return 0;
+}
+
+function cg124Fix3ManualSource(existing) {
+  if (!existing) return "NONE";
+  return String(
+    existing.manual_source ||
+    (existing.gps_managed ? "WEB" : existing.source || "LEGACY")
+  );
+}
+
+function cg124Fix3ManagedByGps(existing) {
+  return Boolean(
+    existing?.gps_managed === true ||
+    Number(existing?.gps_occurrences || 0) > 0 ||
+    String(existing?.gps_source || "").toUpperCase() === "CGWEB124"
+  );
+}
+
+function cg124Fix3BuildRow({existing = null, activityId, code, gpsCount, indexRow}) {
+  const manual = cg124Fix3ManualCount(existing);
+  const gpsCountSafe = Math.max(0, Math.min(99, Number(gpsCount) || 0));
+  const total = Math.max(manual, gpsCountSafe);
+  const manualSource = cg124Fix3ManualSource(existing);
+  const source = manual > 0 && gpsCountSafe > 0
+    ? "MIXED"
+    : gpsCountSafe > 0
+      ? "GPS"
+      : manualSource || "WEB";
+
+  return {
+    ...(existing || {}),
+    activity_id: cg124Fix3ActivityIdValue(activityId),
+    landmark_code: String(code),
+    occurrences: total,
+    manual_occurrences: manual,
+    gps_occurrences: gpsCountSafe,
+    gps_managed: gpsCountSafe > 0,
+    manual_source: manualSource,
+    source,
+    gps_source: gpsCountSafe > 0 ? "CGWEB124" : null,
+    gps_detector_version: indexRow?.detector_version || CGWEB124_DETECTOR_VERSION,
+    gps_marker_signature: indexRow?.marker_signature || cg124MarkerSignature(),
+    gps_indexed_at_ms: Number(indexRow?.indexed_at_ms || Date.now()),
+    gps_reinject_version: CGWEB124_FIX3_VERSION,
+    landmark_provenance_version: "LANDMARK_PROVENANCE001",
+    updated_at_ms: Date.now()
+  };
+}
+
+function cg124Fix3Comparable(row) {
+  if (!row) return null;
+  return {
+    activity_id: String(row.activity_id ?? ""),
+    landmark_code: String(row.landmark_code ?? ""),
+    occurrences: Number(row.occurrences || 0),
+    manual_occurrences: Number(row.manual_occurrences || 0),
+    gps_occurrences: Number(row.gps_occurrences || 0),
+    gps_managed: Boolean(row.gps_managed),
+    manual_source: String(row.manual_source || ""),
+    source: String(row.source || ""),
+    gps_source: String(row.gps_source || ""),
+    gps_detector_version: String(row.gps_detector_version || ""),
+    gps_marker_signature: String(row.gps_marker_signature || ""),
+    gps_reinject_version: String(row.gps_reinject_version || ""),
+    landmark_provenance_version: String(row.landmark_provenance_version || "")
+  };
+}
+
+function cg124Fix3RowsEqual(a, b) {
+  return JSON.stringify(cg124Fix3Comparable(a)) === JSON.stringify(cg124Fix3Comparable(b));
+}
+
+function cg124Fix3PublicOp(op) {
+  return {
+    operation: op.operation,
+    activity_id: op.activity_id,
+    landmark_code: op.landmark_code,
+    row: op.row || null
+  };
+}
+
+function cg124Fix3EnsureUi() {
+  const panel = document.getElementById("cgweb124GpsMarkerSection");
+  if (!panel) return null;
+  let host = document.getElementById("cg124ReinjectPanel");
+  if (host) return host;
+
+  host = document.createElement("div");
+  host.id = "cg124ReinjectPanel";
+  host.className = "cg124-index";
+  host.innerHTML = `
+    <div class="cg124-head">
+      <div>
+        <strong>Réinjecter les repères GPS dans les activités</strong>
+        <div id="cg124ReinjectMeta" class="muted">Prévisualise d’abord les liens à créer, mettre à jour ou nettoyer.</div>
+      </div>
+      <div class="cg124-actions">
+        <button id="cg124ReinjectPreview" class="secondary" type="button">Prévisualiser</button>
+        <button id="cg124ReinjectApply" class="primary" type="button" disabled>Réinjecter dans les activités</button>
+      </div>
+    </div>
+    <div id="cg124ReinjectStatus" class="muted">LANDMARK_PROVENANCE001 · occurrences = max(manuel, GPS).</div>
+  `;
+
+  const indexBlock = panel.querySelector(".cg124-index");
+  if (indexBlock) indexBlock.insertAdjacentElement("afterend", host);
+  else panel.appendChild(host);
+
+  host.querySelector("#cg124ReinjectPreview")?.addEventListener("click", () => void cg124Fix3Preview());
+  host.querySelector("#cg124ReinjectApply")?.addEventListener("click", () => void cg124Fix3Apply());
+  return host;
+}
+
+function cg124Fix3SetStatus(text, error = false) {
+  const node = document.getElementById("cg124ReinjectStatus");
+  if (!node) return;
+  node.textContent = String(text || "");
+  node.classList.toggle("cg124-error", Boolean(error));
+}
+
+function cg124Fix3RenderPlan(plan = cg124Fix3Plan) {
+  cg124Fix3EnsureUi();
+  const meta = document.getElementById("cg124ReinjectMeta");
+  const apply = document.getElementById("cg124ReinjectApply");
+  const preview = document.getElementById("cg124ReinjectPreview");
+  if (preview) preview.disabled = cg124Fix3Running;
+
+  if (!plan) {
+    if (meta) meta.textContent = "Prévisualise d’abord les liens à créer, mettre à jour ou nettoyer.";
+    if (apply) apply.disabled = true;
+    return;
+  }
+
+  if (meta) {
+    meta.textContent =
+      `${cg124FormatNumber(plan.detected_links)} lien(s) GPS détecté(s) · ` +
+      `${cg124FormatNumber(plan.create_count)} création(s) · ` +
+      `${cg124FormatNumber(plan.update_count)} mise(s) à jour · ` +
+      `${cg124FormatNumber(plan.cleanup_update_count)} nettoyage(s) manuel conservé · ` +
+      `${cg124FormatNumber(plan.delete_count)} suppression(s) GPS obsolète(s) · ` +
+      `${cg124FormatNumber(plan.noop_count)} déjà conforme(s).`;
+  }
+  if (apply) apply.disabled = cg124Fix3Running || !plan.operations.length;
+}
+
+async function cg124Fix3BuildPlan() {
+  if (!cg124User) throw new Error("Connexion SPORT requise.");
+  if (cg124HistoryRunning) throw new Error("Attends la fin de l’indexation historique.");
+
+  const history = cg124ReadHistory();
+  const signature = cg124MarkerSignature();
+  if (!history || history.status !== "COMPLETE") {
+    throw new Error("L’index historique GPS doit être COMPLETE avant la réinjection.");
+  }
+  if (String(history.marker_signature || "") !== signature) {
+    throw new Error("La configuration GPS a changé. Relance d’abord « Indexer tout l’historique ». ");
+  }
+
+  cg124Fix3SetStatus("Lecture de l’index GPS et des repères déjà présents…");
+
+  const [indexSnap, linkSnap] = await Promise.all([
+    getDocs(cg124UserCollection(CGWEB124_INDEX_COLLECTION)),
+    getDocs(cg124UserCollection("activity_landmarks"))
+  ]);
+
+  const existing = new Map();
+  for (const item of linkSnap.docs) {
+    const row = item.data() || {};
+    const activityId = String(row.activity_id ?? "").trim();
+    const code = String(row.landmark_code ?? "").trim();
+    if (!activityId || !code) continue;
+    existing.set(cg124Fix3Key(activityId, code), {__docId: item.id, ...row});
+  }
+
+  const desired = new Map();
+  let staleIndexRows = 0;
+  let ignoredUnknownMarkers = 0;
+
+  for (const item of indexSnap.docs) {
+    const row = item.data() || {};
+    if (String(row.marker_signature || "") !== signature) {
+      staleIndexRows += 1;
+      continue;
+    }
+    const activityId = String(row.activity_id || row.activity_doc_id || "").trim();
+    if (!activityId) continue;
+
+    for (const [code, hit] of Object.entries(row.hits || {})) {
+      const count = Math.max(0, Number(hit?.passage_count) || 0);
+      if (count <= 0) continue;
+      if (!cg124Markers.has(String(code))) {
+        ignoredUnknownMarkers += 1;
+        continue;
+      }
+      desired.set(cg124Fix3Key(activityId, code), {
+        activityId,
+        code: String(code),
+        gpsCount: count,
+        indexRow: row
+      });
+    }
+  }
+
+  const operations = [];
+  let createCount = 0, updateCount = 0, cleanupUpdateCount = 0, deleteCount = 0, noopCount = 0;
+
+  for (const [key, target] of desired) {
+    const old = existing.get(key) || null;
+    const next = cg124Fix3BuildRow({
+      existing: old,
+      activityId: target.activityId,
+      code: target.code,
+      gpsCount: target.gpsCount,
+      indexRow: target.indexRow
+    });
+
+    if (old && cg124Fix3RowsEqual(old, next)) {
+      noopCount += 1;
+      continue;
+    }
+
+    operations.push({
+      operation: "UPSERT",
+      kind: old ? "UPDATE" : "CREATE",
+      rowKey: old?.__docId || `${target.activityId}:${target.code}`,
+      activity_id: cg124Fix3ActivityIdValue(target.activityId),
+      landmark_code: target.code,
+      row: next,
+      existed: Boolean(old)
+    });
+    if (old) updateCount += 1;
+    else createCount += 1;
+  }
+
+  /* STALE_GPS_LINK_CLEANUP001 : uniquement les liens explicitement GPS. */
+  for (const [key, old] of existing) {
+    if (desired.has(key) || !cg124Fix3ManagedByGps(old)) continue;
+    const manual = cg124Fix3ManualCount(old);
+
+    if (manual > 0) {
+      const cleaned = {
+        ...old,
+        occurrences: manual,
+        manual_occurrences: manual,
+        gps_occurrences: 0,
+        gps_managed: false,
+        gps_source: null,
+        source: cg124Fix3ManualSource(old) || "WEB",
+        gps_reinject_version: CGWEB124_FIX3_VERSION,
+        landmark_provenance_version: "LANDMARK_PROVENANCE001",
+        gps_cleanup_at_ms: Date.now(),
+        updated_at_ms: Date.now()
+      };
+      operations.push({
+        operation: "UPSERT",
+        kind: "CLEANUP_UPDATE",
+        rowKey: old.__docId,
+        activity_id: cg124Fix3ActivityIdValue(old.activity_id),
+        landmark_code: String(old.landmark_code),
+        row: cleaned,
+        existed: true
+      });
+      cleanupUpdateCount += 1;
+    } else {
+      operations.push({
+        operation: "DELETE",
+        kind: "DELETE",
+        rowKey: old.__docId,
+        activity_id: cg124Fix3ActivityIdValue(old.activity_id),
+        landmark_code: String(old.landmark_code),
+        row: null,
+        existed: true
+      });
+      deleteCount += 1;
+    }
+  }
+
+  return {
+    built_at_ms: Date.now(),
+    marker_signature: signature,
+    detected_links: desired.size,
+    index_doc_count: indexSnap.size,
+    existing_link_count: linkSnap.size,
+    stale_index_rows: staleIndexRows,
+    ignored_unknown_markers: ignoredUnknownMarkers,
+    create_count: createCount,
+    update_count: updateCount,
+    cleanup_update_count: cleanupUpdateCount,
+    delete_count: deleteCount,
+    noop_count: noopCount,
+    operations
+  };
+}
+
+async function cg124Fix3Preview() {
+  if (cg124Fix3Running) return;
+  cg124Fix3Running = true;
+  cg124Fix3RenderPlan();
+  try {
+    cg124Fix3Plan = await cg124Fix3BuildPlan();
+    cg124Fix3RenderPlan(cg124Fix3Plan);
+    cg124Fix3SetStatus(
+      cg124Fix3Plan.operations.length
+        ? `Prévisualisation prête · ${cg124FormatNumber(cg124Fix3Plan.operations.length)} mutation(s) nécessaire(s).`
+        : "Tout est déjà synchronisé · aucune mutation nécessaire."
+    );
+  } catch (error) {
+    console.error("CGWEB124 FIX3 preview", error);
+    cg124Fix3Plan = null;
+    cg124Fix3SetStatus(error?.message || String(error), true);
+  } finally {
+    cg124Fix3Running = false;
+    cg124Fix3RenderPlan(cg124Fix3Plan);
+  }
+}
+
+async function cg124Fix3CommitChunk(operations) {
+  if (!operations?.length) return;
+  const batch = writeBatch(db);
+  const now = Date.now();
+  let metaDelta = 0;
+
+  for (const op of operations) {
+    const businessRef = cg124UserDoc("activity_landmarks", op.rowKey);
+    const seq = cg124NextSeq();
+    const eventId = `cgweb124_fix3_${now}_${seq}_${Math.random().toString(36).slice(2, 7)}`;
+    const changeRef = cg124UserDoc("changes", eventId);
+
+    if (op.operation === "DELETE") {
+      batch.delete(businessRef);
+      metaDelta -= 1;
+    } else {
+      batch.set(
+        businessRef,
+        {...(op.row || {}), __sportKey: String(op.rowKey), __updatedAtMs: now},
+        {merge: true}
+      );
+      if (!op.existed) metaDelta += 1;
+    }
+
+    const change = {
+      eventId,
+      deviceId: cg124DeviceId(),
+      firebaseSeq: seq,
+      sourceChangeSeq: 0,
+      table: "activity_landmarks",
+      rowKey: String(op.rowKey),
+      operation: op.operation,
+      changedAtMs: now,
+      publishedAt: serverTimestamp(),
+      androidVersion: 0,
+      webVersion: CGWEB124_FIX3_VERSION
+    };
+    if (op.operation !== "DELETE") change.row = op.row;
+    batch.set(changeRef, change);
+  }
+
+  const metaPatch = {
+    updatedAtMs: now,
+    sourceDeviceId: cg124DeviceId(),
+    webVersion: CGWEB124_FIX3_VERSION
+  };
+  if (metaDelta !== 0) {
+    metaPatch.activityLandmarkCount = increment(metaDelta);
+    metaPatch.expectedDocuments = increment(metaDelta);
+  }
+  batch.set(cg124UserDoc("meta", "state"), metaPatch, {merge: true});
+  await batch.commit();
+}
+
+async function cg124Fix3Apply() {
+  if (cg124Fix3Running) return;
+  if (!cg124Fix3Plan) await cg124Fix3Preview();
+  const plan = cg124Fix3Plan;
+  if (!plan || !plan.operations.length) {
+    cg124Fix3SetStatus("Aucune réinjection nécessaire.");
+    return;
+  }
+  if (String(plan.marker_signature || "") !== cg124MarkerSignature()) {
+    cg124Fix3Plan = null;
+    cg124Fix3RenderPlan();
+    cg124Fix3SetStatus("La configuration GPS a changé. Recommence la prévisualisation.", true);
+    return;
+  }
+
+  const ok = window.confirm(
+    "Réinjecter les repères GPS détectés dans les activités ?\n\n" +
+    `${plan.create_count} création(s)\n` +
+    `${plan.update_count} mise(s) à jour\n` +
+    `${plan.cleanup_update_count} nettoyage(s) conservant le manuel\n` +
+    `${plan.delete_count} suppression(s) GPS obsolète(s)\n\n` +
+    "Anti-doublon : occurrences = max(manuel, GPS), jamais manuel + GPS."
+  );
+  if (!ok) return;
+
+  cg124Fix3Running = true;
+  cg124Fix3RenderPlan(plan);
+
+  try {
+    let cursor = 0;
+    while (cursor < plan.operations.length) {
+      const chunk = plan.operations.slice(cursor, cursor + CGWEB124_FIX3_CHUNK);
+      cg124Fix3SetStatus(
+        `GPS_TO_ACTIVITY_BACKFILL001 · ${cg124FormatNumber(cursor + 1)} à ` +
+        `${cg124FormatNumber(Math.min(cursor + chunk.length, plan.operations.length))} / ` +
+        `${cg124FormatNumber(plan.operations.length)}`
+      );
+      await cg124Fix3CommitChunk(chunk);
+      cursor += chunk.length;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+
+    window.dispatchEvent(new CustomEvent("sport-gps-backfill-applied", {
+      detail: {
+        operations: plan.operations.map(cg124Fix3PublicOp),
+        build: CGWEB124_FIX3_VERSION
+      }
+    }));
+
+    /* IDEMPOTENT_LANDMARK_UPSERT001 : vérification immédiate. */
+    cg124Fix3Plan = await cg124Fix3BuildPlan();
+    cg124Fix3RenderPlan(cg124Fix3Plan);
+    cg124Fix3SetStatus(
+      cg124Fix3Plan.operations.length === 0
+        ? "Réinjection terminée · état idempotent confirmé · 0 mutation restante."
+        : `Réinjection terminée mais ${cg124FormatNumber(cg124Fix3Plan.operations.length)} mutation(s) restent à appliquer. Relance la réinjection.`,
+      cg124Fix3Plan.operations.length !== 0
+    );
+  } catch (error) {
+    console.error("CGWEB124 FIX3 apply", error);
+    cg124Fix3Plan = null;
+    cg124Fix3SetStatus(
+      `Réinjection interrompue : ${error?.message || error} · relance Prévisualiser ; les opérations déjà appliquées seront ignorées.`,
+      true
+    );
+  } finally {
+    cg124Fix3Running = false;
+    cg124Fix3RenderPlan(cg124Fix3Plan);
+  }
+}
+
+async function cg124Fix3ExistingForActivity(activityId) {
+  const value = cg124Fix3ActivityIdValue(activityId);
+  const snap = await getDocs(
+    query(cg124UserCollection("activity_landmarks"), where("activity_id", "==", value))
+  );
+  const map = new Map();
+  for (const item of snap.docs) {
+    const row = item.data() || {};
+    const code = String(row.landmark_code || "").trim();
+    if (code) map.set(code, {__docId: item.id, ...row});
+  }
+  return map;
+}
+
+async function cg124Fix3SyncOneIndexRow(indexRow) {
+  if (!cg124User || !indexRow) return;
+  const activityId = String(indexRow.activity_id || indexRow.activity_doc_id || "").trim();
+  if (!activityId) return;
+
+  const existingByCode = await cg124Fix3ExistingForActivity(activityId);
+  const operations = [];
+
+  for (const code of cg124Markers.keys()) {
+    const old = existingByCode.get(code) || null;
+    const gpsCount = Math.max(0, Number(indexRow?.hits?.[code]?.passage_count) || 0);
+
+    if (gpsCount > 0) {
+      const next = cg124Fix3BuildRow({existing: old, activityId, code, gpsCount, indexRow});
+      if (!old || !cg124Fix3RowsEqual(old, next)) {
+        operations.push({
+          operation: "UPSERT",
+          kind: old ? "UPDATE" : "CREATE",
+          rowKey: old?.__docId || `${activityId}:${code}`,
+          activity_id: cg124Fix3ActivityIdValue(activityId),
+          landmark_code: code,
+          row: next,
+          existed: Boolean(old)
+        });
+      }
+      continue;
+    }
+
+    if (!old || !cg124Fix3ManagedByGps(old)) continue;
+    const manual = cg124Fix3ManualCount(old);
+
+    if (manual > 0) {
+      operations.push({
+        operation: "UPSERT",
+        kind: "CLEANUP_UPDATE",
+        rowKey: old.__docId,
+        activity_id: cg124Fix3ActivityIdValue(activityId),
+        landmark_code: code,
+        row: {
+          ...old,
+          occurrences: manual,
+          manual_occurrences: manual,
+          gps_occurrences: 0,
+          gps_managed: false,
+          gps_source: null,
+          source: cg124Fix3ManualSource(old) || "WEB",
+          gps_reinject_version: CGWEB124_FIX3_VERSION,
+          landmark_provenance_version: "LANDMARK_PROVENANCE001",
+          gps_cleanup_at_ms: Date.now(),
+          updated_at_ms: Date.now()
+        },
+        existed: true
+      });
+    } else {
+      operations.push({
+        operation: "DELETE",
+        kind: "DELETE",
+        rowKey: old.__docId,
+        activity_id: cg124Fix3ActivityIdValue(activityId),
+        landmark_code: code,
+        row: null,
+        existed: true
+      });
+    }
+  }
+
+  if (!operations.length) return;
+  await cg124Fix3CommitChunk(operations);
+  window.dispatchEvent(new CustomEvent("sport-gps-backfill-applied", {
+    detail: {
+      operations: operations.map(cg124Fix3PublicOp),
+      build: CGWEB124_FIX3_VERSION,
+      incremental: true
+    }
+  }));
+}
+
+const cg124Fix3BaseRender = cg124Render;
+cg124Render = function() {
+  cg124Fix3BaseRender();
+  cg124Fix3EnsureUi();
+  cg124Fix3RenderPlan(cg124Fix3Plan);
+};
+
+window.CGWEB124_FIX3_STATUS = () => ({
+  build: CGWEB124_FIX3_VERSION,
+  gps_to_activity_backfill: "GPS_TO_ACTIVITY_BACKFILL001",
+  landmark_provenance: "LANDMARK_PROVENANCE001",
+  multipass_occurrence_sync: "MULTIPASS_OCCURRENCE_SYNC001",
+  idempotent_landmark_upsert: "IDEMPOTENT_LANDMARK_UPSERT001",
+  stale_gps_link_cleanup: "STALE_GPS_LINK_CLEANUP001",
+  incremental_activity_reinject: "INCREMENTAL_ACTIVITY_REINJECT001",
+  running: cg124Fix3Running,
+  planned_operations: cg124Fix3Plan?.operations?.length || 0
+});
+
+queueMicrotask(() => {
+  cg124Fix3EnsureUi();
+  cg124Fix3RenderPlan();
+});
+
+console.info(
+  "CGWEB124 FIX3 actif · GPS_TO_ACTIVITY_BACKFILL001 / LANDMARK_PROVENANCE001 / MULTIPASS_OCCURRENCE_SYNC001 / IDEMPOTENT_LANDMARK_UPSERT001 / STALE_GPS_LINK_CLEANUP001 / INCREMENTAL_ACTIVITY_REINJECT001"
+);
+/* CGWEB124_FIX3_REINJECT_END */
