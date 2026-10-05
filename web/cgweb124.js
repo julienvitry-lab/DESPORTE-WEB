@@ -672,7 +672,11 @@ function cg124EnsurePanel() {
   let panel = document.getElementById("cgweb124GpsMarkerSection");
   if (panel) return panel;
 
-  const anchor = document.getElementById("landmarkManagerSection");
+  /*
+   * CGWEB127 · CGWEB124_SINGLE_SCOPE001
+   * CGWEB124 appartient exclusivement à Plus > Repères avancés.
+   */
+  const anchor = document.getElementById("advancedLandmarksSection");
   if (!anchor) return null;
 
   panel = document.createElement("section");
@@ -737,7 +741,7 @@ function cg124EnsurePanel() {
     </div>
   `;
 
-  anchor.insertAdjacentElement("afterend", panel);
+  anchor.appendChild(panel);
 
   panel.querySelector("#cg124MarkerSelect")?.addEventListener("change", cg124PopulateEditor);
   panel.querySelector("#cg124MapPickerOpen")?.addEventListener("click", () => cg124MapPickerOpen());

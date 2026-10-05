@@ -1071,11 +1071,6 @@ function uxPageConfig() {
       eyebrow: "",
       subs: [["directory","Activités"]]
     },
-    joins: {
-      title: "Jonctions",
-      eyebrow: "",
-      subs: []
-    },
     analysis: {
       title: "Analyse",
       eyebrow: "",
@@ -1100,6 +1095,7 @@ function uxPageConfig() {
         ["import","Import"],
         ["sync","Synchronisation"],
         ["health","Santé sync"],
+        ["joins","Jonctions"],
         ["landmarks-advanced","Repères avancés"]
       ]
     }
@@ -1265,6 +1261,7 @@ function navigateUx(page, subpage = null, options = {}) {
   uxCurrentPage = page;
   uxCurrentSubpage = sub;
   document.body.dataset.uxPage = page;
+  document.body.dataset.uxSubpage = sub;
   document.body.classList.toggle("ux-activities-page", page === "activities");
 
   if (!ui.detailView.classList.contains("hidden")) showCatalog(false);
@@ -1282,14 +1279,6 @@ function navigateUx(page, subpage = null, options = {}) {
   } else if (page === "activities") {
     if (sub === "trash") setUxSectionVisibility([ui.trashSection]);
     else setUxSectionVisibility([ui.activityDirectorySection]);
-  } else if (page === "joins") {
-    setUxSectionVisibility([
-      document.getElementById("cgweb123JoinWorkspace")
-    ]);
-
-    queueMicrotask(() => {
-      void cgweb123Fix1RefreshWorkspace();
-    });
   } else if (page === "analysis") {
     if (sub === "landmarks") setUxSectionVisibility([ui.landmarkManagerSection]);
     else if (sub === "records") setUxSectionVisibility([ui.recordsManagerSection]);
@@ -1301,7 +1290,15 @@ function navigateUx(page, subpage = null, options = {}) {
       renderEquipmentManager();
     }
   } else if (page === "more") {
-    if (sub === "appearance") {
+    if (sub === "joins") {
+      setUxSectionVisibility([
+        document.getElementById("cgweb123JoinWorkspace")
+      ]);
+
+      queueMicrotask(() => {
+        void cgweb123Fix1RefreshWorkspace();
+      });
+    } else if (sub === "appearance") {
       setUxSectionVisibility([ui.appearanceSection]);
     } else if (sub === "maps") {
       setUxSectionVisibility([ui.globalMapSection]);
@@ -9874,14 +9871,14 @@ function renderDetail(activity) {
   renderPerformance(activity);
   renderPersonal(activity);
 
-  /* CGWEB126 · EDITABLE_SEQUENCE_OVERRIDE001 */
-  window.dispatchEvent(
-    new CustomEvent(
-      "sport-activity-detail-render",
-      { detail: { activity } }
-    )
-  );
-
+  /*
+   * CGWEB127 · DETAIL_FREEZE_RECOVERY001
+   *
+   * Le bridge UI CGWEB126 est volontairement retiré du hot path
+   * renderDetail(). Le moteur de classement CGWEB126 reste actif,
+   * mais aucun nouveau DOM n'est injecté pendant l'ouverture
+   * d'une activité.
+   */
   renderRecurringLandmarkHistory(activity);
   resetRecurringClimbAnalysis();
   renderLinkedRecords(activity);
@@ -22668,7 +22665,8 @@ function applyRealtimeChange(event) {
   /* CGWEB123_FIX1_LIVE_CHANGE_HOOK */
   if (
     table === "activities" &&
-    document.body.dataset.uxPage === "joins"
+    document.body.dataset.uxPage === "more" &&
+    document.body.dataset.uxSubpage === "joins"
   ) {
     cgweb123Fix1ScheduleLiveRefresh();
   }
@@ -65059,7 +65057,7 @@ function cgweb123Fix1InstallStyle() {
     "cgweb123Fix1Style";
 
   style.textContent = `
-    body[data-ux-page="joins"]
+    body[data-ux-page="more"][data-ux-subpage="joins"]
     #catalogView > .hero {
       display:none !important;
     }
@@ -67383,10 +67381,8 @@ function cgweb123Fix1ScheduleLiveRefresh() {
   }
 
   if (
-    document.body
-      .dataset
-      .uxPage !==
-    "joins"
+    document.body.dataset.uxPage !== "more" ||
+    document.body.dataset.uxSubpage !== "joins"
   ) {
     return;
   }
@@ -67663,10 +67659,8 @@ onAuthStateChanged(
   user => {
     if (
       user &&
-      document.body
-        .dataset
-        .uxPage ===
-      "joins"
+      document.body.dataset.uxPage === "more" &&
+      document.body.dataset.uxSubpage === "joins"
     ) {
       setTimeout(
         () => {
@@ -67689,8 +67683,8 @@ window.CGWEB123_FIX1_STATUS =
 
       join_workspace_tab:
         Boolean(
-          document.querySelector(
-            '[data-ux-page="joins"]'
+          uxPageConfig()?.more?.subs?.some(
+            ([key]) => key === "joins"
           )
         ),
 
@@ -69951,10 +69945,8 @@ async function cgweb123Fix3Fix1Run(
     cgweb123Fix3Fix1Render();
 
     if (
-      document.body
-        ?.dataset
-        ?.uxPage ===
-      "joins"
+      document.body?.dataset?.uxPage === "more" &&
+      document.body?.dataset?.uxSubpage === "joins"
     ) {
       cgweb123Fix1ScheduleLiveRefresh();
     }
@@ -71139,8 +71131,11 @@ function cgweb125Key(page, sub) {
 
 function cgweb125StopUnusedServices(page, sub) {
   const needInterop =
-    ["activities","joins","analysis","equipment"].includes(page) ||
-    (page === "more" && ["manual","trash","sync","health"].includes(sub));
+    ["activities","analysis","equipment"].includes(page) ||
+    (
+      page === "more" &&
+      ["joins","manual","trash","sync","health"].includes(sub)
+    );
   const needHistory = page === "more" && ["sync","trash"].includes(sub);
   const needHealth = page === "more" && sub === "health";
   const needStrava = page === "more" && sub === "strava";
@@ -71181,9 +71176,6 @@ async function cgweb125LoadPage(page, sub, force = false) {
         activities.length ? Promise.resolve() : loadNextPage()
       ]);
       startInteropWatch();
-    } else if (page === "joins") {
-      startInteropWatch();
-      /* Le workspace Jonctions possède déjà sa lecture Firestore dédiée. */
     } else if (page === "analysis") {
       startInteropWatch();
       if (sub === "goals" || sub === "weight") {
@@ -71195,7 +71187,10 @@ async function cgweb125LoadPage(page, sub, force = false) {
       startInteropWatch();
       await loadReferenceCollections();
     } else if (page === "more") {
-      if (sub === "trash") {
+      if (sub === "joins") {
+        startInteropWatch();
+        /* Workspace Jonctions : lecture Firestore dédiée, chargée à la demande. */
+      } else if (sub === "trash") {
         startInteropWatch();
         startSyncHistoryWatch();
         await loadTrashActivities();
@@ -71474,3 +71469,28 @@ console.info(
 );
 
 /* CGWEB126_APP_BRIDGE_END */
+
+
+/* CGWEB127_START
+   DETAIL_FREEZE_RECOVERY001
+   CGWEB124_SINGLE_SCOPE001
+   JOINS_REHOME001
+   LAZY_LOAD_PRESERVE001
+*/
+window.CGWEB127_STATUS = () => ({
+  build: "CGWEB127",
+  detail_freeze_recovery: "DETAIL_FREEZE_RECOVERY001",
+  cgweb124_single_scope: "CGWEB124_SINGLE_SCOPE001",
+  cgweb124_location: "more/landmarks-advanced",
+  joins_rehome: "JOINS_REHOME001",
+  joins_location: "more/joins",
+  lazy_load_preserved: "LAZY_LOAD_PRESERVE001",
+  cgweb126_detail_bridge_enabled: false
+});
+
+console.info(
+  "CGWEB127 actif · DETAIL_FREEZE_RECOVERY001 / " +
+  "CGWEB124_SINGLE_SCOPE001 / JOINS_REHOME001 / " +
+  "LAZY_LOAD_PRESERVE001"
+);
+/* CGWEB127_END */
