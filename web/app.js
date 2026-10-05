@@ -43411,19 +43411,81 @@ function cgweb120Fix7Boot() {
   }
 
   if (!window.__cgweb120Fix7ObserverInstalled) {
-    const observer = new MutationObserver(() => {
-      window.requestAnimationFrame(() => {
-        cgweb120Fix7Apply();
-      });
-    });
+    /*
+     * CGWEB127 FIX1
+     * DETAIL_OBSERVER_SELF_LOOP_GUARD001
+     * DETAIL_OBSERVER_SCOPE001
+     *
+     * CGWEB120 FIX7 modifie lui-même plusieurs attributs :
+     * hidden / aria-hidden / style / dataset.
+     *
+     * Observer les attributs de document.body permettait donc à
+     * CGWEB120 FIX7 de réveiller son propre observer.
+     *
+     * Désormais :
+     * - la surveillance est limitée au détail d'activité ;
+     * - seuls les changements structurels DOM sont observés ;
+     * - les attributs ne sont plus observés ;
+     * - plusieurs mutations successives sont fusionnées dans un RAF ;
+     * - l'observer est suspendu pendant les corrections DOM produites
+     *   par CGWEB120 FIX7 lui-même.
+     */
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true
-    });
+    const detail =
+      document.getElementById("detailView");
+
+    if (!detail) {
+      console.warn(
+        "CGWEB127 FIX1 · #detailView introuvable · observer FIX7 non installé"
+      );
+      return;
+    }
+
+    let scheduled = false;
+
+    const observe = (observer) => {
+      if (!detail.isConnected) return;
+
+      observer.observe(
+        detail,
+        {
+          childList: true,
+          subtree: true
+        }
+      );
+    };
+
+    const observer =
+      new MutationObserver(() => {
+        if (scheduled) return;
+
+        scheduled = true;
+
+        window.requestAnimationFrame(() => {
+          scheduled = false;
+
+          /*
+           * SELF_LOOP_GUARD :
+           * aucune mutation produite par cgweb120Fix7Apply()
+           * ne doit réveiller cet observer.
+           */
+          observer.disconnect();
+
+          try {
+            cgweb120Fix7Apply();
+          } finally {
+            observe(observer);
+          }
+        });
+      });
+
+    observe(observer);
 
     window.__cgweb120Fix7ObserverInstalled = true;
+    window.__cgweb120Fix7Observer = observer;
+    window.__cgweb120Fix7ObserverRoot = detail;
+    window.__cgweb120Fix7ObserverAttributes = false;
+    window.__cgweb120Fix7SelfLoopGuard = true;
   }
 }
 
@@ -71494,3 +71556,43 @@ console.info(
   "LAZY_LOAD_PRESERVE001"
 );
 /* CGWEB127_END */
+
+
+/* CGWEB127_FIX1_START
+   DETAIL_OBSERVER_SELF_LOOP_GUARD001
+   DETAIL_OBSERVER_SCOPE001
+*/
+window.CGWEB127_FIX1_STATUS = () => ({
+  build: "CGWEB127_FIX1",
+
+  detail_observer_self_loop_guard:
+    "DETAIL_OBSERVER_SELF_LOOP_GUARD001",
+
+  detail_observer_scope:
+    "DETAIL_OBSERVER_SCOPE001",
+
+  observer_installed:
+    window.__cgweb120Fix7ObserverInstalled === true,
+
+  observer_root:
+    window.__cgweb120Fix7ObserverRoot?.id || null,
+
+  observer_attributes:
+    window.__cgweb120Fix7ObserverAttributes === true,
+
+  observer_child_list: true,
+
+  observer_subtree: true,
+
+  self_loop_guard:
+    window.__cgweb120Fix7SelfLoopGuard === true,
+
+  global_body_attribute_observer_removed: true
+});
+
+console.info(
+  "CGWEB127 FIX1 actif · " +
+  "DETAIL_OBSERVER_SELF_LOOP_GUARD001 / " +
+  "DETAIL_OBSERVER_SCOPE001"
+);
+/* CGWEB127_FIX1_END */
