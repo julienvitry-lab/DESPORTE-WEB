@@ -9873,6 +9873,15 @@ function renderDetail(activity) {
   renderCartography(activity);
   renderPerformance(activity);
   renderPersonal(activity);
+
+  /* CGWEB126 · EDITABLE_SEQUENCE_OVERRIDE001 */
+  window.dispatchEvent(
+    new CustomEvent(
+      "sport-activity-detail-render",
+      { detail: { activity } }
+    )
+  );
+
   renderRecurringLandmarkHistory(activity);
   resetRecurringClimbAnalysis();
   renderLinkedRecords(activity);
@@ -22213,6 +22222,19 @@ async function setLandmarkOccurrence(activity, code, occurrences) {
         ? "CGWEB124 FIX3 · repère manuel retiré ; la détection GPS reste active."
         : "WEB018 · repère synchronisé automatiquement sur les trois plateformes.",
       "success"
+    );
+
+    /* CGWEB126 · INCREMENTAL_SEQUENCE_REFRESH001 */
+    window.dispatchEvent(
+      new CustomEvent(
+        "sport-landmark-links-changed",
+        {
+          detail: {
+            activity_id: activityId,
+            landmark_code: code
+          }
+        }
+      )
     );
   } catch (error) {
     console.error(error);
@@ -71372,3 +71394,83 @@ window.addEventListener("sport-gps-backfill-applied", (event) => {
 });
 console.info("CGWEB124 FIX3 bridge actif · LANDMARK_PROVENANCE001");
 /* CGWEB124_FIX3_APP_BRIDGE_END */
+/* CGWEB126_APP_BRIDGE_START
+   EDITABLE_SEQUENCE_OVERRIDE001
+*/
+
+window.CGWEB126_APP_BRIDGE = Object.freeze({
+  async saveSequenceOverride(activityKeyValue, value) {
+    const key = String(activityKeyValue ?? "").trim();
+
+    if (!key) {
+      throw new Error(
+        "Activité introuvable pour l’enregistrement du suivi des repères."
+      );
+    }
+
+    const current = currentDetailActivity();
+
+    const activity =
+      activities.find(
+        (row) => String(activityKey(row)) === key
+      ) ||
+      (
+        current &&
+        String(activityKey(current)) === key
+          ? current
+          : null
+      );
+
+    if (!activity) {
+      throw new Error("Activité non chargée dans SPORT Web.");
+    }
+
+    const normalized =
+      value === null
+        ? null
+        : String(value);
+
+    const patch = {
+      landmark_sequence_override: normalized,
+      landmark_sequence_override_updated_at_ms: Date.now(),
+      landmark_sequence_override_version: "EDITABLE_SEQUENCE_OVERRIDE001"
+    };
+
+    await cgweb084SaveActivityRevision(
+      activity,
+      "LANDMARK_SEQUENCE",
+      patch
+    );
+
+    await commitWebMutation({
+      table: "activities",
+      rowKey: key,
+      operation: "UPSERT",
+      row: patch,
+      materializedCollection: "activities",
+      materializedData: patch
+    });
+
+    Object.assign(activity, patch);
+
+    window.dispatchEvent(
+      new CustomEvent(
+        "sport-landmark-sequence-override-saved",
+        {
+          detail: {
+            activity_id: key,
+            override: normalized
+          }
+        }
+      )
+    );
+
+    return patch;
+  }
+});
+
+console.info(
+  "CGWEB126 app bridge actif · EDITABLE_SEQUENCE_OVERRIDE001 / INCREMENTAL_SEQUENCE_REFRESH001"
+);
+
+/* CGWEB126_APP_BRIDGE_END */
