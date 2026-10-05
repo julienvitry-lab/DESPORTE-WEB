@@ -9824,6 +9824,107 @@ function web061RefreshSingleMetricRow(activity) {
 }
 
 
+/* CGWEB128 · DETAIL_SEQUENCE_ASYNC001 */
+
+let cgweb128DetailSequenceTicket = 0;
+let cgweb128DetailSequenceRaf1 = 0;
+let cgweb128DetailSequenceRaf2 = 0;
+
+function cgweb128ScheduleDetailSequence(activity) {
+  const ticket =
+    ++cgweb128DetailSequenceTicket;
+
+  if (cgweb128DetailSequenceRaf1) {
+    cancelAnimationFrame(
+      cgweb128DetailSequenceRaf1
+    );
+  }
+
+  if (cgweb128DetailSequenceRaf2) {
+    cancelAnimationFrame(
+      cgweb128DetailSequenceRaf2
+    );
+  }
+
+  cgweb128DetailSequenceRaf1 =
+    requestAnimationFrame(() => {
+      cgweb128DetailSequenceRaf1 = 0;
+
+      if (
+        ticket !==
+        cgweb128DetailSequenceTicket
+      ) {
+        return;
+      }
+
+      cgweb128DetailSequenceRaf2 =
+        requestAnimationFrame(() => {
+          cgweb128DetailSequenceRaf2 = 0;
+
+          if (
+            ticket !==
+            cgweb128DetailSequenceTicket
+          ) {
+            return;
+          }
+
+          const detail =
+            document.getElementById(
+              "detailView"
+            );
+
+          if (
+            !detail ||
+            detail.classList.contains(
+              "hidden"
+            )
+          ) {
+            return;
+          }
+
+          let current = null;
+
+          try {
+            current =
+              currentDetailActivity();
+          } catch (_) {}
+
+          if (
+            current &&
+            String(
+              activityKey(current)
+            ) !==
+            String(
+              activityKey(activity)
+            )
+          ) {
+            return;
+          }
+
+          window.dispatchEvent(
+            new CustomEvent(
+              "sport-activity-detail-render",
+              {
+                detail: {
+                  activity,
+                  source:
+                    "CGWEB128_DETAIL_SEQUENCE_ASYNC001"
+                }
+              }
+            )
+          );
+
+          window
+            .__cgweb128DetailSequenceDispatchCount =
+            Number(
+              window
+                .__cgweb128DetailSequenceDispatchCount ||
+              0
+            ) + 1;
+        });
+    });
+}
+
 function renderDetail(activity) {
   /* CGWEB105_RENDER_DETAIL_HOOK */
   queueMicrotask(()=>cgweb105RenderJoinPanel(activity));
@@ -9872,13 +9973,15 @@ function renderDetail(activity) {
   renderPersonal(activity);
 
   /*
-   * CGWEB127 · DETAIL_FREEZE_RECOVERY001
+   * CGWEB128 · DETAIL_SEQUENCE_ASYNC001
    *
-   * Le bridge UI CGWEB126 est volontairement retiré du hot path
-   * renderDetail(). Le moteur de classement CGWEB126 reste actif,
-   * mais aucun nouveau DOM n'est injecté pendant l'ouverture
-   * d'une activité.
+   * Réactivation du bridge CGWEB126 hors du hot path :
+   * aucune injection DOM synchrone pendant renderDetail().
    */
+  cgweb128ScheduleDetailSequence(
+    activity
+  );
+
   renderRecurringLandmarkHistory(activity);
   resetRecurringClimbAnalysis();
   renderLinkedRecords(activity);
@@ -71768,7 +71871,8 @@ window.CGWEB127_STATUS = () => ({
   joins_rehome: "JOINS_REHOME001",
   joins_location: "more/joins",
   lazy_load_preserved: "LAZY_LOAD_PRESERVE001",
-  cgweb126_detail_bridge_enabled: false
+  cgweb126_detail_bridge_enabled: true,
+  cgweb126_detail_bridge_mode: "CGWEB128_ASYNC"
 });
 
 console.info(

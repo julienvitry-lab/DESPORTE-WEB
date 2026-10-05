@@ -52,6 +52,13 @@ let cg126PanelObserver = null;
 let cg126IncrementalTimer = null;
 let cg126SequenceCache = new Map();
 
+/* CGWEB128 · détail asynchrone / idempotent */
+let cg126DetailRenderRaf = null;
+let cg126PendingDetailActivity = null;
+let cg126DetailRenderCount = 0;
+let cg126DetailPanelMountCount = 0;
+let cg126DetailPanelMoveCount = 0;
+
 function cg126UserCollection(name) {
   if (!cg126User) throw new Error("Connexion SPORT requise.");
   return collection(db, CGWEB126_ROOT, cg126User.uid, name);
@@ -704,15 +711,70 @@ function cg126EffectiveActivity(activity) {
 }
 
 function cg126EnsureDetailUi() {
-  const grid = document.getElementById("detailPersonalGrid");
-  if (!grid) return null;
+  const detail =
+    document.getElementById(
+      "detailView"
+    );
 
-  let host = document.getElementById("cgweb126SequenceField");
-  if (host) return host;
+  const grid =
+    document.getElementById(
+      "detailPersonalGrid"
+    );
 
-  host = document.createElement("div");
-  host.id = "cgweb126SequenceField";
-  host.className = "cg126-sequence-field";
+  if (
+    !detail ||
+    detail.classList.contains(
+      "hidden"
+    ) ||
+    !grid ||
+    !detail.contains(grid)
+  ) {
+    return null;
+  }
+
+  let host =
+    document.getElementById(
+      "cgweb126SequenceField"
+    );
+
+  if (host) {
+    const correctlyPlaced =
+      host.parentElement ===
+        grid.parentElement &&
+      host.previousElementSibling ===
+        grid;
+
+    if (!correctlyPlaced) {
+      grid.insertAdjacentElement(
+        "afterend",
+        host
+      );
+
+      cg126DetailPanelMoveCount += 1;
+    }
+
+    if (
+      host.dataset.cgweb128Idempotent !==
+      "1"
+    ) {
+      host.dataset.cgweb128Idempotent =
+        "1";
+    }
+
+    return host;
+  }
+
+  host =
+    document.createElement("div");
+
+  host.id =
+    "cgweb126SequenceField";
+
+  host.className =
+    "cg126-sequence-field";
+
+  host.dataset.cgweb128Idempotent =
+    "1";
 
   host.innerHTML = `
     <div class="cg126-sequence-head">
@@ -747,83 +809,295 @@ function cg126EnsureDetailUi() {
     </div>
   `;
 
-  grid.insertAdjacentElement("afterend", host);
-
-  host.querySelector("#cgweb126SequenceInput")?.addEventListener(
-    "input",
-    () => {
-      const status = document.getElementById("cgweb126SequenceStatus");
-      if (status) status.textContent = "Modification non enregistrée.";
-    }
+  grid.insertAdjacentElement(
+    "afterend",
+    host
   );
 
-  host.querySelector("#cgweb126SequenceSave")?.addEventListener(
-    "click",
-    () => void cg126SaveOverride()
-  );
+  cg126DetailPanelMountCount += 1;
 
-  host.querySelector("#cgweb126SequenceReset")?.addEventListener(
-    "click",
-    () => void cg126ResetOverride()
-  );
+  host
+    .querySelector(
+      "#cgweb126SequenceInput"
+    )
+    ?.addEventListener(
+      "input",
+      () => {
+        const status =
+          document.getElementById(
+            "cgweb126SequenceStatus"
+          );
+
+        if (
+          status &&
+          status.textContent !==
+            "Modification non enregistrée."
+        ) {
+          status.textContent =
+            "Modification non enregistrée.";
+        }
+      }
+    );
+
+  host
+    .querySelector(
+      "#cgweb126SequenceSave"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        void cg126SaveOverride()
+    );
+
+  host
+    .querySelector(
+      "#cgweb126SequenceReset"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        void cg126ResetOverride()
+    );
 
   return host;
 }
 
+
 function cg126RenderDetail(activity) {
-  cg126CurrentActivity = activity || null;
+  if (!activity) {
+    cg126CurrentActivity = null;
+    return;
+  }
 
-  const host = cg126EnsureDetailUi();
-  if (!host || !activity) return;
+  const detail =
+    document.getElementById(
+      "detailView"
+    );
 
-  const effective = cg126EffectiveActivity(activity);
+  if (
+    !detail ||
+    detail.classList.contains(
+      "hidden"
+    )
+  ) {
+    return;
+  }
+
+  cg126CurrentActivity =
+    activity;
+
+  const host =
+    cg126EnsureDetailUi();
+
+  if (!host) return;
+
+  const effective =
+    cg126EffectiveActivity(
+      activity
+    );
 
   const hasOverride =
-    effective.landmark_sequence_override !== null &&
-    effective.landmark_sequence_override !== undefined;
+    effective
+      .landmark_sequence_override !==
+        null &&
+    effective
+      .landmark_sequence_override !==
+        undefined;
 
-  const generated = String(effective.landmark_sequence_generated ?? "");
-  const value = hasOverride
-    ? String(effective.landmark_sequence_override)
-    : generated;
+  const generated =
+    String(
+      effective
+        .landmark_sequence_generated ??
+      ""
+    );
 
-  const input = document.getElementById("cgweb126SequenceInput");
-  const mode = document.getElementById("cgweb126SequenceMode");
-  const reset = document.getElementById("cgweb126SequenceReset");
-  const status = document.getElementById("cgweb126SequenceStatus");
+  const value =
+    hasOverride
+      ? String(
+          effective
+            .landmark_sequence_override
+        )
+      : generated;
+
+  const input =
+    document.getElementById(
+      "cgweb126SequenceInput"
+    );
+
+  const mode =
+    document.getElementById(
+      "cgweb126SequenceMode"
+    );
+
+  const reset =
+    document.getElementById(
+      "cgweb126SequenceReset"
+    );
+
+  const status =
+    document.getElementById(
+      "cgweb126SequenceStatus"
+    );
+
+  /*
+   * SEQUENCE_PANEL_IDEMPOTENT001 :
+   * ne modifier le DOM que lorsque la valeur diffère.
+   */
+  if (
+    input &&
+    input.value !== value
+  ) {
+    input.value = value;
+  }
 
   if (input) {
-    input.value = value;
+    const lineCount =
+      Math.max(
+        1,
+        value.split("\n").length
+      );
 
-    const lineCount = Math.max(1, value.split("\n").length);
-    input.rows = Math.max(3, Math.min(8, lineCount));
+    const wantedRows =
+      Math.max(
+        3,
+        Math.min(
+          8,
+          lineCount
+        )
+      );
+
+    if (
+      Number(input.rows) !==
+      wantedRows
+    ) {
+      input.rows =
+        wantedRows;
+    }
   }
 
   if (mode) {
-    mode.textContent = hasOverride ? "Personnalisé" : "Automatique";
-    mode.className = hasOverride ? "pill pending" : "pill neutral";
-  }
+    const wantedText =
+      hasOverride
+        ? "Personnalisé"
+        : "Automatique";
 
-  if (reset) reset.disabled = !hasOverride;
+    const wantedClass =
+      hasOverride
+        ? "pill pending"
+        : "pill neutral";
 
-  if (status) {
-    if (hasOverride) {
-      const generatedLines = generated ? generated.split("\n").length : 0;
-      status.textContent =
-        `Texte personnalisé · calcul automatique conservé en arrière-plan (${generatedLines} ligne(s)).`;
-    } else if (generated) {
-      status.textContent =
-        "Valeur calculée automatiquement · modifiable librement.";
-    } else {
-      status.textContent =
-        "Aucune séquence calculée pour cette activité.";
+    if (
+      mode.textContent !==
+      wantedText
+    ) {
+      mode.textContent =
+        wantedText;
+    }
+
+    if (
+      mode.className !==
+      wantedClass
+    ) {
+      mode.className =
+        wantedClass;
     }
   }
+
+  if (
+    reset &&
+    reset.disabled ===
+      hasOverride
+  ) {
+    reset.disabled =
+      !hasOverride;
+  }
+
+  if (status) {
+    let wantedStatus = "";
+
+    if (hasOverride) {
+      const generatedLines =
+        generated
+          ? generated
+              .split("\n")
+              .length
+          : 0;
+
+      wantedStatus =
+        "Texte personnalisé · " +
+        "calcul automatique conservé " +
+        "en arrière-plan (" +
+        generatedLines +
+        " ligne(s)).";
+    } else if (generated) {
+      wantedStatus =
+        "Valeur calculée automatiquement · " +
+        "modifiable librement.";
+    } else {
+      wantedStatus =
+        "Aucune séquence calculée " +
+        "pour cette activité.";
+    }
+
+    if (
+      status.textContent !==
+      wantedStatus
+    ) {
+      status.textContent =
+        wantedStatus;
+    }
+  }
+
+  cg126DetailRenderCount += 1;
+
+  window.__cgweb128LastRenderedActivity =
+    String(
+      activity.__docId ??
+      activity.id ??
+      ""
+    );
 }
 
-function cg126RenderCurrentDetail() {
-  if (cg126CurrentActivity) cg126RenderDetail(cg126CurrentActivity);
+
+function cg126ScheduleDetailRender(
+  activity
+) {
+  cg126PendingDetailActivity =
+    activity || null;
+
+  if (
+    cg126DetailRenderRaf !== null
+  ) {
+    return;
+  }
+
+  cg126DetailRenderRaf =
+    requestAnimationFrame(() => {
+      cg126DetailRenderRaf = null;
+
+      const pending =
+        cg126PendingDetailActivity;
+
+      cg126PendingDetailActivity =
+        null;
+
+      cg126RenderDetail(
+        pending
+      );
+    });
 }
+
+
+function cg126RenderCurrentDetail() {
+  if (!cg126CurrentActivity) {
+    return;
+  }
+
+  cg126ScheduleDetailRender(
+    cg126CurrentActivity
+  );
+}
+
 
 async function cg126SaveOverride() {
   const activity = cg126CurrentActivity;
@@ -845,7 +1119,7 @@ async function cg126SaveOverride() {
     const patch = await bridge.saveSequenceOverride(key, input.value);
 
     Object.assign(activity, patch);
-    cg126RenderDetail(activity);
+    cg126ScheduleDetailRender(activity);
     cg126SetDetailStatus("Texte personnalisé enregistré.");
   } catch (error) {
     cg126SetDetailStatus(error?.message || String(error), true);
@@ -870,7 +1144,7 @@ async function cg126ResetOverride() {
     const patch = await bridge.saveSequenceOverride(key, null);
 
     Object.assign(activity, patch);
-    cg126RenderDetail(activity);
+    cg126ScheduleDetailRender(activity);
     cg126SetDetailStatus("Valeur automatique restaurée.");
   } catch (error) {
     cg126SetDetailStatus(error?.message || String(error), true);
@@ -1027,25 +1301,46 @@ function cg126RenderPlan(plan = cg126Plan) {
 }
 
 function cg126WatchForPanel() {
+  const scope =
+    document.getElementById(
+      "advancedLandmarksSection"
+    );
+
+  window.__cgweb128PanelObserverRoot =
+    scope?.id || null;
+
   if (cg126EnsurePanel()) {
     if (cg126PanelObserver) {
-      cg126PanelObserver.disconnect();
-      cg126PanelObserver = null;
+      cg126PanelObserver
+        .disconnect();
+
+      cg126PanelObserver =
+        null;
     }
+
     return;
   }
 
-  if (cg126PanelObserver) return;
+  if (
+    cg126PanelObserver ||
+    !scope
+  ) {
+    return;
+  }
 
-  cg126PanelObserver = new MutationObserver(() => {
-    if (cg126EnsurePanel()) {
-      cg126PanelObserver?.disconnect();
-      cg126PanelObserver = null;
-    }
-  });
+  cg126PanelObserver =
+    new MutationObserver(() => {
+      if (cg126EnsurePanel()) {
+        cg126PanelObserver
+          ?.disconnect();
+
+        cg126PanelObserver =
+          null;
+      }
+    });
 
   cg126PanelObserver.observe(
-    document.body,
+    scope,
     {
       childList: true,
       subtree: true
@@ -1053,10 +1348,13 @@ function cg126WatchForPanel() {
   );
 }
 
+
 window.addEventListener(
   "sport-activity-detail-render",
   (event) => {
-    cg126RenderDetail(event.detail?.activity || null);
+    cg126ScheduleDetailRender(
+      event.detail?.activity || null
+    );
   }
 );
 
@@ -1123,6 +1421,89 @@ window.CGWEB126_STATUS = () => ({
   planned_mutations: cg126Plan?.mutation_count || 0,
   state: cg126ReadState()
 });
+
+
+window.CGWEB128_STATUS = () => ({
+  build:
+    "CGWEB128",
+
+  detail_sequence_async:
+    "DETAIL_SEQUENCE_ASYNC001",
+
+  sequence_panel_idempotent:
+    "SEQUENCE_PANEL_IDEMPOTENT001",
+
+  observer_safe_integration:
+    "OBSERVER_SAFE_INTEGRATION001",
+
+  detail_event:
+    "sport-activity-detail-render",
+
+  detail_event_dispatch_count:
+    Number(
+      window
+        .__cgweb128DetailSequenceDispatchCount ||
+      0
+    ),
+
+  detail_render_count:
+    cg126DetailRenderCount,
+
+  detail_render_pending:
+    cg126DetailRenderRaf !== null,
+
+  detail_panel_present:
+    Boolean(
+      document.getElementById(
+        "cgweb126SequenceField"
+      )
+    ),
+
+  detail_panel_mount_count:
+    cg126DetailPanelMountCount,
+
+  detail_panel_move_count:
+    cg126DetailPanelMoveCount,
+
+  detail_panel_idempotent:
+    document
+      .getElementById(
+        "cgweb126SequenceField"
+      )
+      ?.dataset
+      ?.cgweb128Idempotent === "1",
+
+  current_activity_id:
+    String(
+      cg126CurrentActivity?.__docId ??
+      cg126CurrentActivity?.id ??
+      ""
+    ) || null,
+
+  last_rendered_activity_id:
+    window
+      .__cgweb128LastRenderedActivity ||
+    null,
+
+  detail_mutation_observer:
+    false,
+
+  admin_panel_observer_root:
+    window
+      .__cgweb128PanelObserverRoot ||
+    null,
+
+  cgweb127_fix2_present:
+    typeof window.CGWEB127_FIX2_STATUS ===
+      "function"
+});
+
+console.info(
+  "CGWEB128 actif · " +
+  "DETAIL_SEQUENCE_ASYNC001 / " +
+  "SEQUENCE_PANEL_IDEMPOTENT001 / " +
+  "OBSERVER_SAFE_INTEGRATION001"
+);
 
 console.info(
   "CGWEB126 actif · LANDMARK_SEQUENCE_RANK001 / SPORT_SCOPED_RANK001 / YEARLY_LANDMARK_RANK001 / MULTIPASS_SEQUENCE_LABEL001 / EDITABLE_SEQUENCE_OVERRIDE001 / HISTORICAL_SEQUENCE_REBUILD001 / INCREMENTAL_SEQUENCE_REFRESH001"
