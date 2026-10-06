@@ -13242,8 +13242,19 @@ function renderPersonal(activity) {
   addDetailItem(ui.detailPersonalGrid, "Note personnelle", activity.personal_note || "—", "full");
 
   const links = linksForActivity(activity);
+  const rawLinks = rawLinksForActivityWeb130Fix2(activity);
+
   rebuildAddLandmarkSelect(links, activity);
-  renderQuickLandmarkButtons(activity, links);
+
+  /*
+   * Les anciennes associations devenues incompatibles restent
+   * accessibles dans les boutons rapides uniquement pour permettre
+   * leur retrait manuel.
+   *
+   * Elles sont exclues du bandeau, du Répertoire, des filtres,
+   * de la fiche et des historiques fonctionnels.
+   */
+  renderQuickLandmarkButtons(activity, rawLinks);
 
   if (!links.length) {
     const empty = document.createElement("span");
@@ -13299,10 +13310,27 @@ function renderPersonal(activity) {
 
 // WEB056 · LANDMARK008
 function landmarkAllowedForActivityWeb056(activity, code) {
-  return !(
-    Number(activity?.sport) === 2 &&
-    String(code || "").trim().toUpperCase() === "Q"
-  );
+  const sport = Number(activity?.sport);
+  const marker = String(code || "").trim().toUpperCase();
+
+  // Règle historique : Q n'est pas proposé au vélo.
+  if (sport === 2 && marker === "Q") return false;
+
+  /*
+   * CGWEB130 FIX2
+   * SPORT_SCOPED_BV001
+   * BASKETAF_VELOTAF_EXCLUSION001
+   *
+   * B = basketaf : course à pied uniquement.
+   * V = vélotaf   : vélo uniquement.
+   *
+   * B et V peuvent partager exactement la même géométrie GPS,
+   * mais ils ne représentent jamais le même passage métier.
+   */
+  if (marker === "B") return sport === 1;
+  if (marker === "V") return sport === 2;
+
+  return true;
 }
 
 
@@ -13840,9 +13868,19 @@ async function rebuildRecordsFromFirestore() {
   }
 }
 
-function linksForActivity(activity) {
+function rawLinksForActivityWeb130Fix2(activity) {
   const id = String(activity.id ?? activity.__docId ?? "").trim();
   return activityLandmarks.get(id) || [];
+}
+
+function linksForActivity(activity) {
+  return rawLinksForActivityWeb130Fix2(activity)
+    .filter((link) =>
+      landmarkAllowedForActivityWeb056(
+        activity,
+        link?.landmark_code
+      )
+    );
 }
 
 function cgweb130ExpandedLandmarkText(
@@ -72596,3 +72634,45 @@ window.CGWEB130_FIX1_STATUS = () => ({
       : 0
 });
 /* CGWEB130_FIX1_END */
+
+/* CGWEB130_FIX2_START
+   SPORT_SCOPED_BV001
+   BASKETAF_VELOTAF_EXCLUSION001
+*/
+window.CGWEB130_FIX2_STATUS = () => ({
+  build: "CGWEB130_FIX2",
+
+  sport_scoped_bv:
+    "SPORT_SCOPED_BV001",
+
+  basketaf_velotaf_exclusion:
+    "BASKETAF_VELOTAF_EXCLUSION001",
+
+  run_B_allowed:
+    landmarkAllowedForActivityWeb056(
+      { sport: 1 },
+      "B"
+    ),
+
+  run_V_allowed:
+    landmarkAllowedForActivityWeb056(
+      { sport: 1 },
+      "V"
+    ),
+
+  bike_B_allowed:
+    landmarkAllowedForActivityWeb056(
+      { sport: 2 },
+      "B"
+    ),
+
+  bike_V_allowed:
+    landmarkAllowedForActivityWeb056(
+      { sport: 2 },
+      "V"
+    ),
+
+  legacy_firestore_bulk_delete:
+    false
+});
+/* CGWEB130_FIX2_END */

@@ -134,6 +134,105 @@ function cg126SportBucket(sport) {
   return "OTHER";
 }
 
+function cg126LandmarkAllowedForSport(sport, code) {
+  const value = Number(sport || 0);
+  const marker = String(code || "").trim().toUpperCase();
+
+  if (marker === "B") return value === 1;
+  if (marker === "V") return value === 2;
+
+  return true;
+}
+
+function cg126FilterStoredSequenceForSport(activity) {
+  if (!activity) return activity;
+
+  const sport =
+    Number(activity.sport || 0);
+
+  const hasStructuredLines =
+    Array.isArray(
+      activity.landmark_sequence_lines
+    );
+
+  const filteredLines =
+    hasStructuredLines
+      ? activity
+          .landmark_sequence_lines
+          .filter(
+            (row) =>
+              cg126LandmarkAllowedForSport(
+                sport,
+                row?.landmark_code
+              )
+          )
+      : [];
+
+  let generated = null;
+
+  if (hasStructuredLines) {
+    const labels =
+      filteredLines
+        .map(
+          (row) =>
+            String(
+              row?.label || ""
+            ).trim()
+        )
+        .filter(Boolean);
+
+    generated =
+      labels.length
+        ? labels.join("\n")
+        : null;
+  } else {
+    /*
+     * Repli pour une ancienne donnée qui ne posséderait
+     * que landmark_sequence_generated.
+     */
+    const labels =
+      String(
+        activity
+          .landmark_sequence_generated ||
+        ""
+      )
+        .split(/\r?\n/)
+        .filter(
+          (line) => {
+            const match =
+              /^\s*([A-Z0-9_-]+)\s+#/i
+                .exec(line);
+
+            return (
+              !match ||
+              cg126LandmarkAllowedForSport(
+                sport,
+                match[1]
+              )
+            );
+          }
+        )
+        .map(
+          (line) =>
+            line.trim()
+        )
+        .filter(Boolean);
+
+    generated =
+      labels.length
+        ? labels.join("\n")
+        : null;
+  }
+
+  return {
+    ...activity,
+    landmark_sequence_lines:
+      filteredLines,
+    landmark_sequence_generated:
+      generated
+  };
+}
+
 function cg126Year(startMs) {
   const ms = Number(startMs);
   if (!Number.isFinite(ms) || ms <= 0) return null;
@@ -232,7 +331,26 @@ async function cg126BuildPlan({reason = "manual"} = {}) {
       continue;
     }
 
-    const startMs = Number(activity.start_time_ms);
+    /*
+     * CGWEB130 FIX2 · SPORT_SCOPED_BV001
+     *
+     * Les anciens liens incompatibles peuvent subsister en stockage,
+     * mais ils ne participent jamais aux séries chronologiques.
+     */
+    if (
+      !cg126LandmarkAllowedForSport(
+        activity.sport,
+        code
+      )
+    ) {
+      invalidLinks += 1;
+      continue;
+    }
+
+    const startMs =
+      Number(
+        activity.start_time_ms
+      );
     const year = cg126Year(startMs);
 
     if (!Number.isFinite(startMs) || startMs <= 0 || !year) {
@@ -701,13 +819,26 @@ async function cg126RunIncremental(reason) {
 function cg126EffectiveActivity(activity) {
   if (!activity) return null;
 
-  const docId = String(activity.__docId ?? activity.id ?? "");
-  const cached = cg126SequenceCache.get(docId) || {};
+  const docId =
+    String(
+      activity.__docId ??
+      activity.id ??
+      ""
+    );
 
-  return {
+  const cached =
+    cg126SequenceCache.get(docId) ||
+    {};
+
+  /*
+   * Une séquence historique calculée avant FIX2
+   * est corrigée immédiatement à l'affichage,
+   * sans attendre une réécriture Firestore.
+   */
+  return cg126FilterStoredSequenceForSport({
     ...activity,
     ...cached
-  };
+  });
 }
 
 
@@ -1891,6 +2022,9 @@ window.CGWEB126_STATUS = () => ({
   editable_sequence_override: "EDITABLE_SEQUENCE_OVERRIDE001",
   historical_sequence_rebuild: "HISTORICAL_SEQUENCE_REBUILD001",
   incremental_sequence_refresh: "INCREMENTAL_SEQUENCE_REFRESH001",
+  sport_scoped_bv: "SPORT_SCOPED_BV001",
+  basketaf_velotaf_exclusion: "BASKETAF_VELOTAF_EXCLUSION001",
+  stored_sequence_bv_filter: "STORED_SEQUENCE_BV_FILTER001",
   running: cg126Running,
   planned_mutations: cg126Plan?.mutation_count || 0,
   state: cg126ReadState()

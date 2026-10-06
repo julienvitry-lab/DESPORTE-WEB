@@ -212,6 +212,29 @@ function cg124RebuildMarkers() {
   }
 }
 
+function cg124LandmarkAllowedForSport(sport, code) {
+  const value = Number(sport || 0);
+  const marker = String(code || "").trim().toUpperCase();
+
+  /*
+   * CGWEB130 FIX2 · SPORT_SCOPED_BV001
+   *
+   * Même point / même trajet GPS possible,
+   * mais deux significations métier distinctes.
+   */
+  if (marker === "B") return value === 1;
+  if (marker === "V") return value === 2;
+
+  return true;
+}
+
+function cg124LandmarkAllowedForActivity(activity, code) {
+  return cg124LandmarkAllowedForSport(
+    activity?.sport,
+    code
+  );
+}
+
 function cg124StableHash(text) {
   let h = 2166136261;
   const value = String(text ?? "");
@@ -455,19 +478,48 @@ async function cg124LoadRoute(activityDocId, activity) {
   return null;
 }
 
-function cg124DetectAllMarkers(points) {
+function cg124DetectAllMarkers(points, activity = null) {
   const hits = {};
+
   for (const marker of cg124Markers.values()) {
-    const result = cg124DetectPassages(points, marker);
-    if (result.passage_count <= 0) continue;
+    /*
+     * CGWEB130 FIX2 · SPORT_SCOPED_BV001
+     *
+     * Le sport est vérifié AVANT la détection géographique :
+     *
+     * course + trajet commun -> B seulement
+     * vélo   + trajet commun -> V seulement
+     */
+    if (
+      !cg124LandmarkAllowedForActivity(
+        activity,
+        marker.code
+      )
+    ) {
+      continue;
+    }
+
+    const result =
+      cg124DetectPassages(
+        points,
+        marker
+      );
+
+    if (result.passage_count <= 0) {
+      continue;
+    }
+
     hits[marker.code] = {
       ...result,
       radius_m: marker.radius_m,
       rearm_radius_m: marker.rearm_radius_m,
-      marker_config_updated_at_ms: marker.config_updated_at_ms,
-      detector_version: CGWEB124_DETECTOR_VERSION
+      marker_config_updated_at_ms:
+        marker.config_updated_at_ms,
+      detector_version:
+        CGWEB124_DETECTOR_VERSION
     };
   }
+
   return hits;
 }
 
@@ -1139,7 +1191,11 @@ async function cg124IndexOne(activityDocId, cachedActivity = null) {
     return { missingRoute: true, hits: {}, row };
   }
 
-  const hits = cg124DetectAllMarkers(route.points);
+  const hits =
+    cg124DetectAllMarkers(
+      route.points,
+      activity
+    );
   const row = {
     version: CGWEB124_INDEX_VERSION,
     detector_version: CGWEB124_DETECTOR_VERSION,
@@ -1798,6 +1854,8 @@ window.CGWEB124_STATUS = () => {
     segment_proximity: "SEGMENT_PROXIMITY001",
     historical_marker_index: "HISTORICAL_MARKER_INDEX001",
     incremental_marker_refresh: "INCREMENTAL_MARKER_REFRESH001",
+    sport_scoped_bv: "SPORT_SCOPED_BV001",
+    basketaf_velotaf_exclusion: "BASKETAF_VELOTAF_EXCLUSION001",
     marker_count: cg124Markers.size,
     marker_signature: cg124MarkerSignature(),
     join_batch_locked: cg124JoinBusy(),
@@ -2771,7 +2829,25 @@ async function cg124Fix3BuildPlan() {
     if (!activityId) continue;
 
     for (const [code, hit] of Object.entries(row.hits || {})) {
-      const count = Math.max(0, Number(hit?.passage_count) || 0);
+      /*
+       * Défense en profondeur :
+       * un ancien index GPS B/V peut encore exister.
+       * Il ne doit jamais être réinjecté dans le mauvais sport.
+       */
+      if (
+        !cg124LandmarkAllowedForSport(
+          row.sport,
+          code
+        )
+      ) {
+        continue;
+      }
+
+      const count =
+        Math.max(
+          0,
+          Number(hit?.passage_count) || 0
+        );
       if (count <= 0) continue;
       if (!cg124Markers.has(String(code))) {
         ignoredUnknownMarkers += 1;
@@ -3048,7 +3124,21 @@ async function cg124Fix3SyncOneIndexRow(indexRow) {
 
   for (const code of cg124Markers.keys()) {
     const old = existingByCode.get(code) || null;
-    const gpsCount = Math.max(0, Number(indexRow?.hits?.[code]?.passage_count) || 0);
+    const gpsCount =
+      cg124LandmarkAllowedForSport(
+        indexRow?.sport,
+        code
+      )
+        ? Math.max(
+            0,
+            Number(
+              indexRow
+                ?.hits
+                ?.[code]
+                ?.passage_count
+            ) || 0
+          )
+        : 0;
 
     if (gpsCount > 0) {
       const next = cg124Fix3BuildRow({existing: old, activityId, code, gpsCount, indexRow});
@@ -3130,6 +3220,8 @@ window.CGWEB124_FIX3_STATUS = () => ({
   idempotent_landmark_upsert: "IDEMPOTENT_LANDMARK_UPSERT001",
   stale_gps_link_cleanup: "STALE_GPS_LINK_CLEANUP001",
   incremental_activity_reinject: "INCREMENTAL_ACTIVITY_REINJECT001",
+  sport_scoped_bv: "SPORT_SCOPED_BV001",
+  basketaf_velotaf_exclusion: "BASKETAF_VELOTAF_EXCLUSION001",
   running: cg124Fix3Running,
   planned_operations: cg124Fix3Plan?.operations?.length || 0
 });
