@@ -2644,189 +2644,30 @@ function cg129RenderLineList(
 function cg129RenderDetail(
   activity
 ) {
+  /*
+   * CGWEB130 · LANDMARK_MILESTONE_MERGE001
+   *
+   * Le détail CGWEB129 autonome est retiré.
+   * CGWEB126 affiche désormais :
+   * - les passages de repères ;
+   * - le seuil distance maximal ;
+   * - le seuil D+ maximal.
+   */
   cg129CurrentActivity =
     activity || null;
-
 
   const existing =
     document.getElementById(
       "cgweb129DailyDetailPanel"
     );
 
-
-  if (!activity) {
-    if (existing) {
-      existing.hidden =
-        true;
-    }
-
-    return;
+  if (existing) {
+    existing.remove();
   }
-
-
-  const effective =
-    cg129EffectiveActivity(
-      activity
-    );
-
-
-  const lines =
-    cg129CanonicalLines(
-      effective
-        .daily_milestone_lines
-    );
-
-
-  /*
-   * Les journées sous tous les seuils
-   * n'affichent pas de panneau vide.
-   */
-  if (
-    !lines.length
-  ) {
-    if (existing) {
-      existing.hidden =
-        true;
-    }
-
-    return;
-  }
-
-
-  const host =
-    cg129EnsureDetailPanel();
-
-
-  if (!host) {
-    return;
-  }
-
-
-  const dayKey =
-    String(
-      effective
-        .daily_milestone_day_key ||
-      cg129LocalDayKey(
-        effective
-          .start_time_ms
-      ) ||
-      ""
-    );
-
-
-  const distanceM =
-    Number(
-      effective
-        .daily_milestone_distance_m ||
-      0
-    );
-
-
-  const ascentM =
-    Number(
-      effective
-        .daily_milestone_ascent_m ||
-      0
-    );
-
-
-  const meta =
-    document.getElementById(
-      "cgweb129DayMeta"
-    );
-
-
-  if (meta) {
-    meta.textContent =
-      cg129DisplayDay(
-        dayKey
-      ) +
-      " · " +
-      cg129FormatDecimal(
-        distanceM /
-        1000,
-        2
-      ) +
-      " km · " +
-      cg129FormatNumber(
-        Math.round(
-          ascentM
-        )
-      ) +
-      " m D+";
-  }
-
-
-  const distanceLines =
-    lines.filter(
-      line =>
-        line.kind ===
-        "distance"
-    );
-
-
-  const ascentLines =
-    lines.filter(
-      line =>
-        line.kind ===
-        "ascent"
-    );
-
-
-  const distanceGroup =
-    document.getElementById(
-      "cgweb129DistanceGroup"
-    );
-
-  const ascentGroup =
-    document.getElementById(
-      "cgweb129AscentGroup"
-    );
-
-
-  if (distanceGroup) {
-    distanceGroup.hidden =
-      distanceLines.length ===
-      0;
-  }
-
-
-  if (ascentGroup) {
-    ascentGroup.hidden =
-      ascentLines.length ===
-      0;
-  }
-
-
-  cg129RenderLineList(
-    document.getElementById(
-      "cgweb129DistanceLines"
-    ),
-    distanceLines
-  );
-
-
-  cg129RenderLineList(
-    document.getElementById(
-      "cgweb129AscentLines"
-    ),
-    ascentLines
-  );
-
-
-  host.hidden =
-    false;
-
-
-  cg129DetailRenderCount +=
-    1;
-
 
   window
-    .__cgweb129LastRenderedActivity =
-    cg129ActivityKey(
-      activity
-    );
+    .__cgweb130MilestonePanelMerged =
+    true;
 }
 
 
@@ -3009,6 +2850,12 @@ window.CGWEB129_STATUS =
 
     daily_aggregate:
       "DAILY_AGGREGATE001",
+
+    daily_milestone_max_only:
+      "DAILY_MILESTONE_MAX_ONLY001",
+
+    detail_display:
+      "MERGED_INTO_CGWEB126",
 
     running_sport:
       1,

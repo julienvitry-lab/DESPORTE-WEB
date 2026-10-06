@@ -710,6 +710,196 @@ function cg126EffectiveActivity(activity) {
   };
 }
 
+
+/* ==========================================================
+   CGWEB130
+   DAILY_MILESTONE_MAX_ONLY001
+   LANDMARK_MILESTONE_MERGE001
+   ========================================================== */
+
+function cg126Cgweb130MaxMilestone(
+  activity,
+  kind
+) {
+  const lines =
+    Array.isArray(
+      activity
+        ?.daily_milestone_lines
+    )
+      ? activity
+          .daily_milestone_lines
+      : [];
+
+  return (
+    lines
+      .filter(
+        row =>
+          String(
+            row?.kind || ""
+          ) === kind
+      )
+      .sort(
+        (a, b) =>
+          Number(
+            b?.threshold || 0
+          ) -
+          Number(
+            a?.threshold || 0
+          )
+      )[0] ||
+    null
+  );
+}
+
+
+function cg126Cgweb130MilestoneLabel(
+  row
+) {
+  if (!row) {
+    return "";
+  }
+
+  const threshold =
+    Number(
+      row.threshold || 0
+    );
+
+  const globalRank =
+    Number(
+      row.global_rank || 0
+    );
+
+  const year =
+    Number(
+      row.year || 0
+    );
+
+  const yearRank =
+    Number(
+      row.year_rank || 0
+    );
+
+  if (
+    !threshold ||
+    !globalRank ||
+    !year ||
+    !yearRank
+  ) {
+    return "";
+  }
+
+  const formatted =
+    threshold.toLocaleString(
+      "fr-FR"
+    );
+
+  if (
+    row.kind === "distance"
+  ) {
+    return (
+      "Jours à plus de " +
+      formatted +
+      " km #" +
+      globalRank +
+      " (" +
+      year +
+      " #" +
+      yearRank +
+      ")"
+    );
+  }
+
+  if (
+    row.kind === "ascent"
+  ) {
+    return (
+      "Jours à plus de " +
+      formatted +
+      " m D+ #" +
+      globalRank +
+      " (" +
+      year +
+      " #" +
+      yearRank +
+      ")"
+    );
+  }
+
+  return "";
+}
+
+
+function cg126Cgweb130MilestoneText(
+  activity
+) {
+  const distance =
+    cg126Cgweb130MilestoneLabel(
+      cg126Cgweb130MaxMilestone(
+        activity,
+        "distance"
+      )
+    );
+
+  const ascent =
+    cg126Cgweb130MilestoneLabel(
+      cg126Cgweb130MaxMilestone(
+        activity,
+        "ascent"
+      )
+    );
+
+  return [
+    distance,
+    ascent
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+
+function cg126Cgweb130MergeText(
+  landmarkText,
+  activity
+) {
+  const milestoneText =
+    cg126Cgweb130MilestoneText(
+      activity
+    );
+
+  return [
+    String(
+      landmarkText || ""
+    ).trim(),
+
+    milestoneText
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+
+function cg126Cgweb130EditableLandmarkText(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .split(/\r?\n/)
+    .filter(
+      line =>
+        !/^Jours à plus de /u
+          .test(
+            line.trim()
+          )
+    )
+    .join("\n")
+    .replace(
+      /\n{3,}/g,
+      "\n\n"
+    )
+    .trim();
+}
+
 /* ==========================================================
    CGWEB128 FIX1
    VISIBLE_SEQUENCE_SECTION001
@@ -1180,13 +1370,19 @@ function cg126RenderDetail(activity) {
       ""
     );
 
-  const value =
+  const landmarkValue =
     hasOverride
       ? String(
           effective
             .landmark_sequence_override
         )
       : generated;
+
+  const value =
+    cg126Cgweb130MergeText(
+      landmarkValue,
+      effective
+    );
 
   const input =
     document.getElementById(
@@ -1230,7 +1426,7 @@ function cg126RenderDetail(activity) {
       Math.max(
         3,
         Math.min(
-          8,
+          14,
           lineCount
         )
       );
@@ -1385,7 +1581,16 @@ async function cg126SaveOverride() {
   try {
     cg126SetDetailStatus("Enregistrement…");
 
-    const patch = await bridge.saveSequenceOverride(key, input.value);
+    const editableLandmarkText =
+      cg126Cgweb130EditableLandmarkText(
+        input.value
+      );
+
+    const patch =
+      await bridge.saveSequenceOverride(
+        key,
+        editableLandmarkText
+      );
 
     Object.assign(activity, patch);
     cg126ScheduleDetailRender(activity);
@@ -1704,6 +1909,12 @@ window.CGWEB128_STATUS = () => ({
 
   observer_safe_integration:
     "OBSERVER_SAFE_INTEGRATION001",
+
+  daily_milestone_max_only:
+    "DAILY_MILESTONE_MAX_ONLY001",
+
+  landmark_milestone_merge:
+    "LANDMARK_MILESTONE_MERGE001",
 
   visible_sequence_section:
     "VISIBLE_SEQUENCE_SECTION001",

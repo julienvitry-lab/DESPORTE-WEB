@@ -1091,6 +1091,7 @@ function uxPageConfig() {
         ["maps","Cartes"],
         ["files","Fichiers"],
         ["trash","Corbeille"],
+        ["activity-management","Gestion de l’activité"],
         ["manual","Ajout manuel"],
         ["import","Import"],
         ["sync","Synchronisation"],
@@ -1127,7 +1128,8 @@ function managedUxSections() {
     document.getElementById("cgweb123JoinWorkspace"),
     ui.personalSyncSection, ui.landmarkManagerSection, ui.recordsManagerSection,
     ui.globalMapSection, ui.equipmentManagerSection,
-    ui.webStravaSection, ui.equipmentMappingSection, ui.appearanceSection, ui.webFilesSection, ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection
+    ui.webStravaSection, ui.equipmentMappingSection, ui.appearanceSection, ui.webFilesSection, ui.webManualSection, ui.webImportSection, ui.syncCenterSection, ui.syncHealthSection, ui.bootstrapMetrics, ui.advancedLandmarksSection,
+    document.getElementById("cgweb130ActivityManagementSection")
   ].filter(Boolean);
 }
 
@@ -1298,6 +1300,17 @@ function navigateUx(page, subpage = null, options = {}) {
       queueMicrotask(() => {
         void cgweb123Fix1RefreshWorkspace();
       });
+    } else if (sub === "activity-management") {
+      const managementSection =
+        cgweb130EnsureActivityManagementSection();
+
+      setUxSectionVisibility(
+        managementSection
+          ? [managementSection]
+          : []
+      );
+
+      cgweb130RehomeActivityManagement();
     } else if (sub === "appearance") {
       setUxSectionVisibility([ui.appearanceSection]);
     } else if (sub === "maps") {
@@ -13832,17 +13845,57 @@ function linksForActivity(activity) {
   return activityLandmarks.get(id) || [];
 }
 
-function markerSummary(activity) {
-  const links = linksForActivity(activity);
-  if (!links.length) return "—";
+function cgweb130ExpandedLandmarkText(
+  activity
+) {
+  const links =
+    linksForActivity(
+      activity
+    );
 
-  return links
-    .map((link) => {
-      const code = String(link.landmark_code ?? "?");
-      const count = Math.max(1, numberOrZero(link.occurrences));
-      return count > 1 ? `${code}×${count}` : code;
-    })
-    .join(" · ");
+  if (!links.length) {
+    return "";
+  }
+
+  const expanded = [];
+
+  for (const link of links) {
+    const code =
+      String(
+        link.landmark_code ??
+        "?"
+      ).trim();
+
+    const count =
+      Math.max(
+        1,
+        numberOrZero(
+          link.occurrences
+        )
+      );
+
+    for (
+      let index = 0;
+      index < count;
+      index += 1
+    ) {
+      expanded.push(
+        code
+      );
+    }
+  }
+
+  return expanded.join("·");
+}
+
+
+function markerSummary(activity) {
+  return (
+    cgweb130ExpandedLandmarkText(
+      activity
+    ) ||
+    "—"
+  );
 }
 
 
@@ -36106,6 +36159,7 @@ uxPageConfig = function cgweb118UxPageConfig() {
         ["import", "Import"],
         ["manual", "Ajout manuel"],
         ["trash", "Corbeille"],
+        ["activity-management", "Gestion de l’activité"],
         ["appearance", "Apparence"],
         ["sync", "Synchronisation"],
         ["health-sync", "Santé Sync"],
@@ -40432,14 +40486,9 @@ function cgweb120PatchMutableValues(row, activity) {
     typeof linksForActivity === "function"
   ) {
     const markerText =
-      linksForActivity(activity)
-        .map((link) =>
-          String(
-            link.landmark_code || ""
-          ).trim()
-        )
-        .filter(Boolean)
-        .join(", ");
+      cgweb130ExpandedLandmarkText(
+        activity
+      );
 
     const landmarkStrong =
       cgweb120StrongForLabel(
@@ -40963,14 +41012,9 @@ function cgweb120Fix1PatchMutableValues(
     typeof linksForActivity === "function"
   ) {
     const markers =
-      linksForActivity(activity)
-        .map((link) =>
-          String(
-            link.landmark_code || ""
-          ).trim()
-        )
-        .filter(Boolean)
-        .join(", ");
+      cgweb130ExpandedLandmarkText(
+        activity
+      );
 
     const landmarkStrong =
       cgweb120Fix1StrongForLabel(
@@ -71984,3 +72028,534 @@ console.info(
   "ACTION_BAR_IDEMPOTENT001"
 );
 /* CGWEB127_FIX2_END */
+
+
+/* CGWEB130_START
+   SPLIT_BUTTON_CENTER001
+   LANDMARK_OCCURRENCE_EXPAND001
+   DAILY_MILESTONE_MAX_ONLY001
+   LANDMARK_MILESTONE_MERGE001
+   ACTIVITY_MANAGEMENT_REHOME001
+*/
+
+
+function cgweb130EnsureStyle() {
+  if (
+    document.getElementById(
+      "cgweb130Style"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement(
+      "style"
+    );
+
+  style.id =
+    "cgweb130Style";
+
+  style.textContent = `
+    /*
+     * SPLIT_BUTTON_CENTER001
+     */
+    #cgweb124SplitButton {
+      display:inline-flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      vertical-align:middle!important;
+      line-height:1.2!important;
+    }
+
+    /*
+     * Plus > Gestion de l'activité
+     */
+    #cgweb130ActivityManagementSection {
+      display:grid;
+      gap:10px;
+    }
+
+    #cgweb130ActivityManagementSection.hidden {
+      display:none!important;
+    }
+
+    #cgweb130ActivityManagementContext {
+      margin:0 0 2mm;
+    }
+
+    #cgweb130ActivityManagementHost {
+      display:grid;
+      gap:8px;
+    }
+
+    #cgweb130ActivityManagementSection
+    #cg122Management {
+      margin:0!important;
+    }
+
+    #cgweb130ActivityManagementSection
+    #cg122ManagementBody {
+      display:flex;
+      align-items:center;
+      gap:2mm;
+      flex-wrap:wrap;
+    }
+  `;
+
+  document.head.appendChild(
+    style
+  );
+}
+
+
+function cgweb130EnsureActivityManagementSection() {
+  cgweb130EnsureStyle();
+
+  let section =
+    document.getElementById(
+      "cgweb130ActivityManagementSection"
+    );
+
+  if (section) {
+    return section;
+  }
+
+  section =
+    document.createElement(
+      "section"
+    );
+
+  section.id =
+    "cgweb130ActivityManagementSection";
+
+  section.className =
+    "panel hidden";
+
+  section.innerHTML = `
+    <div
+      id="cgweb130ActivityManagementContext"
+      class="muted"
+    >
+      Aucune activité sélectionnée.
+    </div>
+
+    <div
+      id="cgweb130ActivityManagementHost"
+    ></div>
+  `;
+
+  const reference =
+    ui?.advancedLandmarksSection ||
+    ui?.syncCenterSection ||
+    ui?.trashSection ||
+    null;
+
+  const parent =
+    reference?.parentElement ||
+    ui?.catalogView ||
+    document.body;
+
+  if (
+    reference &&
+    reference.parentElement ===
+      parent
+  ) {
+    reference.insertAdjacentElement(
+      "afterend",
+      section
+    );
+  } else {
+    parent.appendChild(
+      section
+    );
+  }
+
+  return section;
+}
+
+
+function cgweb130EnsureManagementDetails() {
+  const section =
+    cgweb130EnsureActivityManagementSection();
+
+  if (!section) {
+    return null;
+  }
+
+  const host =
+    document.getElementById(
+      "cgweb130ActivityManagementHost"
+    );
+
+  if (!host) {
+    return null;
+  }
+
+  let details =
+    document.getElementById(
+      "cg122Management"
+    );
+
+  if (!details) {
+    details =
+      document.createElement(
+        "details"
+      );
+
+    details.id =
+      "cg122Management";
+
+    const summary =
+      document.createElement(
+        "summary"
+      );
+
+    summary.textContent =
+      "Gestion de l’activité";
+
+    const body =
+      document.createElement(
+        "div"
+      );
+
+    body.id =
+      "cg122ManagementBody";
+
+    details.append(
+      summary,
+      body
+    );
+  }
+
+  let body =
+    document.getElementById(
+      "cg122ManagementBody"
+    );
+
+  if (!body) {
+    body =
+      document.createElement(
+        "div"
+      );
+
+    body.id =
+      "cg122ManagementBody";
+
+    details.appendChild(
+      body
+    );
+  }
+
+  if (
+    details.parentElement !==
+      host
+  ) {
+    host.appendChild(
+      details
+    );
+  }
+
+  return {
+    details,
+    body
+  };
+}
+
+
+function cgweb130ManagementActivity() {
+  try {
+    return (
+      typeof currentDetailActivity ===
+        "function"
+        ? currentDetailActivity()
+        : null
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+
+function cgweb130UpdateActivityManagementContext() {
+  const activity =
+    cgweb130ManagementActivity();
+
+  const context =
+    document.getElementById(
+      "cgweb130ActivityManagementContext"
+    );
+
+  const trash =
+    ui?.trashCurrentActivityButton ||
+    document.getElementById(
+      "trashCurrentActivityButton"
+    );
+
+  if (!context) {
+    return;
+  }
+
+  if (!activity) {
+    context.textContent =
+      "Aucune activité sélectionnée · ouvre d’abord une activité depuis le répertoire.";
+
+    if (trash) {
+      trash.disabled =
+        true;
+    }
+
+    return;
+  }
+
+  let date = "—";
+  let distance = "—";
+
+  try {
+    date =
+      formatActivityDateWeb049(
+        activity.start_time_ms
+      );
+  } catch (_) {}
+
+  try {
+    distance =
+      formatDistance(
+        activity.distance_m
+      );
+  } catch (_) {}
+
+  context.textContent =
+    "Activité sélectionnée · " +
+    date +
+    " · " +
+    distance;
+
+  if (trash) {
+    trash.disabled =
+      Boolean(
+        trashMutationRunning
+      );
+
+    trash.textContent =
+      activity.deleted_at_ms == null
+        ? "🗑 Mettre à la corbeille"
+        : "↩ Restaurer";
+  }
+}
+
+
+function cgweb130RehomeActivityManagement() {
+  const nodes =
+    cgweb130EnsureManagementDetails();
+
+  if (!nodes) {
+    return false;
+  }
+
+  const trash =
+    ui?.trashCurrentActivityButton ||
+    document.getElementById(
+      "trashCurrentActivityButton"
+    );
+
+  if (
+    trash &&
+    trash.parentElement !==
+      nodes.body
+  ) {
+    nodes.body.appendChild(
+      trash
+    );
+  }
+
+  if (trash) {
+    trash.hidden =
+      false;
+
+    trash.removeAttribute(
+      "hidden"
+    );
+
+    trash.removeAttribute(
+      "aria-hidden"
+    );
+
+    if (
+      trash.dataset
+        .cgweb130Hook !== "1"
+    ) {
+      trash.dataset
+        .cgweb130Hook =
+        "1";
+
+      trash.addEventListener(
+        "click",
+        () => {
+          setTimeout(
+            cgweb130UpdateActivityManagementContext,
+            250
+          );
+
+          setTimeout(
+            cgweb130UpdateActivityManagementContext,
+            900
+          );
+        }
+      );
+    }
+  }
+
+  cgweb130UpdateActivityManagementContext();
+
+  return true;
+}
+
+
+/*
+ * Les anciens moteurs CGWEB122 savent encore retrouver
+ * #cg122ManagementBody.
+ *
+ * Une fois le details déplacé dans Plus, ils ne le recréent donc
+ * plus au bas de la fiche.
+ *
+ * Aucun MutationObserver supplémentaire n'est ajouté.
+ */
+try {
+  const cgweb130RenderDetailBase =
+    renderDetail;
+
+  renderDetail =
+    function cgweb130RenderDetailWrapper(
+      ...args
+    ) {
+      const result =
+        cgweb130RenderDetailBase.apply(
+          this,
+          args
+        );
+
+      queueMicrotask(
+        cgweb130RehomeActivityManagement
+      );
+
+      requestAnimationFrame(
+        cgweb130RehomeActivityManagement
+      );
+
+      return result;
+    };
+
+  window
+    .__cgweb130RenderDetailWrapped =
+    true;
+} catch (error) {
+  console.warn(
+    "CGWEB130 renderDetail wrapper indisponible",
+    error
+  );
+}
+
+
+queueMicrotask(() => {
+  cgweb130EnsureStyle();
+  cgweb130EnsureActivityManagementSection();
+  cgweb130RehomeActivityManagement();
+});
+
+
+window.CGWEB130_STATUS = () => {
+  const activity =
+    cgweb130ManagementActivity();
+
+  const management =
+    document.getElementById(
+      "cg122Management"
+    );
+
+  const detail =
+    document.getElementById(
+      "detailView"
+    );
+
+  const milestonePanel =
+    document.getElementById(
+      "cgweb129DailyDetailPanel"
+    );
+
+  return {
+    build:
+      "CGWEB130",
+
+    split_button_center:
+      "SPLIT_BUTTON_CENTER001",
+
+    landmark_occurrence_expand:
+      "LANDMARK_OCCURRENCE_EXPAND001",
+
+    daily_milestone_max_only:
+      "DAILY_MILESTONE_MAX_ONLY001",
+
+    landmark_milestone_merge:
+      "LANDMARK_MILESTONE_MERGE001",
+
+    activity_management_rehome:
+      "ACTIVITY_MANAGEMENT_REHOME001",
+
+    current_landmark_summary:
+      activity
+        ? cgweb130ExpandedLandmarkText(
+            activity
+          )
+        : null,
+
+    management_section_present:
+      Boolean(
+        document.getElementById(
+          "cgweb130ActivityManagementSection"
+        )
+      ),
+
+    management_parent:
+      management
+        ?.parentElement
+        ?.id ||
+      null,
+
+    management_inside_detail:
+      Boolean(
+        detail &&
+        management &&
+        detail.contains(
+          management
+        )
+      ),
+
+    separate_daily_milestone_panel_present:
+      Boolean(
+        milestonePanel
+      ),
+
+    render_detail_wrapped:
+      window
+        .__cgweb130RenderDetailWrapped ===
+      true,
+
+    cgweb127_fix2_preserved:
+      typeof window
+        .CGWEB127_FIX2_STATUS ===
+      "function"
+  };
+};
+
+
+console.info(
+  "CGWEB130 actif · " +
+  "SPLIT_BUTTON_CENTER001 / " +
+  "LANDMARK_OCCURRENCE_EXPAND001 / " +
+  "DAILY_MILESTONE_MAX_ONLY001 / " +
+  "LANDMARK_MILESTONE_MERGE001 / " +
+  "ACTIVITY_MANAGEMENT_REHOME001"
+);
+
+/* CGWEB130_END */
