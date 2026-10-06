@@ -71605,6 +71605,24 @@ async function cgweb125LoadPage(page, sub, force = false) {
         loadReferenceCollections(),
         activities.length ? Promise.resolve() : loadNextPage()
       ]);
+
+      /*
+       * CGWEB130 FIX1
+       * LANDMARK_REFERENCE_RERENDER001
+       * DIRECTORY_MARKER_REFRESH001
+       *
+       * Les activités et les activity_landmarks sont chargés en parallèle.
+       * loadNextPage() peut rendre le répertoire avant que les repères
+       * soient disponibles. Une fois les deux lectures terminées, on
+       * effectue donc un unique rendu déterministe.
+       */
+      if (
+        ui.activityList &&
+        Array.isArray(filteredActivities)
+      ) {
+        renderActivities();
+      }
+
       startInteropWatch();
     } else if (page === "analysis") {
       startInteropWatch();
@@ -72559,3 +72577,22 @@ console.info(
 );
 
 /* CGWEB130_END */
+
+/* CGWEB130_FIX1_START
+   LANDMARK_REFERENCE_RERENDER001
+   DIRECTORY_MARKER_REFRESH001
+*/
+window.CGWEB130_FIX1_STATUS = () => ({
+  build: "CGWEB130_FIX1",
+  landmark_reference_rerender:
+    "LANDMARK_REFERENCE_RERENDER001",
+  directory_marker_refresh:
+    "DIRECTORY_MARKER_REFRESH001",
+  loaded_activity_count:
+    Array.isArray(activities) ? activities.length : 0,
+  activity_landmark_activity_count:
+    activityLandmarks instanceof Map
+      ? activityLandmarks.size
+      : 0
+});
+/* CGWEB130_FIX1_END */
