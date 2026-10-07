@@ -9696,23 +9696,22 @@ function web065EnsureToolbarGroups() {
 }
 
 function web065EnsureStickySpacer(toolbar) {
-  if (!toolbar || !ui.detailView) return null;
+  /*
+   * CGWEB132 · DETAIL_SPACER_RETIRE001
+   *
+   * Le sticky reste dans le flux :
+   * aucun spacer dynamique.
+   */
+  const existing =
+    document.getElementById(
+      "web065DetailStickySpacer"
+    );
 
-  let spacer = document.getElementById("web065DetailStickySpacer");
-
-  if (!spacer) {
-    spacer = document.createElement("div");
-    spacer.id = "web065DetailStickySpacer";
-    spacer.setAttribute("aria-hidden", "true");
+  if (existing) {
+    existing.remove();
   }
 
-  if (spacer.parentElement !== ui.detailView) {
-    ui.detailView.insertBefore(spacer, toolbar);
-  } else if (spacer.nextElementSibling !== toolbar) {
-    ui.detailView.insertBefore(spacer, toolbar);
-  }
-
-  return spacer;
+  return null;
 }
 
 function web065StickyTopPx() {
@@ -9724,66 +9723,32 @@ function web065StickyTopPx() {
 }
 
 function web065ReserveStickyOffset() {
-  const token = ++web065ReserveToken;
-
-  const toolbar = web065EnsureToolbarGroups();
-  const row = document.getElementById("web061SingleMetricRow");
-
-  if (!toolbar || !row || !ui.detailView) return;
-
-  const spacer = web065EnsureStickySpacer(toolbar);
-  if (!spacer) return;
-
   /*
-   * Mesure du toolbar à sa position NORMALE, sans sticky.
+   * CGWEB132 · DETAIL_SPACER_RETIRE001
+   *
+   * Anciennes mesures dynamiques neutralisées.
    */
-  spacer.style.height = "0px";
-  toolbar.classList.add("web065-measuring-static");
+  web065ReserveToken += 1;
 
-  window.requestAnimationFrame(() => {
-    if (token !== web065ReserveToken) return;
-
-    const desiredTop = web065StickyTopPx();
-    const normalTop = toolbar.getBoundingClientRect().top;
-
-    const reserve = Math.max(
-      0,
-      Math.ceil(desiredTop - normalTop)
+  const spacer =
+    document.getElementById(
+      "web065DetailStickySpacer"
     );
 
-    spacer.style.height = reserve + "px";
-    spacer.dataset.reservePx = String(reserve);
+  if (spacer) {
+    spacer.remove();
+  }
 
-    toolbar.classList.remove("web065-measuring-static");
+  const toolbar =
+    document.getElementById(
+      "web064DirectDetailToolbar"
+    );
 
-    /*
-     * Contrôle post-layout : si une ancienne règle résiduelle crée encore
-     * un chevauchement, on augmente le spacer de la différence exacte.
-     */
-    window.requestAnimationFrame(() => {
-      if (token !== web065ReserveToken) return;
-
-      const toolbarRect = toolbar.getBoundingClientRect();
-      const rowRect = row.getBoundingClientRect();
-
-      const missing = Math.ceil(
-        toolbarRect.bottom + 8 - rowRect.top
-      );
-
-      if (missing > 0) {
-        const current =
-          Number.parseFloat(spacer.style.height) || 0;
-
-        spacer.style.height =
-          Math.ceil(current + missing) + "px";
-
-        spacer.dataset.reservePx =
-          String(Math.ceil(current + missing));
-      }
-
-      row.style.marginTop = "0px";
-    });
-  });
+  if (toolbar) {
+    toolbar.classList.remove(
+      "web065-measuring-static"
+    );
+  }
 }
 
 function web065InstallDetailTop() {
@@ -43994,18 +43959,17 @@ function cgweb120Fix8Toolbar() {
 
 function cgweb120Fix8ToolbarTop() {
   /*
-   * Écart demandé :
-   * navigation principale → bandeau activité = 2 mm.
+   * CGWEB132 · PRIMARY_NAV_2MM_ANCHOR001
+   * Valeur stable et indépendante du scroll.
    */
-  let mm2 = 8;
+  let mm2 = 2 * 96 / 25.4;
 
   try {
     if (
       typeof web072Fix13Mm2Px ===
       "function"
     ) {
-      mm2 =
-        web072Fix13Mm2Px();
+      mm2 = web072Fix13Mm2Px();
     }
   } catch (_) {}
 
@@ -44017,23 +43981,44 @@ function cgweb120Fix8ToolbarTop() {
       "[data-ux-primary-nav]"
     );
 
-  if (nav) {
-    const rect =
-      nav.getBoundingClientRect();
-
-    if (
-      rect.height > 0 &&
-      rect.bottom >= 0
-    ) {
-      return Math.ceil(
-        rect.bottom + mm2
-      );
-    }
+  if (!nav) {
+    return Math.ceil(mm2);
   }
 
-  return Math.ceil(mm2);
-}
+  const style =
+    getComputedStyle(nav);
 
+  const cssTop =
+    Number.parseFloat(
+      style.top
+    );
+
+  const rect =
+    nav.getBoundingClientRect();
+
+  const stableTop =
+    Number.isFinite(cssTop)
+      ? cssTop
+      : Math.max(
+          0,
+          rect.top
+        );
+
+  const height =
+    nav.offsetHeight ||
+    rect.height ||
+    0;
+
+  if (!(height > 0)) {
+    return Math.ceil(mm2);
+  }
+
+  return Math.ceil(
+    stableTop +
+    height +
+    mm2
+  );
+}
 
 function cgweb120Fix8ApplyToolbarFlow() {
   const detail =
@@ -44110,7 +44095,7 @@ function cgweb120Fix8ApplyToolbarFlow() {
 
   toolbar.style.setProperty(
     "z-index",
-    "10000",
+    "3450",
     "important"
   );
 
@@ -44124,9 +44109,19 @@ function cgweb120Fix8ApplyToolbarFlow() {
    * 2 mm entre navigation principale et bandeau activité
    * au placement naturel.
    */
+  /*
+   * CGWEB132 :
+   * les 2 mm sont déjà inclus dans top.
+   */
   toolbar.style.setProperty(
     "margin-top",
-    "2mm",
+    "0",
+    "important"
+  );
+
+  toolbar.style.setProperty(
+    "transform",
+    "none",
     "important"
   );
 
@@ -58681,41 +58676,26 @@ console.info(
     const bar = toolbar();
     if (!bar) return;
 
+    /*
+     * CGWEB132 · LEGACY_STATIC_OVERRIDE_RETIRE001
+     *
+     * Ce moteur historique ne possède plus
+     * le positionnement du bandeau.
+     */
     bar.classList.remove(
       "web072-fix9-toolbar-sticky",
       "web072-fix10-toolbar-fixed",
       "web072-fix11-toolbar-fixed"
     );
 
-    bar.style.setProperty(
-      "position",
-      "static",
-      "important"
-    );
-
-    bar.style.setProperty(
-      "top",
-      "auto",
-      "important"
-    );
-
-    bar.style.setProperty(
-      "left",
-      "auto",
-      "important"
-    );
-
-    bar.style.setProperty(
-      "right",
-      "auto",
-      "important"
-    );
-
-    bar.style.setProperty(
-      "transform",
-      "none",
-      "important"
-    );
+    try {
+      if (
+        typeof cgweb120Fix8ApplyToolbarFlow ===
+        "function"
+      ) {
+        cgweb120Fix8ApplyToolbarFlow();
+      }
+    } catch (_) {}
   }
 
   function ensureMarkerPanel() {
@@ -73314,3 +73294,112 @@ console.info(
 );
 
 /* CGWEB131_END */
+
+/* CGWEB132_START
+   DETAIL_TOOLBAR_SINGLE_OWNER001
+   PRIMARY_NAV_2MM_ANCHOR001
+   LEGACY_STATIC_OVERRIDE_RETIRE001
+   DETAIL_SPACER_RETIRE001
+*/
+
+window.CGWEB132_STATUS = () => {
+  const nav =
+    document.getElementById(
+      "uxPrimaryNav"
+    );
+
+  const toolbar =
+    document.getElementById(
+      "web064DirectDetailToolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .cgweb120-fix8-toolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .web059-detail-toolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .detail-toolbar"
+    );
+
+  const navStyle =
+    nav
+      ? getComputedStyle(nav)
+      : null;
+
+  const toolbarStyle =
+    toolbar
+      ? getComputedStyle(toolbar)
+      : null;
+
+  return {
+    build:
+      "CGWEB132",
+
+    detail_toolbar_single_owner:
+      "DETAIL_TOOLBAR_SINGLE_OWNER001",
+
+    primary_nav_2mm_anchor:
+      "PRIMARY_NAV_2MM_ANCHOR001",
+
+    legacy_static_override_retire:
+      "LEGACY_STATIC_OVERRIDE_RETIRE001",
+
+    detail_spacer_retire:
+      "DETAIL_SPACER_RETIRE001",
+
+    nav_css_top:
+      navStyle
+        ? navStyle.top
+        : null,
+
+    nav_height_px:
+      nav
+        ? nav.offsetHeight
+        : null,
+
+    target_toolbar_top_px:
+      typeof cgweb120Fix8ToolbarTop ===
+        "function"
+        ? cgweb120Fix8ToolbarTop()
+        : null,
+
+    toolbar_position:
+      toolbarStyle
+        ? toolbarStyle.position
+        : null,
+
+    toolbar_top:
+      toolbarStyle
+        ? toolbarStyle.top
+        : null,
+
+    toolbar_z_index:
+      toolbarStyle
+        ? toolbarStyle.zIndex
+        : null,
+
+    toolbar_margin_top:
+      toolbarStyle
+        ? toolbarStyle.marginTop
+        : null,
+
+    spacer_present:
+      !!document.getElementById(
+        "web065DetailStickySpacer"
+      ),
+
+    scroll_listener_for_anchor:
+      false
+  };
+};
+
+console.info(
+  "CGWEB132 actif · " +
+  "DETAIL_TOOLBAR_SINGLE_OWNER001 / " +
+  "PRIMARY_NAV_2MM_ANCHOR001 / " +
+  "LEGACY_STATIC_OVERRIDE_RETIRE001 / " +
+  "DETAIL_SPACER_RETIRE001"
+);
+
+/* CGWEB132_END */
