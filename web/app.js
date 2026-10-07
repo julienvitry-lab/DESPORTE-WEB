@@ -9377,6 +9377,10 @@ async function renderGlobalActivityMap(loadEverything) {
 }
 
 function showActivity(activity) {
+  document.body.classList.add(
+    "cgweb131-detail-open"
+  );
+
   catalogScrollY = window.scrollY;
   ui.uxSecondaryNav?.classList.add("hidden");
   currentDetailId = activityKey(activity);
@@ -9398,6 +9402,10 @@ function showActivity(activity) {
 }
 
 function showCatalog(restoreScroll = true) {
+  document.body.classList.remove(
+    "cgweb131-detail-open"
+  );
+
   document.title = "SPORT Web · WEB041";
   cartographyRequestToken++;
   destroyActivityMap();
@@ -9414,19 +9422,89 @@ function showCatalog(restoreScroll = true) {
   }
 }
 
-function moveDetail(delta) {
-  if (!currentDetailId || !filteredActivities.length) return;
+function cgweb131ChronologicalDetailActivities() {
+  const rows =
+    Array.isArray(filteredActivities)
+      ? [...filteredActivities]
+      : [];
 
-  const index = filteredActivities.findIndex((activity) => activityKey(activity) === currentDetailId);
+  const timestamp = activity => {
+    const value =
+      Number(
+        activity?.start_time_ms
+      );
+
+    return Number.isFinite(value)
+      ? value
+      : Number.POSITIVE_INFINITY;
+  };
+
+  rows.sort(
+    (a, b) =>
+      timestamp(a) -
+        timestamp(b) ||
+      String(
+        activityKey(a) ?? ""
+      ).localeCompare(
+        String(
+          activityKey(b) ?? ""
+        ),
+        "fr"
+      )
+  );
+
+  return rows;
+}
+
+
+function moveDetail(delta) {
+  if (
+    !currentDetailId ||
+    !filteredActivities.length
+  ) {
+    return;
+  }
+
+  const chronological =
+    cgweb131ChronologicalDetailActivities();
+
+  const index =
+    chronological.findIndex(
+      activity =>
+        activityKey(activity) ===
+        currentDetailId
+    );
+
   if (index < 0) return;
 
-  const targetIndex = index + delta;
-  if (targetIndex < 0 || targetIndex >= filteredActivities.length) return;
+  const direction =
+    Number(delta) < 0
+      ? -1
+      : 1;
 
-  const target = filteredActivities[targetIndex];
-  currentDetailId = activityKey(target);
+  const targetIndex =
+    index + direction;
+
+  if (
+    targetIndex < 0 ||
+    targetIndex >=
+      chronological.length
+  ) {
+    return;
+  }
+
+  const target =
+    chronological[targetIndex];
+
+  currentDetailId =
+    activityKey(target);
+
   renderDetail(target);
-  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth"
+  });
 }
 
 
@@ -9942,21 +10020,64 @@ function renderDetail(activity) {
   /* CGWEB105_RENDER_DETAIL_HOOK */
   queueMicrotask(()=>cgweb105RenderJoinPanel(activity));
 
-  const index = filteredActivities.findIndex((row) => activityKey(row) === activityKey(activity));
-  const total = filteredActivities.length;
+  /*
+   * CGWEB131 · CHRONOLOGICAL_DETAIL_NAV001
+   *
+   * La fiche ne dépend plus de l'ordre du Répertoire.
+   * Elle conserve son périmètre filtré mais navigue toujours :
+   *
+   *   précédente = plus ancienne
+   *   suivante   = plus récente
+   */
+  const chronological =
+    cgweb131ChronologicalDetailActivities();
+
+  const index =
+    chronological.findIndex(
+      row =>
+        activityKey(row) ===
+        activityKey(activity)
+    );
+
+  const total =
+    chronological.length;
 
   ui.detailPosition.textContent =
-    index >= 0 ? `${formatNumber(index + 1)} / ${formatNumber(total)}` : "—";
+    index >= 0
+      ? `${formatNumber(index + 1)} / ${formatNumber(total)}`
+      : "—";
 
-  const previousDisabled = index <= 0;
-  const nextDisabled = index < 0 || index >= total - 1;
+  const previousDisabled =
+    index <= 0;
 
-  [ui.previousActivityButton, ui.previousActivityBottomButton].forEach((button) => {
-    button.disabled = previousDisabled;
+  const nextDisabled =
+    index < 0 ||
+    index >= total - 1;
+
+  [
+    ui.previousActivityButton,
+    ui.previousActivityBottomButton
+  ].forEach(button => {
+    if (!button) return;
+
+    button.disabled =
+      previousDisabled;
+
+    button.textContent =
+      "← Activité précédente";
   });
 
-  [ui.nextActivityButton, ui.nextActivityBottomButton].forEach((button) => {
-    button.disabled = nextDisabled;
+  [
+    ui.nextActivityButton,
+    ui.nextActivityBottomButton
+  ].forEach(button => {
+    if (!button) return;
+
+    button.disabled =
+      nextDisabled;
+
+    button.textContent =
+      "Activité suivante →";
   });
 
   const title = cgweb115CanonicalActivityTitle(activity);
@@ -13923,16 +14044,13 @@ function cgweb130ExpandedLandmarkText(
     }
   }
 
-  return expanded.join("·");
+  return expanded.join(" · ");
 }
 
 
 function markerSummary(activity) {
-  return (
-    cgweb130ExpandedLandmarkText(
-      activity
-    ) ||
-    "—"
+  return cgweb130ExpandedLandmarkText(
+    activity
   );
 }
 
@@ -72676,3 +72794,187 @@ window.CGWEB130_FIX2_STATUS = () => ({
     false
 });
 /* CGWEB130_FIX2_END */
+
+/* CGWEB131_START
+   LANDMARK_SPACING001
+   EMPTY_LANDMARK_BLANK001
+   DETAIL_TOP_GAP_LOCK_2MM001
+   CHRONOLOGICAL_DETAIL_NAV001
+*/
+
+function cgweb131InstallStyle() {
+  let style =
+    document.getElementById(
+      "cgweb131Style"
+    );
+
+  if (!style) {
+    style =
+      document.createElement(
+        "style"
+      );
+
+    style.id =
+      "cgweb131Style";
+
+    document.head.appendChild(
+      style
+    );
+  }
+
+  style.textContent = `
+    /*
+     * DETAIL_TOP_GAP_LOCK_2MM001
+     *
+     * Le flux avant le bandeau ne réserve plus lui-même
+     * d'espace vertical.
+     *
+     * L'unique espace autorisé est le margin-top:2mm
+     * du bandeau d'activité.
+     */
+    body.cgweb131-detail-open main {
+      margin-top:0!important;
+      padding-top:0!important;
+    }
+
+    body.cgweb131-detail-open #dashboard {
+      margin-top:0!important;
+      padding-top:0!important;
+    }
+
+    body.cgweb131-detail-open #detailView {
+      margin-top:0!important;
+      padding-top:0!important;
+    }
+
+    body.cgweb131-detail-open
+    #detailView
+    #web064DirectDetailToolbar,
+
+    body.cgweb131-detail-open
+    #detailView
+    .cgweb120-fix8-toolbar,
+
+    body.cgweb131-detail-open
+    #detailView
+    .web059-detail-toolbar,
+
+    body.cgweb131-detail-open
+    #detailView
+    > .detail-toolbar {
+      margin-top:2mm!important;
+    }
+  `;
+}
+
+
+cgweb131InstallStyle();
+
+
+window.CGWEB131_STATUS = () => {
+  const chronological =
+    typeof cgweb131ChronologicalDetailActivities ===
+      "function"
+      ? cgweb131ChronologicalDetailActivities()
+      : [];
+
+  const nav =
+    document.getElementById(
+      "uxPrimaryNav"
+    );
+
+  const toolbar =
+    document.getElementById(
+      "web064DirectDetailToolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .cgweb120-fix8-toolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .detail-toolbar"
+    );
+
+  let measuredGapPx =
+    null;
+
+  if (
+    nav &&
+    toolbar &&
+    !ui?.detailView?.classList.contains(
+      "hidden"
+    )
+  ) {
+    const navRect =
+      nav.getBoundingClientRect();
+
+    const toolbarRect =
+      toolbar.getBoundingClientRect();
+
+    measuredGapPx =
+      Math.round(
+        (
+          toolbarRect.top -
+          navRect.bottom
+        ) * 100
+      ) / 100;
+  }
+
+  return {
+    build:
+      "CGWEB131",
+
+    landmark_spacing:
+      "LANDMARK_SPACING001",
+
+    landmark_separator:
+      " · ",
+
+    empty_landmark_blank:
+      "EMPTY_LANDMARK_BLANK001",
+
+    empty_marker_sample:
+      markerSummary({
+        id:
+          "__cgweb131_empty__"
+      }),
+
+    detail_top_gap_lock:
+      "DETAIL_TOP_GAP_LOCK_2MM001",
+
+    target_gap:
+      "2mm",
+
+    measured_gap_px:
+      measuredGapPx,
+
+    chronological_detail_nav:
+      "CHRONOLOGICAL_DETAIL_NAV001",
+
+    chronological_activity_count:
+      chronological.length,
+
+    first_activity_ms:
+      Number(
+        chronological[0]
+          ?.start_time_ms
+      ) || null,
+
+    last_activity_ms:
+      Number(
+        chronological[
+          chronological.length - 1
+        ]?.start_time_ms
+      ) || null
+  };
+};
+
+
+console.info(
+  "CGWEB131 actif · " +
+  "LANDMARK_SPACING001 / " +
+  "EMPTY_LANDMARK_BLANK001 / " +
+  "DETAIL_TOP_GAP_LOCK_2MM001 / " +
+  "CHRONOLOGICAL_DETAIL_NAV001"
+);
+
+/* CGWEB131_END */
