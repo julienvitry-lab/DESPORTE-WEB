@@ -57693,29 +57693,21 @@ console.info(
       "web072-fix11-toolbar-fixed"
     );
 
-    toolbar.style.setProperty(
-      "position",
-      "static",
-      "important"
-    );
-
-    toolbar.style.setProperty(
-      "top",
-      "auto",
-      "important"
-    );
-
-    toolbar.style.setProperty(
-      "left",
-      "auto",
-      "important"
-    );
-
-    toolbar.style.setProperty(
-      "width",
-      "auto",
-      "important"
-    );
+    /*
+     * CGWEB132 FIX1
+     * LEGACY_ACTIONBAR_POSITION_RETIRE001
+     *
+     * CGWEB122 FIX2 ne possède plus position/top/left/width.
+     * Le propriétaire unique reste CGWEB120/CGWEB132.
+     */
+    try {
+      if (
+        typeof cgweb120Fix8ApplyToolbarFlow ===
+        "function"
+      ) {
+        cgweb120Fix8ApplyToolbarFlow();
+      }
+    } catch (_) {}
 
     const center =
       document.getElementById(
@@ -57887,15 +57879,13 @@ console.info(
        * CGWEB122 FIX3
        * Le bandeau appartient au flux normal de la fiche.
        */
-      #web064DirectDetailToolbar {
-        position:static!important;
-        top:auto!important;
-        left:auto!important;
-        right:auto!important;
-        width:auto!important;
-        transform:none!important;
-        margin:0!important;
-      }
+      /*
+       * CGWEB132 FIX1
+       * FIX2_FIX3_OWNER_HANDOFF001
+       *
+       * Aucun positionnement du toolbar n'est autorisé ici.
+       * CGWEB122 FIX3 ne gère plus que les actions métier.
+       */
 
       #web065DetailStickySpacer,
       .web072-fix11-toolbar-placeholder {
@@ -58078,12 +58068,21 @@ console.info(
       "web072-fix11-toolbar-fixed"
     );
 
-    toolbar.style.setProperty("position", "static", "important");
-    toolbar.style.setProperty("top", "auto", "important");
-    toolbar.style.setProperty("left", "auto", "important");
-    toolbar.style.setProperty("right", "auto", "important");
-    toolbar.style.setProperty("width", "auto", "important");
-    toolbar.style.setProperty("transform", "none", "important");
+    /*
+     * CGWEB132 FIX1 · FIX2_FIX3_OWNER_HANDOFF001
+     *
+     * Le repositionnement historique est retiré.
+     * Après toute réparation des actions, le propriétaire unique
+     * réapplique l'invariant sticky.
+     */
+    try {
+      if (
+        typeof cgweb120Fix8ApplyToolbarFlow ===
+        "function"
+      ) {
+        cgweb120Fix8ApplyToolbarFlow();
+      }
+    } catch (_) {}
 
     const center = getCenter(toolbar);
     if (!center) return false;
@@ -58400,13 +58399,13 @@ console.info(
 
     style.textContent = `
       #detailView #web064DirectDetailToolbar {
-        position: static !important;
-        inset: auto !important;
-        top: auto !important;
-        left: auto !important;
-        right: auto !important;
-        transform: none !important;
-
+        /*
+         * CGWEB132 FIX1
+         * LEGACY_ACTIONBAR_POSITION_RETIRE001
+         *
+         * FIX4 conserve uniquement le layout interne.
+         * Aucun positionnement du bandeau ici.
+         */
         display: flex !important;
         align-items: center !important;
         flex-wrap: nowrap !important;
@@ -73403,3 +73402,245 @@ console.info(
 );
 
 /* CGWEB132_END */
+
+/* CGWEB132_FIX1_START
+   LEGACY_ACTIONBAR_POSITION_RETIRE001
+   FIX2_FIX3_OWNER_HANDOFF001
+   TOOLBAR_STICKY_INVARIANT001
+   GAP_2MM_RUNTIME_CHECK001
+*/
+
+function cgweb132Fix1Toolbar() {
+  return (
+    document.getElementById(
+      "web064DirectDetailToolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .cgweb120-fix8-toolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .web059-detail-toolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .detail-toolbar"
+    )
+  );
+}
+
+
+function cgweb132Fix1EnforceInvariant() {
+  /*
+   * TOOLBAR_STICKY_INVARIANT001
+   *
+   * Un seul propriétaire :
+   * CGWEB120 FIX8 / CGWEB132.
+   */
+  try {
+    if (
+      typeof cgweb120Fix8ApplyToolbarFlow ===
+      "function"
+    ) {
+      return !!cgweb120Fix8ApplyToolbarFlow();
+    }
+  } catch (_) {}
+
+  return false;
+}
+
+
+/*
+ * Une passe finale après chargement.
+ * Aucun listener scroll.
+ */
+queueMicrotask(
+  cgweb132Fix1EnforceInvariant
+);
+
+requestAnimationFrame(
+  cgweb132Fix1EnforceInvariant
+);
+
+
+window.CGWEB132_FIX1_STATUS = () => {
+  /*
+   * Le diagnostic commence volontairement par remettre
+   * l'invariant attendu avant mesure.
+   */
+  cgweb132Fix1EnforceInvariant();
+
+  const nav =
+    document.getElementById(
+      "uxPrimaryNav"
+    );
+
+  const toolbar =
+    cgweb132Fix1Toolbar();
+
+  const navRect =
+    nav
+      ? nav.getBoundingClientRect()
+      : null;
+
+  const toolbarRect =
+    toolbar
+      ? toolbar.getBoundingClientRect()
+      : null;
+
+  const toolbarStyle =
+    toolbar
+      ? getComputedStyle(toolbar)
+      : null;
+
+  const expectedTop =
+    typeof cgweb120Fix8ToolbarTop ===
+      "function"
+      ? cgweb120Fix8ToolbarTop()
+      : null;
+
+  const mm2px =
+    2 * 96 / 25.4;
+
+  const pinned =
+    toolbarRect &&
+    Number.isFinite(expectedTop)
+      ? Math.abs(
+          toolbarRect.top -
+          expectedTop
+        ) <= 2
+      : false;
+
+  const measuredGap =
+    navRect &&
+    toolbarRect
+      ? toolbarRect.top -
+        navRect.bottom
+      : null;
+
+  const fix3Style =
+    document.getElementById(
+      "cg122Fix3Style"
+    );
+
+  const fix4Style =
+    document.getElementById(
+      "cg122Fix4Style"
+    );
+
+  const legacyStaticCssPresent =
+    Boolean(
+      /position\s*:\s*static\s*!important/i.test(
+        String(
+          fix3Style?.textContent ||
+          ""
+        )
+      ) ||
+      /position\s*:\s*static\s*!important/i.test(
+        String(
+          fix4Style?.textContent ||
+          ""
+        )
+      )
+    );
+
+  return {
+    build:
+      "CGWEB132_FIX1",
+
+    legacy_actionbar_position_retire:
+      "LEGACY_ACTIONBAR_POSITION_RETIRE001",
+
+    fix2_fix3_owner_handoff:
+      "FIX2_FIX3_OWNER_HANDOFF001",
+
+    toolbar_sticky_invariant:
+      "TOOLBAR_STICKY_INVARIANT001",
+
+    gap_2mm_runtime_check:
+      "GAP_2MM_RUNTIME_CHECK001",
+
+    toolbar_position:
+      toolbarStyle
+        ? toolbarStyle.position
+        : null,
+
+    toolbar_inline_position:
+      toolbar
+        ? toolbar.style.getPropertyValue(
+            "position"
+          )
+        : null,
+
+    toolbar_inline_position_priority:
+      toolbar
+        ? toolbar.style.getPropertyPriority(
+            "position"
+          )
+        : null,
+
+    expected_toolbar_top_px:
+      expectedTop,
+
+    actual_toolbar_top_px:
+      toolbarRect
+        ? Math.round(
+            toolbarRect.top * 100
+          ) / 100
+        : null,
+
+    pinned:
+      pinned,
+
+    measured_gap_px:
+      measuredGap === null
+        ? null
+        : Math.round(
+            measuredGap * 100
+          ) / 100,
+
+    expected_2mm_px:
+      Math.round(
+        mm2px * 100
+      ) / 100,
+
+    gap_error_px_when_pinned:
+      pinned &&
+      measuredGap !== null
+        ? Math.round(
+            (
+              measuredGap -
+              mm2px
+            ) * 100
+          ) / 100
+        : null,
+
+    spacer_present:
+      !!document.getElementById(
+        "web065DetailStickySpacer"
+      ),
+
+    legacy_static_css_present:
+      legacyStaticCssPresent,
+
+    invariant_ok:
+      Boolean(
+        toolbarStyle &&
+        toolbarStyle.position ===
+          "sticky" &&
+        !document.getElementById(
+          "web065DetailStickySpacer"
+        ) &&
+        !legacyStaticCssPresent
+      )
+  };
+};
+
+
+console.info(
+  "CGWEB132 FIX1 actif · " +
+  "LEGACY_ACTIONBAR_POSITION_RETIRE001 / " +
+  "FIX2_FIX3_OWNER_HANDOFF001 / " +
+  "TOOLBAR_STICKY_INVARIANT001 / " +
+  "GAP_2MM_RUNTIME_CHECK001"
+);
+
+/* CGWEB132_FIX1_END */
