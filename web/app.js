@@ -8127,10 +8127,10 @@ function cgweb083Fix9SyncActivityHeader() {
   const card =
     list?.querySelector(".activity-card");
 
-  const secondary =
-    document.getElementById("uxSecondaryNav");
+  const primary =
+    document.getElementById("uxPrimaryNav");
 
-  if (!track || !card || !secondary) {
+  if (!track || !card || !primary) {
     return;
   }
 
@@ -8140,22 +8140,63 @@ function cgweb083Fix9SyncActivityHeader() {
   if (cells.length !== 8) return;
 
   /*
-   * ANCRAGE : INCHANGE.
+   * CGWEB131 FIX2
+   * DIRECTORY_HEADER_PRIMARY_ANCHOR001
+   *
+   * Le bandeau de colonnes doit rester exactement 2 mm
+   * sous la navigation principale visible.
+   *
+   * uxSecondaryNav est volontairement ignoré :
+   * lorsqu'il est masqué, son bottom vaut pratiquement 0
+   * et faisait remonter le header au sommet de l'écran.
    */
   const gap2mm =
     cgweb083Fix9Mm2Px(2);
 
-  const secondaryRect =
-    secondary.getBoundingClientRect();
+  const primaryRect =
+    primary.getBoundingClientRect();
+
+  if (
+    !Number.isFinite(primaryRect.bottom) ||
+    primaryRect.height <= 0
+  ) {
+    return;
+  }
 
   const stickyTop =
     Math.ceil(
-      secondaryRect.bottom + gap2mm
+      primaryRect.bottom + gap2mm
     );
 
   host.style.setProperty(
     "top",
     stickyTop + "px",
+    "important"
+  );
+
+  /*
+   * HEADER_ZINDEX_GUARD001
+   *
+   * topbar       : 4000
+   * navigation  : 3500
+   * header      : 3300
+   *
+   * Le header activité ne pourra donc plus recouvrir
+   * SPORT Web ni la navigation principale.
+   */
+  host.style.setProperty(
+    "z-index",
+    "3300",
+    "important"
+  );
+
+  /*
+   * Les 2 mm sont déjà intégrés dans stickyTop.
+   * Aucune deuxième marge verticale ne doit s'ajouter.
+   */
+  host.style.setProperty(
+    "margin-top",
+    "0px",
     "important"
   );
 
@@ -72997,39 +73038,84 @@ function cgweb131Fix1BlankDashInActivities() {
 
 function cgweb131Fix1ReorderDetailNavButtons() {
   /*
-   * DETAIL_NAV_BUTTON_ORDER001
+   * CGWEB131 FIX2
+   * DETAIL_NAV_ORDER_LOCK001
    *
-   * Positionnement physique :
-   * - précédente à gauche
-   * - suivante à droite
+   * L'ordre DOM seul ne suffisait pas car WEB057 impose
+   * encore un ordre CSS historique inversé.
+   *
+   * On verrouille donc explicitement l'ordre visuel.
    */
-  const pairs = [
-    [
-      ui?.previousActivityButton,
-      ui?.nextActivityButton
-    ],
-    [
-      ui?.previousActivityBottomButton,
-      ui?.nextActivityBottomButton
-    ]
-  ];
 
-  for (const [previousButton, nextButton] of pairs) {
-    if (
-      !previousButton ||
-      !nextButton ||
-      !previousButton.parentElement ||
-      previousButton.parentElement !== nextButton.parentElement
-    ) {
-      continue;
-    }
+  const previous =
+    ui?.previousActivityButton;
 
-    const parent =
-      previousButton.parentElement;
+  const next =
+    ui?.nextActivityButton;
 
-    parent.insertBefore(
-      previousButton,
-      nextButton
+  if (previous) {
+    previous.style.setProperty(
+      "order",
+      "1",
+      "important"
+    );
+  }
+
+  if (next) {
+    next.style.setProperty(
+      "order",
+      "2",
+      "important"
+    );
+  }
+
+  if (
+    previous &&
+    next &&
+    previous.parentElement &&
+    previous.parentElement ===
+      next.parentElement
+  ) {
+    previous.parentElement.insertBefore(
+      previous,
+      next
+    );
+  }
+
+  /*
+   * Même logique pour l'ancien bandeau inférieur,
+   * même s'il est actuellement masqué.
+   */
+  const previousBottom =
+    ui?.previousActivityBottomButton;
+
+  const nextBottom =
+    ui?.nextActivityBottomButton;
+
+  const backBottom =
+    ui?.backToCatalogBottomButton;
+
+  if (previousBottom) {
+    previousBottom.style.setProperty(
+      "order",
+      "1",
+      "important"
+    );
+  }
+
+  if (backBottom) {
+    backBottom.style.setProperty(
+      "order",
+      "2",
+      "important"
+    );
+  }
+
+  if (nextBottom) {
+    nextBottom.style.setProperty(
+      "order",
+      "3",
+      "important"
     );
   }
 }
@@ -73130,6 +73216,101 @@ console.info(
   "DETAIL_ANCHOR_STABILITY001 / " +
   "DETAIL_NAV_BUTTON_ORDER001 / " +
   "ACTIVITIES_EMPTY_DASH_BLANK001"
+);
+
+window.CGWEB131_FIX2_STATUS = () => {
+  const primary =
+    document.getElementById(
+      "uxPrimaryNav"
+    );
+
+  const header =
+    document.getElementById(
+      "cgweb083MeasuredActivityHeader"
+    );
+
+  const previous =
+    ui?.previousActivityButton;
+
+  const next =
+    ui?.nextActivityButton;
+
+  const primaryRect =
+    primary
+      ? primary.getBoundingClientRect()
+      : null;
+
+  const headerRect =
+    header
+      ? header.getBoundingClientRect()
+      : null;
+
+  return {
+    build:
+      "CGWEB131_FIX2",
+
+    directory_header_primary_anchor:
+      "DIRECTORY_HEADER_PRIMARY_ANCHOR001",
+
+    header_zindex_guard:
+      "HEADER_ZINDEX_GUARD001",
+
+    detail_nav_order_lock:
+      "DETAIL_NAV_ORDER_LOCK001",
+
+    primary_bottom_px:
+      primaryRect
+        ? Math.round(
+            primaryRect.bottom * 100
+          ) / 100
+        : null,
+
+    directory_header_top_px:
+      headerRect
+        ? Math.round(
+            headerRect.top * 100
+          ) / 100
+        : null,
+
+    measured_gap_px:
+      primaryRect && headerRect
+        ? Math.round(
+            (
+              headerRect.top -
+              primaryRect.bottom
+            ) * 100
+          ) / 100
+        : null,
+
+    header_z_index:
+      header
+        ? getComputedStyle(
+            header
+          ).zIndex
+        : null,
+
+    previous_order:
+      previous
+        ? getComputedStyle(
+            previous
+          ).order
+        : null,
+
+    next_order:
+      next
+        ? getComputedStyle(
+            next
+          ).order
+        : null
+  };
+};
+
+
+console.info(
+  "CGWEB131 FIX2 actif · " +
+  "DIRECTORY_HEADER_PRIMARY_ANCHOR001 / " +
+  "HEADER_ZINDEX_GUARD001 / " +
+  "DETAIL_NAV_ORDER_LOCK001"
 );
 
 /* CGWEB131_END */

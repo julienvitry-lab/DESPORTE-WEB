@@ -4488,7 +4488,11 @@ select {
 #cgweb083MeasuredActivityHeader{
   position:sticky!important;
   top:var(--cgweb083-fix9-header-top, 168px)!important;
-  z-index:5600!important;
+  /*
+   * CGWEB131 FIX2 · HEADER_ZINDEX_GUARD001
+   * Sous topbar (4000) et navigation principale (3500).
+   */
+  z-index:3300!important;
 
   display:block;
   width:100%!important;
@@ -4501,7 +4505,11 @@ select {
    * EXACTEMENT 2 mm sous Répertoire / Corbeille.
    * Le seuil sticky calculé en JS correspond à cette position.
    */
-  margin:2mm 0 0 0!important;
+  /*
+   * Les 2 mm sont portés par le top calculé en JS.
+   * Pas de double espacement.
+   */
+  margin:0!important;
   padding:0!important;
 
   pointer-events:none!important;
@@ -11221,7 +11229,7 @@ div.cgweb099-filter-grid
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="./fitcloud.js?v=CGWEB123-FIX4-SERVER-BATCH001"></script>
-<script type="module" src="./app.js?v=CGWEB131-FIX1-DETAIL-ANCHOR-STABILITY001"></script>
+<script type="module" src="./app.js?v=CGWEB131-FIX2-DIRECTORY-PRIMARY-ANCHOR001"></script>
 <script type="module" src="./cgweb123fix4.js?v=CGWEB125-FIX1-BATCH-FREEZE001"></script>
 <script type="module" src="./cgweb124.js?v=CGWEB130-FIX2-SPORT-SCOPED-BV001"></script>
 <script type="module" src="./cgweb126.js?v=CGWEB130-FIX2-SPORT-SCOPED-BV001"></script>
