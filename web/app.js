@@ -10958,8 +10958,18 @@ function normalizeRoute(data) {
 
     if (previous) {
       cumulative += haversineMeters(previous.latitude, previous.longitude, latitude, longitude);
-      const previousAltitude = Number(previous.altitudeMeters);
-      const currentAltitude = Number(alt[i]);
+      const previousAltitude =
+        previous.altitudeMeters == null ||
+        previous.altitudeMeters === ""
+          ? NaN
+          : Number(previous.altitudeMeters);
+
+      const currentAltitude =
+        alt[i] == null ||
+        alt[i] === ""
+          ? NaN
+          : Number(alt[i]);
+
       if (Number.isFinite(previousAltitude) && Number.isFinite(currentAltitude)) {
         const gain = currentAltitude - previousAltitude;
         if (gain > 0) cumulativeAscent += gain;
@@ -10971,8 +10981,16 @@ function normalizeRoute(data) {
       ? rawDistance
       : cumulative;
 
-    const rawAltitude = Number(alt[i]);
-    const altitudeMeters = Number.isFinite(rawAltitude) ? rawAltitude : null;
+    const rawAltitude =
+      alt[i] == null ||
+      alt[i] === ""
+        ? NaN
+        : Number(alt[i]);
+
+    const altitudeMeters =
+      Number.isFinite(rawAltitude)
+        ? rawAltitude
+        : null;
 
     const point = {
       latitude,
@@ -74291,3 +74309,1212 @@ console.info(
 );
 
 /* CGWEB132_FIX2_END */
+
+/* CGWEB133_START
+   ELEVATION_AUDIT001
+   ORIGINAL_ASCENT_PRESERVE001
+   OBVIOUS_ANOMALY_FLAG001
+   ON_DEMAND_ELEVATION_RECALC001
+   MANUAL_CORRECTION_APPLY001
+   ORIGINAL_VALUE_RESTORE001
+
+   CONTRAT :
+   - la valeur montre/FIT reste la référence par défaut ;
+   - aucun recalcul automatique ;
+   - aucun backfill historique ;
+   - aucune écriture pendant l'audit ;
+   - toute correction nécessite une action manuelle explicite ;
+   - la valeur d'origine reste restaurable.
+*/
+
+const CGWEB133_VERSION = "CGWEB133";
+const CGWEB133_DEM_SOURCE = "OPEN_METEO_COPERNICUS_GLO90";
+
+const cgweb133State = {
+  busy: false,
+  previewByActivity: new Map(),
+  lastAuditByActivity: new Map()
+};
+
+function cgweb133Finite(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function cgweb133OriginalAscent(activity) {
+  const preserved = cgweb133Finite(activity?.ascent_m_original);
+  if (preserved !== null && preserved >= 0) return preserved;
+  const current = cgweb133Finite(activity?.ascent_m);
+  return current !== null && current >= 0 ? current : null;
+}
+
+function cgweb133CurrentAscent(activity) {
+  const current = cgweb133Finite(activity?.ascent_m);
+  return current !== null && current >= 0 ? current : null;
+}
+
+function cgweb133RouteDistance(route) {
+  const points = Array.isArray(route?.points) ? route.points : [];
+  if (points.length < 2) return 0;
+
+  const last = cgweb133Finite(points[points.length - 1]?.distanceMeters);
+  if (last !== null && last > 0) return last;
+
+  let distance = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1];
+    const b = points[i];
+    if (
+      Number.isFinite(Number(a?.latitude)) &&
+      Number.isFinite(Number(a?.longitude)) &&
+      Number.isFinite(Number(b?.latitude)) &&
+      Number.isFinite(Number(b?.longitude))
+    ) {
+      distance += haversineMeters(
+        Number(a.latitude),
+        Number(a.longitude),
+        Number(b.latitude),
+        Number(b.longitude)
+      );
+    }
+  }
+  return distance;
+}
+
+function cgweb133AltitudeStats(route) {
+  const points = Array.isArray(route?.points) ? route.points : [];
+  const values = points.map((point) => cgweb133Finite(point?.altitudeMeters));
+  const finite = values.filter((value) => value !== null);
+
+  const min = finite.length ? Math.min(...finite) : null;
+  const max = finite.length ? Math.max(...finite) : null;
+  const range = min !== null && max !== null ? max - min : 0;
+  const zeroish = finite.filter((value) => Math.abs(value) < 0.5).length;
+
+  return {
+    pointCount: points.length,
+    altitudeCount: finite.length,
+    altitudeCoverage: points.length ? finite.length / points.length : 0,
+    zeroishCount: zeroish,
+    zeroishRatio: finite.length ? zeroish / finite.length : 0,
+    min,
+    max,
+    range
+  };
+}
+
+function cgweb133Audit(activity, route) {
+  const originalAscent = cgweb133OriginalAscent(activity);
+  const currentAscent = cgweb133CurrentAscent(activity);
+  const stats = cgweb133AltitudeStats(route);
+  const distance = cgweb133RouteDistance(route);
+  const reasons = [];
+
+  if (stats.pointCount >= 2 && stats.altitudeCount < 2) {
+    reasons.push("ALTITUDE_MISSING");
+  }
+
+  if (
+    stats.altitudeCount >= 2 &&
+    stats.zeroishRatio >= 0.98 &&
+    distance >= 1000
+  ) {
+    reasons.push("ALTITUDE_ALL_ZERO");
+  }
+
+  if (
+    stats.altitudeCount >= 10 &&
+    stats.range < 1 &&
+    distance >= 3000
+  ) {
+    reasons.push("ALTITUDE_IMPLAUSIBLY_FLAT");
+  }
+
+  if (
+    originalAscent !== null &&
+    originalAscent <= 0 &&
+    stats.altitudeCount >= 10 &&
+    stats.range >= 10
+  ) {
+    reasons.push("ZERO_ASCENT_WITH_RELIEF");
+  }
+
+  const correctionActive = Boolean(activity?.ascent_correction_active);
+
+  const result = {
+    activityId: String(activityKey(activity) || ""),
+    originalAscent,
+    currentAscent,
+    correctionActive,
+    distanceMeters: Math.round(distance),
+    ...stats,
+    suspect: reasons.length > 0,
+    reasons
+  };
+
+  if (result.activityId) {
+    cgweb133State.lastAuditByActivity.set(result.activityId, result);
+  }
+
+  return result;
+}
+
+function cgweb133ReasonLabel(reason) {
+  const labels = {
+    ALTITUDE_MISSING: "altitude absente du tracé",
+    ALTITUDE_ALL_ZERO: "altitude ramenée artificiellement à 0 m",
+    ALTITUDE_IMPLAUSIBLY_FLAT: "profil altimétrique anormalement plat",
+    ZERO_ASCENT_WITH_RELIEF: "D+ nul malgré un relief mesurable"
+  };
+  return labels[reason] || reason;
+}
+
+function cgweb133EnsureStyle() {
+  if (document.getElementById("cgweb133Style")) return;
+
+  const style = document.createElement("style");
+  style.id = "cgweb133Style";
+  style.textContent = `
+    #cgweb133ElevationPanel {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border: 1px solid rgba(140, 255, 40, .22);
+      border-radius: 14px;
+      background: rgba(130, 220, 40, .035);
+    }
+    #cgweb133ElevationPanel.cgweb133-suspect {
+      border-color: rgba(255, 188, 80, .48);
+      background: rgba(255, 170, 55, .045);
+    }
+    #cgweb133ElevationPanel.cgweb133-corrected {
+      border-color: rgba(70, 210, 130, .48);
+      background: rgba(70, 210, 130, .045);
+    }
+    .cgweb133-head,
+    .cgweb133-values,
+    .cgweb133-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .cgweb133-head { justify-content: space-between; }
+    .cgweb133-values { margin-top: 8px; }
+    .cgweb133-values span { opacity: .88; }
+    .cgweb133-actions { margin-top: 10px; }
+    #cgweb133Message { margin-top: 8px; line-height: 1.45; }
+    #cgweb133PreviewSvg {
+      display: none;
+      width: 100%;
+      height: 110px;
+      margin-top: 10px;
+      border: 1px solid rgba(128,128,128,.20);
+      border-radius: 10px;
+      background: rgba(0,0,0,.12);
+    }
+    #cgweb133PreviewSvg.cgweb133-visible { display: block; }
+    #cgweb133PreviewSvg path {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      vector-effect: non-scaling-stroke;
+    }
+    #cgweb133PreviewSvg .cgweb133-area {
+      fill: currentColor;
+      opacity: .08;
+      stroke: none;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function cgweb133EnsurePanel() {
+  cgweb133EnsureStyle();
+
+  const mapSection = document.getElementById("detailMapSection");
+  if (!mapSection) return null;
+
+  let panel = document.getElementById("cgweb133ElevationPanel");
+  if (panel) return panel;
+
+  panel = document.createElement("section");
+  panel.id = "cgweb133ElevationPanel";
+  panel.innerHTML = `
+    <div class="cgweb133-head">
+      <strong>Dénivelé · contrôle manuel</strong>
+      <span id="cgweb133AuditBadge" class="pill neutral">Audit…</span>
+    </div>
+
+    <div class="cgweb133-values">
+      <span id="cgweb133OriginalValue">Montre/FIT : —</span>
+      <span id="cgweb133CurrentValue">Valeur utilisée : —</span>
+      <span id="cgweb133ProposalValue" hidden>Proposition SPORT : —</span>
+    </div>
+
+    <div id="cgweb133Message" class="muted">
+      La valeur de la montre/FIT est conservée par défaut.
+    </div>
+
+    <svg
+      id="cgweb133PreviewSvg"
+      viewBox="0 0 1000 110"
+      preserveAspectRatio="none"
+      aria-label="Aperçu du profil utilisé pour le recalcul"
+    ></svg>
+
+    <div class="cgweb133-actions">
+      <button id="cgweb133RecalcButton" class="secondary" type="button">
+        Recalculer le D+
+      </button>
+      <button id="cgweb133ApplyButton" class="primary" type="button" hidden>
+        Utiliser cette valeur
+      </button>
+      <button id="cgweb133DiscardButton" class="secondary" type="button" hidden>
+        Annuler la proposition
+      </button>
+      <button id="cgweb133RestoreButton" class="secondary" type="button" hidden>
+        Restaurer la valeur montre/FIT
+      </button>
+    </div>
+  `;
+
+  const profile = mapSection.querySelector(".profile-card");
+  if (profile && profile.parentElement === mapSection) {
+    profile.insertAdjacentElement("afterend", panel);
+  } else {
+    mapSection.appendChild(panel);
+  }
+
+  document.getElementById("cgweb133RecalcButton")
+    ?.addEventListener("click", () => void cgweb133RecalculateCurrent());
+
+  document.getElementById("cgweb133ApplyButton")
+    ?.addEventListener("click", () => void cgweb133ApplyCurrentProposal());
+
+  document.getElementById("cgweb133DiscardButton")
+    ?.addEventListener("click", () => {
+      const activity = currentDetailActivity();
+      if (activity) cgweb133DiscardPreview(activity);
+    });
+
+  document.getElementById("cgweb133RestoreButton")
+    ?.addEventListener("click", () => void cgweb133RestoreCurrent());
+
+  return panel;
+}
+
+function cgweb133SetBusy(busy, text = "") {
+  cgweb133State.busy = Boolean(busy);
+
+  for (const id of [
+    "cgweb133RecalcButton",
+    "cgweb133ApplyButton",
+    "cgweb133DiscardButton",
+    "cgweb133RestoreButton"
+  ]) {
+    const button = document.getElementById(id);
+    if (button) button.disabled = Boolean(busy);
+  }
+
+  if (text) {
+    const message = document.getElementById("cgweb133Message");
+    if (message) message.textContent = text;
+  }
+}
+
+async function cgweb133LoadRoute(activity) {
+  if (!activity) return null;
+
+  if (activeRoute?.points?.length >= 2) {
+    return activeRoute;
+  }
+
+  if (typeof cgweb121Fix1ReadDetailed === "function") {
+    try {
+      const detailed = await cgweb121Fix1ReadDetailed(activity);
+      if (detailed?.raw) {
+        const route = normalizeRoute(detailed.raw);
+        if (route?.points?.length >= 2) return route;
+      }
+    } catch (error) {
+      console.warn("CGWEB133 route détaillée", error);
+    }
+  }
+
+  if (!currentUser) return null;
+
+  const keys = [...new Set(
+    [activity?.id, activity?.__docId, activityKey(activity)]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+  )];
+
+  for (const key of keys) {
+    try {
+      const snapshot = await getDoc(
+        doc(db, ROOT, currentUser.uid, "activity_routes", key)
+      );
+      if (!snapshot.exists()) continue;
+
+      const route = normalizeRoute(snapshot.data());
+      if (route?.points?.length >= 2) return route;
+    } catch (error) {
+      console.warn("CGWEB133 activity_routes", key, error);
+    }
+  }
+
+  return null;
+}
+
+function cgweb133InterpolateNativeAltitudes(route) {
+  const points = Array.isArray(route?.points) ? route.points : [];
+  if (points.length < 2) return null;
+
+  const values = points.map((point) => cgweb133Finite(point?.altitudeMeters));
+  const validIndices = [];
+
+  for (let i = 0; i < values.length; i += 1) {
+    if (values[i] !== null) validIndices.push(i);
+  }
+
+  if (validIndices.length < 2) return null;
+
+  const coverage = validIndices.length / values.length;
+  const validValues = validIndices.map((i) => values[i]);
+  const range = Math.max(...validValues) - Math.min(...validValues);
+  const zeroishRatio =
+    validValues.filter((value) => Math.abs(value) < 0.5).length /
+    validValues.length;
+
+  if (coverage < 0.70 || zeroishRatio >= 0.98 || range < 1) return null;
+
+  const out = values.slice();
+  const firstValid = validIndices[0];
+
+  for (let i = 0; i < firstValid; i += 1) out[i] = out[firstValid];
+
+  let previousValid = firstValid;
+
+  for (let k = 1; k < validIndices.length; k += 1) {
+    const nextValid = validIndices[k];
+    const a = out[previousValid];
+    const b = out[nextValid];
+    const span = nextValid - previousValid;
+
+    for (let i = previousValid + 1; i < nextValid; i += 1) {
+      const ratio = (i - previousValid) / span;
+      out[i] = a + (b - a) * ratio;
+    }
+
+    previousValid = nextValid;
+  }
+
+  for (let i = previousValid + 1; i < out.length; i += 1) {
+    out[i] = out[previousValid];
+  }
+
+  return out;
+}
+
+function cgweb133Median(values) {
+  if (!values.length) return null;
+  const ordered = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(ordered.length / 2);
+  if (ordered.length % 2) return ordered[middle];
+  return (ordered[middle - 1] + ordered[middle]) / 2;
+}
+
+function cgweb133SmoothSeries(route, values, radiusMeters) {
+  const points = route?.points || [];
+  if (points.length !== values.length || values.length < 2) return values.slice();
+
+  const distances = points.map((point, index) => {
+    const value = cgweb133Finite(point?.distanceMeters);
+    return value !== null ? value : index;
+  });
+
+  return values.map((_value, index) => {
+    const center = distances[index];
+    const window = [];
+
+    for (let j = index; j >= 0; j -= 1) {
+      if (center - distances[j] > radiusMeters) break;
+      if (Number.isFinite(values[j])) window.push(values[j]);
+    }
+
+    for (let j = index + 1; j < values.length; j += 1) {
+      if (distances[j] - center > radiusMeters) break;
+      if (Number.isFinite(values[j])) window.push(values[j]);
+    }
+
+    return cgweb133Median(window) ?? values[index];
+  });
+}
+
+function cgweb133HysteresisAscent(values, thresholdMeters) {
+  const series = values.filter(Number.isFinite);
+  if (series.length < 2) return 0;
+
+  let valley = series[0];
+  let peak = series[0];
+  let climbing = false;
+  let gain = 0;
+
+  for (let i = 1; i < series.length; i += 1) {
+    const z = series[i];
+
+    if (!climbing) {
+      if (z < valley) valley = z;
+      if (z - valley >= thresholdMeters) {
+        climbing = true;
+        peak = z;
+      }
+      continue;
+    }
+
+    if (z > peak) {
+      peak = z;
+      continue;
+    }
+
+    if (peak - z >= thresholdMeters) {
+      gain += Math.max(0, peak - valley);
+      climbing = false;
+      valley = z;
+      peak = z;
+    }
+  }
+
+  if (climbing) gain += Math.max(0, peak - valley);
+  return gain;
+}
+
+function cgweb133SampleRouteForDem(route) {
+  const points = (route?.points || []).filter(
+    (point) =>
+      Number.isFinite(Number(point?.latitude)) &&
+      Number.isFinite(Number(point?.longitude))
+  );
+
+  if (points.length < 2) return [];
+
+  const totalDistance = cgweb133RouteDistance({ points });
+  const desired = Math.max(
+    2,
+    Math.min(
+      500,
+      totalDistance > 0 ? Math.ceil(totalDistance / 50) + 1 : points.length
+    )
+  );
+
+  if (points.length <= desired) return points;
+
+  const samples = [];
+  const used = new Set();
+
+  if (totalDistance > 0) {
+    let cursor = 0;
+
+    for (let slot = 0; slot < desired; slot += 1) {
+      const target = totalDistance * slot / (desired - 1);
+
+      while (
+        cursor < points.length - 2 &&
+        Math.abs(Number(points[cursor + 1]?.distanceMeters) - target) <
+          Math.abs(Number(points[cursor]?.distanceMeters) - target)
+      ) {
+        cursor += 1;
+      }
+
+      if (!used.has(cursor)) {
+        used.add(cursor);
+        samples.push(points[cursor]);
+      }
+    }
+  } else {
+    for (let slot = 0; slot < desired; slot += 1) {
+      const index = Math.round(slot * (points.length - 1) / (desired - 1));
+      if (!used.has(index)) {
+        used.add(index);
+        samples.push(points[index]);
+      }
+    }
+  }
+
+  if (samples[samples.length - 1] !== points[points.length - 1]) {
+    samples.push(points[points.length - 1]);
+  }
+
+  return samples;
+}
+
+async function cgweb133FetchDemBatch(batch) {
+  const lat = batch
+    .map((point) => Number(point.latitude).toFixed(6))
+    .join(",");
+
+  const lon = batch
+    .map((point) => Number(point.longitude).toFixed(6))
+    .join(",");
+
+  const url =
+    "https://api.open-meteo.com/v1/elevation" +
+    "?latitude=" + encodeURIComponent(lat) +
+    "&longitude=" + encodeURIComponent(lon);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+
+    if (!response.ok) {
+      throw new Error("API altitude HTTP " + response.status);
+    }
+
+    const payload = await response.json();
+    let elevation = payload?.elevation;
+
+    if (!Array.isArray(elevation)) elevation = [elevation];
+
+    if (elevation.length !== batch.length) {
+      throw new Error("Réponse altitude incomplète.");
+    }
+
+    return elevation.map((value) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function cgweb133BuildDemSeries(route) {
+  const samples = cgweb133SampleRouteForDem(route);
+
+  if (samples.length < 2) {
+    throw new Error("Tracé GPS insuffisant pour reconstruire l'altitude.");
+  }
+
+  const sampleRows = [];
+
+  for (let start = 0; start < samples.length; start += 100) {
+    const batch = samples.slice(start, start + 100);
+    const elevations = await cgweb133FetchDemBatch(batch);
+
+    for (let i = 0; i < batch.length; i += 1) {
+      const elevation = elevations[i];
+      if (elevation === null) continue;
+
+      sampleRows.push({
+        distance: cgweb133Finite(batch[i]?.distanceMeters) ?? start + i,
+        elevation
+      });
+    }
+  }
+
+  if (sampleRows.length < 2) {
+    throw new Error("Le modèle numérique de terrain n'a pas fourni assez de points.");
+  }
+
+  sampleRows.sort((a, b) => a.distance - b.distance);
+
+  const points = route?.points || [];
+  const series = [];
+  let right = 1;
+
+  for (let i = 0; i < points.length; i += 1) {
+    const distance = cgweb133Finite(points[i]?.distanceMeters) ?? i;
+
+    while (
+      right < sampleRows.length - 1 &&
+      sampleRows[right].distance < distance
+    ) {
+      right += 1;
+    }
+
+    const b = sampleRows[right];
+    const a = sampleRows[Math.max(0, right - 1)];
+
+    if (distance <= sampleRows[0].distance) {
+      series.push(sampleRows[0].elevation);
+      continue;
+    }
+
+    if (distance >= sampleRows[sampleRows.length - 1].distance) {
+      series.push(sampleRows[sampleRows.length - 1].elevation);
+      continue;
+    }
+
+    const span = Math.max(1e-9, b.distance - a.distance);
+    const ratio = Math.max(0, Math.min(1, (distance - a.distance) / span));
+
+    series.push(a.elevation + (b.elevation - a.elevation) * ratio);
+  }
+
+  return {
+    series,
+    sampleCount: sampleRows.length
+  };
+}
+
+function cgweb133DrawPreview(route, values) {
+  const svg = document.getElementById("cgweb133PreviewSvg");
+  if (!svg) return;
+
+  svg.replaceChildren();
+
+  if (!Array.isArray(values) || values.length < 2) {
+    svg.classList.remove("cgweb133-visible");
+    return;
+  }
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = Math.max(1, max - min);
+  const points = route?.points || [];
+  const maxDistance = Math.max(1, cgweb133RouteDistance(route));
+
+  const coords = values.map((value, index) => {
+    const distance = cgweb133Finite(points[index]?.distanceMeters);
+
+    const x =
+      (distance !== null
+        ? distance / maxDistance
+        : index / Math.max(1, values.length - 1)) * 1000;
+
+    const y = 8 + (max - value) / span * 90;
+    return [x, y];
+  });
+
+  const lineD = coords
+    .map(([x, y], index) =>
+      (index ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1)
+    )
+    .join(" ");
+
+  const areaD =
+    lineD +
+    " L" + coords[coords.length - 1][0].toFixed(1) + ",104" +
+    " L" + coords[0][0].toFixed(1) + ",104 Z";
+
+  const ns = "http://www.w3.org/2000/svg";
+
+  const area = document.createElementNS(ns, "path");
+  area.setAttribute("d", areaD);
+  area.setAttribute("class", "cgweb133-area");
+
+  const line = document.createElementNS(ns, "path");
+  line.setAttribute("d", lineD);
+
+  svg.append(area, line);
+  svg.classList.add("cgweb133-visible");
+}
+
+function cgweb133DiscardPreview(activity) {
+  const key = String(activityKey(activity) || "");
+  if (key) cgweb133State.previewByActivity.delete(key);
+
+  const proposal = document.getElementById("cgweb133ProposalValue");
+  const apply = document.getElementById("cgweb133ApplyButton");
+  const discard = document.getElementById("cgweb133DiscardButton");
+  const svg = document.getElementById("cgweb133PreviewSvg");
+
+  if (proposal) proposal.hidden = true;
+  if (apply) apply.hidden = true;
+  if (discard) discard.hidden = true;
+
+  if (svg) {
+    svg.replaceChildren();
+    svg.classList.remove("cgweb133-visible");
+  }
+
+  void cgweb133RefreshPanel(activity);
+}
+
+async function cgweb133RefreshPanel(activity) {
+  const panel = cgweb133EnsurePanel();
+  if (!panel || !activity) return null;
+
+  let route = null;
+  try {
+    route = await cgweb133LoadRoute(activity);
+  } catch (_) {}
+
+  const audit = cgweb133Audit(activity, route);
+
+  const originalNode = document.getElementById("cgweb133OriginalValue");
+  const currentNode = document.getElementById("cgweb133CurrentValue");
+  const badge = document.getElementById("cgweb133AuditBadge");
+  const message = document.getElementById("cgweb133Message");
+  const restore = document.getElementById("cgweb133RestoreButton");
+
+  if (originalNode) {
+    originalNode.textContent =
+      "Montre/FIT : " +
+      (audit.originalAscent === null ? "—" : Math.round(audit.originalAscent) + " m");
+  }
+
+  if (currentNode) {
+    currentNode.textContent =
+      "Valeur utilisée : " +
+      (audit.currentAscent === null ? "—" : Math.round(audit.currentAscent) + " m");
+  }
+
+  panel.classList.toggle(
+    "cgweb133-suspect",
+    audit.suspect && !audit.correctionActive
+  );
+
+  panel.classList.toggle(
+    "cgweb133-corrected",
+    audit.correctionActive
+  );
+
+  if (restore) restore.hidden = !audit.correctionActive;
+
+  const preview = audit.activityId
+    ? cgweb133State.previewByActivity.get(audit.activityId)
+    : null;
+
+  if (preview) {
+    const proposal = document.getElementById("cgweb133ProposalValue");
+    const apply = document.getElementById("cgweb133ApplyButton");
+    const discard = document.getElementById("cgweb133DiscardButton");
+
+    if (proposal) {
+      proposal.hidden = false;
+      proposal.textContent =
+        "Proposition SPORT : " + Math.round(preview.ascentMeters) + " m";
+    }
+
+    if (apply) apply.hidden = false;
+    if (discard) discard.hidden = false;
+
+    if (message) {
+      message.textContent =
+        "Proposition non appliquée · " +
+        preview.sourceLabel +
+        " · seuil " +
+        preview.thresholdMeters +
+        " m. La valeur montre/FIT n'a pas été modifiée.";
+    }
+
+    if (badge) {
+      badge.textContent = "Proposition";
+      badge.className = "pill pending";
+    }
+
+    cgweb133DrawPreview(route, preview.smoothedSeries);
+    return audit;
+  }
+
+  if (audit.correctionActive) {
+    if (badge) {
+      badge.textContent = "Correction manuelle active";
+      badge.className = "pill ok";
+    }
+
+    if (message) {
+      message.textContent =
+        "La valeur montre/FIT reste conservée et peut être restaurée à tout moment.";
+    }
+
+    return audit;
+  }
+
+  if (audit.suspect) {
+    if (badge) {
+      badge.textContent = "D+ suspect";
+      badge.className = "pill pending";
+    }
+
+    if (message) {
+      message.textContent =
+        "Anomalie flagrante détectée : " +
+        audit.reasons.map(cgweb133ReasonLabel).join(" · ") +
+        ". Aucun recalcul n'est lancé automatiquement.";
+    }
+
+    return audit;
+  }
+
+  if (badge) {
+    badge.textContent = "Valeur montre/FIT";
+    badge.className = "pill neutral";
+  }
+
+  if (message) {
+    message.textContent =
+      "Aucune aberration flagrante détectée. Le D+ montre/FIT est conservé.";
+  }
+
+  return audit;
+}
+
+async function cgweb133RecalculateCurrent() {
+  if (cgweb133State.busy) return;
+
+  const activity = currentDetailActivity();
+  if (!activity) return;
+
+  const key = String(activityKey(activity) || "");
+  if (!key) return;
+
+  cgweb133SetBusy(true, "Analyse du profil altimétrique…");
+
+  try {
+    const route = await cgweb133LoadRoute(activity);
+
+    if (!route || route?.points?.length < 2) {
+      throw new Error("Tracé GPS indisponible.");
+    }
+
+    const nativeSeries = cgweb133InterpolateNativeAltitudes(route);
+
+    let source;
+    let sourceLabel;
+    let series;
+    let thresholdMeters;
+    let smoothingRadiusMeters;
+    let demSampleCount = 0;
+
+    if (nativeSeries) {
+      source = "NATIVE_ALTITUDE";
+      sourceLabel = "altitude montre/FIT";
+      series = nativeSeries;
+      thresholdMeters = 2;
+      smoothingRadiusMeters = 20;
+    } else {
+      const dem = await cgweb133BuildDemSeries(route);
+      source = CGWEB133_DEM_SOURCE;
+      sourceLabel = "terrain Copernicus GLO-90";
+      series = dem.series;
+      demSampleCount = dem.sampleCount;
+      thresholdMeters = 10;
+      smoothingRadiusMeters = 60;
+    }
+
+    const smoothed = cgweb133SmoothSeries(
+      route,
+      series,
+      smoothingRadiusMeters
+    );
+
+    const ascent = cgweb133HysteresisAscent(
+      smoothed,
+      thresholdMeters
+    );
+
+    if (!Number.isFinite(ascent) || ascent < 0) {
+      throw new Error("Le recalcul n'a pas produit de D+ exploitable.");
+    }
+
+    const preview = {
+      activityId: key,
+      ascentMeters: Math.round(ascent),
+      source,
+      sourceLabel,
+      thresholdMeters,
+      smoothingRadiusMeters,
+      demSampleCount,
+      createdAtMs: Date.now(),
+      smoothedSeries: smoothed
+    };
+
+    cgweb133State.previewByActivity.set(key, preview);
+    await cgweb133RefreshPanel(activity);
+
+  } catch (error) {
+    console.error("CGWEB133 recalcul", error);
+
+    const message = document.getElementById("cgweb133Message");
+    if (message) {
+      message.textContent =
+        "Recalcul impossible : " + (error?.message || String(error));
+    }
+  } finally {
+    cgweb133SetBusy(false);
+  }
+}
+
+async function cgweb133PersistAscentPatch(activity, patch, revisionKind) {
+  if (!activity || !currentUser) {
+    throw new Error("Activité ou connexion Firebase absente.");
+  }
+
+  const key = String(activityKey(activity) || "");
+  if (!key) throw new Error("Identifiant d'activité absent.");
+
+  if (typeof cgweb084SaveActivityRevision === "function") {
+    await cgweb084SaveActivityRevision(activity, revisionKind, patch);
+  }
+
+  const numericId = Number(key);
+  const row = { ...patch };
+
+  if (Number.isFinite(numericId) && numericId > 0) {
+    row.id = numericId;
+  }
+
+  await commitWebMutation({
+    table: "activities",
+    rowKey: key,
+    operation: "UPSERT",
+    row,
+    materializedCollection: "activities",
+    materializedData: row
+  });
+
+  Object.assign(activity, row);
+
+  try {
+    renderHeroMetrics(activity);
+    renderSummary(activity);
+    web061RefreshSingleMetricRow(activity);
+  } catch (_) {}
+
+  try {
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+  } catch (_) {}
+
+  try {
+    void loadWebDashboard();
+  } catch (_) {}
+}
+
+async function cgweb133ApplyCurrentProposal() {
+  if (cgweb133State.busy) return;
+
+  const activity = currentDetailActivity();
+  if (!activity) return;
+
+  const key = String(activityKey(activity) || "");
+  const preview = cgweb133State.previewByActivity.get(key);
+  if (!preview) return;
+
+  const original = cgweb133OriginalAscent(activity);
+
+  const confirmed = window.confirm(
+    [
+      "Appliquer la correction manuelle du D+ ?",
+      "",
+      "Montre/FIT : " +
+        (original === null ? "—" : Math.round(original) + " m"),
+      "Proposition SPORT : " +
+        Math.round(preview.ascentMeters) + " m",
+      "",
+      "La valeur d'origine sera conservée et restera restaurable."
+    ].join("\n")
+  );
+
+  if (!confirmed) return;
+
+  cgweb133SetBusy(true, "Enregistrement de la correction manuelle…");
+
+  try {
+    const now = Date.now();
+
+    const patch = {
+      ascent_m_original: original,
+      ascent_m_corrected: Math.round(preview.ascentMeters),
+      ascent_m: Math.round(preview.ascentMeters),
+      ascent_correction_active: true,
+      ascent_correction_source: preview.source,
+      ascent_correction_method: "SMOOTH_HYSTERESIS",
+      ascent_correction_threshold_m: preview.thresholdMeters,
+      ascent_correction_smoothing_radius_m: preview.smoothingRadiusMeters,
+      ascent_correction_version: CGWEB133_VERSION,
+      ascent_correction_updated_at_ms: now
+    };
+
+    await cgweb133PersistAscentPatch(
+      activity,
+      patch,
+      "ELEVATION_MANUAL_CORRECTION"
+    );
+
+    cgweb133State.previewByActivity.delete(key);
+    await cgweb133RefreshPanel(activity);
+
+    setMessage(
+      "CGWEB133 · D+ corrigé manuellement. La valeur montre/FIT reste restaurable.",
+      "success"
+    );
+
+  } catch (error) {
+    console.error("CGWEB133 application", error);
+
+    const message = document.getElementById("cgweb133Message");
+    if (message) {
+      message.textContent =
+        "Enregistrement impossible : " + (error?.message || String(error));
+    }
+  } finally {
+    cgweb133SetBusy(false);
+  }
+}
+
+async function cgweb133RestoreCurrent() {
+  if (cgweb133State.busy) return;
+
+  const activity = currentDetailActivity();
+  if (!activity) return;
+
+  const original = cgweb133Finite(activity?.ascent_m_original);
+
+  if (original === null || original < 0) {
+    const message = document.getElementById("cgweb133Message");
+    if (message) {
+      message.textContent =
+        "Aucune valeur montre/FIT préservée n'est disponible.";
+    }
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Restaurer le D+ montre/FIT d'origine : " +
+    Math.round(original) +
+    " m ?"
+  );
+
+  if (!confirmed) return;
+
+  cgweb133SetBusy(true, "Restauration de la valeur montre/FIT…");
+
+  try {
+    const patch = {
+      ascent_m: original,
+      ascent_m_corrected: null,
+      ascent_correction_active: false,
+      ascent_correction_restored_at_ms: Date.now(),
+      ascent_correction_version: CGWEB133_VERSION
+    };
+
+    await cgweb133PersistAscentPatch(
+      activity,
+      patch,
+      "ELEVATION_ORIGINAL_RESTORE"
+    );
+
+    cgweb133State.previewByActivity.delete(
+      String(activityKey(activity) || "")
+    );
+
+    await cgweb133RefreshPanel(activity);
+
+    setMessage(
+      "CGWEB133 · valeur montre/FIT restaurée.",
+      "success"
+    );
+
+  } catch (error) {
+    console.error("CGWEB133 restauration", error);
+
+    const message = document.getElementById("cgweb133Message");
+    if (message) {
+      message.textContent =
+        "Restauration impossible : " + (error?.message || String(error));
+    }
+  } finally {
+    cgweb133SetBusy(false);
+  }
+}
+
+/*
+ * L'audit est passif.
+ * Il s'exécute après le rendu cartographique, mais n'écrit rien.
+ */
+if (typeof renderCartography === "function") {
+  const cgweb133BaseRenderCartography = renderCartography;
+
+  renderCartography = async function cgweb133RenderCartographyWrapper(
+    activity,
+    ...args
+  ) {
+    const result = await cgweb133BaseRenderCartography.call(
+      this,
+      activity,
+      ...args
+    );
+
+    try {
+      await cgweb133RefreshPanel(activity);
+    } catch (error) {
+      console.warn("CGWEB133 audit après cartographie", error);
+    }
+
+    return result;
+  };
+}
+
+if (typeof renderDetail === "function") {
+  const cgweb133BaseRenderDetail = renderDetail;
+
+  renderDetail = function cgweb133RenderDetailWrapper(
+    activity,
+    ...args
+  ) {
+    const result = cgweb133BaseRenderDetail.call(
+      this,
+      activity,
+      ...args
+    );
+
+    queueMicrotask(() => {
+      cgweb133EnsurePanel();
+      void cgweb133RefreshPanel(activity);
+    });
+
+    return result;
+  };
+}
+
+window.CGWEB133_STATUS = async function () {
+  const activity = currentDetailActivity();
+
+  const route = activity
+    ? await cgweb133LoadRoute(activity)
+    : null;
+
+  const audit = activity
+    ? cgweb133Audit(activity, route)
+    : null;
+
+  return {
+    build: "CGWEB133",
+    elevation_audit: "ELEVATION_AUDIT001",
+    original_ascent_preserve: "ORIGINAL_ASCENT_PRESERVE001",
+    obvious_anomaly_flag: "OBVIOUS_ANOMALY_FLAG001",
+    on_demand_recalc: "ON_DEMAND_ELEVATION_RECALC001",
+    manual_apply: "MANUAL_CORRECTION_APPLY001",
+    original_restore: "ORIGINAL_VALUE_RESTORE001",
+    automatic_recalculation: false,
+    historical_backfill: false,
+    activity_id: audit?.activityId || null,
+    audit,
+    preview: audit?.activityId
+      ? cgweb133State.previewByActivity.get(audit.activityId) || null
+      : null
+  };
+};
+
+window.CGWEB133_RECALC_CURRENT = cgweb133RecalculateCurrent;
+window.CGWEB133_RESTORE_CURRENT = cgweb133RestoreCurrent;
+
+queueMicrotask(cgweb133EnsurePanel);
+
+console.info(
+  "CGWEB133 actif · " +
+  "ELEVATION_AUDIT001 / " +
+  "ORIGINAL_ASCENT_PRESERVE001 / " +
+  "OBVIOUS_ANOMALY_FLAG001 / " +
+  "ON_DEMAND_ELEVATION_RECALC001 / " +
+  "MANUAL_CORRECTION_APPLY001 / " +
+  "ORIGINAL_VALUE_RESTORE001"
+);
+
+/* CGWEB133_END */
