@@ -72824,24 +72824,12 @@ function cgweb131InstallStyle() {
 
   style.textContent = `
     /*
-     * DETAIL_TOP_GAP_LOCK_2MM001
+     * CGWEB131 FIX1
+     * DETAIL_ANCHOR_STABILITY001
      *
-     * Le flux avant le bandeau ne réserve plus lui-même
-     * d'espace vertical.
-     *
-     * L'unique espace autorisé est le margin-top:2mm
-     * du bandeau d'activité.
+     * On limite le correctif au seul détail activité
+     * pour éviter les remontées parasites lors du scroll.
      */
-    body.cgweb131-detail-open main {
-      margin-top:0!important;
-      padding-top:0!important;
-    }
-
-    body.cgweb131-detail-open #dashboard {
-      margin-top:0!important;
-      padding-top:0!important;
-    }
-
     body.cgweb131-detail-open #detailView {
       margin-top:0!important;
       padding-top:0!important;
@@ -72863,6 +72851,9 @@ function cgweb131InstallStyle() {
     #detailView
     > .detail-toolbar {
       margin-top:2mm!important;
+      transform:none!important;
+      will-change:auto!important;
+      scroll-margin-top:0!important;
     }
   `;
 }
@@ -72969,12 +72960,176 @@ window.CGWEB131_STATUS = () => {
 };
 
 
+function cgweb131Fix1BlankDashInActivities() {
+  /*
+   * ACTIVITIES_EMPTY_DASH_BLANK001
+   *
+   * Dans l'onglet Activités, une absence d'information
+   * ne doit plus être représentée par "—".
+   */
+  const roots = [
+    document.getElementById("catalogView"),
+    document.getElementById("detailView")
+  ].filter(Boolean);
+
+  for (const root of roots) {
+    const nodes =
+      root.querySelectorAll(
+        "td, span, div, strong, p, button"
+      );
+
+    nodes.forEach(node => {
+      if (!node) return;
+      if (node.children.length) return;
+
+      const text =
+        String(node.textContent || "")
+          .replace(/\u00a0/g, " ")
+          .trim();
+
+      if (text === "—") {
+        node.textContent = "";
+      }
+    });
+  }
+}
+
+
+function cgweb131Fix1ReorderDetailNavButtons() {
+  /*
+   * DETAIL_NAV_BUTTON_ORDER001
+   *
+   * Positionnement physique :
+   * - précédente à gauche
+   * - suivante à droite
+   */
+  const pairs = [
+    [
+      ui?.previousActivityButton,
+      ui?.nextActivityButton
+    ],
+    [
+      ui?.previousActivityBottomButton,
+      ui?.nextActivityBottomButton
+    ]
+  ];
+
+  for (const [previousButton, nextButton] of pairs) {
+    if (
+      !previousButton ||
+      !nextButton ||
+      !previousButton.parentElement ||
+      previousButton.parentElement !== nextButton.parentElement
+    ) {
+      continue;
+    }
+
+    const parent =
+      previousButton.parentElement;
+
+    parent.insertBefore(
+      previousButton,
+      nextButton
+    );
+  }
+}
+
+
+function cgweb131Fix1Apply() {
+  cgweb131Fix1BlankDashInActivities();
+  cgweb131Fix1ReorderDetailNavButtons();
+}
+
+
+if (
+  typeof renderActivities ===
+  "function"
+) {
+  const cgweb131Fix1BaseRenderActivities =
+    renderActivities;
+
+  renderActivities =
+    function (...args) {
+      const result =
+        cgweb131Fix1BaseRenderActivities.apply(
+          this,
+          args
+        );
+
+      window.requestAnimationFrame(
+        cgweb131Fix1Apply
+      );
+
+      return result;
+    };
+}
+
+
+if (
+  typeof renderDetail ===
+  "function"
+) {
+  const cgweb131Fix1BaseRenderDetail =
+    renderDetail;
+
+  renderDetail =
+    function (...args) {
+      const result =
+        cgweb131Fix1BaseRenderDetail.apply(
+          this,
+          args
+        );
+
+      window.requestAnimationFrame(
+        cgweb131Fix1Apply
+      );
+
+      return result;
+    };
+}
+
+
+window.requestAnimationFrame(
+  cgweb131Fix1Apply
+);
+
+
+window.CGWEB131_FIX1_STATUS = () => ({
+  build:
+    "CGWEB131_FIX1",
+
+  detail_anchor_stability:
+    "DETAIL_ANCHOR_STABILITY001",
+
+  detail_nav_button_order:
+    "DETAIL_NAV_BUTTON_ORDER001",
+
+  activities_empty_dash_blank:
+    "ACTIVITIES_EMPTY_DASH_BLANK001",
+
+  detail_open_class_present:
+    document.body.classList.contains(
+      "cgweb131-detail-open"
+    ),
+
+  previous_left_of_next:
+    !!(
+      ui?.previousActivityButton &&
+      ui?.nextActivityButton &&
+      ui.previousActivityButton.parentElement ===
+        ui.nextActivityButton.parentElement &&
+      ui.previousActivityButton.compareDocumentPosition(
+        ui.nextActivityButton
+      ) & Node.DOCUMENT_POSITION_FOLLOWING
+    )
+});
+
+
 console.info(
-  "CGWEB131 actif · " +
-  "LANDMARK_SPACING001 / " +
-  "EMPTY_LANDMARK_BLANK001 / " +
-  "DETAIL_TOP_GAP_LOCK_2MM001 / " +
-  "CHRONOLOGICAL_DETAIL_NAV001"
+  "CGWEB131 FIX1 actif · " +
+  "DETAIL_ANCHOR_STABILITY001 / " +
+  "DETAIL_NAV_BUTTON_ORDER001 / " +
+  "ACTIVITIES_EMPTY_DASH_BLANK001"
 );
 
 /* CGWEB131_END */
