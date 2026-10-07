@@ -73644,3 +73644,650 @@ console.info(
 );
 
 /* CGWEB132_FIX1_END */
+
+/* CGWEB132_FIX2_START
+   FIXED_DETAIL_ANCHOR001
+   PRIMARY_NAV_FIXED_GAP_2MM001
+   TOOLBAR_PLACEHOLDER001
+   STICKY_CONTEXT_BYPASS001
+*/
+
+let cgweb132Fix2Raf = 0;
+let cgweb132Fix2Observer = null;
+let cgweb132Fix2ResizeObserver = null;
+
+
+function cgweb132Fix2Toolbar() {
+  return (
+    document.getElementById(
+      "web064DirectDetailToolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .cgweb120-fix8-toolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .cgweb122-fix5-live-toolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .web059-detail-toolbar"
+    ) ||
+    document.querySelector(
+      "#detailView .detail-toolbar"
+    )
+  );
+}
+
+
+function cgweb132Fix2Mm2Px() {
+  return 2 * 96 / 25.4;
+}
+
+
+function cgweb132Fix2StableTop() {
+  const nav =
+    document.getElementById(
+      "uxPrimaryNav"
+    );
+
+  if (!nav) {
+    return Math.ceil(
+      cgweb132Fix2Mm2Px()
+    );
+  }
+
+  const style =
+    getComputedStyle(nav);
+
+  const cssTop =
+    Number.parseFloat(
+      style.top
+    );
+
+  const rect =
+    nav.getBoundingClientRect();
+
+  const stableTop =
+    Number.isFinite(cssTop)
+      ? cssTop
+      : Math.max(
+          0,
+          rect.top
+        );
+
+  const height =
+    nav.offsetHeight ||
+    rect.height ||
+    0;
+
+  return Math.ceil(
+    stableTop +
+    height +
+    cgweb132Fix2Mm2Px()
+  );
+}
+
+
+function cgweb132Fix2SetImportant(
+  node,
+  property,
+  value
+) {
+  if (!node) return;
+
+  if (
+    node.style.getPropertyValue(
+      property
+    ) === value &&
+    node.style.getPropertyPriority(
+      property
+    ) === "important"
+  ) {
+    return;
+  }
+
+  node.style.setProperty(
+    property,
+    value,
+    "important"
+  );
+}
+
+
+function cgweb132Fix2EnsurePlaceholder(
+  toolbar
+) {
+  if (
+    !toolbar ||
+    !toolbar.parentElement
+  ) {
+    return null;
+  }
+
+  let placeholder =
+    document.getElementById(
+      "cgweb132Fix2ToolbarPlaceholder"
+    );
+
+  if (!placeholder) {
+    placeholder =
+      document.createElement(
+        "div"
+      );
+
+    placeholder.id =
+      "cgweb132Fix2ToolbarPlaceholder";
+
+    placeholder.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+  }
+
+  if (
+    placeholder.parentElement !==
+      toolbar.parentElement ||
+    placeholder.nextElementSibling !==
+      toolbar
+  ) {
+    toolbar.parentElement.insertBefore(
+      placeholder,
+      toolbar
+    );
+  }
+
+  return placeholder;
+}
+
+
+function cgweb132Fix2ApplyFixedAnchor() {
+  cgweb132Fix2Raf = 0;
+
+  const detail =
+    document.getElementById(
+      "detailView"
+    );
+
+  if (
+    !detail ||
+    detail.classList.contains(
+      "hidden"
+    )
+  ) {
+    return false;
+  }
+
+  const toolbar =
+    cgweb132Fix2Toolbar();
+
+  if (!toolbar) {
+    return false;
+  }
+
+  const placeholder =
+    cgweb132Fix2EnsurePlaceholder(
+      toolbar
+    );
+
+  if (!placeholder) {
+    return false;
+  }
+
+  /*
+   * Mesure de hauteur AVANT de sortir le bandeau du flux.
+   */
+  const measuredHeight =
+    Math.ceil(
+      toolbar.getBoundingClientRect()
+        .height ||
+      toolbar.offsetHeight ||
+      0
+    );
+
+  const detailRect =
+    detail.getBoundingClientRect();
+
+  const left =
+    Math.max(
+      0,
+      Math.round(
+        detailRect.left
+      )
+    );
+
+  const width =
+    Math.max(
+      0,
+      Math.round(
+        Math.min(
+          detailRect.width,
+          window.innerWidth - left
+        )
+      )
+    );
+
+  const top =
+    cgweb132Fix2StableTop();
+
+  /*
+   * TOOLBAR_PLACEHOLDER001
+   *
+   * Le bandeau fixed quitte le flux.
+   * Le placeholder conserve exactement sa hauteur.
+   */
+  const placeholderHeight =
+    measuredHeight > 0
+      ? measuredHeight
+      : 54;
+
+  if (
+    placeholder.style.height !==
+      placeholderHeight + "px"
+  ) {
+    placeholder.style.height =
+      placeholderHeight + "px";
+  }
+
+  placeholder.style.setProperty(
+    "display",
+    "block",
+    "important"
+  );
+
+  placeholder.style.setProperty(
+    "width",
+    "100%",
+    "important"
+  );
+
+  placeholder.style.setProperty(
+    "min-height",
+    "0",
+    "important"
+  );
+
+  placeholder.style.setProperty(
+    "max-height",
+    "none",
+    "important"
+  );
+
+  placeholder.style.setProperty(
+    "margin",
+    "0",
+    "important"
+  );
+
+  placeholder.style.setProperty(
+    "padding",
+    "0",
+    "important"
+  );
+
+  placeholder.style.setProperty(
+    "border",
+    "0",
+    "important"
+  );
+
+  /*
+   * FIXED_DETAIL_ANCHOR001
+   *
+   * Plus aucun contexte sticky.
+   * Plus aucune dépendance au scroll d'un ancêtre.
+   */
+  cgweb132Fix2SetImportant(
+    toolbar,
+    "position",
+    "fixed"
+  );
+
+  cgweb132Fix2SetImportant(
+    toolbar,
+    "top",
+    top + "px"
+  );
+
+  cgweb132Fix2SetImportant(
+    toolbar,
+    "left",
+    left + "px"
+  );
+
+  cgweb132Fix2SetImportant(
+    toolbar,
+    "right",
+    "auto"
+  );
+
+  cgweb132Fix2SetImportant(
+    toolbar,
+    "width",
+    width + "px"
+  );
+
+  cgweb132Fix2SetImportant(
+    toolbar,
+    "max-width",
+    width + "px"
+  );
+
+  cgweb132Fix2SetImportant(
+    toolbar,
+    "margin",
+    "0"
+  );
+
+  cgweb132Fix2SetImportant(
+    toolbar,
+    "transform",
+    "none"
+  );
+
+  cgweb132Fix2SetImportant(
+    toolbar,
+    "box-sizing",
+    "border-box"
+  );
+
+  /*
+   * Sous uxPrimaryNav (3500),
+   * au-dessus du contenu.
+   */
+  cgweb132Fix2SetImportant(
+    toolbar,
+    "z-index",
+    "3450"
+  );
+
+  toolbar.classList.add(
+    "cgweb132-fix2-fixed-toolbar"
+  );
+
+  /*
+   * Plus aucun ancien spacer.
+   */
+  const oldSpacer =
+    document.getElementById(
+      "web065DetailStickySpacer"
+    );
+
+  if (oldSpacer) {
+    oldSpacer.remove();
+  }
+
+  return true;
+}
+
+
+function cgweb132Fix2Schedule() {
+  if (cgweb132Fix2Raf) {
+    return;
+  }
+
+  cgweb132Fix2Raf =
+    requestAnimationFrame(
+      cgweb132Fix2ApplyFixedAnchor
+    );
+}
+
+
+/*
+ * CGWEB132 FIX1 appelle encore le propriétaire historique.
+ * On garde ses responsabilités de layout interne,
+ * puis FIX2 impose le mode fixed final.
+ */
+if (
+  typeof cgweb120Fix8ApplyToolbarFlow ===
+  "function"
+) {
+  const cgweb132Fix2BaseToolbarFlow =
+    cgweb120Fix8ApplyToolbarFlow;
+
+  cgweb120Fix8ApplyToolbarFlow =
+    function (...args) {
+      const result =
+        cgweb132Fix2BaseToolbarFlow.apply(
+          this,
+          args
+        );
+
+      cgweb132Fix2ApplyFixedAnchor();
+
+      return result;
+    };
+}
+
+
+/*
+ * Surveillance uniquement des reconstructions DOM/style.
+ * PAS de listener scroll.
+ */
+const cgweb132Fix2Detail =
+  document.getElementById(
+    "detailView"
+  );
+
+if (cgweb132Fix2Detail) {
+  cgweb132Fix2Observer =
+    new MutationObserver(
+      mutations => {
+        for (
+          const mutation
+          of mutations
+        ) {
+          if (
+            mutation.type ===
+            "childList"
+          ) {
+            cgweb132Fix2Schedule();
+            return;
+          }
+
+          if (
+            mutation.type ===
+            "attributes"
+          ) {
+            const target =
+              mutation.target;
+
+            if (
+              target?.id ===
+                "web064DirectDetailToolbar" ||
+              target?.classList?.contains(
+                "cgweb120-fix8-toolbar"
+              ) ||
+              target?.classList?.contains(
+                "cgweb122-fix5-live-toolbar"
+              ) ||
+              target?.classList?.contains(
+                "web059-detail-toolbar"
+              )
+            ) {
+              cgweb132Fix2Schedule();
+              return;
+            }
+          }
+        }
+      }
+    );
+
+  cgweb132Fix2Observer.observe(
+    cgweb132Fix2Detail,
+    {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: [
+        "style",
+        "class"
+      ]
+    }
+  );
+}
+
+
+if (
+  typeof ResizeObserver ===
+  "function"
+) {
+  cgweb132Fix2ResizeObserver =
+    new ResizeObserver(
+      cgweb132Fix2Schedule
+    );
+
+  const nav =
+    document.getElementById(
+      "uxPrimaryNav"
+    );
+
+  if (nav) {
+    cgweb132Fix2ResizeObserver.observe(
+      nav
+    );
+  }
+
+  if (cgweb132Fix2Detail) {
+    cgweb132Fix2ResizeObserver.observe(
+      cgweb132Fix2Detail
+    );
+  }
+}
+
+
+window.addEventListener(
+  "resize",
+  cgweb132Fix2Schedule,
+  { passive: true }
+);
+
+
+/*
+ * IMPORTANT :
+ * aucun listener "scroll".
+ * position:fixed ne nécessite aucun recalcul vertical.
+ */
+queueMicrotask(
+  cgweb132Fix2Schedule
+);
+
+requestAnimationFrame(
+  cgweb132Fix2Schedule
+);
+
+setTimeout(
+  cgweb132Fix2Schedule,
+  80
+);
+
+setTimeout(
+  cgweb132Fix2Schedule,
+  250
+);
+
+
+window.CGWEB132_FIX2_STATUS = () => {
+  cgweb132Fix2ApplyFixedAnchor();
+
+  const nav =
+    document.getElementById(
+      "uxPrimaryNav"
+    );
+
+  const toolbar =
+    cgweb132Fix2Toolbar();
+
+  const placeholder =
+    document.getElementById(
+      "cgweb132Fix2ToolbarPlaceholder"
+    );
+
+  const navRect =
+    nav
+      ? nav.getBoundingClientRect()
+      : null;
+
+  const toolbarRect =
+    toolbar
+      ? toolbar.getBoundingClientRect()
+      : null;
+
+  const toolbarStyle =
+    toolbar
+      ? getComputedStyle(toolbar)
+      : null;
+
+  const measuredGap =
+    navRect &&
+    toolbarRect
+      ? Math.round(
+          (
+            toolbarRect.top -
+            navRect.bottom
+          ) * 100
+        ) / 100
+      : null;
+
+  return {
+    build:
+      "CGWEB132_FIX2",
+
+    fixed_detail_anchor:
+      "FIXED_DETAIL_ANCHOR001",
+
+    primary_nav_fixed_gap_2mm:
+      "PRIMARY_NAV_FIXED_GAP_2MM001",
+
+    toolbar_placeholder:
+      "TOOLBAR_PLACEHOLDER001",
+
+    sticky_context_bypass:
+      "STICKY_CONTEXT_BYPASS001",
+
+    toolbar_position:
+      toolbarStyle
+        ? toolbarStyle.position
+        : null,
+
+    toolbar_top_px:
+      toolbarRect
+        ? Math.round(
+            toolbarRect.top * 100
+          ) / 100
+        : null,
+
+    primary_nav_bottom_px:
+      navRect
+        ? Math.round(
+            navRect.bottom * 100
+          ) / 100
+        : null,
+
+    measured_gap_px:
+      measuredGap,
+
+    expected_gap_px:
+      Math.round(
+        cgweb132Fix2Mm2Px() *
+        100
+      ) / 100,
+
+    placeholder_height_px:
+      placeholder
+        ? placeholder.offsetHeight
+        : null,
+
+    scroll_listener:
+      false
+  };
+};
+
+
+console.info(
+  "CGWEB132 FIX2 actif · " +
+  "FIXED_DETAIL_ANCHOR001 / " +
+  "PRIMARY_NAV_FIXED_GAP_2MM001 / " +
+  "TOOLBAR_PLACEHOLDER001 / " +
+  "STICKY_CONTEXT_BYPASS001"
+);
+
+/* CGWEB132_FIX2_END */
