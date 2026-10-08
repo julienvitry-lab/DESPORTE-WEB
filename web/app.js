@@ -76994,3 +76994,379 @@ console.info(
 );
 
 /* CGWEB134_END */
+
+/* CGWEB134_FIX1_START
+   MUTATION_SELF_LOOP_GUARD001
+   IDEMPOTENT_STRAVA_BUTTON001
+   TOOLBAR_OBSERVER_SCOPE001
+   STRAY_LITERAL_NEWLINE_REMOVE001
+*/
+
+
+function cgweb134Fix1SetButtonText(
+  button,
+  text
+) {
+  if (!button) {
+    return;
+  }
+
+  /*
+   * IMPORTANT :
+   * textContent recrée un nœud texte et produit une mutation childList.
+   *
+   * Le MutationObserver CGWEB134 observant précisément childList,
+   * réécrire le même texte créait une boucle infinie :
+   *
+   * observer
+   *   -> refreshButton
+   *   -> textContent
+   *   -> mutation
+   *   -> observer
+   *   -> ...
+   *
+   * On ne touche désormais au DOM que si la valeur change réellement.
+   */
+  if (
+    button.textContent !==
+    text
+  ) {
+    button.textContent =
+      text;
+  }
+}
+
+
+cgweb134RefreshButton =
+  function cgweb134RefreshButtonFix1() {
+    const button =
+      document.getElementById(
+        "cgweb134StravaButton"
+      );
+
+    if (!button) {
+      return;
+    }
+
+    const activity =
+      currentDetailActivity();
+
+    button.classList.remove(
+      "cgweb134-ready",
+      "cgweb134-warning"
+    );
+
+    if (!activity) {
+      cgweb134Fix1SetButtonText(
+        button,
+        "Strava"
+      );
+
+      button.disabled =
+        true;
+
+      return;
+    }
+
+    button.disabled =
+      false;
+
+    if (
+      String(
+        activity
+          ?.strava_activity_id ||
+        ""
+      ).trim()
+    ) {
+      cgweb134Fix1SetButtonText(
+        button,
+        "Strava ✓"
+      );
+
+      button.title =
+        "Activité déjà liée à Strava.";
+
+      return;
+    }
+
+    const year =
+      cgweb134ActivityYear(
+        activity
+      );
+
+    if (
+      Number.isFinite(year) &&
+      year >= 2026
+    ) {
+      cgweb134Fix1SetButtonText(
+        button,
+        "Strava"
+      );
+
+      button.title =
+        "CGWEB134 : export historique réservé aux activités antérieures à 2026.";
+
+      return;
+    }
+
+    const key =
+      String(
+        activityKey(
+          activity
+        ) || ""
+      );
+
+    const state =
+      cgweb134State
+        .byActivity
+        .get(key);
+
+    if (
+      state?.status ===
+        "READY_LOCKED"
+    ) {
+      cgweb134Fix1SetButtonText(
+        button,
+        "Strava · prêt"
+      );
+
+      button.classList.add(
+        "cgweb134-ready"
+      );
+
+      button.title =
+        "Préflight Strava validé ; aucun upload n'a encore été effectué.";
+
+      return;
+    }
+
+    if (
+      state?.status ===
+        "DUPLICATE_BLOCKED"
+    ) {
+      cgweb134Fix1SetButtonText(
+        button,
+        "Strava ⚠"
+      );
+
+      button.classList.add(
+        "cgweb134-warning"
+      );
+
+      button.title =
+        "Doublon Strava possible : export bloqué.";
+
+      return;
+    }
+
+    cgweb134Fix1SetButtonText(
+      button,
+      cgweb134State.busy
+        ? "Strava…"
+        : "Strava"
+    );
+
+    button.title =
+      "Préparer cette activité historique pour un futur export Strava.";
+  };
+
+
+function cgweb134Fix1ToolbarNeedsRepair() {
+  const detail =
+    document.getElementById(
+      "detailView"
+    );
+
+  if (
+    !detail ||
+    detail.classList.contains(
+      "hidden"
+    )
+  ) {
+    return false;
+  }
+
+  const host =
+    cgweb134ToolbarHost();
+
+  /*
+   * Pas encore de toolbar :
+   * inutile de réveiller CGWEB134 à chaque mutation de la fiche.
+   * Une future mutation d'insertion du toolbar sera de nouveau observée.
+   */
+  if (!host) {
+    return false;
+  }
+
+  const button =
+    document.getElementById(
+      "cgweb134StravaButton"
+    );
+
+  if (!button) {
+    return true;
+  }
+
+  if (
+    button.parentElement !==
+      host
+  ) {
+    return true;
+  }
+
+  const split =
+    document.getElementById(
+      "cgweb124SplitButton"
+    );
+
+  if (
+    split &&
+    split.parentElement ===
+      host
+  ) {
+    return (
+      split.nextElementSibling !==
+      button
+    );
+  }
+
+  const manual =
+    document.getElementById(
+      "cg122ManualButton"
+    );
+
+  if (
+    manual &&
+    manual.parentElement ===
+      host
+  ) {
+    return (
+      manual.nextElementSibling !==
+      button
+    );
+  }
+
+  return false;
+}
+
+
+/*
+ * On retire l'observer CGWEB134 initial.
+ */
+try {
+  window
+    .__cgweb134ToolbarObserver
+    ?.disconnect();
+} catch (_) {}
+
+
+/*
+ * Nouvel observer :
+ * il ne répare le bandeau QUE si le bouton est réellement absent
+ * ou mal placé.
+ *
+ * Les mutations provenant des cartes, graphiques, textes, etc.
+ * ne déclenchent plus de réparation inutile.
+ */
+const cgweb134Fix1Detail =
+  document.getElementById(
+    "detailView"
+  );
+
+if (cgweb134Fix1Detail) {
+  const cgweb134Fix1Observer =
+    new MutationObserver(
+      () => {
+        if (
+          cgweb134Fix1ToolbarNeedsRepair()
+        ) {
+          cgweb134ScheduleToolbarRepair();
+        }
+      }
+    );
+
+  cgweb134Fix1Observer.observe(
+    cgweb134Fix1Detail,
+    {
+      subtree:
+        true,
+
+      childList:
+        true
+    }
+  );
+
+  window
+    .__cgweb134ToolbarObserver =
+    cgweb134Fix1Observer;
+}
+
+
+/*
+ * Une passe finale, idempotente.
+ */
+queueMicrotask(
+  () => {
+    cgweb134EnsureToolbarButton();
+    cgweb134RefreshButton();
+  }
+);
+
+
+window.CGWEB134_FIX1_STATUS =
+  function () {
+    const button =
+      document.getElementById(
+        "cgweb134StravaButton"
+      );
+
+    const host =
+      cgweb134ToolbarHost();
+
+    return {
+      build:
+        "CGWEB134_FIX1",
+
+      mutation_self_loop_guard:
+        "MUTATION_SELF_LOOP_GUARD001",
+
+      idempotent_strava_button:
+        "IDEMPOTENT_STRAVA_BUTTON001",
+
+      toolbar_observer_scope:
+        "TOOLBAR_OBSERVER_SCOPE001",
+
+      stray_literal_newline_remove:
+        "STRAY_LITERAL_NEWLINE_REMOVE001",
+
+      button_present:
+        Boolean(button),
+
+      button_text:
+        button
+          ?.textContent ||
+        null,
+
+      button_parent_ok:
+        Boolean(
+          button &&
+          host &&
+          button.parentElement ===
+            host
+        ),
+
+      toolbar_needs_repair:
+        cgweb134Fix1ToolbarNeedsRepair()
+    };
+  };
+
+
+console.info(
+  "CGWEB134 FIX1 actif · " +
+  "MUTATION_SELF_LOOP_GUARD001 / " +
+  "IDEMPOTENT_STRAVA_BUTTON001 / " +
+  "TOOLBAR_OBSERVER_SCOPE001 / " +
+  "STRAY_LITERAL_NEWLINE_REMOVE001"
+);
+
+/* CGWEB134_FIX1_END */
