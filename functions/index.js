@@ -1110,6 +1110,795 @@ exports.stravaWebhookProcessor = onDocumentCreated(
   }
 );
 
+
+/* CGWEB134_SERVER_START
+   STRAVA_EXPORT_FOUNDATION001
+   ACTIVITY_WRITE_SCOPE001
+   OUTBOUND_EXPORT_LOCK001
+   STRAVA_DUPLICATE_GUARD001
+*/
+
+const CGWEB134_EXPORT_VERSION =
+  "CGWEB134";
+
+const CGWEB134_LOCK_TTL_MS =
+  30 * 60 * 1000;
+
+const CGWEB134_DUPLICATE_QUERY_WINDOW_MS =
+  18 * 60 * 60 * 1000;
+
+
+function cgweb134ScopeSet(scope) {
+  return new Set(
+    String(scope || "")
+      .split(/[,\s]+/)
+      .map((value) =>
+        String(value || "")
+          .trim()
+      )
+      .filter(Boolean)
+  );
+}
+
+
+function cgweb134ScopeHas(
+  scope,
+  expected
+) {
+  return cgweb134ScopeSet(
+    scope
+  ).has(expected);
+}
+
+
+function cgweb134ParisParts(ms) {
+  const n =
+    Number(ms);
+
+  if (!Number.isFinite(n)) {
+    return null;
+  }
+
+  const formatter =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone:
+          "Europe/Paris",
+
+        year:
+          "numeric",
+
+        month:
+          "2-digit",
+
+        day:
+          "2-digit"
+      }
+    );
+
+  const values = {};
+
+  for (
+    const part of
+    formatter.formatToParts(
+      new Date(n)
+    )
+  ) {
+    if (
+      part.type !==
+      "literal"
+    ) {
+      values[part.type] =
+        part.value;
+    }
+  }
+
+  return {
+    year:
+      Number(values.year),
+
+    dayKey:
+      [
+        values.year,
+        values.month,
+        values.day
+      ].join("-")
+  };
+}
+
+
+function cgweb134ActivitySnapshot(
+  activity
+) {
+  return {
+    start_time_ms:
+      Number(
+        activity
+          ?.start_time_ms
+      ) || 0,
+
+    sport:
+      Number(
+        activity
+          ?.sport
+      ) || 0,
+
+    sub_sport:
+      Number(
+        activity
+          ?.sub_sport
+      ) || 0,
+
+    distance_m:
+      numberOrZero(
+        activity
+          ?.distance_m
+      ),
+
+    timer_time_ms:
+      numberOrZero(
+        activity
+          ?.timer_time_ms
+      ),
+
+    elapsed_time_ms:
+      numberOrZero(
+        activity
+          ?.elapsed_time_ms
+      ),
+
+    ascent_m:
+      numberOrZero(
+        activity
+          ?.ascent_m
+      ),
+
+    calories:
+      Number.isFinite(
+        Number(
+          activity
+            ?.calories
+        )
+      )
+        ? Math.round(
+            Number(
+              activity.calories
+            )
+          )
+        : null,
+
+    title:
+      String(
+        activity
+          ?.custom_title ||
+        activity
+          ?.title ||
+        ""
+      ).trim()
+  };
+}
+
+
+function cgweb134SnapshotHash(
+  snapshot
+) {
+  return crypto
+    .createHash(
+      "sha256"
+    )
+    .update(
+      JSON.stringify(
+        snapshot
+      ),
+      "utf8"
+    )
+    .digest(
+      "hex"
+    );
+}
+
+
+function cgweb134RemoteDay(
+  row
+) {
+  const local =
+    String(
+      row
+        ?.start_date_local ||
+      ""
+    ).trim();
+
+  if (
+    /^\d{4}-\d{2}-\d{2}/
+      .test(local)
+  ) {
+    return local.slice(
+      0,
+      10
+    );
+  }
+
+  const parsed =
+    Date.parse(
+      row?.start_date ||
+      ""
+    );
+
+  return (
+    cgweb134ParisParts(
+      parsed
+    )?.dayKey ||
+    ""
+  );
+}
+
+
+function cgweb134RemoteStartMs(
+  row
+) {
+  const value =
+    Date.parse(
+      row?.start_date ||
+      row?.start_date_local ||
+      ""
+    );
+
+  return Number.isFinite(
+    value
+  )
+    ? value
+    : null;
+}
+
+
+function cgweb134DuplicateCandidate(
+  activity,
+  row
+) {
+  const localStart =
+    Number(
+      activity
+        ?.start_time_ms
+    );
+
+  const remoteStart =
+    cgweb134RemoteStartMs(
+      row
+    );
+
+  if (
+    !Number.isFinite(
+      localStart
+    )
+  ) {
+    return null;
+  }
+
+  const localParts =
+    cgweb134ParisParts(
+      localStart
+    );
+
+  const sameDay =
+    Boolean(
+      localParts
+        ?.dayKey &&
+      cgweb134RemoteDay(
+        row
+      ) ===
+        localParts.dayKey
+    );
+
+  const localSport =
+    Number(
+      activity
+        ?.sport
+    ) || 0;
+
+  const remoteSport =
+    stravaSportToFitSport(
+      row?.type,
+      row?.sport_type
+    );
+
+  const sportCompatible =
+    localSport <= 0 ||
+    remoteSport <= 0 ||
+    localSport ===
+      remoteSport;
+
+  if (!sportCompatible) {
+    return null;
+  }
+
+  const localDistance =
+    numberOrZero(
+      activity
+        ?.distance_m
+    );
+
+  const remoteDistance =
+    numberOrZero(
+      row
+        ?.distance
+    );
+
+  const distanceDelta =
+    Math.abs(
+      localDistance -
+      remoteDistance
+    );
+
+  const distanceTolerance =
+    Math.max(
+      150,
+      localDistance * 0.025
+    );
+
+  const distanceOk =
+    localDistance <= 0 ||
+    remoteDistance <= 0 ||
+    distanceDelta <=
+      distanceTolerance;
+
+  if (!distanceOk) {
+    return null;
+  }
+
+  const localDuration =
+    numberOrZero(
+      activity
+        ?.timer_time_ms
+    ) ||
+    numberOrZero(
+      activity
+        ?.elapsed_time_ms
+    );
+
+  const remoteDuration =
+    (
+      numberOrZero(
+        row
+          ?.moving_time
+      ) ||
+      numberOrZero(
+        row
+          ?.elapsed_time
+      )
+    ) * 1000;
+
+  const durationDelta =
+    Math.abs(
+      localDuration -
+      remoteDuration
+    );
+
+  const durationTolerance =
+    Math.max(
+      180000,
+      localDuration * 0.10
+    );
+
+  const durationOk =
+    localDuration <= 0 ||
+    remoteDuration <= 0 ||
+    durationDelta <=
+      durationTolerance;
+
+  if (!durationOk) {
+    return null;
+  }
+
+  const timeDelta =
+    Number.isFinite(
+      remoteStart
+    )
+      ? Math.abs(
+          remoteStart -
+          localStart
+        )
+      : Infinity;
+
+  const timeClose =
+    timeDelta <=
+      2 * 60 * 1000;
+
+  /*
+   * Filet pour les activités dont Strava masque l'heure
+   * de départ : même jour + statistiques quasiment identiques.
+   */
+  const strictDistance =
+    localDistance > 0 &&
+    remoteDistance > 0 &&
+    distanceDelta <=
+      Math.max(
+        50,
+        localDistance * 0.01
+      );
+
+  const strictDuration =
+    localDuration > 0 &&
+    remoteDuration > 0 &&
+    durationDelta <=
+      Math.max(
+        60000,
+        localDuration * 0.03
+      );
+
+  const hiddenTimeFallback =
+    sameDay &&
+    strictDistance &&
+    strictDuration;
+
+  if (
+    !timeClose &&
+    !hiddenTimeFallback
+  ) {
+    return null;
+  }
+
+  return {
+    strava_activity_id:
+      String(
+        row?.id ||
+        ""
+      ),
+
+    name:
+      String(
+        row?.name ||
+        ""
+      ),
+
+    start_date:
+      row?.start_date ||
+      null,
+
+    start_date_local:
+      row?.start_date_local ||
+      null,
+
+    sport_type:
+      row?.sport_type ||
+      row?.type ||
+      null,
+
+    distance_m:
+      remoteDistance,
+
+    moving_time_s:
+      numberOrZero(
+        row?.moving_time
+      ),
+
+    elapsed_time_s:
+      numberOrZero(
+        row?.elapsed_time
+      ),
+
+    ascent_m:
+      numberOrZero(
+        row
+          ?.total_elevation_gain
+      ),
+
+    time_delta_ms:
+      Number.isFinite(
+        timeDelta
+      )
+        ? Math.round(
+            timeDelta
+          )
+        : null,
+
+    distance_delta_m:
+      Math.round(
+        distanceDelta
+      ),
+
+    duration_delta_ms:
+      Math.round(
+        durationDelta
+      ),
+
+    match:
+      timeClose
+        ? "TIME_STATS"
+        : "SAME_DAY_STRICT_STATS"
+  };
+}
+
+
+async function cgweb134DuplicateGuard(
+  uid,
+  activity
+) {
+  const startMs =
+    Number(
+      activity
+        ?.start_time_ms
+    );
+
+  if (
+    !Number.isFinite(
+      startMs
+    )
+  ) {
+    throw Object.assign(
+      new Error(
+        "Activité sans date de départ exploitable."
+      ),
+      {
+        status:
+          400
+      }
+    );
+  }
+
+  const after =
+    Math.max(
+      0,
+      Math.floor(
+        (
+          startMs -
+          CGWEB134_DUPLICATE_QUERY_WINDOW_MS
+        ) /
+        1000
+      )
+    );
+
+  const before =
+    Math.max(
+      after + 1,
+      Math.ceil(
+        (
+          startMs +
+          CGWEB134_DUPLICATE_QUERY_WINDOW_MS
+        ) /
+        1000
+      )
+    );
+
+  const path =
+    "/athlete/activities" +
+    "?after=" +
+    after +
+    "&before=" +
+    before +
+    "&page=1" +
+    "&per_page=100";
+
+  const rows =
+    await stravaGet(
+      uid,
+      path
+    );
+
+  const candidates =
+    (
+      Array.isArray(rows)
+        ? rows
+        : []
+    )
+      .map(
+        row =>
+          cgweb134DuplicateCandidate(
+            activity,
+            row
+          )
+      )
+      .filter(Boolean)
+      .sort(
+        (a, b) => {
+          const ad =
+            a.time_delta_ms ??
+            Number.MAX_SAFE_INTEGER;
+
+          const bd =
+            b.time_delta_ms ??
+            Number.MAX_SAFE_INTEGER;
+
+          if (ad !== bd) {
+            return ad - bd;
+          }
+
+          return (
+            a.distance_delta_m -
+            b.distance_delta_m
+          );
+        }
+      )
+      .slice(
+        0,
+        10
+      );
+
+  return {
+    checked_at_ms:
+      Date.now(),
+
+    candidate_count:
+      candidates.length,
+
+    candidates
+  };
+}
+
+
+function cgweb134OutboundRef(
+  uid,
+  activityKey
+) {
+  return firestore()
+    .doc(
+      `${ROOT}/${uid}/strava_outbound_exports/${activityKey}`
+    );
+}
+
+
+async function cgweb134AcquireOutboundLock(
+  uid,
+  activityKey,
+  activity,
+  duplicateGuard
+) {
+  const ref =
+    cgweb134OutboundRef(
+      uid,
+      activityKey
+    );
+
+  const now =
+    Date.now();
+
+  const snapshot =
+    cgweb134ActivitySnapshot(
+      activity
+    );
+
+  const snapshotHash =
+    cgweb134SnapshotHash(
+      snapshot
+    );
+
+  const result =
+    await firestore()
+      .runTransaction(
+        async transaction => {
+          const existingSnap =
+            await transaction.get(
+              ref
+            );
+
+          const existing =
+            existingSnap.exists
+              ? existingSnap.data()
+              : null;
+
+          if (
+            existing &&
+            existing.state ===
+              "PREPARED" &&
+            Number(
+              existing.expires_at_ms
+            ) > now &&
+            String(
+              existing
+                .activity_snapshot_hash ||
+              ""
+            ) ===
+              snapshotHash
+          ) {
+            return {
+              ...existing,
+              reused:
+                true
+            };
+          }
+
+          const lockToken =
+            crypto
+              .randomBytes(
+                18
+              )
+              .toString(
+                "hex"
+              );
+
+          const externalId =
+            (
+              "CGWEB_" +
+              String(
+                activityKey
+              )
+            )
+              .replace(
+                /[^A-Za-z0-9_.-]/g,
+                "_"
+              )
+              .slice(
+                0,
+                180
+              );
+
+          const row = {
+            version:
+              CGWEB134_EXPORT_VERSION,
+
+            state:
+              "PREPARED",
+
+            activity_key:
+              String(
+                activityKey
+              ),
+
+            lock_token:
+              lockToken,
+
+            external_id:
+              externalId,
+
+            created_at_ms:
+              now,
+
+            updated_at_ms:
+              now,
+
+            expires_at_ms:
+              now +
+              CGWEB134_LOCK_TTL_MS,
+
+            activity_snapshot:
+              snapshot,
+
+            activity_snapshot_hash:
+              snapshotHash,
+
+            duplicate_guard:
+              {
+                status:
+                  "PASS",
+
+                checked_at_ms:
+                  duplicateGuard
+                    ?.checked_at_ms ||
+                  now,
+
+                candidate_count:
+                  0
+              },
+
+            upload_started:
+              false,
+
+            strava_upload_id:
+              null,
+
+            strava_activity_id:
+              null
+          };
+
+          transaction.set(
+            ref,
+            row
+          );
+
+          return {
+            ...row,
+            reused:
+              false
+          };
+        }
+      );
+
+  return result;
+}
+
+
+/* CGWEB134_SERVER_END */
+
 exports.stravaBridge = onRequest(
   {region:REGION, secrets:[STRAVA_CLIENT_SECRET], timeoutSeconds:120, cors:false},
   async (req, res) => {
@@ -1139,7 +1928,8 @@ exports.stravaBridge = onRequest(
           access_token:token.access_token,
           refresh_token:token.refresh_token,
           expires_at:token.expires_at,
-          scope:stateData.scope,
+          scope:String(token.scope || stateData.scope || ""),
+          requested_scope:String(stateData.scope || ""),
           connected_at_ms:Date.now(),
           updated_at_ms:Date.now(),
           server_sync_version:WEBSTRAVA_VERSION
@@ -1184,6 +1974,11 @@ exports.stravaBridge = onRequest(
           configured:Boolean(STRAVA_CLIENT_ID.value() && STRAVA_REDIRECT_URI.value()),
           athlete:data?.athlete || null,
           scope:data?.scope || null,
+          write_authorized:
+            cgweb134ScopeHas(
+              data?.scope,
+              "activity:write"
+            ),
           webhook:{
             active:Boolean(webhook?.active),
             subscription_id:webhook?.subscription_id || null,
@@ -1209,7 +2004,7 @@ exports.stravaBridge = onRequest(
         }
 
         const state = crypto.randomBytes(24).toString("hex");
-        const scope = "read,activity:read_all";
+        const scope = "read,activity:read_all,activity:write";
         await firestore().doc(`strava_oauth_states/${state}`).set({
           uid,
           scope,
@@ -1220,11 +2015,261 @@ exports.stravaBridge = onRequest(
         authorize.searchParams.set("client_id", clientId);
         authorize.searchParams.set("response_type", "code");
         authorize.searchParams.set("redirect_uri", redirectUri);
-        authorize.searchParams.set("approval_prompt", "auto");
+        authorize.searchParams.set("approval_prompt", "force");
         authorize.searchParams.set("scope", scope);
         authorize.searchParams.set("state", state);
         return res.json({authorize_url:authorize.toString()});
       }
+
+
+      if (
+        action ===
+          "export_preflight" &&
+        req.method ===
+          "POST"
+      ) {
+        const integration =
+          await tokenDocument(
+            uid
+          );
+
+        if (
+          !integration
+            ?.refresh_token
+        ) {
+          return res.json({
+            ok:
+              false,
+
+            status:
+              "STRAVA_NOT_CONNECTED"
+          });
+        }
+
+        if (
+          !cgweb134ScopeHas(
+            integration?.scope,
+            "activity:write"
+          )
+        ) {
+          return res.json({
+            ok:
+              false,
+
+            status:
+              "ACTIVITY_WRITE_REQUIRED",
+
+            scope:
+              integration?.scope ||
+              ""
+          });
+        }
+
+        const activityKey =
+          String(
+            req.body
+              ?.activity_key ||
+            ""
+          ).trim();
+
+        if (
+          !/^[A-Za-z0-9_.:-]{1,180}$/
+            .test(
+              activityKey
+            )
+        ) {
+          throw Object.assign(
+            new Error(
+              "Identifiant d'activité invalide."
+            ),
+            {
+              status:
+                400
+            }
+          );
+        }
+
+        const activityRef =
+          firestore()
+            .doc(
+              `${ROOT}/${uid}/activities/${activityKey}`
+            );
+
+        const activitySnap =
+          await activityRef.get();
+
+        if (
+          !activitySnap.exists
+        ) {
+          throw Object.assign(
+            new Error(
+              "Activité SPORT introuvable."
+            ),
+            {
+              status:
+                404
+            }
+          );
+        }
+
+        const activity = {
+          __docId:
+            activityKey,
+
+          ...activitySnap.data()
+        };
+
+        if (
+          activity
+            ?.deleted_at_ms != null
+        ) {
+          return res.json({
+            ok:
+              false,
+
+            status:
+              "INELIGIBLE_DELETED"
+          });
+        }
+
+        const parts =
+          cgweb134ParisParts(
+            activity
+              ?.start_time_ms
+          );
+
+        if (
+          !parts ||
+          !Number.isFinite(
+            parts.year
+          )
+        ) {
+          return res.json({
+            ok:
+              false,
+
+            status:
+              "INELIGIBLE_DATE"
+          });
+        }
+
+        /*
+         * Le chantier historique CGWEB134 est strictement
+         * réservé aux activités avant 2026.
+         */
+        if (
+          parts.year >= 2026
+        ) {
+          return res.json({
+            ok:
+              false,
+
+            status:
+              "INELIGIBLE_NOT_HISTORICAL",
+
+            activity_year:
+              parts.year
+          });
+        }
+
+        const linkedStravaId =
+          String(
+            activity
+              ?.strava_activity_id ||
+            ""
+          ).trim();
+
+        if (linkedStravaId) {
+          return res.json({
+            ok:
+              false,
+
+            status:
+              "ALREADY_LINKED",
+
+            strava_activity_id:
+              linkedStravaId
+          });
+        }
+
+        const duplicateGuard =
+          await cgweb134DuplicateGuard(
+            uid,
+            activity
+          );
+
+        if (
+          duplicateGuard
+            .candidate_count > 0
+        ) {
+          return res.json({
+            ok:
+              false,
+
+            status:
+              "DUPLICATE_BLOCKED",
+
+            duplicate_guard:
+              duplicateGuard,
+
+            activity_snapshot:
+              cgweb134ActivitySnapshot(
+                activity
+              )
+          });
+        }
+
+        const lock =
+          await cgweb134AcquireOutboundLock(
+            uid,
+            activityKey,
+            activity,
+            duplicateGuard
+          );
+
+        return res.json({
+          ok:
+            true,
+
+          status:
+            "READY_LOCKED",
+
+          export_version:
+            CGWEB134_EXPORT_VERSION,
+
+          activity_key:
+            activityKey,
+
+          activity_snapshot:
+            lock
+              .activity_snapshot,
+
+          external_id:
+            lock
+              .external_id,
+
+          lock_token:
+            lock
+              .lock_token,
+
+          lock_reused:
+            Boolean(
+              lock.reused
+            ),
+
+          lock_expires_at_ms:
+            lock
+              .expires_at_ms,
+
+          duplicate_guard:
+            lock
+              .duplicate_guard,
+
+          upload_performed:
+            false
+        });
+      }
+
 
       if (action === "activities") {
         const after = Math.max(0, Number(req.query.after || 0));

@@ -75518,3 +75518,1479 @@ console.info(
 );
 
 /* CGWEB133_END */
+
+/* CGWEB134_START
+   STRAVA_EXPORT_FOUNDATION001
+   ACTIVITY_WRITE_SCOPE001
+   OUTBOUND_EXPORT_LOCK001
+   STRAVA_DUPLICATE_GUARD001
+*/
+
+const cgweb134State = {
+  busy: false,
+  byActivity: new Map(),
+  lastStatus: null,
+  observerQueued: false
+};
+
+
+function cgweb134ActivityYear(
+  activity
+) {
+  const ms =
+    Number(
+      activity
+        ?.start_time_ms
+    );
+
+  if (!Number.isFinite(ms)) {
+    return null;
+  }
+
+  try {
+    return Number(
+      new Intl.DateTimeFormat(
+        "en-US",
+        {
+          timeZone:
+            "Europe/Paris",
+
+          year:
+            "numeric"
+        }
+      ).format(
+        new Date(ms)
+      )
+    );
+  } catch (_) {
+    return new Date(
+      ms
+    ).getFullYear();
+  }
+}
+
+
+function cgweb134Escape(
+  value
+) {
+  return String(
+    value ?? ""
+  ).replace(
+    /[&<>"']/g,
+    char => ({
+      "&":
+        "&amp;",
+
+      "<":
+        "&lt;",
+
+      ">":
+        "&gt;",
+
+      '"':
+        "&quot;",
+
+      "'":
+        "&#039;"
+    })[char]
+  );
+}
+
+
+function cgweb134FormatDistance(
+  meters
+) {
+  const n =
+    Number(meters);
+
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  return (
+    (
+      n /
+      1000
+    ).toLocaleString(
+      "fr-FR",
+      {
+        minimumFractionDigits:
+          0,
+
+        maximumFractionDigits:
+          2
+      }
+    ) +
+    " km"
+  );
+}
+
+
+function cgweb134FormatDuration(
+  milliseconds
+) {
+  const ms =
+    Math.max(
+      0,
+      Number(
+        milliseconds
+      ) || 0
+    );
+
+  const seconds =
+    Math.round(
+      ms /
+      1000
+    );
+
+  const h =
+    Math.floor(
+      seconds /
+      3600
+    );
+
+  const m =
+    Math.floor(
+      (
+        seconds %
+        3600
+      ) /
+      60
+    );
+
+  const s =
+    seconds %
+    60;
+
+  if (h > 0) {
+    return (
+      h +
+      " h " +
+      String(m)
+        .padStart(
+          2,
+          "0"
+        ) +
+      " min " +
+      String(s)
+        .padStart(
+          2,
+          "0"
+        ) +
+      " s"
+    );
+  }
+
+  return (
+    m +
+    " min " +
+    String(s)
+      .padStart(
+        2,
+        "0"
+      ) +
+    " s"
+  );
+}
+
+
+function cgweb134EnsureStyle() {
+  if (
+    document.getElementById(
+      "cgweb134Style"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement(
+      "style"
+    );
+
+  style.id =
+    "cgweb134Style";
+
+  style.textContent = `
+    #cgweb134StravaButton.cgweb134-ready {
+      border-color: rgba(80,210,120,.55) !important;
+    }
+
+    #cgweb134StravaButton.cgweb134-warning {
+      border-color: rgba(255,180,70,.65) !important;
+    }
+
+    #cgweb134Overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(0,0,0,.68);
+      backdrop-filter: blur(6px);
+    }
+
+    #cgweb134Overlay.hidden {
+      display: none !important;
+    }
+
+    #cgweb134Dialog {
+      width: min(760px, 96vw);
+      max-height: min(760px, 90vh);
+      overflow: auto;
+      padding: 18px;
+      border: 1px solid rgba(128,128,128,.30);
+      border-radius: 16px;
+      background: var(--surface, #111713);
+      box-shadow: 0 24px 80px rgba(0,0,0,.45);
+    }
+
+    .cgweb134-dialog-head,
+    .cgweb134-dialog-actions,
+    .cgweb134-stat-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .cgweb134-dialog-head {
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .cgweb134-dialog-actions {
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .cgweb134-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4,minmax(110px,1fr));
+      gap: 8px;
+      margin: 14px 0;
+    }
+
+    .cgweb134-stat {
+      padding: 10px;
+      border: 1px solid rgba(128,128,128,.22);
+      border-radius: 10px;
+    }
+
+    .cgweb134-stat small,
+    .cgweb134-stat strong {
+      display: block;
+    }
+
+    .cgweb134-duplicate {
+      margin-top: 8px;
+      padding: 10px;
+      border: 1px solid rgba(255,170,60,.34);
+      border-radius: 10px;
+    }
+
+    #cgweb134FoundationCard {
+      margin: 0 0 14px;
+      padding: 12px 14px;
+      border: 1px solid rgba(128,128,128,.22);
+      border-radius: 12px;
+      background: rgba(128,128,128,.035);
+    }
+
+    @media (max-width: 720px) {
+      .cgweb134-stat-grid {
+        grid-template-columns: repeat(2,minmax(110px,1fr));
+      }
+    }
+  `;
+
+  document.head.appendChild(
+    style
+  );
+}
+
+
+function cgweb134EnsureOverlay() {
+  cgweb134EnsureStyle();
+
+  let overlay =
+    document.getElementById(
+      "cgweb134Overlay"
+    );
+
+  if (overlay) {
+    return overlay;
+  }
+
+  overlay =
+    document.createElement(
+      "div"
+    );
+
+  overlay.id =
+    "cgweb134Overlay";
+
+  overlay.className =
+    "hidden";
+
+  overlay.innerHTML = `
+    <section id="cgweb134Dialog">
+      <div class="cgweb134-dialog-head">
+        <strong id="cgweb134DialogTitle">Strava</strong>
+        <button id="cgweb134CloseButton" class="secondary" type="button">
+          Fermer
+        </button>
+      </div>
+
+      <div id="cgweb134DialogBody"></div>
+
+      <div class="cgweb134-dialog-actions">
+        <button
+          id="cgweb134OpenStravaSettings"
+          class="secondary"
+          type="button"
+        >
+          Plus → Strava
+        </button>
+      </div>
+    </section>
+  `;
+
+  overlay.addEventListener(
+    "click",
+    event => {
+      if (
+        event.target ===
+        overlay
+      ) {
+        overlay.classList.add(
+          "hidden"
+        );
+      }
+    }
+  );
+
+  document.body.appendChild(
+    overlay
+  );
+
+  document
+    .getElementById(
+      "cgweb134CloseButton"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        overlay.classList.add(
+          "hidden"
+        )
+    );
+
+  document
+    .getElementById(
+      "cgweb134OpenStravaSettings"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        overlay.classList.add(
+          "hidden"
+        );
+
+        if (
+          typeof navigateUx ===
+          "function"
+        ) {
+          navigateUx(
+            "more",
+            "strava"
+          );
+        }
+      }
+    );
+
+  return overlay;
+}
+
+
+function cgweb134OpenDialog(
+  title,
+  html
+) {
+  const overlay =
+    cgweb134EnsureOverlay();
+
+  const titleNode =
+    document.getElementById(
+      "cgweb134DialogTitle"
+    );
+
+  const body =
+    document.getElementById(
+      "cgweb134DialogBody"
+    );
+
+  if (titleNode) {
+    titleNode.textContent =
+      title;
+  }
+
+  if (body) {
+    body.innerHTML =
+      html;
+  }
+
+  overlay.classList.remove(
+    "hidden"
+  );
+}
+
+
+function cgweb134SnapshotHtml(
+  snapshot
+) {
+  if (!snapshot) {
+    return "";
+  }
+
+  const time =
+    Number(
+      snapshot.timer_time_ms
+    ) ||
+    Number(
+      snapshot.elapsed_time_ms
+    ) ||
+    0;
+
+  const calories =
+    Number.isFinite(
+      Number(
+        snapshot.calories
+      )
+    )
+      ? Math.round(
+          Number(
+            snapshot.calories
+          )
+        ) +
+        " kcal"
+      : "—";
+
+  return `
+    <div class="cgweb134-stat-grid">
+      <div class="cgweb134-stat">
+        <small>Distance</small>
+        <strong>${cgweb134Escape(
+          cgweb134FormatDistance(
+            snapshot.distance_m
+          )
+        )}</strong>
+      </div>
+
+      <div class="cgweb134-stat">
+        <small>Temps</small>
+        <strong>${cgweb134Escape(
+          cgweb134FormatDuration(
+            time
+          )
+        )}</strong>
+      </div>
+
+      <div class="cgweb134-stat">
+        <small>D+</small>
+        <strong>${cgweb134Escape(
+          Math.round(
+            Number(
+              snapshot.ascent_m
+            ) || 0
+          ) +
+          " m"
+        )}</strong>
+      </div>
+
+      <div class="cgweb134-stat">
+        <small>Calories</small>
+        <strong>${cgweb134Escape(
+          calories
+        )}</strong>
+      </div>
+    </div>
+  `;
+}
+
+
+function cgweb134ShowResult(
+  activity,
+  result
+) {
+  const status =
+    String(
+      result?.status ||
+      ""
+    );
+
+  if (
+    status ===
+      "READY_LOCKED"
+  ) {
+    const expires =
+      Number(
+        result
+          ?.lock_expires_at_ms
+      );
+
+    const time =
+      Number.isFinite(expires)
+        ? new Date(
+            expires
+          ).toLocaleTimeString(
+            "fr-FR",
+            {
+              hour:
+                "2-digit",
+
+              minute:
+                "2-digit"
+            }
+          )
+        : "—";
+
+    cgweb134OpenDialog(
+      "Strava · activité prête",
+      `
+        <p>
+          <strong>Préflight validé.</strong>
+          Aucun doublon Strava probable n'a été trouvé.
+        </p>
+
+        ${cgweb134SnapshotHtml(
+          result
+            ?.activity_snapshot
+        )}
+
+        <p>
+          Verrou d'export actif jusqu'à
+          <strong>${cgweb134Escape(
+            time
+          )}</strong>.
+        </p>
+
+        <p class="muted">
+          External ID réservé :
+          ${cgweb134Escape(
+            result?.external_id ||
+            "—"
+          )}
+        </p>
+
+        <p class="muted">
+          CGWEB134 n'envoie encore aucun fichier vers Strava.
+          La préparation du FIT et l'upload arriveront dans les étapes suivantes.
+        </p>
+      `
+    );
+
+    return;
+  }
+
+  if (
+    status ===
+      "DUPLICATE_BLOCKED"
+  ) {
+    const rows =
+      result
+        ?.duplicate_guard
+        ?.candidates ||
+      [];
+
+    const matches =
+      rows
+        .map(
+          row => `
+            <div class="cgweb134-duplicate">
+              <strong>
+                ${cgweb134Escape(
+                  row.name ||
+                  "Activité Strava"
+                )}
+              </strong>
+
+              <div>
+                ${cgweb134Escape(
+                  cgweb134FormatDistance(
+                    row.distance_m
+                  )
+                )}
+                ·
+                ${cgweb134Escape(
+                  cgweb134FormatDuration(
+                    Number(
+                      row.moving_time_s ||
+                      row.elapsed_time_s ||
+                      0
+                    ) *
+                    1000
+                  )
+                )}
+                ·
+                D+ ${cgweb134Escape(
+                  Math.round(
+                    Number(
+                      row.ascent_m
+                    ) || 0
+                  )
+                )} m
+              </div>
+
+              <small>
+                Strava #${cgweb134Escape(
+                  row.strava_activity_id
+                )}
+                · détection ${cgweb134Escape(
+                  row.match
+                )}
+              </small>
+            </div>
+          `
+        )
+        .join("");
+
+    cgweb134OpenDialog(
+      "Strava · doublon possible",
+      `
+        <p>
+          <strong>Export bloqué par sécurité.</strong>
+          Une activité déjà présente sur Strava ressemble fortement
+          à cette activité SPORT.
+        </p>
+
+        ${cgweb134SnapshotHtml(
+          result
+            ?.activity_snapshot
+        )}
+
+        ${matches}
+
+        <p class="muted">
+          Aucun verrou d'export n'a été créé.
+          CGWEB134 ne permet volontairement pas de forcer l'envoi.
+        </p>
+      `
+    );
+
+    return;
+  }
+
+  if (
+    status ===
+      "ALREADY_LINKED"
+  ) {
+    cgweb134OpenDialog(
+      "Strava · déjà liée",
+      `
+        <p>
+          Cette activité SPORT est déjà liée à
+          <strong>Strava #${cgweb134Escape(
+            result
+              ?.strava_activity_id ||
+            activity
+              ?.strava_activity_id ||
+            "—"
+          )}</strong>.
+        </p>
+
+        <p class="muted">
+          Aucun nouvel export ne sera préparé.
+        </p>
+      `
+    );
+
+    return;
+  }
+
+  if (
+    status ===
+      "INELIGIBLE_NOT_HISTORICAL"
+  ) {
+    cgweb134OpenDialog(
+      "Strava · activité 2026+",
+      `
+        <p>
+          CGWEB134 réserve le nouveau pipeline aux activités
+          <strong>antérieures à 2026</strong>.
+        </p>
+
+        <p class="muted">
+          Cette activité reste gérée par la synchronisation Strava normale.
+        </p>
+      `
+    );
+
+    return;
+  }
+
+  if (
+    status ===
+      "INELIGIBLE_DELETED"
+  ) {
+    cgweb134OpenDialog(
+      "Strava · activité non exportable",
+      `
+        <p>
+          Cette activité est dans la corbeille SPORT.
+        </p>
+      `
+    );
+
+    return;
+  }
+
+  cgweb134OpenDialog(
+    "Strava",
+    `
+      <p>
+        Préflight interrompu :
+        <strong>${cgweb134Escape(
+          status ||
+          "état inconnu"
+        )}</strong>
+      </p>
+    `
+  );
+}
+
+
+function cgweb134ToolbarHost() {
+  return (
+    document.getElementById(
+      "web065ToolbarCenter"
+    ) ||
+    document.querySelector(
+      "#detailView .cgweb122-fix5-action-host"
+    )
+  );
+}
+
+
+function cgweb134RefreshButton() {
+  const button =
+    document.getElementById(
+      "cgweb134StravaButton"
+    );
+
+  if (!button) {
+    return;
+  }
+
+  const activity =
+    currentDetailActivity();
+
+  button.classList.remove(
+    "cgweb134-ready",
+    "cgweb134-warning"
+  );
+
+  if (!activity) {
+    button.textContent =
+      "Strava";
+
+    button.disabled =
+      true;
+
+    return;
+  }
+
+  button.disabled =
+    false;
+
+  if (
+    String(
+      activity
+        ?.strava_activity_id ||
+      ""
+    ).trim()
+  ) {
+    button.textContent =
+      "Strava ✓";
+
+    button.title =
+      "Activité déjà liée à Strava.";
+
+    return;
+  }
+
+  const year =
+    cgweb134ActivityYear(
+      activity
+    );
+
+  if (
+    Number.isFinite(year) &&
+    year >= 2026
+  ) {
+    button.textContent =
+      "Strava";
+
+    button.title =
+      "CGWEB134 : export historique réservé aux activités antérieures à 2026.";
+
+    return;
+  }
+
+  const key =
+    String(
+      activityKey(
+        activity
+      ) || ""
+    );
+
+  const state =
+    cgweb134State
+      .byActivity
+      .get(key);
+
+  if (
+    state?.status ===
+      "READY_LOCKED"
+  ) {
+    button.textContent =
+      "Strava · prêt";
+
+    button.classList.add(
+      "cgweb134-ready"
+    );
+
+    button.title =
+      "Préflight Strava validé ; aucun upload n'a encore été effectué.";
+
+    return;
+  }
+
+  if (
+    state?.status ===
+      "DUPLICATE_BLOCKED"
+  ) {
+    button.textContent =
+      "Strava ⚠";
+
+    button.classList.add(
+      "cgweb134-warning"
+    );
+
+    button.title =
+      "Doublon Strava possible : export bloqué.";
+
+    return;
+  }
+
+  button.textContent =
+    cgweb134State.busy
+      ? "Strava…"
+      : "Strava";
+
+  button.title =
+    "Préparer cette activité historique pour un futur export Strava.";
+}
+
+
+function cgweb134EnsureToolbarButton() {
+  const detail =
+    document.getElementById(
+      "detailView"
+    );
+
+  if (
+    !detail ||
+    detail.classList.contains(
+      "hidden"
+    )
+  ) {
+    return false;
+  }
+
+  const host =
+    cgweb134ToolbarHost();
+
+  if (!host) {
+    return false;
+  }
+
+  let button =
+    document.getElementById(
+      "cgweb134StravaButton"
+    );
+
+  if (!button) {
+    button =
+      document.createElement(
+        "button"
+      );
+
+    button.id =
+      "cgweb134StravaButton";
+
+    button.type =
+      "button";
+
+    button.className =
+      "secondary";
+
+    button.textContent =
+      "Strava";
+
+    button.addEventListener(
+      "click",
+      event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        void cgweb134PreflightCurrent();
+      }
+    );
+  }
+
+  const split =
+    document.getElementById(
+      "cgweb124SplitButton"
+    );
+
+  const manual =
+    document.getElementById(
+      "cg122ManualButton"
+    );
+
+  if (
+    split &&
+    split.parentElement ===
+      host
+  ) {
+    if (
+      button.parentElement !==
+        host ||
+      split.nextElementSibling !==
+        button
+    ) {
+      split.insertAdjacentElement(
+        "afterend",
+        button
+      );
+    }
+  } else if (
+    manual &&
+    manual.parentElement ===
+      host
+  ) {
+    if (
+      button.parentElement !==
+        host ||
+      manual.nextElementSibling !==
+        button
+    ) {
+      manual.insertAdjacentElement(
+        "afterend",
+        button
+      );
+    }
+  } else if (
+    button.parentElement !==
+      host
+  ) {
+    host.appendChild(
+      button
+    );
+  }
+
+  cgweb134RefreshButton();
+
+  return true;
+}
+
+
+function cgweb134EnsureFoundationCard() {
+  cgweb134EnsureStyle();
+
+  const section =
+    document.getElementById(
+      "webStravaSection"
+    );
+
+  if (!section) {
+    return null;
+  }
+
+  let card =
+    document.getElementById(
+      "cgweb134FoundationCard"
+    );
+
+  if (card) {
+    return card;
+  }
+
+  card =
+    document.createElement(
+      "div"
+    );
+
+  card.id =
+    "cgweb134FoundationCard";
+
+  card.innerHTML = `
+    <strong>Export historique CGWEB → Strava</strong>
+
+    <p class="muted">
+      CGWEB134 prépare l'export individuel des activités antérieures à 2026 :
+      autorisation activity:write, détection de doublon et verrou de préparation.
+    </p>
+
+    <p class="muted">
+      Aucun fichier n'est encore envoyé à Strava dans cette version.
+      Le bouton <strong>Strava</strong> se trouve directement dans le bandeau
+      de chaque fiche activité.
+    </p>
+  `;
+
+  const heading =
+    section.querySelector(
+      ".panel-title-row, .section-heading"
+    );
+
+  if (heading) {
+    heading.insertAdjacentElement(
+      "afterend",
+      card
+    );
+  } else {
+    section.insertBefore(
+      card,
+      section.firstChild
+    );
+  }
+
+  return card;
+}
+
+
+async function cgweb134EnsureWriteAuthorization() {
+  let status =
+    await webStravaFetch(
+      "status"
+    );
+
+  cgweb134State.lastStatus =
+    status;
+
+  if (
+    status?.connected &&
+    status?.write_authorized
+  ) {
+    return status;
+  }
+
+  const text =
+    status?.connected
+      ? (
+          "CGWEB134 doit ajouter l'autorisation Strava « activity:write » " +
+          "pour préparer les futurs exports.\n\n" +
+          "Une fenêtre Strava va s'ouvrir. Continuer ?"
+        )
+      : (
+          "Strava doit être connecté à SPORT Web avant de préparer l'export.\n\n" +
+          "Ouvrir l'autorisation Strava maintenant ?"
+        );
+
+  if (
+    !window.confirm(
+      text
+    )
+  ) {
+    return null;
+  }
+
+  await connectWebStrava();
+
+  status =
+    await webStravaFetch(
+      "status"
+    );
+
+  cgweb134State.lastStatus =
+    status;
+
+  if (
+    !status?.connected
+  ) {
+    throw new Error(
+      "Connexion Strava non confirmée."
+    );
+  }
+
+  if (
+    !status
+      ?.write_authorized
+  ) {
+    throw new Error(
+      "Strava n'a pas accordé le scope activity:write."
+    );
+  }
+
+  return status;
+}
+
+
+async function cgweb134PreflightCurrent() {
+  if (
+    cgweb134State.busy
+  ) {
+    return;
+  }
+
+  const activity =
+    currentDetailActivity();
+
+  if (!activity) {
+    return;
+  }
+
+  const key =
+    String(
+      activityKey(
+        activity
+      ) || ""
+    );
+
+  if (!key) {
+    return;
+  }
+
+  if (
+    String(
+      activity
+        ?.strava_activity_id ||
+      ""
+    ).trim()
+  ) {
+    cgweb134ShowResult(
+      activity,
+      {
+        status:
+          "ALREADY_LINKED",
+
+        strava_activity_id:
+          activity
+            .strava_activity_id
+      }
+    );
+
+    return;
+  }
+
+  const year =
+    cgweb134ActivityYear(
+      activity
+    );
+
+  if (
+    Number.isFinite(year) &&
+    year >= 2026
+  ) {
+    cgweb134ShowResult(
+      activity,
+      {
+        status:
+          "INELIGIBLE_NOT_HISTORICAL",
+
+        activity_year:
+          year
+      }
+    );
+
+    return;
+  }
+
+  cgweb134State.busy =
+    true;
+
+  cgweb134RefreshButton();
+
+  try {
+    const authorization =
+      await cgweb134EnsureWriteAuthorization();
+
+    if (!authorization) {
+      cgweb134OpenDialog(
+        "Strava · autorisation requise",
+        `
+          <p>
+            La préparation de l'export a été annulée.
+          </p>
+
+          <p class="muted">
+            Aucune donnée n'a été modifiée.
+          </p>
+        `
+      );
+
+      return;
+    }
+
+    cgweb134OpenDialog(
+      "Strava · contrôle en cours",
+      `
+        <p>
+          Recherche d'une activité Strava déjà existante
+          et préparation du verrou d'export…
+        </p>
+
+        <p class="muted">
+          Aucun fichier n'est envoyé pendant ce contrôle.
+        </p>
+      `
+    );
+
+    const result =
+      await webStravaFetch(
+        "export_preflight",
+        {
+          method:
+            "POST",
+
+          body:
+            {
+              activity_key:
+                key
+            }
+        }
+      );
+
+    cgweb134State
+      .byActivity
+      .set(
+        key,
+        result
+      );
+
+    cgweb134ShowResult(
+      activity,
+      result
+    );
+
+  } catch (error) {
+    console.error(
+      "CGWEB134 preflight",
+      error
+    );
+
+    cgweb134OpenDialog(
+      "Strava · erreur",
+      `
+        <p>
+          ${cgweb134Escape(
+            error?.message ||
+            String(error)
+          )}
+        </p>
+
+        <p class="muted">
+          Aucun upload Strava n'a été effectué.
+        </p>
+      `
+    );
+
+  } finally {
+    cgweb134State.busy =
+      false;
+
+    cgweb134RefreshButton();
+  }
+}
+
+
+/*
+ * Le bouton doit survivre aux reconstructions successives
+ * du bandeau CGWEB122 / CGWEB124.
+ */
+function cgweb134ScheduleToolbarRepair() {
+  if (
+    cgweb134State
+      .observerQueued
+  ) {
+    return;
+  }
+
+  cgweb134State
+    .observerQueued =
+    true;
+
+  queueMicrotask(
+    () => {
+      cgweb134State
+        .observerQueued =
+        false;
+
+      cgweb134EnsureToolbarButton();
+    }
+  );
+}
+
+
+const cgweb134Detail =
+  document.getElementById(
+    "detailView"
+  );
+
+if (cgweb134Detail) {
+  const observer =
+    new MutationObserver(
+      mutations => {
+        if (
+          mutations.some(
+            mutation =>
+              mutation.type ===
+                "childList"
+          )
+        ) {
+          cgweb134ScheduleToolbarRepair();
+        }
+      }
+    );
+
+  observer.observe(
+    cgweb134Detail,
+    {
+      subtree:
+        true,
+
+      childList:
+        true
+    }
+  );
+
+  window
+    .__cgweb134ToolbarObserver =
+    observer;
+}
+
+
+if (
+  typeof renderDetail ===
+    "function"
+) {
+  const cgweb134BaseRenderDetail =
+    renderDetail;
+
+  renderDetail =
+    function cgweb134RenderDetailWrapper(
+      activity,
+      ...args
+    ) {
+      const result =
+        cgweb134BaseRenderDetail.call(
+          this,
+          activity,
+          ...args
+        );
+
+      queueMicrotask(
+        cgweb134EnsureToolbarButton
+      );
+
+      requestAnimationFrame(
+        cgweb134EnsureToolbarButton
+      );
+
+      return result;
+    };
+}
+
+
+queueMicrotask(
+  () => {
+    cgweb134EnsureStyle();
+    cgweb134EnsureOverlay();
+    cgweb134EnsureFoundationCard();
+    cgweb134EnsureToolbarButton();
+  }
+);
+
+
+window.CGWEB134_STATUS =
+  function () {
+    const activity =
+      currentDetailActivity();
+
+    const key =
+      activity
+        ? String(
+            activityKey(
+              activity
+            ) || ""
+          )
+        : "";
+
+    return {
+      build:
+        "CGWEB134",
+
+      strava_export_foundation:
+        "STRAVA_EXPORT_FOUNDATION001",
+
+      activity_write_scope:
+        "ACTIVITY_WRITE_SCOPE001",
+
+      outbound_export_lock:
+        "OUTBOUND_EXPORT_LOCK001",
+
+      duplicate_guard:
+        "STRAVA_DUPLICATE_GUARD001",
+
+      real_upload_enabled:
+        false,
+
+      historical_cutoff:
+        "2026-01-01 Europe/Paris",
+
+      activity_key:
+        key || null,
+
+      activity_year:
+        activity
+          ? cgweb134ActivityYear(
+              activity
+            )
+          : null,
+
+      linked_strava_activity_id:
+        activity
+          ?.strava_activity_id ||
+        null,
+
+      current_state:
+        key
+          ? cgweb134State
+              .byActivity
+              .get(key) ||
+            null
+          : null,
+
+      last_strava_status:
+        cgweb134State
+          .lastStatus
+    };
+  };
+
+
+window.CGWEB134_PREFLIGHT_CURRENT =
+  cgweb134PreflightCurrent;
+
+
+console.info(
+  "CGWEB134 actif · " +
+  "STRAVA_EXPORT_FOUNDATION001 / " +
+  "ACTIVITY_WRITE_SCOPE001 / " +
+  "OUTBOUND_EXPORT_LOCK001 / " +
+  "STRAVA_DUPLICATE_GUARD001"
+);
+
+/* CGWEB134_END */
