@@ -6737,3 +6737,55 @@ window.SPORT_FIT_STRAVA_PREVIEW =
   });
 
 /* CGWEB135_FIT_STRAVA_PREVIEW_API_END */
+
+/* CGWEB138_FRONTEND_START · preview/backfill per activity only */
+(() => {
+  const base = "https://europe-west1-sport-505813.cloudfunctions.net/stravaBridge";
+  async function api(action, data={}) {
+    const user = window.SPORT_WEB_BRIDGE?.getUser?.();
+    if (!user) throw new Error("CGWEB138 : connexion SPORT requise.");
+    const token = await user.getIdToken();
+    const response = await fetch(`${base}?action=${encodeURIComponent(action)}`, {
+      method:"POST", headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+      body:JSON.stringify(data)
+    });
+    const raw=await response.text();
+    let body;
+    try { body=JSON.parse(raw); } catch { body={error:raw}; }
+    if(!response.ok) throw new Error(body?.error||`Strava ${response.status}`);
+    return body;
+  }
+  window.SPORT_STRAVA_TEXT_BRIDGE=Object.freeze({
+    version:"CGWEB138",
+    preview:(options={})=>api("text_backfill_preview",options),
+    audit:(activityKey)=>api("text_audit",{activity_key:String(activityKey||"")}),
+    apply:(previewRow)=>{
+      if(!previewRow||previewRow.status!=="PREVIEW"||!previewRow.needs_update)
+        throw new Error("CGWEB138 : sélectionner une ligne PREVIEW nécessitant une mise à jour.");
+      return api("text_backfill_apply",{
+        activity_key:previewRow.activity_key,
+        source_hash:previewRow.source_hash,
+        remote_hash:previewRow.remote_hash
+      });
+    },
+    applyPage:async(page)=>{
+      const rows=Array.isArray(page?.rows)?page.rows:[];
+      if(rows.length>10)throw new Error("CGWEB138 : maximum 10 activités par lot.");
+      const results=[];
+      for(const row of rows) {
+        if(row?.status!=="PREVIEW"||!row?.needs_update)continue;
+        try {
+          results.push({activity_key:row.activity_key,
+            result:await api("text_backfill_apply",{
+              activity_key:row.activity_key,
+              source_hash:row.source_hash,remote_hash:row.remote_hash
+            })});
+        } catch(error) {
+          results.push({activity_key:row.activity_key,error:error.message});
+        }
+      }
+      return results;
+    }
+  });
+})();
+/* CGWEB138_FRONTEND_END */

@@ -3,6 +3,7 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {defineSecret, defineString} = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+const cgweb138Text = require("./cgweb138");
 
 admin.initializeApp();
 
@@ -2830,6 +2831,15 @@ async function cgweb136ReconcileFromDetail(
     }
   );
 
+  /* CGWEB138 · POST_UPLOAD_TEXT_AUDIT001
+   * Text-only failure must never roll back five canonical Strava metrics.
+   */
+  try {
+    finalResult.text_bridge = await cgweb138Bridge.sync(uid,key,{mode:"upload"});
+  } catch (error) {
+    console.warn("CGWEB138 post-upload text audit pending",key,error?.message||error);
+    finalResult.text_bridge={status:"TEXT_AUDIT_PENDING",error:error?.message||String(error)};
+  }
   return finalResult;
 }
 
@@ -3159,27 +3169,13 @@ async function cgweb136UploadToStrava(
     )
   );
 
-  const title =
-    String(
-      activity
-        ?.custom_title ||
-      activity
-        ?.title ||
-      lock
-        ?.activity_snapshot
-        ?.title ||
-      ""
-    ).trim();
-
-  if (title) {
-    form.append(
-      "name",
-      title.slice(
-        0,
-        180
-      )
-    );
-  }
+  /* CGWEB138 · UPLOAD_METADATA_PARITY001 */
+  const textMetadata = cgweb138Text.metadata({
+    ...(activity||{}),
+    canonical_file_name: activity?.canonical_file_name || lock?.fit_preview?.file_name || ""
+  });
+  if (textMetadata.title) form.append("name", textMetadata.title);
+  if (textMetadata.description) form.append("description", textMetadata.description);
 
   form.append(
     "file",
@@ -6806,6 +6802,14 @@ async function cgweb137TotalsAudit(
 /* CGWEB136_SERVER_END */
 
 
+/* CGWEB138_SERVER_START */
+const cgweb138Bridge = cgweb138Text.createBridge({
+  db:firestore(), root:ROOT, tokenDocument, refreshTokenIfNeeded,
+  stravaGet, audit:cgweb136Audit, apiBase:STRAVA_API_BASE,
+  FieldPath:admin.firestore.FieldPath
+});
+/* CGWEB138_SERVER_END */
+
 exports.stravaBridge = onRequest(
   {region:REGION, secrets:[STRAVA_CLIENT_SECRET], timeoutSeconds:120, cors:false},
   async (req, res) => {
@@ -7264,6 +7268,23 @@ exports.stravaBridge = onRequest(
 
 
 
+
+      /* CGWEB138_ACTIONS_START */
+      if (["text_backfill_preview","text_backfill_apply","text_audit"].includes(action)
+          && req.method === "POST") {
+        const body=req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)
+          ? req.body : {};
+        if(action === "text_backfill_preview")
+          return res.json(await cgweb138Bridge.previewPage(uid,body));
+        const key=String(body.activity_key||"").trim();
+        if(action === "text_audit")
+          return res.json(await cgweb138Bridge.inspect(uid,key));
+        return res.json(await cgweb138Bridge.sync(uid,key,{
+          mode:"backfill",source_hash:String(body.source_hash||""),
+          remote_hash:String(body.remote_hash||"")
+        }));
+      }
+      /* CGWEB138_ACTIONS_END */
 
       /* CGWEB137_ACTION_START */
 
