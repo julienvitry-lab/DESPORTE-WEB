@@ -78303,3 +78303,1169 @@ console.info(
 );
 
 /* CGWEB135_END */
+
+/* CGWEB136_START
+   STRAVA_SINGLE_EXPORT001
+   EXACT_BINARY_UPLOAD001
+   UPLOAD_STATUS_POLL001
+   STRAVA_POSTCHECK001
+   STRAVA_WINS_RECONCILE001
+   EXPORT_AUDIT_TRAIL001
+*/
+
+const cgweb136State = {
+  busy:
+    false,
+
+  byActivity:
+    new Map()
+};
+
+
+function cgweb136Sleep(
+  milliseconds
+) {
+  return new Promise(
+    resolve =>
+      setTimeout(
+        resolve,
+        milliseconds
+      )
+  );
+}
+
+
+function cgweb136EnsureStyle() {
+  if (
+    document.getElementById(
+      "cgweb136Style"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement(
+      "style"
+    );
+
+  style.id =
+    "cgweb136Style";
+
+  style.textContent = `
+    #cgweb136ExportButton {
+      white-space: nowrap;
+    }
+
+    .cgweb136-warning {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid rgba(255,170,70,.35);
+      border-radius: 10px;
+    }
+
+    .cgweb136-success {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid rgba(80,220,130,.35);
+      border-radius: 10px;
+    }
+
+    .cgweb136-final-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+    }
+
+    .cgweb136-final-table th,
+    .cgweb136-final-table td {
+      padding: 8px 7px;
+      border-bottom: 1px solid rgba(128,128,128,.18);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .cgweb136-final-table th:first-child,
+    .cgweb136-final-table td:first-child {
+      text-align: left;
+    }
+
+    .cgweb136-changed {
+      font-weight: 700;
+    }
+
+    @media (max-width: 720px) {
+      .cgweb136-final-table {
+        font-size: .88em;
+      }
+
+      .cgweb136-final-table th,
+      .cgweb136-final-table td {
+        padding: 6px 4px;
+      }
+    }
+  `;
+
+  document.head.appendChild(
+    style
+  );
+}
+
+
+function cgweb136RemoveActionButtons() {
+  document
+    .getElementById(
+      "cgweb135PrepareFitButton"
+    )
+    ?.remove();
+
+  document
+    .getElementById(
+      "cgweb136ExportButton"
+    )
+    ?.remove();
+
+  document
+    .getElementById(
+      "cgweb136ResumeButton"
+    )
+    ?.remove();
+}
+
+
+function cgweb136Duration(
+  milliseconds
+) {
+  const n =
+    Number(
+      milliseconds
+    );
+
+  return Number.isFinite(n)
+    ? cgweb134FormatDuration(
+        n
+      )
+    : "—";
+}
+
+
+function cgweb136Value(
+  metric,
+  value
+) {
+  const n =
+    Number(value);
+
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  if (
+    metric ===
+      "distance_m"
+  ) {
+    return cgweb134FormatDistance(
+      n
+    );
+  }
+
+  if (
+    metric ===
+      "timer_time_ms" ||
+    metric ===
+      "elapsed_time_ms"
+  ) {
+    return cgweb136Duration(
+      n
+    );
+  }
+
+  if (
+    metric ===
+      "ascent_m"
+  ) {
+    return (
+      n.toLocaleString(
+        "fr-FR",
+        {
+          maximumFractionDigits:
+            1
+        }
+      ) +
+      " m"
+    );
+  }
+
+  if (
+    metric ===
+      "calories"
+  ) {
+    return (
+      n.toLocaleString(
+        "fr-FR",
+        {
+          maximumFractionDigits:
+            1
+        }
+      ) +
+      " kcal"
+    );
+  }
+
+  return String(n);
+}
+
+
+function cgweb136FinalRow(
+  result,
+  metric,
+  label
+) {
+  const row =
+    (
+      result
+        ?.comparisons ||
+      []
+    ).find(
+      item =>
+        item?.metric ===
+        metric
+    );
+
+  const changed =
+    row
+      ?.delta_strava_minus_before !=
+        null &&
+    Math.abs(
+      Number(
+        row
+          .delta_strava_minus_before
+      )
+    ) >
+      0.000001;
+
+  return `
+    <tr class="${changed ? "cgweb136-changed" : ""}">
+      <td>
+        ${cgweb134Escape(label)}
+      </td>
+
+      <td>
+        ${cgweb134Escape(
+          cgweb136Value(
+            metric,
+            row?.before
+          )
+        )}
+      </td>
+
+      <td>
+        ${cgweb134Escape(
+          cgweb136Value(
+            metric,
+            row?.strava
+          )
+        )}
+      </td>
+
+      <td>
+        ${cgweb134Escape(
+          cgweb136Value(
+            metric,
+            row?.final
+          )
+        )}
+      </td>
+
+      <td>
+        ${
+          row?.reconciled
+            ? "✓"
+            : "⚠"
+        }
+      </td>
+    </tr>
+  `;
+}
+
+
+function cgweb136ApplyLocalPatch(
+  activity,
+  result
+) {
+  const patch =
+    result
+      ?.cgweb_patch;
+
+  if (
+    !activity ||
+    !patch
+  ) {
+    return;
+  }
+
+  Object.assign(
+    activity,
+    patch
+  );
+
+  try {
+    renderHeroMetrics(
+      activity
+    );
+
+    renderSummary(
+      activity
+    );
+
+    web061RefreshSingleMetricRow(
+      activity
+    );
+  } catch (_) {}
+
+  try {
+    rebuildDynamicFilters();
+    applyFiltersAndRender();
+  } catch (_) {}
+
+  try {
+    void loadWebDashboard();
+  } catch (_) {}
+
+  try {
+    cgweb134RefreshButton();
+  } catch (_) {}
+}
+
+
+function cgweb136ShowFinal(
+  activity,
+  result
+) {
+  cgweb136RemoveActionButtons();
+
+  cgweb136ApplyLocalPatch(
+    activity,
+    result
+  );
+
+  const changed =
+    Array.isArray(
+      result
+        ?.changed_metrics
+    )
+      ? result.changed_metrics
+      : [];
+
+  cgweb134OpenDialog(
+    "Strava · export synchronisé",
+    `
+      <div class="cgweb136-success">
+        <strong>Export terminé.</strong>
+        L'activité Strava a été créée puis relue.
+        CGWEB a adopté les statistiques finales Strava.
+      </div>
+
+      <table class="cgweb136-final-table">
+        <thead>
+          <tr>
+            <th>Statistique</th>
+            <th>CGWEB avant</th>
+            <th>Strava</th>
+            <th>CGWEB final</th>
+            <th></th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${cgweb136FinalRow(
+            result,
+            "distance_m",
+            "Distance"
+          )}
+
+          ${cgweb136FinalRow(
+            result,
+            "timer_time_ms",
+            "Temps"
+          )}
+
+          ${cgweb136FinalRow(
+            result,
+            "elapsed_time_ms",
+            "Temps écoulé"
+          )}
+
+          ${cgweb136FinalRow(
+            result,
+            "ascent_m",
+            "D+"
+          )}
+
+          ${cgweb136FinalRow(
+            result,
+            "calories",
+            "Calories"
+          )}
+        </tbody>
+      </table>
+
+      <p class="muted">
+        Strava #${cgweb134Escape(
+          result
+            ?.strava_activity_id ||
+          "—"
+        )}
+        · upload #${cgweb134Escape(
+          result
+            ?.strava_upload_id ||
+          "—"
+        )}
+      </p>
+
+      <p class="muted">
+        ${
+          changed.length
+            ? (
+                "Valeurs modifiées par Strava puis répercutées dans CGWEB : " +
+                cgweb134Escape(
+                  changed.join(
+                    " · "
+                  )
+                )
+              )
+            : "Aucune statistique cible n'a été modifiée par Strava."
+        }
+      </p>
+
+      <p class="muted">
+        Les valeurs CGWEB antérieures à l'export restent archivées
+        dans les champs pre_strava_export_* et dans le journal d'audit.
+      </p>
+    `
+  );
+
+  cgweb136State
+    .byActivity
+    .set(
+      String(
+        activityKey(
+          activity
+        ) || ""
+      ),
+      result
+    );
+}
+
+
+function cgweb136ShowError(
+  title,
+  message
+) {
+  cgweb136RemoveActionButtons();
+
+  cgweb134OpenDialog(
+    title,
+    `
+      <div class="cgweb136-warning">
+        ${cgweb134Escape(
+          message ||
+          "Erreur inconnue."
+        )}
+      </div>
+    `
+  );
+}
+
+
+async function cgweb136PollLoop(
+  activity,
+  lockToken
+) {
+  const key =
+    String(
+      activityKey(
+        activity
+      ) || ""
+    );
+
+  if (
+    !key ||
+    !lockToken
+  ) {
+    return;
+  }
+
+  cgweb134OpenDialog(
+    "Strava · traitement en cours",
+    `
+      <p>
+        Le FIT a été accepté par Strava.
+        SPORT attend maintenant la fin du traitement…
+      </p>
+
+      <p class="muted">
+        Contrôle toutes les 2 secondes.
+        Tu peux laisser cette fenêtre ouverte.
+      </p>
+    `
+  );
+
+  cgweb136RemoveActionButtons();
+
+  /*
+   * Strava recommande au maximum un polling par seconde.
+   * SPORT reste volontairement deux fois moins agressif : 2 s.
+   */
+  for (
+    let attempt = 1;
+    attempt <= 60;
+    attempt += 1
+  ) {
+    if (
+      attempt > 1
+    ) {
+      await cgweb136Sleep(
+        2000
+      );
+    }
+
+    const result =
+      await webStravaFetch(
+        "export_status",
+        {
+          method:
+            "POST",
+
+          body:
+            {
+              activity_key:
+                key,
+
+              lock_token:
+                lockToken
+            }
+        }
+      );
+
+    cgweb136State
+      .byActivity
+      .set(
+        key,
+        result
+      );
+
+    const status =
+      String(
+        result?.status ||
+        ""
+      );
+
+    if (
+      status ===
+        "RECONCILED"
+    ) {
+      cgweb136ShowFinal(
+        activity,
+        result
+      );
+
+      return;
+    }
+
+    if (
+      status ===
+        "STRAVA_ERROR"
+    ) {
+      cgweb136ShowError(
+        "Strava · traitement refusé",
+        result?.error ||
+        "Strava a refusé le fichier pendant son traitement."
+      );
+
+      return;
+    }
+
+    if (
+      status ===
+        "UPLOAD_UNKNOWN"
+    ) {
+      cgweb136ShowError(
+        "Strava · état incertain",
+        result?.error ||
+        "Impossible de déterminer si Strava a reçu le POST. Aucun nouvel envoi automatique ne sera effectué."
+      );
+
+      return;
+    }
+
+    if (
+      status ===
+        "POSTCHECK_INCOMPLETE"
+    ) {
+      const missing =
+        Array.isArray(
+          result?.missing
+        )
+          ? result.missing
+          : [];
+
+      const body =
+        document.getElementById(
+          "cgweb134DialogBody"
+        );
+
+      if (body) {
+        body.innerHTML = `
+          <p>
+            Activité Strava créée.
+            Le contrôle final attend encore :
+            <strong>${cgweb134Escape(
+              missing.join(
+                " · "
+              ) ||
+              "statistiques détaillées"
+            )}</strong>.
+          </p>
+
+          <p class="muted">
+            Nouvelle lecture automatique dans 2 secondes…
+          </p>
+        `;
+      }
+
+      continue;
+    }
+
+    const body =
+      document.getElementById(
+        "cgweb134DialogBody"
+      );
+
+    if (body) {
+      body.innerHTML = `
+        <p>
+          Traitement Strava en cours…
+          <strong>${attempt}/60</strong>
+        </p>
+
+        <p class="muted">
+          ${cgweb134Escape(
+            result
+              ?.strava_status ||
+            "Le fichier est toujours en traitement."
+          )}
+        </p>
+      `;
+    }
+  }
+
+  cgweb136ShowError(
+    "Strava · traitement toujours en cours",
+    "Le délai local de 2 minutes est écoulé. L'upload n'est pas rejoué. Reclique simplement sur Strava pour reprendre le contrôle de cet export."
+  );
+}
+
+
+async function cgweb136ExportCurrent(
+  activity,
+  previewResult
+) {
+  if (
+    cgweb136State.busy
+  ) {
+    return;
+  }
+
+  const key =
+    String(
+      activityKey(
+        activity
+      ) || ""
+    );
+
+  const lock =
+    cgweb134State
+      .byActivity
+      .get(key);
+
+  const preview =
+    previewResult
+      ?.preview;
+
+  if (
+    !key ||
+    lock?.status !==
+      "READY_LOCKED" ||
+    !lock?.lock_token ||
+    !preview?.parity_ok ||
+    !preview?.sha256
+  ) {
+    cgweb136ShowError(
+      "Strava · export non prêt",
+      "Le préflight CGWEB134 et la validation FIT CGWEB135 doivent être refaits."
+    );
+
+    return;
+  }
+
+  const confirmed =
+    window.confirm(
+      [
+        "ENVOI RÉEL VERS STRAVA",
+        "",
+        "Cette action va créer une activité sur ton compte Strava.",
+        "",
+        "FIT contrôlé : " +
+          String(
+            preview.file_name ||
+            "—"
+          ),
+        "SHA-256 : " +
+          String(
+            preview.sha256 ||
+            ""
+          ).slice(
+            0,
+            20
+          ) +
+          "…",
+        "",
+        "Après traitement, Strava sera l'autorité :",
+        "distance, temps, temps écoulé, D+ et calories",
+        "seront répercutés dans CGWEB en cas d'écart.",
+        "",
+        "Continuer ?"
+      ].join(
+        "\n"
+      )
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  cgweb136State.busy =
+    true;
+
+  cgweb134OpenDialog(
+    "Strava · envoi du FIT",
+    `
+      <p>
+        Vérification finale du SHA-256 et contrôle anti-doublon…
+      </p>
+
+      <p class="muted">
+        Un seul POST Strava est autorisé pour ce verrou.
+      </p>
+    `
+  );
+
+  cgweb136RemoveActionButtons();
+
+  try {
+    const result =
+      await webStravaFetch(
+        "export_upload",
+        {
+          method:
+            "POST",
+
+          body:
+            {
+              activity_key:
+                key,
+
+              lock_token:
+                lock
+                  .lock_token,
+
+              fit_sha256:
+                preview
+                  .sha256
+            }
+        }
+      );
+
+    cgweb136State
+      .byActivity
+      .set(
+        key,
+        result
+      );
+
+    const status =
+      String(
+        result?.status ||
+        ""
+      );
+
+    if (
+      status ===
+        "RECONCILED"
+    ) {
+      cgweb136ShowFinal(
+        activity,
+        result
+      );
+
+      return;
+    }
+
+    if (
+      status ===
+        "DUPLICATE_BLOCKED_BEFORE_UPLOAD"
+    ) {
+      cgweb136ShowError(
+        "Strava · export bloqué",
+        "Une activité Strava correspondante est apparue depuis le préflight. Aucun FIT n'a été envoyé."
+      );
+
+      return;
+    }
+
+    if (
+      status ===
+        "UPLOAD_UNKNOWN"
+    ) {
+      cgweb136ShowError(
+        "Strava · état incertain",
+        result?.message ||
+        "SPORT refuse tout nouvel envoi automatique afin d'éviter un doublon."
+      );
+
+      return;
+    }
+
+    if (
+      status !==
+        "UPLOAD_ACCEPTED" &&
+      status !==
+        "UPLOAD_IN_PROGRESS"
+    ) {
+      cgweb136ShowError(
+        "Strava · upload interrompu",
+        "État inattendu : " +
+          (
+            status ||
+            "inconnu"
+          )
+      );
+
+      return;
+    }
+
+    await cgweb136PollLoop(
+      activity,
+      lock
+        .lock_token
+    );
+
+  } catch (error) {
+    console.error(
+      "CGWEB136 upload",
+      error
+    );
+
+    cgweb136ShowError(
+      "Strava · export impossible",
+      error?.message ||
+      String(error)
+    );
+
+  } finally {
+    cgweb136State.busy =
+      false;
+  }
+}
+
+
+function cgweb136AddExportButton(
+  activity,
+  result
+) {
+  cgweb136RemoveActionButtons();
+
+  if (
+    !result
+      ?.preview
+      ?.parity_ok
+  ) {
+    return;
+  }
+
+  const actions =
+    document.querySelector(
+      "#cgweb134Dialog .cgweb134-dialog-actions"
+    );
+
+  if (!actions) {
+    return;
+  }
+
+  const button =
+    document.createElement(
+      "button"
+    );
+
+  button.id =
+    "cgweb136ExportButton";
+
+  button.type =
+    "button";
+
+  button.className =
+    "primary";
+
+  button.textContent =
+    "Exporter vers Strava";
+
+  button.addEventListener(
+    "click",
+    () => {
+      void cgweb136ExportCurrent(
+        activity,
+        result
+      );
+    }
+  );
+
+  actions.insertBefore(
+    button,
+    actions.firstChild
+  );
+}
+
+
+/*
+ * Corrige en même temps le bouton CGWEB135 resté
+ * « Préparation du FIT… » après le changement de contenu.
+ */
+const cgweb136BaseShowPreview =
+  cgweb135ShowPreview;
+
+cgweb135ShowPreview =
+  function cgweb136ShowPreviewWrapper(
+    activity,
+    result
+  ) {
+    const out =
+      cgweb136BaseShowPreview(
+        activity,
+        result
+      );
+
+    cgweb136AddExportButton(
+      activity,
+      result
+    );
+
+    return out;
+  };
+
+
+function cgweb136AddResumeButton(
+  activity,
+  result
+) {
+  const actions =
+    document.querySelector(
+      "#cgweb134Dialog .cgweb134-dialog-actions"
+    );
+
+  if (!actions) {
+    return;
+  }
+
+  cgweb136RemoveActionButtons();
+
+  const button =
+    document.createElement(
+      "button"
+    );
+
+  button.id =
+    "cgweb136ResumeButton";
+
+  button.type =
+    "button";
+
+  button.className =
+    "primary";
+
+  button.textContent =
+    "Reprendre le contrôle";
+
+  button.addEventListener(
+    "click",
+    () => {
+      void cgweb136PollLoop(
+        activity,
+        result
+          ?.lock_token
+      );
+    }
+  );
+
+  actions.insertBefore(
+    button,
+    actions.firstChild
+  );
+}
+
+
+/*
+ * Après rechargement navigateur, CGWEB134 peut retrouver un export
+ * déjà parti chez Strava sans jamais créer un second upload.
+ */
+const cgweb136BaseShowResult =
+  cgweb134ShowResult;
+
+cgweb134ShowResult =
+  function cgweb136ShowResultWrapper(
+    activity,
+    result
+  ) {
+    const status =
+      String(
+        result?.status ||
+        ""
+      );
+
+    if (
+      status ===
+        "UPLOAD_IN_PROGRESS" ||
+      status ===
+        "POSTCHECK_INCOMPLETE"
+    ) {
+      cgweb134OpenDialog(
+        "Strava · export déjà engagé",
+        `
+          <p>
+            Cette activité a déjà été envoyée à Strava.
+            SPORT ne créera aucun second upload.
+          </p>
+
+          <p class="muted">
+            ${
+              status ===
+                "POSTCHECK_INCOMPLETE"
+                ? "L'activité Strava existe ; la réconciliation finale doit être reprise."
+                : "Le traitement Strava doit être repris."
+            }
+          </p>
+        `
+      );
+
+      cgweb136AddResumeButton(
+        activity,
+        result
+      );
+
+      return;
+    }
+
+    if (
+      status ===
+        "UPLOAD_UNKNOWN"
+    ) {
+      cgweb136ShowError(
+        "Strava · état d'upload incertain",
+        result?.error ||
+        "Un POST Strava précédent a un résultat incertain. Aucun nouvel upload automatique n'est autorisé."
+      );
+
+      return;
+    }
+
+    if (
+      status ===
+        "STRAVA_ERROR"
+    ) {
+      cgweb136ShowError(
+        "Strava · erreur de traitement",
+        result?.error ||
+        "Strava a signalé une erreur pour cet upload."
+      );
+
+      return;
+    }
+
+    return cgweb136BaseShowResult(
+      activity,
+      result
+    );
+  };
+
+
+window.CGWEB136_STATUS =
+  function () {
+    const activity =
+      currentDetailActivity();
+
+    const key =
+      activity
+        ? String(
+            activityKey(
+              activity
+            ) || ""
+          )
+        : "";
+
+    return {
+      build:
+        "CGWEB136",
+
+      strava_single_export:
+        "STRAVA_SINGLE_EXPORT001",
+
+      exact_binary_upload:
+        "EXACT_BINARY_UPLOAD001",
+
+      upload_status_poll:
+        "UPLOAD_STATUS_POLL001",
+
+      strava_postcheck:
+        "STRAVA_POSTCHECK001",
+
+      strava_wins_reconcile:
+        "STRAVA_WINS_RECONCILE001",
+
+      export_audit_trail:
+        "EXPORT_AUDIT_TRAIL001",
+
+      real_strava_upload:
+        true,
+
+      poll_interval_ms:
+        2000,
+
+      activity_key:
+        key ||
+        null,
+
+      local_state:
+        key
+          ? cgweb136State
+              .byActivity
+              .get(key) ||
+            null
+          : null
+    };
+  };
+
+
+cgweb136EnsureStyle();
+
+
+console.info(
+  "CGWEB136 actif · " +
+  "STRAVA_SINGLE_EXPORT001 / " +
+  "EXACT_BINARY_UPLOAD001 / " +
+  "UPLOAD_STATUS_POLL001 / " +
+  "STRAVA_POSTCHECK001 / " +
+  "STRAVA_WINS_RECONCILE001 / " +
+  "EXPORT_AUDIT_TRAIL001"
+);
+
+/* CGWEB136_END */

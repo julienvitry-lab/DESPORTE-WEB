@@ -965,6 +965,27 @@ async function fetchStravaActivityDetail(uid, id) {
 
 async function importStravaActivityServer(uid, stravaId, webhookEvent) {
   const payload = await fetchStravaActivityDetail(uid, stravaId);
+
+  /*
+   * CGWEB136 · OUTBOUND_WEBHOOK_GUARD001
+   *
+   * Une activité créée volontairement par le pipeline CGWEB → Strava
+   * ne doit jamais revenir comme une nouvelle activité SPORT.
+   *
+   * Si le webhook concerne un external_id CGWEB136, le même document
+   * SPORT est réconcilié avec Strava.
+   */
+  const outboundManaged =
+    await cgweb136HandleOutboundWebhook(
+      uid,
+      payload?.activity,
+      webhookEvent
+    );
+
+  if (outboundManaged) {
+    return outboundManaged;
+  }
+
   const normalized = normalizeStravaDetailServer(payload);
   const activity = normalized.activity;
   const route = normalized.route;
@@ -1899,6 +1920,2443 @@ async function cgweb134AcquireOutboundLock(
 
 /* CGWEB134_SERVER_END */
 
+
+/* CGWEB136_SERVER_START
+   STRAVA_SINGLE_EXPORT001
+   EXACT_BINARY_UPLOAD001
+   UPLOAD_STATUS_POLL001
+   STRAVA_POSTCHECK001
+   STRAVA_WINS_RECONCILE001
+   EXPORT_AUDIT_TRAIL001
+*/
+
+const CGWEB136_VERSION =
+  "CGWEB136";
+
+const CGWEB136_FIT_BUCKET =
+  "sport-505813.firebasestorage.app";
+
+
+function cgweb136ExportRef(
+  uid,
+  activityKey
+) {
+  return firestore()
+    .doc(
+      `${ROOT}/${uid}/strava_outbound_exports/${activityKey}`
+    );
+}
+
+
+function cgweb136AuditCollection(
+  uid
+) {
+  return firestore()
+    .collection(
+      `${ROOT}/${uid}/strava_export_audit`
+    );
+}
+
+
+async function cgweb136Audit(
+  uid,
+  activityKey,
+  stage,
+  data = {}
+) {
+  const now =
+    Date.now();
+
+  await cgweb136AuditCollection(
+    uid
+  )
+    .doc()
+    .set({
+      version:
+        CGWEB136_VERSION,
+
+      activity_key:
+        String(
+          activityKey ||
+          ""
+        ),
+
+      stage:
+        String(
+          stage ||
+          ""
+        ),
+
+      created_at_ms:
+        now,
+
+      ...data
+    });
+
+  return now;
+}
+
+
+function cgweb136Finite(
+  value
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const n =
+    Number(value);
+
+  return Number.isFinite(n)
+    ? n
+    : null;
+}
+
+
+function cgweb136ExternalIdBase(
+  value
+) {
+  return String(
+    value ||
+    ""
+  )
+    .trim()
+    .replace(
+      /\.(?:fit|fit\.gz)$/i,
+      ""
+    );
+}
+
+
+function cgweb136Metric(
+  metric,
+  before,
+  stravaValue,
+  finalValue,
+  unit
+) {
+  const b =
+    cgweb136Finite(
+      before
+    );
+
+  const s =
+    cgweb136Finite(
+      stravaValue
+    );
+
+  const f =
+    cgweb136Finite(
+      finalValue
+    );
+
+  return {
+    metric,
+
+    before:
+      b,
+
+    strava:
+      s,
+
+    final:
+      f,
+
+    delta_strava_minus_before:
+      b != null &&
+      s != null
+        ? s - b
+        : null,
+
+    reconciled:
+      s != null &&
+      f != null
+        ? Math.abs(
+            s - f
+          ) < 0.000001
+        : false,
+
+    unit
+  };
+}
+
+
+async function cgweb136FindOutboundByDetail(
+  uid,
+  detail
+) {
+  const externalRaw =
+    String(
+      detail?.external_id ||
+      ""
+    ).trim();
+
+  const externalBase =
+    cgweb136ExternalIdBase(
+      externalRaw
+    );
+
+  if (externalBase) {
+    const snap =
+      await firestore()
+        .collection(
+          `${ROOT}/${uid}/strava_outbound_exports`
+        )
+        .where(
+          "external_id",
+          "==",
+          externalBase
+        )
+        .limit(2)
+        .get();
+
+    if (!snap.empty) {
+      const doc =
+        snap.docs[0];
+
+      return {
+        activityKey:
+          doc.id,
+
+        ref:
+          doc.ref,
+
+        lock:
+          doc.data() ||
+          {}
+      };
+    }
+  }
+
+  const stravaId =
+    String(
+      detail?.id ||
+      ""
+    ).trim();
+
+  if (stravaId) {
+    const snap =
+      await firestore()
+        .collection(
+          `${ROOT}/${uid}/strava_outbound_exports`
+        )
+        .where(
+          "strava_activity_id",
+          "==",
+          stravaId
+        )
+        .limit(2)
+        .get();
+
+    if (!snap.empty) {
+      const doc =
+        snap.docs[0];
+
+      return {
+        activityKey:
+          doc.id,
+
+        ref:
+          doc.ref,
+
+        lock:
+          doc.data() ||
+          {}
+      };
+    }
+  }
+
+  return null;
+}
+
+
+async function cgweb136ReconcileFromDetail(
+  uid,
+  activityKey,
+  lock,
+  detail,
+  source
+) {
+  const key =
+    String(
+      activityKey ||
+      ""
+    ).trim();
+
+  const stravaId =
+    String(
+      detail?.id ||
+      lock?.strava_activity_id ||
+      ""
+    ).trim();
+
+  if (
+    !key ||
+    !stravaId
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : activité SPORT ou Strava absente du postcheck."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  const activityRef =
+    firestore()
+      .doc(
+        `${ROOT}/${uid}/activities/${key}`
+      );
+
+  const lockRef =
+    cgweb136ExportRef(
+      uid,
+      key
+    );
+
+  const activitySnap =
+    await activityRef.get();
+
+  if (!activitySnap.exists) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : activité SPORT introuvable pendant la réconciliation."
+      ),
+      {
+        status:
+          404
+      }
+    );
+  }
+
+  const current =
+    activitySnap.data() ||
+    {};
+
+  const before =
+    lock?.activity_snapshot ||
+    {
+      distance_m:
+        current.distance_m,
+
+      timer_time_ms:
+        current.timer_time_ms,
+
+      elapsed_time_ms:
+        current.elapsed_time_ms,
+
+      ascent_m:
+        current.ascent_m,
+
+      calories:
+        current.calories
+    };
+
+  const strava = {
+    distance_m:
+      cgweb136Finite(
+        detail?.distance
+      ),
+
+    timer_time_ms:
+      cgweb136Finite(
+        detail?.moving_time
+      ) != null
+        ? cgweb136Finite(
+            detail.moving_time
+          ) * 1000
+        : null,
+
+    elapsed_time_ms:
+      cgweb136Finite(
+        detail?.elapsed_time
+      ) != null
+        ? cgweb136Finite(
+            detail.elapsed_time
+          ) * 1000
+        : null,
+
+    ascent_m:
+      cgweb136Finite(
+        detail
+          ?.total_elevation_gain
+      ),
+
+    calories:
+      cgweb136Finite(
+        detail?.calories
+      )
+  };
+
+  const missing = [];
+
+  for (
+    const [
+      metric,
+      value
+    ] of Object.entries(
+      strava
+    )
+  ) {
+    if (
+      value === null
+    ) {
+      missing.push(
+        metric
+      );
+    }
+  }
+
+  if (missing.length) {
+    const now =
+      Date.now();
+
+    await lockRef.set(
+      {
+        state:
+          "POSTCHECK_INCOMPLETE",
+
+        strava_activity_id:
+          stravaId,
+
+        postcheck_missing:
+          missing,
+
+        last_postcheck_at_ms:
+          now,
+
+        updated_at_ms:
+          now
+      },
+      {
+        merge:
+          true
+      }
+    );
+
+    await cgweb136Audit(
+      uid,
+      key,
+      "POSTCHECK_INCOMPLETE",
+      {
+        strava_activity_id:
+          stravaId,
+
+        missing,
+
+        source:
+          String(
+            source ||
+            "UNKNOWN"
+          )
+      }
+    );
+
+    return {
+      ok:
+        false,
+
+      status:
+        "POSTCHECK_INCOMPLETE",
+
+      activity_key:
+        key,
+
+      strava_activity_id:
+        stravaId,
+
+      missing
+    };
+  }
+
+  /*
+   * STRAVA_WINS_RECONCILE001
+   *
+   * Après création effective de l'activité Strava,
+   * ces cinq statistiques deviennent l'autorité.
+   *
+   * Les valeurs CGWEB pré-export sont conservées séparément.
+   */
+  const patch = {
+    pre_strava_export_distance_m:
+      before.distance_m ??
+      null,
+
+    pre_strava_export_timer_time_ms:
+      before.timer_time_ms ??
+      null,
+
+    pre_strava_export_elapsed_time_ms:
+      before.elapsed_time_ms ??
+      null,
+
+    pre_strava_export_ascent_m:
+      before.ascent_m ??
+      null,
+
+    pre_strava_export_calories:
+      before.calories ??
+      null,
+
+    distance_m:
+      strava.distance_m,
+
+    timer_time_ms:
+      strava.timer_time_ms,
+
+    elapsed_time_ms:
+      strava.elapsed_time_ms,
+
+    ascent_m:
+      strava.ascent_m,
+
+    calories:
+      strava.calories,
+
+    strava_activity_id:
+      stravaId,
+
+    strava_upload_id:
+      String(
+        lock
+          ?.strava_upload_id ||
+        ""
+      ) ||
+      null,
+
+    strava_export_external_id:
+      lock
+        ?.external_id ||
+      null,
+
+    strava_export_fit_sha256:
+      lock
+        ?.fit_preview
+        ?.sha256 ||
+      null,
+
+    strava_export_version:
+      CGWEB136_VERSION,
+
+    strava_reconciled_at_ms:
+      Date.now()
+  };
+
+  const comparisons = [
+    cgweb136Metric(
+      "distance_m",
+      before.distance_m,
+      strava.distance_m,
+      patch.distance_m,
+      "m"
+    ),
+
+    cgweb136Metric(
+      "timer_time_ms",
+      before.timer_time_ms,
+      strava.timer_time_ms,
+      patch.timer_time_ms,
+      "ms"
+    ),
+
+    cgweb136Metric(
+      "elapsed_time_ms",
+      before.elapsed_time_ms,
+      strava.elapsed_time_ms,
+      patch.elapsed_time_ms,
+      "ms"
+    ),
+
+    cgweb136Metric(
+      "ascent_m",
+      before.ascent_m,
+      strava.ascent_m,
+      patch.ascent_m,
+      "m"
+    ),
+
+    cgweb136Metric(
+      "calories",
+      before.calories,
+      strava.calories,
+      patch.calories,
+      "kcal"
+    )
+  ];
+
+  const changedMetrics =
+    comparisons
+      .filter(
+        row =>
+          row
+            .delta_strava_minus_before !=
+          null &&
+          Math.abs(
+            row
+              .delta_strava_minus_before
+          ) >
+          0.000001
+      )
+      .map(
+        row =>
+          row.metric
+      );
+
+  const now =
+    Date.now();
+
+  const eventId =
+    [
+      "cgweb136",
+      "reconcile",
+      key,
+      now
+    ].join("_");
+
+  const root =
+    firestore()
+      .doc(
+        `${ROOT}/${uid}`
+      );
+
+  const finalResult = {
+    ok:
+      true,
+
+    status:
+      "RECONCILED",
+
+    version:
+      CGWEB136_VERSION,
+
+    activity_key:
+      key,
+
+    strava_activity_id:
+      stravaId,
+
+    strava_upload_id:
+      String(
+        lock
+          ?.strava_upload_id ||
+        ""
+      ) ||
+      null,
+
+    external_id:
+      lock
+        ?.external_id ||
+      null,
+
+    reconciled_at_ms:
+      now,
+
+    reconciliation_source:
+      String(
+        source ||
+        "POSTCHECK"
+      ),
+
+    pre_export:
+      {
+        distance_m:
+          before.distance_m ??
+          null,
+
+        timer_time_ms:
+          before.timer_time_ms ??
+          null,
+
+        elapsed_time_ms:
+          before.elapsed_time_ms ??
+          null,
+
+        ascent_m:
+          before.ascent_m ??
+          null,
+
+        calories:
+          before.calories ??
+          null
+      },
+
+    strava_final:
+      strava,
+
+    cgweb_patch:
+      patch,
+
+    comparisons,
+
+    changed_metrics:
+      changedMetrics
+  };
+
+  const batch =
+    firestore()
+      .batch();
+
+  batch.set(
+    activityRef,
+    {
+      ...patch,
+
+      __sportKey:
+        key,
+
+      __updatedAtMs:
+        now
+    },
+    {
+      merge:
+        true
+    }
+  );
+
+  batch.set(
+    root
+      .collection(
+        "changes"
+      )
+      .doc(
+        eventId
+      ),
+    {
+      eventId,
+
+      deviceId:
+        "CGWEB136_STRAVA_EXPORT",
+
+      firebaseSeq:
+        now,
+
+      sourceChangeSeq:
+        0,
+
+      table:
+        "activities",
+
+      rowKey:
+        key,
+
+      operation:
+        "UPSERT",
+
+      changedAtMs:
+        now,
+
+      publishedAt:
+        admin.firestore
+          .FieldValue
+          .serverTimestamp(),
+
+      androidVersion:
+        0,
+
+      webVersion:
+        CGWEB136_VERSION,
+
+      row:
+        patch
+    },
+    {
+      merge:
+        true
+    }
+  );
+
+  batch.set(
+    root
+      .collection(
+        "meta"
+      )
+      .doc(
+        "state"
+      ),
+    {
+      updatedAtMs:
+        now,
+
+      sourceDeviceId:
+        "CGWEB136_STRAVA_EXPORT",
+
+      webVersion:
+        CGWEB136_VERSION
+    },
+    {
+      merge:
+        true
+    }
+  );
+
+  batch.set(
+    lockRef,
+    {
+      state:
+        "RECONCILED",
+
+      strava_activity_id:
+        stravaId,
+
+      reconciled_at_ms:
+        now,
+
+      updated_at_ms:
+        now,
+
+      final_result:
+        finalResult
+    },
+    {
+      merge:
+        true
+    }
+  );
+
+  await batch.commit();
+
+  await cgweb136Audit(
+    uid,
+    key,
+    "RECONCILED",
+    {
+      strava_activity_id:
+        stravaId,
+
+      strava_upload_id:
+        finalResult
+          .strava_upload_id,
+
+      external_id:
+        finalResult
+          .external_id,
+
+      fit_sha256:
+        lock
+          ?.fit_preview
+          ?.sha256 ||
+        null,
+
+      changed_metrics:
+        changedMetrics,
+
+      comparisons,
+
+      source:
+        finalResult
+          .reconciliation_source
+    }
+  );
+
+  return finalResult;
+}
+
+
+async function cgweb136HandleOutboundWebhook(
+  uid,
+  detail,
+  webhookEvent
+) {
+  if (!detail) {
+    return null;
+  }
+
+  const managed =
+    await cgweb136FindOutboundByDetail(
+      uid,
+      detail
+    );
+
+  if (!managed) {
+    return null;
+  }
+
+  const stravaId =
+    String(
+      detail?.id ||
+      ""
+    );
+
+  const now =
+    Date.now();
+
+  await managed.ref.set(
+    {
+      strava_activity_id:
+        stravaId ||
+        managed
+          .lock
+          ?.strava_activity_id ||
+        null,
+
+      webhook_seen_at_ms:
+        now,
+
+      webhook_aspect:
+        String(
+          webhookEvent
+            ?.aspect_type ||
+          ""
+        ),
+
+      updated_at_ms:
+        now
+    },
+    {
+      merge:
+        true
+    }
+  );
+
+  const refreshed =
+    await managed.ref.get();
+
+  const lock =
+    refreshed.exists
+      ? refreshed.data() ||
+        managed.lock
+      : managed.lock;
+
+  try {
+    const result =
+      await cgweb136ReconcileFromDetail(
+        uid,
+        managed.activityKey,
+        lock,
+        detail,
+        "WEBHOOK_" +
+          String(
+            webhookEvent
+              ?.aspect_type ||
+            "UNKNOWN"
+          )
+            .toUpperCase()
+      );
+
+    return {
+      status:
+        "outbound_export_managed",
+
+      activity_id:
+        managed.activityKey,
+
+      strava_activity_id:
+        stravaId,
+
+      reconciliation_status:
+        result?.status ||
+        null
+    };
+  } catch (error) {
+    console.warn(
+      "CGWEB136 outbound webhook reconciliation",
+      managed.activityKey,
+      error?.message ||
+      error
+    );
+
+    return {
+      status:
+        "outbound_export_managed_pending",
+
+      activity_id:
+        managed.activityKey,
+
+      strava_activity_id:
+        stravaId,
+
+      error:
+        error?.message ||
+        String(error)
+    };
+  }
+}
+
+
+async function cgweb136ReadExactCandidate(
+  uid,
+  activityKey,
+  lock,
+  requestedSha
+) {
+  const preview =
+    lock
+      ?.fit_preview ||
+    {};
+
+  if (
+    lock
+      ?.fit_preview_ready !==
+      true ||
+    preview.parity_ok !==
+      true
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : FIT CGWEB135 non validé."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  const expectedSha =
+    String(
+      preview.sha256 ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const clientSha =
+    String(
+      requestedSha ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (
+    !/^[a-f0-9]{64}$/
+      .test(
+        expectedSha
+      )
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : SHA-256 du candidat invalide."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  if (
+    clientSha &&
+    clientSha !==
+      expectedSha
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : le FIT présenté au navigateur n'est plus le candidat serveur."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  const objectPath =
+    String(
+      preview.object_path ||
+      ""
+    ).trim();
+
+  const requiredPrefix =
+    `strava_exports/${uid}/previews/${activityKey}/`;
+
+  if (
+    !objectPath.startsWith(
+      requiredPrefix
+    )
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : chemin Storage du candidat refusé."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  const object =
+    admin
+      .storage()
+      .bucket(
+        CGWEB136_FIT_BUCKET
+      )
+      .file(
+        objectPath
+      );
+
+  const [exists] =
+    await object.exists();
+
+  if (!exists) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : binaire FIT candidat absent du Storage."
+      ),
+      {
+        status:
+          404
+      }
+    );
+  }
+
+  const [buffer] =
+    await object.download();
+
+  const actualSha =
+    crypto
+      .createHash(
+        "sha256"
+      )
+      .update(
+        buffer
+      )
+      .digest(
+        "hex"
+      );
+
+  if (
+    actualSha !==
+      expectedSha
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : SHA-256 du binaire différent du candidat validé."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  return {
+    buffer,
+
+    sha256:
+      actualSha,
+
+    objectPath,
+
+    fileName:
+      String(
+        preview.file_name ||
+        `${activityKey}.fit`
+      )
+        .replace(
+          /[\\/]+/g,
+          "_"
+        )
+        .slice(
+          0,
+          180
+        )
+  };
+}
+
+
+async function cgweb136UploadToStrava(
+  token,
+  candidate,
+  lock,
+  activity
+) {
+  const form =
+    new FormData();
+
+  form.append(
+    "data_type",
+    "fit"
+  );
+
+  form.append(
+    "external_id",
+    String(
+      lock.external_id
+    )
+  );
+
+  const title =
+    String(
+      activity
+        ?.custom_title ||
+      activity
+        ?.title ||
+      lock
+        ?.activity_snapshot
+        ?.title ||
+      ""
+    ).trim();
+
+  if (title) {
+    form.append(
+      "name",
+      title.slice(
+        0,
+        180
+      )
+    );
+  }
+
+  form.append(
+    "file",
+    new Blob(
+      [
+        candidate.buffer
+      ],
+      {
+        type:
+          "application/vnd.ant.fit"
+      }
+    ),
+    candidate.fileName
+  );
+
+  /*
+   * IMPORTANT : aucun retry POST automatique.
+   *
+   * Après une coupure réseau, nous ne pouvons pas savoir avec certitude
+   * si Strava a reçu le fichier. Rejouer le POST créerait un risque de
+   * doublon. L'état deviendra UPLOAD_UNKNOWN.
+   */
+  const response =
+    await fetch(
+      `${STRAVA_API_BASE}/uploads`,
+      {
+        method:
+          "POST",
+
+        headers:
+          {
+            Authorization:
+              `Bearer ${token}`
+          },
+
+        body:
+          form
+      }
+    );
+
+  const text =
+    await response.text();
+
+  let payload = {};
+
+  try {
+    payload =
+      text
+        ? JSON.parse(text)
+        : {};
+  } catch {
+    payload = {
+      raw:
+        text
+    };
+  }
+
+  return {
+    response,
+    payload
+  };
+}
+
+
+async function cgweb136UploadSingle(
+  uid,
+  body
+) {
+  const activityKey =
+    String(
+      body
+        ?.activity_key ||
+      ""
+    ).trim();
+
+  const lockToken =
+    String(
+      body
+        ?.lock_token ||
+      ""
+    ).trim();
+
+  const requestedSha =
+    String(
+      body
+        ?.fit_sha256 ||
+      ""
+    ).trim();
+
+  if (
+    !/^[A-Za-z0-9_.:-]{1,180}$/
+      .test(
+        activityKey
+      )
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : activity_key invalide."
+      ),
+      {
+        status:
+          400
+      }
+    );
+  }
+
+  if (!lockToken) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : verrou absent."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  const integration =
+    await tokenDocument(
+      uid
+    );
+
+  if (
+    !integration
+      ?.refresh_token ||
+    !cgweb134ScopeHas(
+      integration?.scope,
+      "activity:write"
+    )
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : autorisation Strava activity:write absente."
+      ),
+      {
+        status:
+          403
+      }
+    );
+  }
+
+  const token =
+    await refreshTokenIfNeeded(
+      uid,
+      integration
+    );
+
+  const lockRef =
+    cgweb136ExportRef(
+      uid,
+      activityKey
+    );
+
+  const lockSnap =
+    await lockRef.get();
+
+  if (!lockSnap.exists) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : verrou CGWEB134 absent."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  let lock =
+    lockSnap.data() ||
+    {};
+
+  if (
+    String(
+      lock.lock_token ||
+      ""
+    ) !==
+    lockToken
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : token de verrou invalide."
+      ),
+      {
+        status:
+          403
+      }
+    );
+  }
+
+  const currentState =
+    String(
+      lock.state ||
+      ""
+    );
+
+  if (
+    currentState ===
+      "RECONCILED"
+  ) {
+    return (
+      lock.final_result ||
+      {
+        ok:
+          true,
+
+        status:
+          "RECONCILED",
+
+        activity_key:
+          activityKey
+      }
+    );
+  }
+
+  if (
+    currentState ===
+      "UPLOADED_PROCESSING" ||
+    currentState ===
+      "POSTCHECK_INCOMPLETE"
+  ) {
+    return {
+      ok:
+        true,
+
+      status:
+        "UPLOAD_IN_PROGRESS",
+
+      activity_key:
+        activityKey,
+
+      strava_upload_id:
+        lock
+          .strava_upload_id ||
+        null,
+
+      strava_activity_id:
+        lock
+          .strava_activity_id ||
+        null
+    };
+  }
+
+  if (
+    currentState ===
+      "UPLOAD_REQUESTING" ||
+    currentState ===
+      "UPLOAD_UNKNOWN"
+  ) {
+    return {
+      ok:
+        false,
+
+      status:
+        "UPLOAD_UNKNOWN",
+
+      activity_key:
+        activityKey,
+
+      message:
+        "Le précédent POST Strava a un état incertain. Aucun nouvel envoi automatique n'est autorisé."
+    };
+  }
+
+  if (
+    currentState !==
+      "PREPARED"
+  ) {
+    throw Object.assign(
+      new Error(
+        `CGWEB136 : état d'export incompatible (${currentState || "vide"}).`
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  if (
+    Number(
+      lock.expires_at_ms ||
+      0
+    ) <= Date.now()
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : verrou expiré. Relancer Strava et préparer à nouveau le FIT."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  const activityRef =
+    firestore()
+      .doc(
+        `${ROOT}/${uid}/activities/${activityKey}`
+      );
+
+  const activitySnap =
+    await activityRef.get();
+
+  if (!activitySnap.exists) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : activité SPORT absente."
+      ),
+      {
+        status:
+          404
+      }
+    );
+  }
+
+  const activity =
+    activitySnap.data() ||
+    {};
+
+  if (
+    String(
+      activity
+        ?.strava_activity_id ||
+      ""
+    ).trim()
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : cette activité est déjà liée à Strava."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  const parts =
+    cgweb134ParisParts(
+      activity
+        ?.start_time_ms
+    );
+
+  if (
+    !parts ||
+    parts.year >= 2026
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : export historique réservé aux activités antérieures à 2026."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  const currentSnapshot =
+    cgweb134ActivitySnapshot(
+      activity
+    );
+
+  const currentHash =
+    cgweb134SnapshotHash(
+      currentSnapshot
+    );
+
+  if (
+    String(
+      lock
+        .activity_snapshot_hash ||
+      ""
+    ) !==
+    currentHash
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : les statistiques CGWEB ont changé depuis le préflight."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  const candidate =
+    await cgweb136ReadExactCandidate(
+      uid,
+      activityKey,
+      lock,
+      requestedSha
+    );
+
+  /*
+   * Dernier contrôle anti-doublon juste avant le vrai POST.
+   */
+  const duplicateGuard =
+    await cgweb134DuplicateGuard(
+      uid,
+      activity
+    );
+
+  if (
+    duplicateGuard
+      .candidate_count > 0
+  ) {
+    await cgweb136Audit(
+      uid,
+      activityKey,
+      "DUPLICATE_BLOCKED_BEFORE_UPLOAD",
+      {
+        candidates:
+          duplicateGuard
+            .candidates ||
+          []
+      }
+    );
+
+    return {
+      ok:
+        false,
+
+      status:
+        "DUPLICATE_BLOCKED_BEFORE_UPLOAD",
+
+      duplicate_guard:
+        duplicateGuard
+    };
+  }
+
+  const attemptId =
+    crypto
+      .randomBytes(
+        16
+      )
+      .toString(
+        "hex"
+      );
+
+  /*
+   * Réservation transactionnelle AVANT le POST.
+   * Deux clics simultanés ne peuvent pas créer deux uploads.
+   */
+  await firestore()
+    .runTransaction(
+      async transaction => {
+        const freshSnap =
+          await transaction.get(
+            lockRef
+          );
+
+        if (!freshSnap.exists) {
+          throw Object.assign(
+            new Error(
+              "CGWEB136 : verrou disparu."
+            ),
+            {
+              status:
+                409
+            }
+          );
+        }
+
+        const fresh =
+          freshSnap.data() ||
+          {};
+
+        if (
+          String(
+            fresh.lock_token ||
+            ""
+          ) !==
+          lockToken
+        ) {
+          throw Object.assign(
+            new Error(
+              "CGWEB136 : verrou remplacé."
+            ),
+            {
+              status:
+                409
+            }
+          );
+        }
+
+        if (
+          String(
+            fresh.state ||
+            ""
+          ) !==
+          "PREPARED"
+        ) {
+          throw Object.assign(
+            new Error(
+              "CGWEB136 : un export est déjà engagé."
+            ),
+            {
+              status:
+                409
+            }
+          );
+        }
+
+        transaction.set(
+          lockRef,
+          {
+            state:
+              "UPLOAD_REQUESTING",
+
+            upload_attempt_id:
+              attemptId,
+
+            exact_binary_sha256:
+              candidate.sha256,
+
+            exact_binary_verified_at_ms:
+              Date.now(),
+
+            updated_at_ms:
+              Date.now()
+          },
+          {
+            merge:
+              true
+          }
+        );
+      }
+    );
+
+  await cgweb136Audit(
+    uid,
+    activityKey,
+    "EXACT_BINARY_VERIFIED",
+    {
+      fit_sha256:
+        candidate.sha256,
+
+      fit_object_path:
+        candidate.objectPath,
+
+      file_name:
+        candidate.fileName,
+
+      bytes:
+        candidate.buffer.length,
+
+      external_id:
+        lock.external_id,
+
+      upload_attempt_id:
+        attemptId
+    }
+  );
+
+  let uploadResponse;
+
+  try {
+    uploadResponse =
+      await cgweb136UploadToStrava(
+        token.access_token,
+        candidate,
+        lock,
+        activity
+      );
+  } catch (error) {
+    const now =
+      Date.now();
+
+    await lockRef.set(
+      {
+        state:
+          "UPLOAD_UNKNOWN",
+
+        last_error:
+          error?.message ||
+          String(error),
+
+        updated_at_ms:
+          now
+      },
+      {
+        merge:
+          true
+      }
+    );
+
+    await cgweb136Audit(
+      uid,
+      activityKey,
+      "UPLOAD_UNKNOWN",
+      {
+        error:
+          error?.message ||
+          String(error),
+
+        fit_sha256:
+          candidate.sha256,
+
+        upload_attempt_id:
+          attemptId
+      }
+    );
+
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : réponse réseau Strava incertaine. Aucun retry automatique ne sera effectué."
+      ),
+      {
+        status:
+          502
+      }
+    );
+  }
+
+  const response =
+    uploadResponse.response;
+
+  const payload =
+    uploadResponse.payload ||
+    {};
+
+  if (!response.ok) {
+    const ambiguous =
+      response.status >=
+      500;
+
+    const nextState =
+      ambiguous
+        ? "UPLOAD_UNKNOWN"
+        : "PREPARED";
+
+    const message =
+      String(
+        payload?.message ||
+        payload?.error ||
+        payload?.raw ||
+        `Strava upload HTTP ${response.status}`
+      );
+
+    await lockRef.set(
+      {
+        state:
+          nextState,
+
+        last_error:
+          message.slice(
+            0,
+            1000
+          ),
+
+        last_http_status:
+          response.status,
+
+        updated_at_ms:
+          Date.now()
+      },
+      {
+        merge:
+          true
+      }
+    );
+
+    await cgweb136Audit(
+      uid,
+      activityKey,
+      ambiguous
+        ? "UPLOAD_UNKNOWN"
+        : "UPLOAD_REJECTED",
+      {
+        http_status:
+          response.status,
+
+        error:
+          message.slice(
+            0,
+            1000
+          ),
+
+        upload_attempt_id:
+          attemptId
+      }
+    );
+
+    throw Object.assign(
+      new Error(
+        message
+      ),
+      {
+        status:
+          response.status >=
+          500
+            ? 502
+            : 409
+      }
+    );
+  }
+
+  const uploadId =
+    String(
+      payload?.id_str ||
+      payload?.id ||
+      ""
+    ).trim();
+
+  if (!uploadId) {
+    await lockRef.set(
+      {
+        state:
+          "UPLOAD_UNKNOWN",
+
+        last_error:
+          "Strava a accepté le POST sans fournir d'identifiant d'upload.",
+
+        updated_at_ms:
+          Date.now()
+      },
+      {
+        merge:
+          true
+      }
+    );
+
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : Strava n'a pas fourni d'identifiant d'upload."
+      ),
+      {
+        status:
+          502
+      }
+    );
+  }
+
+  const responseActivityId =
+    payload?.activity_id !=
+      null
+      ? String(
+          payload.activity_id
+        )
+      : null;
+
+  /*
+   * Le webhook peut exceptionnellement avoir réconcilié l'activité
+   * pendant que le POST attendait sa réponse.
+   * Ne jamais rétrograder RECONCILED vers UPLOADED_PROCESSING.
+   */
+  await firestore()
+    .runTransaction(
+      async transaction => {
+        const freshSnap =
+          await transaction.get(
+            lockRef
+          );
+
+        const fresh =
+          freshSnap.exists
+            ? freshSnap.data() ||
+              {}
+            : {};
+
+        const patch = {
+          strava_upload_id:
+            uploadId,
+
+          strava_upload_response:
+            payload,
+
+          strava_activity_id:
+            responseActivityId ||
+            fresh
+              .strava_activity_id ||
+            null,
+
+          upload_accepted_at_ms:
+            Date.now(),
+
+          updated_at_ms:
+            Date.now()
+        };
+
+        if (
+          String(
+            fresh.state ||
+            ""
+          ) !==
+          "RECONCILED"
+        ) {
+          patch.state =
+            "UPLOADED_PROCESSING";
+        }
+
+        transaction.set(
+          lockRef,
+          patch,
+          {
+            merge:
+              true
+          }
+        );
+      }
+    );
+
+  await cgweb136Audit(
+    uid,
+    activityKey,
+    "STRAVA_UPLOAD_ACCEPTED",
+    {
+      strava_upload_id:
+        uploadId,
+
+      strava_activity_id:
+        responseActivityId,
+
+      external_id:
+        lock.external_id,
+
+      fit_sha256:
+        candidate.sha256,
+
+      strava_status:
+        payload?.status ||
+        null
+    }
+  );
+
+  const finalSnap =
+    await lockRef.get();
+
+  const finalLock =
+    finalSnap.exists
+      ? finalSnap.data() ||
+        {}
+      : {};
+
+  if (
+    String(
+      finalLock.state ||
+      ""
+    ) ===
+      "RECONCILED" &&
+    finalLock.final_result
+  ) {
+    return finalLock.final_result;
+  }
+
+  return {
+    ok:
+      true,
+
+    status:
+      "UPLOAD_ACCEPTED",
+
+    activity_key:
+      activityKey,
+
+    strava_upload_id:
+      uploadId,
+
+    strava_activity_id:
+      responseActivityId,
+
+    external_id:
+      lock.external_id,
+
+    fit_sha256:
+      candidate.sha256,
+
+    strava_status:
+      payload?.status ||
+      null
+  };
+}
+
+
+async function cgweb136PollSingle(
+  uid,
+  body
+) {
+  const activityKey =
+    String(
+      body
+        ?.activity_key ||
+      ""
+    ).trim();
+
+  const lockToken =
+    String(
+      body
+        ?.lock_token ||
+      ""
+    ).trim();
+
+  if (
+    !activityKey ||
+    !lockToken
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : activité/verrou absent pour le polling."
+      ),
+      {
+        status:
+          400
+      }
+    );
+  }
+
+  const lockRef =
+    cgweb136ExportRef(
+      uid,
+      activityKey
+    );
+
+  const lockSnap =
+    await lockRef.get();
+
+  if (!lockSnap.exists) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : verrou d'export absent."
+      ),
+      {
+        status:
+          404
+      }
+    );
+  }
+
+  let lock =
+    lockSnap.data() ||
+    {};
+
+  if (
+    String(
+      lock.lock_token ||
+      ""
+    ) !==
+    lockToken
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 : token de verrou invalide."
+      ),
+      {
+        status:
+          403
+      }
+    );
+  }
+
+  if (
+    String(
+      lock.state ||
+      ""
+    ) ===
+      "RECONCILED"
+  ) {
+    return (
+      lock.final_result ||
+      {
+        ok:
+          true,
+
+        status:
+          "RECONCILED",
+
+        activity_key:
+          activityKey
+      }
+    );
+  }
+
+  if (
+    String(
+      lock.state ||
+      ""
+    ) ===
+      "STRAVA_ERROR"
+  ) {
+    return {
+      ok:
+        false,
+
+      status:
+        "STRAVA_ERROR",
+
+      activity_key:
+        activityKey,
+
+      error:
+        lock.last_error ||
+        "Erreur Strava."
+    };
+  }
+
+  if (
+    [
+      "UPLOAD_REQUESTING",
+      "UPLOAD_UNKNOWN"
+    ].includes(
+      String(
+        lock.state ||
+        ""
+      )
+    ) &&
+    !lock.strava_upload_id
+  ) {
+    return {
+      ok:
+        false,
+
+      status:
+        "UPLOAD_UNKNOWN",
+
+      activity_key:
+        activityKey,
+
+      error:
+        lock.last_error ||
+        "État du POST Strava incertain."
+    };
+  }
+
+  /*
+   * POSTCHECK_INCOMPLETE :
+   * l'activité existe déjà, on retente seulement la lecture détaillée.
+   */
+  if (
+    String(
+      lock.state ||
+      ""
+    ) ===
+      "POSTCHECK_INCOMPLETE" &&
+    lock.strava_activity_id
+  ) {
+    const detail =
+      await stravaGet(
+        uid,
+        `/activities/${encodeURIComponent(
+          String(
+            lock.strava_activity_id
+          )
+        )}?include_all_efforts=false`
+      );
+
+    return cgweb136ReconcileFromDetail(
+      uid,
+      activityKey,
+      lock,
+      detail,
+      "POLL_POSTCHECK"
+    );
+  }
+
+  const uploadId =
+    String(
+      lock.strava_upload_id ||
+      ""
+    ).trim();
+
+  if (!uploadId) {
+    return {
+      ok:
+        false,
+
+      status:
+        "NOT_UPLOADED",
+
+      activity_key:
+        activityKey
+    };
+  }
+
+  const upload =
+    await stravaGet(
+      uid,
+      `/uploads/${encodeURIComponent(
+        uploadId
+      )}`
+    );
+
+  const now =
+    Date.now();
+
+  const uploadError =
+    String(
+      upload?.error ||
+      ""
+    ).trim();
+
+  const uploadStatus =
+    String(
+      upload?.status ||
+      ""
+    ).trim();
+
+  const activityId =
+    upload?.activity_id !=
+      null
+      ? String(
+          upload.activity_id
+        )
+      : String(
+          lock
+            .strava_activity_id ||
+          ""
+        ).trim();
+
+  if (uploadError) {
+    await lockRef.set(
+      {
+        state:
+          "STRAVA_ERROR",
+
+        last_error:
+          uploadError.slice(
+            0,
+            1000
+          ),
+
+        last_strava_status:
+          uploadStatus,
+
+        last_poll_at_ms:
+          now,
+
+        updated_at_ms:
+          now
+      },
+      {
+        merge:
+          true
+      }
+    );
+
+    await cgweb136Audit(
+      uid,
+      activityKey,
+      "STRAVA_PROCESSING_ERROR",
+      {
+        strava_upload_id:
+          uploadId,
+
+        error:
+          uploadError.slice(
+            0,
+            1000
+          ),
+
+        status:
+          uploadStatus
+      }
+    );
+
+    return {
+      ok:
+        false,
+
+      status:
+        "STRAVA_ERROR",
+
+      activity_key:
+        activityKey,
+
+      strava_upload_id:
+        uploadId,
+
+      error:
+        uploadError,
+
+      strava_status:
+        uploadStatus
+    };
+  }
+
+  await lockRef.set(
+    {
+      strava_activity_id:
+        activityId ||
+        lock
+          .strava_activity_id ||
+        null,
+
+      last_strava_status:
+        uploadStatus,
+
+      last_poll_at_ms:
+        now,
+
+      updated_at_ms:
+        now
+    },
+    {
+      merge:
+        true
+    }
+  );
+
+  if (!activityId) {
+    return {
+      ok:
+        true,
+
+      status:
+        "PROCESSING",
+
+      activity_key:
+        activityKey,
+
+      strava_upload_id:
+        uploadId,
+
+      strava_status:
+        uploadStatus
+    };
+  }
+
+  const refreshedSnap =
+    await lockRef.get();
+
+  lock =
+    refreshedSnap.exists
+      ? refreshedSnap.data() ||
+        lock
+      : lock;
+
+  const detail =
+    await stravaGet(
+      uid,
+      `/activities/${encodeURIComponent(
+        activityId
+      )}?include_all_efforts=false`
+    );
+
+  return cgweb136ReconcileFromDetail(
+    uid,
+    activityKey,
+    lock,
+    detail,
+    "UPLOAD_STATUS_POLL"
+  );
+}
+
+
+/* CGWEB136_SERVER_END */
+
+
 exports.stravaBridge = onRequest(
   {region:REGION, secrets:[STRAVA_CLIENT_SECRET], timeoutSeconds:120, cors:false},
   async (req, res) => {
@@ -2192,6 +4650,90 @@ exports.stravaBridge = onRequest(
           });
         }
 
+        /*
+         * CGWEB136 · RESUMABLE_EXPORT_GUARD001
+         *
+         * Une fois le POST Strava engagé, le verrou ne doit JAMAIS être
+         * remplacé par un nouveau préflight, même après rechargement
+         * du navigateur.
+         */
+        const existingOutboundSnap =
+          await cgweb134OutboundRef(
+            uid,
+            activityKey
+          ).get();
+
+        if (existingOutboundSnap.exists) {
+          const existingOutbound =
+            existingOutboundSnap.data() ||
+            {};
+
+          const existingState =
+            String(
+              existingOutbound.state ||
+              ""
+            );
+
+          if (
+            [
+              "UPLOAD_REQUESTING",
+              "UPLOADED_PROCESSING",
+              "POSTCHECK_INCOMPLETE",
+              "UPLOAD_UNKNOWN",
+              "STRAVA_ERROR"
+            ].includes(
+              existingState
+            )
+          ) {
+            return res.json({
+              ok:
+                existingState ===
+                  "UPLOADED_PROCESSING" ||
+                existingState ===
+                  "POSTCHECK_INCOMPLETE",
+
+              status:
+                existingState ===
+                  "UPLOADED_PROCESSING"
+                  ? "UPLOAD_IN_PROGRESS"
+                  : existingState,
+
+              activity_key:
+                activityKey,
+
+              lock_token:
+                existingOutbound
+                  .lock_token ||
+                null,
+
+              external_id:
+                existingOutbound
+                  .external_id ||
+                null,
+
+              strava_upload_id:
+                existingOutbound
+                  .strava_upload_id ||
+                null,
+
+              strava_activity_id:
+                existingOutbound
+                  .strava_activity_id ||
+                null,
+
+              fit_preview:
+                existingOutbound
+                  .fit_preview ||
+                null,
+
+              error:
+                existingOutbound
+                  .last_error ||
+                null
+            });
+          }
+        }
+
         const duplicateGuard =
           await cgweb134DuplicateGuard(
             uid,
@@ -2269,6 +4811,61 @@ exports.stravaBridge = onRequest(
             false
         });
       }
+
+
+
+      /* CGWEB136_ACTIONS_START */
+
+      if (
+        action ===
+          "export_upload" &&
+        req.method ===
+          "POST"
+      ) {
+        const body =
+          req.body &&
+          typeof req.body ===
+            "object" &&
+          !Buffer.isBuffer(
+            req.body
+          )
+            ? req.body
+            : {};
+
+        return res.json(
+          await cgweb136UploadSingle(
+            uid,
+            body
+          )
+        );
+      }
+
+
+      if (
+        action ===
+          "export_status" &&
+        req.method ===
+          "POST"
+      ) {
+        const body =
+          req.body &&
+          typeof req.body ===
+            "object" &&
+          !Buffer.isBuffer(
+            req.body
+          )
+            ? req.body
+            : {};
+
+        return res.json(
+          await cgweb136PollSingle(
+            uid,
+            body
+          )
+        );
+      }
+
+      /* CGWEB136_ACTIONS_END */
 
 
       if (action === "activities") {
