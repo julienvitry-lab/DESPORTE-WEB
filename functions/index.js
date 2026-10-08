@@ -2445,9 +2445,46 @@ async function cgweb136ReconcileFromDetail(
     strava_export_version:
       CGWEB136_VERSION,
 
+    /* CGWEB136 FIX1 · POST_EXPORT_STATE001 */
+    strava_export_state:
+      "RECONCILED",
+
     strava_reconciled_at_ms:
       Date.now()
   };
+
+  /*
+   * CGWEB136 FIX1 · LOAD_IMMUTABILITY_AUDIT001
+   *
+   * La Charge n'est PAS une statistique réconciliée avec Strava.
+   * Si aucune charge native n'est stockée, SPORT l'affiche à partir de :
+   *
+   * (minutes + 2 × km + D+/100) × facteur FC
+   *
+   * Une modification Strava de distance/temps/D+ peut donc légitimement
+   * modifier la charge DÉRIVÉE sans toucher à un champ de charge persistant.
+   */
+  const cgweb136Fix1LoadAudit =
+    cgweb136Fix1BuildLoadAudit(
+      current,
+      before,
+      {
+        ...current,
+        ...patch
+      }
+    );
+
+  patch.pre_strava_export_charge_score =
+    cgweb136Fix1LoadAudit
+      .before_score;
+
+  patch.post_strava_export_charge_score =
+    cgweb136Fix1LoadAudit
+      .after_score;
+
+  patch.strava_load_fields_immutable =
+    cgweb136Fix1LoadAudit
+      .persisted_load_fields_unchanged;
 
   const comparisons = [
     cgweb136Metric(
@@ -2596,7 +2633,10 @@ async function cgweb136ReconcileFromDetail(
     comparisons,
 
     changed_metrics:
-      changedMetrics
+      changedMetrics,
+
+    load_immutability_audit:
+      cgweb136Fix1LoadAudit
   };
 
   const batch =
@@ -4354,6 +4394,901 @@ async function cgweb136PollSingle(
 }
 
 
+
+/* CGWEB136_FIX1_SERVER_START
+   POST_EXPORT_STATE001
+   CALORIES_RECONCILE_AUDIT001
+   LOAD_IMMUTABILITY_AUDIT001
+   SYNCHRONIZED_BUTTON001
+*/
+
+const CGWEB136_FIX1_VERSION =
+  "CGWEB136_FIX1";
+
+
+const CGWEB136_FIX1_LOAD_FIELDS = [
+  "training_load",
+  "trainingLoad",
+  "load",
+  "activity_load",
+  "activityLoad",
+  "trimp",
+  "charge_score",
+  "chargeScore",
+  "sport_load",
+  "sportLoad"
+];
+
+
+function cgweb136Fix1Finite(
+  value
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const n =
+    Number(value);
+
+  return Number.isFinite(n)
+    ? n
+    : null;
+}
+
+
+function cgweb136Fix1LoadFields(
+  activity
+) {
+  const result = {};
+
+  for (
+    const field of
+    CGWEB136_FIX1_LOAD_FIELDS
+  ) {
+    const raw =
+      activity?.[field];
+
+    if (
+      raw === null ||
+      raw === undefined ||
+      raw === ""
+    ) {
+      continue;
+    }
+
+    const numeric =
+      Number(raw);
+
+    result[field] =
+      Number.isFinite(numeric)
+        ? numeric
+        : String(raw);
+  }
+
+  return result;
+}
+
+
+function cgweb136Fix1StoredLoad(
+  activity
+) {
+  for (
+    const field of
+    CGWEB136_FIX1_LOAD_FIELDS
+  ) {
+    const value =
+      cgweb136Fix1Finite(
+        activity?.[field]
+      );
+
+    if (
+      value !== null &&
+      value >= 0
+    ) {
+      return {
+        field,
+        value
+      };
+    }
+  }
+
+  return null;
+}
+
+
+function cgweb136Fix1MovingTimeMs(
+  activity
+) {
+  const candidates = [
+    cgweb136Fix1Finite(
+      activity
+        ?.timer_time_ms
+    ),
+
+    cgweb136Fix1Finite(
+      activity
+        ?.moving_time_ms
+    ),
+
+    cgweb136Fix1Finite(
+      activity
+        ?.moving_time
+    ) != null
+      ? cgweb136Fix1Finite(
+          activity
+            ?.moving_time
+        ) * 1000
+      : null,
+
+    cgweb136Fix1Finite(
+      activity
+        ?.elapsed_time_ms
+    )
+  ];
+
+  for (
+    const candidate of candidates
+  ) {
+    if (
+      candidate !== null &&
+      candidate > 0
+    ) {
+      return candidate;
+    }
+  }
+
+  return 0;
+}
+
+
+function cgweb136Fix1ChargeScore(
+  activity
+) {
+  const stored =
+    cgweb136Fix1StoredLoad(
+      activity
+    );
+
+  if (stored) {
+    return {
+      score:
+        stored.value,
+
+      rounded:
+        Math.round(
+          stored.value
+        ),
+
+      source:
+        "PERSISTED",
+
+      persisted_field:
+        stored.field,
+
+      persisted_value:
+        stored.value,
+
+      formula:
+        null
+    };
+  }
+
+  const durationMs =
+    cgweb136Fix1MovingTimeMs(
+      activity
+    );
+
+  const minutes =
+    Math.max(
+      0,
+      Number(durationMs) || 0
+    ) /
+    60000;
+
+  const km =
+    Math.max(
+      0,
+      Number(
+        activity
+          ?.distance_m
+      ) || 0
+    ) /
+    1000;
+
+  const ascent =
+    Math.max(
+      0,
+      Number(
+        activity
+          ?.ascent_m
+      ) || 0
+    );
+
+  let hrFactor = 1;
+
+  const avgHr =
+    Number(
+      activity
+        ?.avg_hr
+    );
+
+  if (
+    Number.isFinite(avgHr) &&
+    avgHr > 0
+  ) {
+    hrFactor =
+      Math.max(
+        0.75,
+        Math.min(
+          1.50,
+          avgHr / 130
+        )
+      );
+  }
+
+  const score =
+    (
+      minutes +
+      km * 2 +
+      ascent / 100
+    ) *
+    hrFactor;
+
+  const finite =
+    Number.isFinite(score) &&
+    score > 0
+      ? score
+      : null;
+
+  return {
+    score:
+      finite,
+
+    rounded:
+      finite != null
+        ? Math.round(
+            finite
+          )
+        : null,
+
+    source:
+      "DERIVED",
+
+    persisted_field:
+      null,
+
+    persisted_value:
+      null,
+
+    formula:
+      {
+        minutes,
+        km,
+        ascent_m:
+          ascent,
+
+        avg_hr:
+          Number.isFinite(
+            avgHr
+          )
+            ? avgHr
+            : null,
+
+        hr_factor:
+          hrFactor
+      }
+  };
+}
+
+
+function cgweb136Fix1BuildLoadAudit(
+  current,
+  beforeStats,
+  afterActivity
+) {
+  const beforeActivity = {
+    ...current,
+
+    distance_m:
+      beforeStats
+        ?.distance_m ??
+      current
+        ?.distance_m,
+
+    timer_time_ms:
+      beforeStats
+        ?.timer_time_ms ??
+      current
+        ?.timer_time_ms,
+
+    elapsed_time_ms:
+      beforeStats
+        ?.elapsed_time_ms ??
+      current
+        ?.elapsed_time_ms,
+
+    ascent_m:
+      beforeStats
+        ?.ascent_m ??
+      current
+        ?.ascent_m
+  };
+
+  const beforeLoadFields =
+    cgweb136Fix1LoadFields(
+      beforeActivity
+    );
+
+  const afterLoadFields =
+    cgweb136Fix1LoadFields(
+      afterActivity
+    );
+
+  const beforeCharge =
+    cgweb136Fix1ChargeScore(
+      beforeActivity
+    );
+
+  const afterCharge =
+    cgweb136Fix1ChargeScore(
+      afterActivity
+    );
+
+  const fieldsUnchanged =
+    JSON.stringify(
+      beforeLoadFields
+    ) ===
+    JSON.stringify(
+      afterLoadFields
+    );
+
+  const roundedChanged =
+    beforeCharge.rounded !==
+    afterCharge.rounded;
+
+  return {
+    persisted_load_fields_unchanged:
+      fieldsUnchanged,
+
+    persisted_load_fields_before:
+      beforeLoadFields,
+
+    persisted_load_fields_after:
+      afterLoadFields,
+
+    charge_source_before:
+      beforeCharge.source,
+
+    charge_source_after:
+      afterCharge.source,
+
+    before_score:
+      beforeCharge.score,
+
+    after_score:
+      afterCharge.score,
+
+    before_rounded:
+      beforeCharge.rounded,
+
+    after_rounded:
+      afterCharge.rounded,
+
+    rounded_changed:
+      roundedChanged,
+
+    before_formula:
+      beforeCharge.formula,
+
+    after_formula:
+      afterCharge.formula,
+
+    explanation:
+      (
+        beforeCharge.source ===
+          "DERIVED" &&
+        afterCharge.source ===
+          "DERIVED" &&
+        roundedChanged
+      )
+        ? "DERIVED_CHARGE_CHANGED_AFTER_STRAVA_TARGET_STATS"
+        : (
+            fieldsUnchanged
+              ? "PERSISTED_LOAD_UNCHANGED"
+              : "PERSISTED_LOAD_FIELDS_CHANGED"
+          )
+  };
+}
+
+
+async function cgweb136Fix1PostExportAudit(
+  uid,
+  activityKey
+) {
+  const key =
+    String(
+      activityKey ||
+      ""
+    ).trim();
+
+  if (
+    !/^[A-Za-z0-9_.:-]{1,180}$/
+      .test(key)
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 FIX1 : activity_key invalide."
+      ),
+      {
+        status:
+          400
+      }
+    );
+  }
+
+  const activityRef =
+    firestore()
+      .doc(
+        `${ROOT}/${uid}/activities/${key}`
+      );
+
+  const lockRef =
+    cgweb136ExportRef(
+      uid,
+      key
+    );
+
+  const [
+    activitySnap,
+    lockSnap
+  ] =
+    await Promise.all([
+      activityRef.get(),
+      lockRef.get()
+    ]);
+
+  if (!activitySnap.exists) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 FIX1 : activité SPORT absente."
+      ),
+      {
+        status:
+          404
+      }
+    );
+  }
+
+  const activity =
+    activitySnap.data() ||
+    {};
+
+  const lock =
+    lockSnap.exists
+      ? lockSnap.data() ||
+        {}
+      : {};
+
+  const stravaId =
+    String(
+      activity
+        ?.strava_activity_id ||
+      lock
+        ?.strava_activity_id ||
+      ""
+    ).trim();
+
+  if (!stravaId) {
+    throw Object.assign(
+      new Error(
+        "CGWEB136 FIX1 : activité non liée à Strava."
+      ),
+      {
+        status:
+          409
+      }
+    );
+  }
+
+  const detail =
+    await stravaGet(
+      uid,
+      `/activities/${encodeURIComponent(
+        stravaId
+      )}?include_all_efforts=false`
+    );
+
+  const preExport = {
+    distance_m:
+      activity
+        ?.pre_strava_export_distance_m ??
+      lock
+        ?.activity_snapshot
+        ?.distance_m ??
+      null,
+
+    timer_time_ms:
+      activity
+        ?.pre_strava_export_timer_time_ms ??
+      lock
+        ?.activity_snapshot
+        ?.timer_time_ms ??
+      null,
+
+    elapsed_time_ms:
+      activity
+        ?.pre_strava_export_elapsed_time_ms ??
+      lock
+        ?.activity_snapshot
+        ?.elapsed_time_ms ??
+      null,
+
+    ascent_m:
+      activity
+        ?.pre_strava_export_ascent_m ??
+      lock
+        ?.activity_snapshot
+        ?.ascent_m ??
+      null,
+
+    calories:
+      activity
+        ?.pre_strava_export_calories ??
+      lock
+        ?.activity_snapshot
+        ?.calories ??
+      null
+  };
+
+  const currentStrava = {
+    distance_m:
+      cgweb136Fix1Finite(
+        detail?.distance
+      ),
+
+    timer_time_ms:
+      cgweb136Fix1Finite(
+        detail?.moving_time
+      ) != null
+        ? cgweb136Fix1Finite(
+            detail.moving_time
+          ) * 1000
+        : null,
+
+    elapsed_time_ms:
+      cgweb136Fix1Finite(
+        detail?.elapsed_time
+      ) != null
+        ? cgweb136Fix1Finite(
+            detail.elapsed_time
+          ) * 1000
+        : null,
+
+    ascent_m:
+      cgweb136Fix1Finite(
+        detail
+          ?.total_elevation_gain
+      ),
+
+    calories:
+      cgweb136Fix1Finite(
+        detail?.calories
+      )
+  };
+
+  const currentCgweb = {
+    distance_m:
+      cgweb136Fix1Finite(
+        activity
+          ?.distance_m
+      ),
+
+    timer_time_ms:
+      cgweb136Fix1Finite(
+        activity
+          ?.timer_time_ms
+      ),
+
+    elapsed_time_ms:
+      cgweb136Fix1Finite(
+        activity
+          ?.elapsed_time_ms
+      ),
+
+    ascent_m:
+      cgweb136Fix1Finite(
+        activity
+          ?.ascent_m
+      ),
+
+    calories:
+      cgweb136Fix1Finite(
+        activity
+          ?.calories
+      )
+  };
+
+  const calorieAudit = {
+    pre_export:
+      cgweb136Fix1Finite(
+        preExport.calories
+      ),
+
+    strava:
+      currentStrava.calories,
+
+    cgweb:
+      currentCgweb.calories,
+
+    strava_equals_cgweb:
+      (
+        currentStrava.calories !==
+          null &&
+        currentCgweb.calories !==
+          null &&
+        Math.abs(
+          currentStrava.calories -
+          currentCgweb.calories
+        ) <
+          0.000001
+      )
+  };
+
+  const afterActivity = {
+    ...activity,
+
+    distance_m:
+      currentCgweb.distance_m,
+
+    timer_time_ms:
+      currentCgweb.timer_time_ms,
+
+    elapsed_time_ms:
+      currentCgweb.elapsed_time_ms,
+
+    ascent_m:
+      currentCgweb.ascent_m
+  };
+
+  const loadAudit =
+    cgweb136Fix1BuildLoadAudit(
+      activity,
+      preExport,
+      afterActivity
+    );
+
+  /*
+   * Vérification supplémentaire :
+   * le patch réellement journalisé par CGWEB136 ne devait contenir
+   * aucun des champs de charge persistés.
+   */
+  const reconciliationPatch =
+    lock
+      ?.final_result
+      ?.cgweb_patch ||
+    {};
+
+  const touchedLoadFields =
+    CGWEB136_FIX1_LOAD_FIELDS
+      .filter(
+        field =>
+          Object.prototype
+            .hasOwnProperty
+            .call(
+              reconciliationPatch,
+              field
+            )
+      );
+
+  loadAudit.reconciliation_patch_touched_load_fields =
+    touchedLoadFields;
+
+  loadAudit.reconciliation_patch_preserved_load_fields =
+    touchedLoadFields.length ===
+    0;
+
+  const targetChecks = {};
+
+  for (
+    const metric of [
+      "distance_m",
+      "timer_time_ms",
+      "elapsed_time_ms",
+      "ascent_m",
+      "calories"
+    ]
+  ) {
+    const cgweb =
+      currentCgweb[metric];
+
+    const strava =
+      currentStrava[metric];
+
+    targetChecks[metric] = {
+      cgweb,
+      strava,
+
+      equal:
+        (
+          cgweb !== null &&
+          strava !== null &&
+          Math.abs(
+            cgweb -
+            strava
+          ) <
+            0.000001
+        )
+    };
+  }
+
+  const allTargetStatsSynced =
+    Object
+      .values(
+        targetChecks
+      )
+      .every(
+        row =>
+          row.equal
+      );
+
+  const lockState =
+    String(
+      lock?.state ||
+      ""
+    );
+
+  /*
+   * Backfill de l'état explicite pour les activités déjà exportées
+   * avant CGWEB136 FIX1.
+   *
+   * Aucun chiffre sportif n'est modifié ici.
+   */
+  if (
+    lockState ===
+      "RECONCILED" &&
+    allTargetStatsSynced
+  ) {
+    await activityRef.set(
+      {
+        strava_export_state:
+          "RECONCILED",
+
+        strava_export_synced_at_ms:
+          Number(
+            lock
+              ?.reconciled_at_ms ||
+            activity
+              ?.strava_reconciled_at_ms ||
+            Date.now()
+          ),
+
+        strava_export_post_audit_version:
+          CGWEB136_FIX1_VERSION,
+
+        strava_export_post_audit_at_ms:
+          Date.now(),
+
+        pre_strava_export_charge_score:
+          loadAudit
+            .before_score,
+
+        post_strava_export_charge_score:
+          loadAudit
+            .after_score,
+
+        strava_load_fields_immutable:
+          (
+            loadAudit
+              .persisted_load_fields_unchanged &&
+            loadAudit
+              .reconciliation_patch_preserved_load_fields
+          )
+      },
+      {
+        merge:
+          true
+      }
+    );
+  }
+
+  const result = {
+    ok:
+      (
+        allTargetStatsSynced &&
+        calorieAudit
+          .strava_equals_cgweb &&
+        loadAudit
+          .persisted_load_fields_unchanged &&
+        loadAudit
+          .reconciliation_patch_preserved_load_fields
+      ),
+
+    status:
+      allTargetStatsSynced
+        ? "POST_EXPORT_SYNC_OK"
+        : "POST_EXPORT_SYNC_MISMATCH",
+
+    version:
+      CGWEB136_FIX1_VERSION,
+
+    activity_key:
+      key,
+
+    strava_activity_id:
+      stravaId,
+
+    lock_state:
+      lockState ||
+      null,
+
+    activity_state:
+      (
+        lockState ===
+          "RECONCILED" &&
+        allTargetStatsSynced
+      )
+        ? "RECONCILED"
+        : (
+            activity
+              ?.strava_export_state ||
+            null
+          ),
+
+    pre_export:
+      preExport,
+
+    strava:
+      currentStrava,
+
+    cgweb:
+      currentCgweb,
+
+    target_checks:
+      targetChecks,
+
+    all_target_stats_synced:
+      allTargetStatsSynced,
+
+    calories_audit:
+      calorieAudit,
+
+    load_immutability_audit:
+      loadAudit
+  };
+
+  await cgweb136Audit(
+    uid,
+    key,
+    "POST_EXPORT_AUDIT",
+    {
+      fix_version:
+        CGWEB136_FIX1_VERSION,
+
+      strava_activity_id:
+        stravaId,
+
+      all_target_stats_synced:
+        allTargetStatsSynced,
+
+      calories_audit:
+        calorieAudit,
+
+      load_immutability_audit:
+        loadAudit
+    }
+  );
+
+  return result;
+}
+
+
+/* CGWEB136_FIX1_SERVER_END */
+
+
 /* CGWEB136_SERVER_END */
 
 
@@ -4812,6 +5747,40 @@ exports.stravaBridge = onRequest(
         });
       }
 
+
+
+
+      /* CGWEB136_FIX1_ACTION_START */
+
+      if (
+        action ===
+          "export_post_audit" &&
+        req.method ===
+          "POST"
+      ) {
+        const body =
+          req.body &&
+          typeof req.body ===
+            "object" &&
+          !Buffer.isBuffer(
+            req.body
+          )
+            ? req.body
+            : {};
+
+        return res.json(
+          await cgweb136Fix1PostExportAudit(
+            uid,
+            String(
+              body
+                ?.activity_key ||
+              ""
+            ).trim()
+          )
+        );
+      }
+
+      /* CGWEB136_FIX1_ACTION_END */
 
 
       /* CGWEB136_ACTIONS_START */

@@ -79469,3 +79469,815 @@ console.info(
 );
 
 /* CGWEB136_END */
+
+/* CGWEB136_FIX1_START
+   POST_EXPORT_STATE001
+   CALORIES_RECONCILE_AUDIT001
+   LOAD_IMMUTABILITY_AUDIT001
+   SYNCHRONIZED_BUTTON001
+*/
+
+const cgweb136Fix1State = {
+  busy:
+    false,
+
+  audits:
+    new Map()
+};
+
+
+function cgweb136Fix1EnsureStyle() {
+  if (
+    document.getElementById(
+      "cgweb136Fix1Style"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement(
+      "style"
+    );
+
+  style.id =
+    "cgweb136Fix1Style";
+
+  style.textContent = `
+    #cgweb134StravaButton.cgweb136-fix1-synchronized {
+      border-color: rgba(70,220,130,.62) !important;
+    }
+
+    .cgweb136-fix1-audit-grid {
+      display: grid;
+      grid-template-columns: repeat(3,minmax(120px,1fr));
+      gap: 8px;
+      margin: 14px 0;
+    }
+
+    .cgweb136-fix1-audit-cell {
+      padding: 10px;
+      border: 1px solid rgba(128,128,128,.20);
+      border-radius: 10px;
+    }
+
+    .cgweb136-fix1-audit-cell small,
+    .cgweb136-fix1-audit-cell strong {
+      display: block;
+    }
+
+    .cgweb136-fix1-ok {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid rgba(70,220,130,.38);
+      border-radius: 10px;
+    }
+
+    .cgweb136-fix1-info {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid rgba(160,190,120,.26);
+      border-radius: 10px;
+    }
+
+    @media (max-width: 720px) {
+      .cgweb136-fix1-audit-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  `;
+
+  document.head.appendChild(
+    style
+  );
+}
+
+
+function cgweb136Fix1IsSynchronized(
+  activity
+) {
+  return Boolean(
+    String(
+      activity
+        ?.strava_activity_id ||
+      ""
+    ).trim()
+  );
+}
+
+
+function cgweb136Fix1SetSynchronizedButton(
+  activity
+) {
+  const button =
+    document.getElementById(
+      "cgweb134StravaButton"
+    );
+
+  if (
+    !button ||
+    !activity ||
+    !cgweb136Fix1IsSynchronized(
+      activity
+    )
+  ) {
+    return false;
+  }
+
+  cgweb134Fix1SetButtonText(
+    button,
+    "Strava · synchronisé"
+  );
+
+  button.classList.remove(
+    "cgweb134-warning"
+  );
+
+  button.classList.add(
+    "cgweb134-ready",
+    "cgweb136-fix1-synchronized"
+  );
+
+  button.title =
+    "Activité liée et réconciliée avec Strava.";
+
+  button.disabled =
+    false;
+
+  return true;
+}
+
+
+/*
+ * CGWEB135 pouvait réappliquer « FIT ✓ » après que CGWEB136
+ * avait déjà ajouté strava_activity_id.
+ *
+ * La synchronisation finale est désormais prioritaire.
+ */
+const cgweb136Fix1BaseRefreshToolbarState =
+  cgweb135RefreshToolbarState;
+
+cgweb135RefreshToolbarState =
+  function cgweb136Fix1RefreshToolbarState(
+    activity =
+      currentDetailActivity()
+  ) {
+    if (
+      cgweb136Fix1SetSynchronizedButton(
+        activity
+      )
+    ) {
+      return;
+    }
+
+    return cgweb136Fix1BaseRefreshToolbarState(
+      activity
+    );
+  };
+
+
+function cgweb136Fix1FormatKcal(
+  value
+) {
+  const n =
+    Number(value);
+
+  return Number.isFinite(n)
+    ? (
+        n.toLocaleString(
+          "fr-FR",
+          {
+            maximumFractionDigits:
+              1
+          }
+        ) +
+        " kcal"
+      )
+    : "—";
+}
+
+
+function cgweb136Fix1FormatScore(
+  value
+) {
+  const n =
+    Number(value);
+
+  return Number.isFinite(n)
+    ? n.toLocaleString(
+        "fr-FR",
+        {
+          minimumFractionDigits:
+            2,
+
+          maximumFractionDigits:
+            2
+        }
+      )
+    : "—";
+}
+
+
+function cgweb136Fix1AuditHtml(
+  audit
+) {
+  const calories =
+    audit
+      ?.calories_audit ||
+    {};
+
+  const load =
+    audit
+      ?.load_immutability_audit ||
+    {};
+
+  const loadImmutable =
+    Boolean(
+      load
+        .persisted_load_fields_unchanged &&
+      load
+        .reconciliation_patch_preserved_load_fields
+    );
+
+  const derivedChanged =
+    (
+      load
+        ?.charge_source_before ===
+        "DERIVED" &&
+      load
+        ?.charge_source_after ===
+        "DERIVED" &&
+      load
+        ?.rounded_changed
+    );
+
+  return `
+    <div class="${
+      audit?.ok
+        ? "cgweb136-fix1-ok"
+        : "cgweb136-fix1-info"
+    }">
+      <strong>
+        ${
+          audit?.ok
+            ? "Synchronisation post-export vérifiée ✓"
+            : "Synchronisation à contrôler"
+        }
+      </strong>
+    </div>
+
+    <div class="cgweb136-fix1-audit-grid">
+      <div class="cgweb136-fix1-audit-cell">
+        <small>Calories avant export</small>
+        <strong>
+          ${cgweb134Escape(
+            cgweb136Fix1FormatKcal(
+              calories.pre_export
+            )
+          )}
+        </strong>
+      </div>
+
+      <div class="cgweb136-fix1-audit-cell">
+        <small>Calories Strava</small>
+        <strong>
+          ${cgweb134Escape(
+            cgweb136Fix1FormatKcal(
+              calories.strava
+            )
+          )}
+        </strong>
+      </div>
+
+      <div class="cgweb136-fix1-audit-cell">
+        <small>Calories CGWEB</small>
+        <strong>
+          ${cgweb134Escape(
+            cgweb136Fix1FormatKcal(
+              calories.cgweb
+            )
+          )}
+          ${
+            calories
+              .strava_equals_cgweb
+              ? " ✓"
+              : " ⚠"
+          }
+        </strong>
+      </div>
+    </div>
+
+    <div class="cgweb136-fix1-info">
+      <strong>Audit Charge</strong>
+
+      <div>
+        Avant export :
+        <strong>
+          ${cgweb134Escape(
+            String(
+              load
+                .before_rounded ??
+              "—"
+            )
+          )}
+        </strong>
+        ${
+          load.before_score != null
+            ? (
+                " (" +
+                cgweb134Escape(
+                  cgweb136Fix1FormatScore(
+                    load.before_score
+                  )
+                ) +
+                ")"
+              )
+            : ""
+        }
+      </div>
+
+      <div>
+        Après réconciliation :
+        <strong>
+          ${cgweb134Escape(
+            String(
+              load
+                .after_rounded ??
+              "—"
+            )
+          )}
+        </strong>
+        ${
+          load.after_score != null
+            ? (
+                " (" +
+                cgweb134Escape(
+                  cgweb136Fix1FormatScore(
+                    load.after_score
+                  )
+                ) +
+                ")"
+              )
+            : ""
+        }
+      </div>
+
+      <div>
+        Champs de charge persistés modifiés par CGWEB136 :
+        <strong>
+          ${loadImmutable ? "NON ✓" : "OUI ⚠"}
+        </strong>
+      </div>
+
+      ${
+        derivedChanged
+          ? `
+            <p class="muted">
+              La variation affichée de Charge est normale :
+              cette activité n'a pas de charge persistée prioritaire.
+              SPORT recalcule donc la Charge à partir du temps,
+              de la distance, du D+ et de la FC.
+              Le D+ réconcilié avec Strava peut faire changer l'arrondi,
+              sans qu'aucune donnée de charge soit écrasée.
+            </p>
+          `
+          : `
+            <p class="muted">
+              Aucune mutation parasite d'un champ de charge persisté
+              n'a été détectée.
+            </p>
+          `
+      }
+    </div>
+
+    <p class="muted">
+      État d'export :
+      <strong>${cgweb134Escape(
+        audit
+          ?.activity_state ||
+        audit
+          ?.lock_state ||
+        "—"
+      )}</strong>
+      · Strava #${cgweb134Escape(
+        audit
+          ?.strava_activity_id ||
+        "—"
+      )}
+    </p>
+  `;
+}
+
+
+async function cgweb136Fix1AuditActivity(
+  activity,
+  mode =
+    "dialog"
+) {
+  if (
+    cgweb136Fix1State.busy ||
+    !activity
+  ) {
+    return null;
+  }
+
+  const key =
+    String(
+      activityKey(
+        activity
+      ) || ""
+    );
+
+  if (!key) {
+    return null;
+  }
+
+  cgweb136Fix1State.busy =
+    true;
+
+  try {
+    if (
+      mode ===
+        "dialog"
+    ) {
+      cgweb134OpenDialog(
+        "Strava · audit post-export",
+        `
+          <p>
+            Lecture des statistiques finales Strava
+            et vérification de CGWEB…
+          </p>
+        `
+      );
+    }
+
+    const audit =
+      await webStravaFetch(
+        "export_post_audit",
+        {
+          method:
+            "POST",
+
+          body:
+            {
+              activity_key:
+                key
+            }
+        }
+      );
+
+    cgweb136Fix1State
+      .audits
+      .set(
+        key,
+        audit
+      );
+
+    if (
+      audit
+        ?.activity_state ===
+        "RECONCILED"
+    ) {
+      activity.strava_export_state =
+        "RECONCILED";
+    }
+
+    if (
+      audit
+        ?.cgweb
+        ?.calories != null
+    ) {
+      activity.calories =
+        audit.cgweb.calories;
+    }
+
+    cgweb136Fix1SetSynchronizedButton(
+      activity
+    );
+
+    if (
+      mode ===
+        "append"
+    ) {
+      const body =
+        document.getElementById(
+          "cgweb134DialogBody"
+        );
+
+      if (body) {
+        let block =
+          document.getElementById(
+            "cgweb136Fix1AuditBlock"
+          );
+
+        if (!block) {
+          block =
+            document.createElement(
+              "div"
+            );
+
+          block.id =
+            "cgweb136Fix1AuditBlock";
+
+          body.appendChild(
+            block
+          );
+        }
+
+        block.innerHTML =
+          cgweb136Fix1AuditHtml(
+            audit
+          );
+      }
+    } else {
+      cgweb134OpenDialog(
+        "Strava · synchronisation vérifiée",
+        cgweb136Fix1AuditHtml(
+          audit
+        )
+      );
+    }
+
+    return audit;
+
+  } catch (error) {
+    console.error(
+      "CGWEB136 FIX1 post-export audit",
+      error
+    );
+
+    if (
+      mode ===
+        "dialog"
+    ) {
+      cgweb134OpenDialog(
+        "Strava · audit impossible",
+        `
+          <p>
+            ${cgweb134Escape(
+              error?.message ||
+              String(error)
+            )}
+          </p>
+        `
+      );
+    }
+
+    return null;
+
+  } finally {
+    cgweb136Fix1State.busy =
+      false;
+  }
+}
+
+
+function cgweb136Fix1AddAuditButton(
+  activity
+) {
+  const actions =
+    document.querySelector(
+      "#cgweb134Dialog .cgweb134-dialog-actions"
+    );
+
+  if (!actions) {
+    return;
+  }
+
+  document
+    .getElementById(
+      "cgweb136Fix1AuditButton"
+    )
+    ?.remove();
+
+  const button =
+    document.createElement(
+      "button"
+    );
+
+  button.id =
+    "cgweb136Fix1AuditButton";
+
+  button.type =
+    "button";
+
+  button.className =
+    "primary";
+
+  button.textContent =
+    "Vérifier la synchronisation";
+
+  button.addEventListener(
+    "click",
+    () => {
+      void cgweb136Fix1AuditActivity(
+        activity,
+        "dialog"
+      );
+    }
+  );
+
+  actions.insertBefore(
+    button,
+    actions.firstChild
+  );
+}
+
+
+/*
+ * Activité déjà liée :
+ * on ne présente plus seulement « déjà liée »,
+ * mais l'état explicite synchronisé.
+ */
+const cgweb136Fix1BaseShowResult =
+  cgweb134ShowResult;
+
+cgweb134ShowResult =
+  function cgweb136Fix1ShowResultWrapper(
+    activity,
+    result
+  ) {
+    if (
+      String(
+        result?.status ||
+        ""
+      ) ===
+        "ALREADY_LINKED"
+    ) {
+      cgweb134OpenDialog(
+        "Strava · synchronisé",
+        `
+          <div class="cgweb136-fix1-ok">
+            <strong>Activité déjà liée à Strava ✓</strong>
+          </div>
+
+          <p>
+            Strava #${cgweb134Escape(
+              result
+                ?.strava_activity_id ||
+              activity
+                ?.strava_activity_id ||
+              "—"
+            )}
+          </p>
+
+          <p class="muted">
+            Tu peux relire les données Strava et auditer
+            calories, Charge et état de réconciliation
+            sans créer aucun nouvel upload.
+          </p>
+        `
+      );
+
+      cgweb136Fix1AddAuditButton(
+        activity
+      );
+
+      cgweb136Fix1SetSynchronizedButton(
+        activity
+      );
+
+      return;
+    }
+
+    return cgweb136Fix1BaseShowResult(
+      activity,
+      result
+    );
+  };
+
+
+/*
+ * Après un nouvel export réussi, l'audit est lancé automatiquement
+ * et ajouté au dialogue final CGWEB avant / Strava / CGWEB final.
+ */
+const cgweb136Fix1BaseShowFinal =
+  cgweb136ShowFinal;
+
+cgweb136ShowFinal =
+  function cgweb136Fix1ShowFinalWrapper(
+    activity,
+    result
+  ) {
+    const out =
+      cgweb136Fix1BaseShowFinal(
+        activity,
+        result
+      );
+
+    cgweb136Fix1SetSynchronizedButton(
+      activity
+    );
+
+    queueMicrotask(
+      () => {
+        void cgweb136Fix1AuditActivity(
+          activity,
+          "append"
+        );
+      }
+    );
+
+    return out;
+  };
+
+
+/*
+ * Passe immédiate sur une fiche déjà réconciliée.
+ */
+queueMicrotask(
+  () => {
+    cgweb136Fix1EnsureStyle();
+
+    const activity =
+      currentDetailActivity();
+
+    if (activity) {
+      cgweb136Fix1SetSynchronizedButton(
+        activity
+      );
+    }
+  }
+);
+
+
+window.CGWEB136_FIX1_STATUS =
+  function () {
+    const activity =
+      currentDetailActivity();
+
+    const key =
+      activity
+        ? String(
+            activityKey(
+              activity
+            ) || ""
+          )
+        : "";
+
+    return {
+      build:
+        "CGWEB136_FIX1",
+
+      post_export_state:
+        "POST_EXPORT_STATE001",
+
+      calories_reconcile_audit:
+        "CALORIES_RECONCILE_AUDIT001",
+
+      load_immutability_audit:
+        "LOAD_IMMUTABILITY_AUDIT001",
+
+      synchronized_button:
+        "SYNCHRONIZED_BUTTON001",
+
+      activity_key:
+        key ||
+        null,
+
+      strava_activity_id:
+        activity
+          ?.strava_activity_id ||
+        null,
+
+      export_state:
+        activity
+          ?.strava_export_state ||
+        null,
+
+      cached_audit:
+        key
+          ? cgweb136Fix1State
+              .audits
+              .get(key) ||
+            null
+          : null
+    };
+  };
+
+
+window.CGWEB136_FIX1_AUDIT_CURRENT =
+  function () {
+    const activity =
+      currentDetailActivity();
+
+    if (activity) {
+      return cgweb136Fix1AuditActivity(
+        activity,
+        "dialog"
+      );
+    }
+
+    return null;
+  };
+
+
+console.info(
+  "CGWEB136 FIX1 actif · " +
+  "POST_EXPORT_STATE001 / " +
+  "CALORIES_RECONCILE_AUDIT001 / " +
+  "LOAD_IMMUTABILITY_AUDIT001 / " +
+  "SYNCHRONIZED_BUTTON001"
+);
+
+/* CGWEB136_FIX1_END */
