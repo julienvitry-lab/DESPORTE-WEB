@@ -6675,55 +6675,74 @@ console.info(
 /* CGWEB135_FIT_STRAVA_PREVIEW_API_START */
 
 async function c135StravaExportPreview(
-  activityId,
-  lockToken
+  activityId, lockToken
 ) {
-  const id =
-    String(
-      activityId ||
-      ""
-    ).trim();
+  const id = String(activityId || "").trim();
+  const token = String(lockToken || "").trim();
 
-  const token =
-    String(
-      lockToken ||
-      ""
-    ).trim();
+  if (!id || !token)
+    throw new Error("Identifiants d'export absents.");
 
-  if (!id) {
-    throw new Error(
-      "CGWEB135 : activity_id absent."
-    );
-  }
+  const fetchPreview = confirmation =>
+    request("strava_export_preview", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        activity_id:id,
+        lock_token:token,
+        ...(confirmation ? {
+          reduced_route_confirmation:confirmation
+        } : {})
+      })
+    });
 
-  if (!token) {
-    throw new Error(
-      "CGWEB135 : verrou CGWEB134 absent."
-    );
-  }
+  const first = await fetchPreview("");
+  const preview = first?.preview || {};
+  const report = preview.cgweb139 || {};
+  const blockers = preview.blockers || [];
 
-  return request(
-    "strava_export_preview",
-    {
-      method:
-        "POST",
+  const reducedOnly =
+    first.status === "FIT_PARITY_BLOCKED" &&
+    blockers.length === 1 &&
+    blockers[0] === "SOURCE_RECORD_COUNT_MISMATCH" &&
+    report.reduced_route_eligible === true;
 
-      headers:
-        {
-          "Content-Type":
-            "application/json"
-        },
+  if (!reducedOnly) return first;
 
-      body:
-        JSON.stringify({
-          activity_id:
-            id,
+  const confirmation =
+    report.reduced_route_confirmation_text;
 
-          lock_token:
-            token
-        })
-    }
+  if (!confirmation) return first;
+
+  const answer = window.prompt(
+    "CGWEB139 FIX2 - Export avec parcours réduit\n\n" +
+    "Activité : " + id + "\n" +
+    "Points d'origine déclarés : " +
+      report.source_declared_point_count + "\n" +
+    "Points disponibles : " +
+      report.candidate_fit_record_count + "\n\n" +
+    "Aucun point GPS ne sera inventé.\n" +
+    "Les métriques CGWEB seront conservées dans le FIT.\n" +
+    "Strava pourra recalculer le dénivelé.\n\n" +
+    "Pour confirmer, saisis exactement :\n" +
+    confirmation,
+    ""
   );
+
+  if (answer === null ||
+      answer.trim() !== confirmation)
+    return first;
+
+  const approved = await fetchPreview(answer.trim());
+
+  if (approved.status !== "FIT_PARITY_OK" ||
+      approved.preview?.cgweb139
+        ?.reduced_route_accepted !== true)
+    throw new Error(
+      "Le FIT réduit n'a pas été validé. Aucun upload."
+    );
+
+  return approved;
 }
 
 

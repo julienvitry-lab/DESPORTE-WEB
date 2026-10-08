@@ -36,7 +36,7 @@ function likelyFlatAltitudeNoise(profile, canonical) {
     profile.positive_gain_m>=30 &&
     profile.positive_gain_m>=5*profile.band_m && profile.reversals>=8;
 }
-function prepare(activity, route, prepared) {
+function prepare(activity, route, prepared, options={}) {
   if(!prepared?.payload || !Array.isArray(prepared.payload.points)) throw new Error("CGWEB139 : payload FIT absent.");
   const payload=prepared.payload;
   const canonical=numberOrNull(activity?.ascent_m);
@@ -47,10 +47,26 @@ function prepare(activity, route, prepared) {
   const authoritativeCount=declaredRouteCount>0 ? declaredRouteCount
     : declaredActivityCount>0 ? declaredActivityCount : null;
   const blockers=[];
-  // A declared original point count is not an invitation to interpolate records.
-  if (authoritativeCount !== null && Math.round(authoritativeCount)!==count) {
+  const declared = authoritativeCount !== null
+    ? Math.round(authoritativeCount) : null;
+  const reducedEligible = declared !== null &&
+    declared > count && count >= 2 &&
+    routeSamples === count &&
+    /^[A-Za-z0-9_.:-]{1,180}$/.test(
+      String(options.activityId || "")
+    );
+  const confirmation = reducedEligible
+    ? `ACCEPTER ${options.activityId} ${count}/${declared}`
+    : null;
+  const reducedAccepted = reducedEligible &&
+    options.reducedRouteConfirmation === confirmation;
+
+  if (options.reducedRouteConfirmation && !reducedAccepted)
+    blockers.push("REDUCED_ROUTE_CONFIRMATION_INVALID");
+
+  if (declared !== null &&
+      declared !== count && !reducedAccepted)
     blockers.push("SOURCE_RECORD_COUNT_MISMATCH");
-  }
   // Even without declared count, never silently drop route samples.
   if (routeSamples>0 && count<routeSamples) blockers.push("ROUTE_SAMPLE_LOSS");
   if (canonical===null || canonical<0) blockers.push("CANONICAL_ASCENT_UNAVAILABLE");
@@ -74,7 +90,15 @@ function prepare(activity, route, prepared) {
       source_declared_point_count:authoritativeCount,source_route_point_count:declaredRouteCount,
       source_activity_record_count:declaredActivityCount,
       stored_route_sample_count:routeSamples,candidate_fit_record_count:payload.points.length,
-      full_record_parity_ok:blockers.filter(s=>s.includes("COUNT")||s.includes("LOSS")).length===0,
+      full_record_parity_ok:
+        (declared === null || declared === count) &&
+        routeSamples <= count,
+      reduced_route_eligible:reducedEligible,
+      reduced_route_accepted:reducedAccepted,
+      reduced_route_confirmation_text:confirmation,
+      record_export_policy:reducedAccepted
+        ? "USER_ACCEPTED_REDUCED_ROUTE"
+        : "STRICT_FULL_RECORD",
       original_altitude:original,candidate_altitude:exported,
       noise_detected:noise,altitude_mode:mode,source_mutated:false}
   };

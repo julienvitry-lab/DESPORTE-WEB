@@ -2993,12 +2993,26 @@ async function cgweb136ReadExactCandidate(
       ?.fit_preview ||
     {};
 
-  /* CGWEB139 : invalidate pre-upgrade candidates rather than silently
-   * uploading a 266-record FIT for a declared 1058-record source. */
-  if (preview?.cgweb139?.version !== "CGWEB139" ||
-      preview?.cgweb139?.full_record_parity_ok !== true) {
+  /* CGWEB139 FIX2 : consentement vérifié côté serveur. */
+  const report139 = preview?.cgweb139 || {};
+  const reducedConfirmed =
+    report139.reduced_route_eligible === true &&
+    report139.reduced_route_accepted === true &&
+    report139.record_export_policy ===
+      "USER_ACCEPTED_REDUCED_ROUTE" &&
+    Number(report139.source_declared_point_count) >
+      Number(report139.candidate_fit_record_count) &&
+    Number(report139.candidate_fit_record_count) >= 2 &&
+    Number(report139.candidate_fit_record_count) ===
+      Number(report139.stored_route_sample_count) &&
+    Number(report139.candidate_fit_record_count) ===
+      Number(preview?.fit?.record_count);
+
+  if (report139.version !== "CGWEB139" ||
+      (report139.full_record_parity_ok !== true &&
+       !reducedConfirmed)) {
     throw Object.assign(new Error(
-      "CGWEB139 : candidat antérieur ou incomplet. Regénérer l'aperçu FIT avant export."
+      "CGWEB139 FIX2 : FIT incomplet non autorisé."
     ), {status:409});
   }
 

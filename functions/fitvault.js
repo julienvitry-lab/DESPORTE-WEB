@@ -14363,7 +14363,8 @@ async function c099GlobalDirectoryQuery(
   async function c135PrepareStravaPreview(
     uid,
     activityId,
-    lockToken
+    lockToken,
+    reducedRouteConfirmation = ""
   ) {
     const id =
       String(
@@ -14621,7 +14622,13 @@ async function c099GlobalDirectoryQuery(
       expected.calories;
 
     /* CGWEB139: audit every record before encoding; preserve exact 0 m D+. */
-    const cgweb139Result = cgweb139.prepare(activity, route, prepared);
+    const cgweb139Result = cgweb139.prepare(
+      activity, route, prepared, {
+        activityId:id,
+        reducedRouteConfirmation:
+          String(reducedRouteConfirmation || "")
+      }
+    );
     blockers.push(...cgweb139Result.blockers);
 
     const generated =
@@ -15405,6 +15412,9 @@ async function c099GlobalDirectoryQuery(
               String(
                 body.lock_token ||
                 ""
+              ).trim(),
+              String(
+                body.reduced_route_confirmation || ""
               ).trim()
             );
 
