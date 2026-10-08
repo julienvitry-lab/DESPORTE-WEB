@@ -1721,6 +1721,39 @@ function createFitVault() {
     );
     const totalDistance = Math.max(0, v078FirstFinite(activity?.distance_m, 0) ?? 0);
 
+    /* CGWEB135 · TOTAL_CALORIES_FIT001 */
+    const calorieCandidates = [
+      activity?.calories,
+      activity?.total_calories,
+      activity?.active_calories,
+      activity?.kcal
+    ];
+
+    let totalCalories = null;
+
+    for (const value of calorieCandidates) {
+      if (
+        value === null ||
+        value === undefined ||
+        value === ""
+      ) {
+        continue;
+      }
+
+      const n =
+        Number(value);
+
+      if (Number.isFinite(n)) {
+        totalCalories =
+          Math.max(
+            0,
+            Math.round(n)
+          );
+
+        break;
+      }
+    }
+
     const lat = v078Array(route, "lat", "latitude", "latitudes");
     const lon = v078Array(route, "lon", "lng", "longitude", "longitudes");
     const alt = v078Array(route, "alt_m", "altitude_m", "altitude", "altitudes");
@@ -1851,6 +1884,7 @@ function createFitVault() {
         total_timer_time_s: timerMs / 1000,
         distance_m: totalDistance,
         total_ascent_m: v078Finite(activity?.ascent_m),
+        total_calories: totalCalories,
         avg_hr: v078Finite(activity?.avg_hr),
         max_hr: v078Finite(activity?.max_hr),
         points
@@ -1861,6 +1895,7 @@ function createFitVault() {
         timerMs,
         distance: totalDistance,
         ascent: v078Finite(activity?.ascent_m),
+        calories: totalCalories,
         avgHr: v078Finite(activity?.avg_hr),
         maxHr: v078Finite(activity?.max_hr),
         sport,
@@ -13917,6 +13952,995 @@ async function c099GlobalDirectoryQuery(
     executeJoin: cg122ExecuteJoin
   };
 
+
+  /* CGWEB135_BACKEND_START
+     FIT_STRAVA_PARITY001
+     TOTAL_CALORIES_FIT001
+     TIMER_EVENTS001
+     PREUPLOAD_ROUNDTRIP001
+     EXPORT_PREVIEW001
+  */
+
+  const CGWEB135_VERSION =
+    "CGWEB135";
+
+
+  function c135OptionalFinite(value) {
+    if (
+      value === null ||
+      value === undefined ||
+      value === ""
+    ) {
+      return null;
+    }
+
+    const n =
+      Number(value);
+
+    return Number.isFinite(n)
+      ? n
+      : null;
+  }
+
+
+  function c135FirstFinite(
+    ...values
+  ) {
+    for (const value of values) {
+      const n =
+        c135OptionalFinite(
+          value
+        );
+
+      if (n != null) {
+        return n;
+      }
+    }
+
+    return null;
+  }
+
+
+  function c135LockSnapshot(
+    activity
+  ) {
+    const directCalories =
+      c135OptionalFinite(
+        activity?.calories
+      );
+
+    return {
+      start_time_ms:
+        Number(
+          activity
+            ?.start_time_ms
+        ) || 0,
+
+      sport:
+        Number(
+          activity
+            ?.sport
+        ) || 0,
+
+      sub_sport:
+        Number(
+          activity
+            ?.sub_sport
+        ) || 0,
+
+      distance_m:
+        Number.isFinite(
+          Number(
+            activity
+              ?.distance_m
+          )
+        )
+          ? Number(
+              activity
+                .distance_m
+            )
+          : 0,
+
+      timer_time_ms:
+        Number.isFinite(
+          Number(
+            activity
+              ?.timer_time_ms
+          )
+        )
+          ? Number(
+              activity
+                .timer_time_ms
+            )
+          : 0,
+
+      elapsed_time_ms:
+        Number.isFinite(
+          Number(
+            activity
+              ?.elapsed_time_ms
+          )
+        )
+          ? Number(
+              activity
+                .elapsed_time_ms
+            )
+          : 0,
+
+      ascent_m:
+        Number.isFinite(
+          Number(
+            activity
+              ?.ascent_m
+          )
+        )
+          ? Number(
+              activity
+                .ascent_m
+            )
+          : 0,
+
+      calories:
+        directCalories != null
+          ? Math.round(
+              directCalories
+            )
+          : null,
+
+      title:
+        String(
+          activity
+            ?.custom_title ||
+          activity
+            ?.title ||
+          ""
+        ).trim()
+    };
+  }
+
+
+  function c135SnapshotHash(
+    snapshot
+  ) {
+    return crypto
+      .createHash(
+        "sha256"
+      )
+      .update(
+        JSON.stringify(
+          snapshot
+        ),
+        "utf8"
+      )
+      .digest(
+        "hex"
+      );
+  }
+
+
+  function c135Expected(
+    activity
+  ) {
+    const startMs =
+      c135OptionalFinite(
+        activity
+          ?.start_time_ms
+      );
+
+    const elapsedMs =
+      Math.max(
+        0,
+        Number(
+          v078DurationMs(
+            activity
+          )
+        ) || 0
+      );
+
+    const timerMs =
+      Math.max(
+        0,
+        c135FirstFinite(
+          activity
+            ?.timer_time_ms,
+
+          activity
+            ?.moving_time_ms,
+
+          elapsedMs
+        ) ??
+        elapsedMs
+      );
+
+    const distance =
+      c135FirstFinite(
+        activity
+          ?.distance_m
+      );
+
+    const ascent =
+      c135FirstFinite(
+        activity
+          ?.ascent_m
+      );
+
+    const calories =
+      c135FirstFinite(
+        activity
+          ?.calories,
+
+        activity
+          ?.total_calories,
+
+        activity
+          ?.active_calories,
+
+        activity
+          ?.kcal
+      );
+
+    return {
+      start_time_ms:
+        startMs,
+
+      elapsed_time_ms:
+        elapsedMs,
+
+      timer_time_ms:
+        timerMs,
+
+      distance_m:
+        distance,
+
+      ascent_m:
+        ascent,
+
+      calories:
+        calories != null
+          ? Math.round(
+              calories
+            )
+          : null
+    };
+  }
+
+
+  function c135Blockers(
+    expected
+  ) {
+    const blockers = [];
+
+    if (
+      !Number.isFinite(
+        expected
+          ?.start_time_ms
+      ) ||
+      expected.start_time_ms <= 0
+    ) {
+      blockers.push(
+        "START_TIME_MISSING"
+      );
+    }
+
+    if (
+      !Number.isFinite(
+        expected
+          ?.distance_m
+      ) ||
+      expected.distance_m < 0
+    ) {
+      blockers.push(
+        "DISTANCE_MISSING"
+      );
+    }
+
+    if (
+      !Number.isFinite(
+        expected
+          ?.timer_time_ms
+      ) ||
+      expected.timer_time_ms <= 0
+    ) {
+      blockers.push(
+        "TIMER_TIME_MISSING"
+      );
+    }
+
+    if (
+      !Number.isFinite(
+        expected
+          ?.elapsed_time_ms
+      ) ||
+      expected.elapsed_time_ms <= 0
+    ) {
+      blockers.push(
+        "ELAPSED_TIME_MISSING"
+      );
+    }
+
+    if (
+      Number.isFinite(
+        expected
+          ?.timer_time_ms
+      ) &&
+      Number.isFinite(
+        expected
+          ?.elapsed_time_ms
+      ) &&
+      expected.timer_time_ms >
+        expected.elapsed_time_ms +
+        50
+    ) {
+      blockers.push(
+        "TIMER_GT_ELAPSED"
+      );
+    }
+
+    if (
+      !Number.isFinite(
+        expected
+          ?.ascent_m
+      ) ||
+      expected.ascent_m < 0
+    ) {
+      blockers.push(
+        "ASCENT_MISSING"
+      );
+    }
+
+    if (
+      !Number.isFinite(
+        expected
+          ?.calories
+      ) ||
+      expected.calories < 0
+    ) {
+      blockers.push(
+        "CALORIES_MISSING"
+      );
+    }
+
+    return blockers;
+  }
+
+
+  function c135Metric(
+    metric,
+    source,
+    fit,
+    tolerance,
+    unit
+  ) {
+    const s =
+      c135OptionalFinite(
+        source
+      );
+
+    const f =
+      c135OptionalFinite(
+        fit
+      );
+
+    if (
+      s == null ||
+      f == null
+    ) {
+      return {
+        metric,
+        source:
+          s,
+        fit:
+          f,
+        delta:
+          null,
+        tolerance,
+        unit,
+        ok:
+          false
+      };
+    }
+
+    const delta =
+      f - s;
+
+    return {
+      metric,
+      source:
+        s,
+      fit:
+        f,
+      delta,
+      tolerance,
+      unit,
+      ok:
+        Math.abs(delta) <=
+        tolerance
+    };
+  }
+
+
+  async function c135PrepareStravaPreview(
+    uid,
+    activityId,
+    lockToken
+  ) {
+    const id =
+      String(
+        activityId ||
+        ""
+      ).trim();
+
+    const token =
+      String(
+        lockToken ||
+        ""
+      ).trim();
+
+    if (
+      !id ||
+      id.includes("/")
+    ) {
+      throw Object.assign(
+        new Error(
+          "CGWEB135 : activity_id invalide."
+        ),
+        {
+          status:
+            400
+        }
+      );
+    }
+
+    if (!token) {
+      throw Object.assign(
+        new Error(
+          "CGWEB135 : verrou d'export absent."
+        ),
+        {
+          status:
+            409
+        }
+      );
+    }
+
+    const lockRef =
+      db.doc(
+        `${ROOT}/${uid}/strava_outbound_exports/${id}`
+      );
+
+    const lockSnap =
+      await lockRef.get();
+
+    if (!lockSnap.exists) {
+      throw Object.assign(
+        new Error(
+          "CGWEB135 : préflight CGWEB134 requis."
+        ),
+        {
+          status:
+            409
+        }
+      );
+    }
+
+    const lock =
+      lockSnap.data() ||
+      {};
+
+    if (
+      String(
+        lock.state ||
+        ""
+      ) !==
+      "PREPARED"
+    ) {
+      throw Object.assign(
+        new Error(
+          "CGWEB135 : verrou d'export non préparé."
+        ),
+        {
+          status:
+            409
+        }
+      );
+    }
+
+    if (
+      String(
+        lock.lock_token ||
+        ""
+      ) !== token
+    ) {
+      throw Object.assign(
+        new Error(
+          "CGWEB135 : token de verrou invalide."
+        ),
+        {
+          status:
+            403
+        }
+      );
+    }
+
+    if (
+      Number(
+        lock.expires_at_ms ||
+        0
+      ) <= Date.now()
+    ) {
+      throw Object.assign(
+        new Error(
+          "CGWEB135 : verrou expiré. Relancer le préflight Strava."
+        ),
+        {
+          status:
+            409
+        }
+      );
+    }
+
+    const activityRef =
+      db.doc(
+        `${ROOT}/${uid}/activities/${id}`
+      );
+
+    const routeRef =
+      db.doc(
+        `${ROOT}/${uid}/activity_routes/${id}`
+      );
+
+    const [
+      activitySnap,
+      routeSnap
+    ] =
+      await Promise.all([
+        activityRef.get(),
+        routeRef.get()
+      ]);
+
+    if (
+      !activitySnap.exists
+    ) {
+      throw Object.assign(
+        new Error(
+          `CGWEB135 : activité ${id} absente.`
+        ),
+        {
+          status:
+            404
+        }
+      );
+    }
+
+    const activity =
+      activitySnap.data() ||
+      {};
+
+    if (
+      activity
+        ?.deleted_at_ms != null
+    ) {
+      throw Object.assign(
+        new Error(
+          "CGWEB135 : activité supprimée."
+        ),
+        {
+          status:
+            422
+        }
+      );
+    }
+
+    /*
+     * Le verrou CGWEB134 porte une photographie immuable
+     * des statistiques au moment du préflight.
+     * Si elles ont changé depuis, on exige un nouveau préflight.
+     */
+    const currentLockSnapshot =
+      c135LockSnapshot(
+        activity
+      );
+
+    const currentHash =
+      c135SnapshotHash(
+        currentLockSnapshot
+      );
+
+    if (
+      String(
+        lock
+          .activity_snapshot_hash ||
+        ""
+      ) !==
+      currentHash
+    ) {
+      throw Object.assign(
+        new Error(
+          "CGWEB135 : les statistiques CGWEB ont changé depuis le préflight. Relancer Strava."
+        ),
+        {
+          status:
+            409
+        }
+      );
+    }
+
+    const route =
+      routeSnap.exists
+        ? routeSnap.data() || {}
+        : {};
+
+    const expected =
+      c135Expected(
+        activity
+      );
+
+    const blockers =
+      c135Blockers(
+        expected
+      );
+
+    /*
+     * V078 est retenu comme builder :
+     * - GPS si disponible ;
+     * - reconstruction minimale si absence de route ;
+     * - distinction elapsed / timer déjà maîtrisée.
+     */
+    const prepared =
+      v078BuildPayload(
+        activity,
+        route
+      );
+
+    prepared.payload.activity_id =
+      id;
+
+    prepared.payload.fit_signature_seed =
+      id;
+
+    prepared.payload.duration_s =
+      expected.elapsed_time_ms /
+      1000;
+
+    prepared.payload.total_elapsed_time_s =
+      expected.elapsed_time_ms /
+      1000;
+
+    prepared.payload.total_timer_time_s =
+      expected.timer_time_ms /
+      1000;
+
+    prepared.payload.distance_m =
+      expected.distance_m;
+
+    prepared.payload.total_ascent_m =
+      expected.ascent_m;
+
+    prepared.payload.total_calories =
+      expected.calories;
+
+    const generated =
+      await encodeCanonicalFit(
+        prepared.payload
+      );
+
+    const validation =
+      await inspectFitBuffer(
+        generated.buffer
+      );
+
+    if (!validation.ok) {
+      throw Object.assign(
+        new Error(
+          "CGWEB135 : FIT candidat invalide."
+        ),
+        {
+          status:
+            500
+        }
+      );
+    }
+
+    const decoded =
+      await decodeCanonicalFitSummary(
+        generated.buffer
+      );
+
+    const comparisons = [
+      c135Metric(
+        "distance_m",
+        expected.distance_m,
+        decoded.totalDistance,
+        0.5,
+        "m"
+      ),
+
+      c135Metric(
+        "timer_time_s",
+        expected.timer_time_ms /
+          1000,
+        decoded.timerSeconds,
+        0.05,
+        "s"
+      ),
+
+      c135Metric(
+        "elapsed_time_s",
+        expected.elapsed_time_ms /
+          1000,
+        decoded.elapsedSeconds,
+        0.05,
+        "s"
+      ),
+
+      c135Metric(
+        "ascent_m",
+        expected.ascent_m,
+        decoded.totalAscent,
+        0.5,
+        "m"
+      ),
+
+      c135Metric(
+        "calories",
+        expected.calories,
+        decoded.totalCalories,
+        0,
+        "kcal"
+      )
+    ];
+
+    const structureOk =
+      Boolean(
+        decoded.integrity &&
+        !decoded.errors.length &&
+        decoded.sessionCount ===
+          1 &&
+        decoded.lapCount >=
+          1 &&
+        decoded.activityCount ===
+          1 &&
+        decoded.eventCount ===
+          Number(
+            generated.stats
+              ?.timerEventCount ||
+            0
+          )
+      );
+
+    const metricsOk =
+      comparisons.every(
+        row =>
+          row.ok
+      );
+
+    const parityOk =
+      Boolean(
+        !blockers.length &&
+        validation.ok &&
+        structureOk &&
+        metricsOk
+      );
+
+    const hash =
+      sha256(
+        generated.buffer
+      );
+
+    const objectPath =
+      [
+        "strava_exports",
+        uid,
+        "previews",
+        id,
+        `${hash}.fit`
+      ].join("/");
+
+    const object =
+      bucket().file(
+        objectPath
+      );
+
+    const [exists] =
+      await object.exists();
+
+    if (!exists) {
+      await object.save(
+        generated.buffer,
+        {
+          resumable:
+            false,
+
+          validation:
+            "crc32c",
+
+          contentType:
+            "application/vnd.ant.fit",
+
+          metadata:
+            {
+              cacheControl:
+                "private, no-store",
+
+              metadata:
+                {
+                  owner_uid:
+                    uid,
+
+                  activity_id:
+                    id,
+
+                  sha256:
+                    hash,
+
+                  source:
+                    "CGWEB135_STRAVA_PREVIEW",
+
+                  export_version:
+                    CGWEB135_VERSION,
+
+                  parity_ok:
+                    parityOk
+                      ? "true"
+                      : "false"
+                }
+            }
+        }
+      );
+    }
+
+    const now =
+      Date.now();
+
+    const preview = {
+      version:
+        CGWEB135_VERSION,
+
+      generated_at_ms:
+        now,
+
+      parity_ok:
+        parityOk,
+
+      blockers,
+
+      sha256:
+        hash,
+
+      object_path:
+        objectPath,
+
+      file_name:
+        generated.fileName,
+
+      size_bytes:
+        generated.buffer.length,
+
+      expected,
+
+      fit:
+        {
+          distance_m:
+            decoded.totalDistance,
+
+          timer_time_s:
+            decoded.timerSeconds,
+
+          elapsed_time_s:
+            decoded.elapsedSeconds,
+
+          ascent_m:
+            decoded.totalAscent,
+
+          calories:
+            decoded.totalCalories,
+
+          record_count:
+            decoded.recordCount,
+
+          event_count:
+            decoded.eventCount,
+
+          lap_count:
+            decoded.lapCount,
+
+          session_count:
+            decoded.sessionCount,
+
+          activity_count:
+            decoded.activityCount,
+
+          integrity:
+            decoded.integrity
+        },
+
+      comparisons,
+
+      timer_events:
+        {
+          mode:
+            generated.stats
+              ?.timerEventMode ||
+            null,
+
+          event_count:
+            Number(
+              generated.stats
+                ?.timerEventCount ||
+              0
+            ),
+
+          pause_seconds:
+            Number(
+              generated.stats
+                ?.timerPauseSeconds ||
+              0
+            )
+        },
+
+      structure_ok:
+        structureOk,
+
+      metrics_ok:
+        metricsOk,
+
+      upload_performed:
+        false,
+
+      can_upload:
+        false
+    };
+
+    await lockRef.set(
+      {
+        fit_preview_version:
+          CGWEB135_VERSION,
+
+        fit_preview_ready:
+          parityOk,
+
+        fit_preview:
+          preview,
+
+        updated_at_ms:
+          now
+      },
+      {
+        merge:
+          true
+      }
+    );
+
+    return {
+      ok:
+        parityOk,
+
+      status:
+        parityOk
+          ? "FIT_PARITY_OK"
+          : "FIT_PARITY_BLOCKED",
+
+      activity_id:
+        id,
+
+      external_id:
+        lock.external_id ||
+        null,
+
+      preview,
+
+      upload_performed:
+        false,
+
+      can_upload:
+        false
+    };
+  }
+
+
+  /* CGWEB135_BACKEND_END */
+
+
   return onRequest(
     {region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: false},
     async (req, res) => {
@@ -14313,6 +15337,72 @@ async function c099GlobalDirectoryQuery(
         }
 
         /* CGWEB075_FITWRITER001_ACTION_END */
+
+        /* CGWEB135_PREUPLOAD_ROUNDTRIP001_ACTION_START */
+
+        if (
+          action ===
+            "strava_export_preview"
+        ) {
+          if (
+            req.method !==
+            "POST"
+          ) {
+            return res.status(
+              405
+            ).json({
+              error:
+                "POST requis."
+            });
+          }
+
+          let body =
+            req.body;
+
+          if (
+            Buffer.isBuffer(body)
+          ) {
+            try {
+              body =
+                JSON.parse(
+                  body.toString(
+                    "utf8"
+                  )
+                );
+            } catch {
+              body = {};
+            }
+          }
+
+          if (
+            !body ||
+            typeof body !==
+              "object" ||
+            Array.isArray(body)
+          ) {
+            body = {};
+          }
+
+          const result =
+            await c135PrepareStravaPreview(
+              uid,
+              String(
+                body.activity_id ||
+                ""
+              ).trim(),
+              String(
+                body.lock_token ||
+                ""
+              ).trim()
+            );
+
+          return res.json(
+            result
+          );
+        }
+
+        /* CGWEB135_PREUPLOAD_ROUNDTRIP001_ACTION_END */
+
 
         /* CGWEB076_FITROUNDTRIP001_ACTION_START */
         if (action === "roundtrip") {

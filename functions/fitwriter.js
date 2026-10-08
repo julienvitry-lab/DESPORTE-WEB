@@ -410,6 +410,30 @@ function activityStats(payload, normalized) {
       ascent
     );
 
+  /* CGWEB135 · TOTAL_CALORIES_FIT001 */
+  const caloriesRaw =
+    payload?.total_calories ??
+    payload?.totalCalories ??
+    payload?.calories ??
+    payload?.kcal;
+
+  const caloriesFinite =
+    caloriesRaw == null ||
+    caloriesRaw === ""
+      ? null
+      : finite(caloriesRaw);
+
+  const totalCalories =
+    caloriesFinite != null
+      ? Math.round(
+          clamp(
+            caloriesFinite,
+            0,
+            65535
+          )
+        )
+      : null;
+
   const avgSpeed =
     timerSeconds > 0
       ? totalDistance / timerSeconds
@@ -425,6 +449,7 @@ function activityStats(payload, normalized) {
       Math.max(0, totalDistance),
     totalAscent:
       Math.max(0, totalAscent || 0),
+    totalCalories,
     avgHeartRate: effectiveAvgHeartRate,
     maxHeartRate: effectiveMaxHeartRate,
     avgSpeed:
@@ -660,6 +685,129 @@ function fitSignatureIdentity(payload, startMs) {
 
 /* CGWEB088_FIX1_FITSIGNATURE001_HELPERS_END */
 
+
+/* CGWEB135_TIMER_EVENTS001_START */
+
+function fitStravaTimerEventPlan(stats) {
+  const startMs =
+    Number(stats?.startMs);
+
+  const endMs =
+    Number(stats?.endMs);
+
+  const elapsedSeconds =
+    Math.max(
+      0,
+      Number(
+        stats?.elapsedSeconds
+      ) || 0
+    );
+
+  const timerSeconds =
+    Math.max(
+      0,
+      Number(
+        stats?.timerSeconds
+      ) || 0
+    );
+
+  const pauseSeconds =
+    Math.max(
+      0,
+      elapsedSeconds -
+      timerSeconds
+    );
+
+  const internalEvents = [];
+
+  let mode =
+    "CONTINUOUS";
+
+  /*
+   * Si Temps chrono < Temps écoulé, le FIT doit porter
+   * une vraie sémantique timer.
+   *
+   * À ce stade historique nous ne prétendons pas connaître
+   * l'emplacement exact d'une ancienne pause si les événements
+   * originaux ne sont plus disponibles.
+   *
+   * On encode donc UNE pause synthétique équilibrée qui respecte
+   * exactement le budget timer. Son existence est explicitement
+   * auditée et ne sera jamais cachée.
+   */
+  if (
+    Number.isFinite(startMs) &&
+    Number.isFinite(endMs) &&
+    endMs >= startMs &&
+    pauseSeconds >= 0.5 &&
+    timerSeconds <= elapsedSeconds
+  ) {
+    const activeBeforeSeconds =
+      timerSeconds / 2;
+
+    const pauseStartMs =
+      startMs +
+      Math.round(
+        activeBeforeSeconds *
+        1000
+      );
+
+    const pauseEndMs =
+      pauseStartMs +
+      Math.round(
+        pauseSeconds *
+        1000
+      );
+
+    if (
+      pauseStartMs >= startMs &&
+      pauseEndMs <= endMs &&
+      pauseEndMs >= pauseStartMs
+    ) {
+      internalEvents.push(
+        {
+          timestampMs:
+            pauseStartMs,
+
+          eventType:
+            "stopAll"
+        },
+
+        {
+          timestampMs:
+            pauseEndMs,
+
+          eventType:
+            "start"
+        }
+      );
+
+      mode =
+        "SYNTHETIC_SINGLE_PAUSE";
+    }
+  }
+
+  if (
+    timerSeconds >
+    elapsedSeconds + 0.05
+  ) {
+    mode =
+      "INVALID_TIMER_GT_ELAPSED";
+  }
+
+  return {
+    mode,
+    pauseSeconds,
+    internalEvents,
+    totalEventCount:
+      2 +
+      internalEvents.length
+  };
+}
+
+/* CGWEB135_TIMER_EVENTS001_END */
+
+
 async function encodeCanonicalFit(payload = {}) {
   const {
     Encoder,
@@ -673,6 +821,11 @@ async function encodeCanonicalFit(payload = {}) {
     activityStats(
       payload,
       normalized
+    );
+
+  const timerPlan =
+    fitStravaTimerEventPlan(
+      stats
     );
 
   const sport =
@@ -766,12 +919,49 @@ async function encodeCanonicalFit(payload = {}) {
   );
 
   /*
-   * Records.
+   * Records + éventuels événements pause/reprise.
    */
+  let timerEventIndex = 0;
+
+  const internalTimerEvents =
+    timerPlan.internalEvents;
+
   for (
     const point of
     normalized.points
   ) {
+    while (
+      timerEventIndex <
+        internalTimerEvents.length &&
+      internalTimerEvents[
+        timerEventIndex
+      ].timestampMs <=
+        point.timestampMs
+    ) {
+      const timerEvent =
+        internalTimerEvents[
+          timerEventIndex
+        ];
+
+      write(
+        Profile.MesgNum.EVENT,
+        {
+          timestamp:
+            new Date(
+              timerEvent.timestampMs
+            ),
+
+          event:
+            "timer",
+
+          eventType:
+            timerEvent.eventType
+        }
+      );
+
+      timerEventIndex += 1;
+    }
+
     write(
       Profile.MesgNum.RECORD,
       {
@@ -828,6 +1018,34 @@ async function encodeCanonicalFit(payload = {}) {
     );
   }
 
+  while (
+    timerEventIndex <
+      internalTimerEvents.length
+  ) {
+    const timerEvent =
+      internalTimerEvents[
+        timerEventIndex
+      ];
+
+    write(
+      Profile.MesgNum.EVENT,
+      {
+        timestamp:
+          new Date(
+            timerEvent.timestampMs
+          ),
+
+        event:
+          "timer",
+
+        eventType:
+          timerEvent.eventType
+      }
+    );
+
+    timerEventIndex += 1;
+  }
+
   /*
    * Timer stop.
    */
@@ -857,6 +1075,8 @@ async function encodeCanonicalFit(payload = {}) {
         stats.totalDistance,
       totalAscent:
         Math.round(stats.totalAscent),
+      totalCalories:
+        stats.totalCalories,
       avgHeartRate:
         stats.avgHeartRate,
       maxHeartRate:
@@ -885,6 +1105,8 @@ async function encodeCanonicalFit(payload = {}) {
         stats.totalDistance,
       totalAscent:
         Math.round(stats.totalAscent),
+      totalCalories:
+        stats.totalCalories,
       avgHeartRate:
         stats.avgHeartRate,
       maxHeartRate:
@@ -934,6 +1156,14 @@ async function encodeCanonicalFit(payload = {}) {
       ...stats,
       sport,
       subSport,
+      totalCalories:
+        stats.totalCalories,
+      timerEventMode:
+        timerPlan.mode,
+      timerPauseSeconds:
+        timerPlan.pauseSeconds,
+      timerEventCount:
+        timerPlan.totalEventCount,
       pointCount:
         normalized.points.length,
       serialNumber,
@@ -1197,6 +1427,7 @@ async function fitWriterSelfTest() {
       start_time_ms: start,
       sport: 1,
       sub_sport: 0,
+      total_calories: 321,
       points
     });
 
@@ -1264,6 +1495,7 @@ async function decodeCanonicalFitSummary(buffer) {
   const sessions = Array.isArray(messages.sessionMesgs) ? messages.sessionMesgs : [];
   const laps = Array.isArray(messages.lapMesgs) ? messages.lapMesgs : [];
   const activities = Array.isArray(messages.activityMesgs) ? messages.activityMesgs : [];
+  const events = Array.isArray(messages.eventMesgs) ? messages.eventMesgs : [];
   const session = sessions[0] || {};
 
   const dateMs = (value) => {
@@ -1295,11 +1527,13 @@ async function decodeCanonicalFitSummary(buffer) {
     timerSeconds: number(session.totalTimerTime),
     totalDistance: number(session.totalDistance),
     totalAscent: number(session.totalAscent),
+    totalCalories: number(session.totalCalories),
     avgHeartRate: number(session.avgHeartRate),
     maxHeartRate: number(session.maxHeartRate),
     sport: number(session.sport),
     subSport: number(session.subSport),
     recordCount: records.length,
+    eventCount: events.length,
     lapCount: laps.length,
     sessionCount: sessions.length,
     activityCount: activities.length

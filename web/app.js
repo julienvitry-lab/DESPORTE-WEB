@@ -77370,3 +77370,936 @@ console.info(
 );
 
 /* CGWEB134_FIX1_END */
+
+/* CGWEB135_START
+   FIT_STRAVA_PARITY001
+   TOTAL_CALORIES_FIT001
+   TIMER_EVENTS001
+   PREUPLOAD_ROUNDTRIP001
+   EXPORT_PREVIEW001
+*/
+
+const cgweb135State = {
+  busy:
+    false,
+
+  byActivity:
+    new Map()
+};
+
+
+function cgweb135EnsureStyle() {
+  if (
+    document.getElementById(
+      "cgweb135Style"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement(
+      "style"
+    );
+
+  style.id =
+    "cgweb135Style";
+
+  style.textContent = `
+    .cgweb135-parity-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+    }
+
+    .cgweb135-parity-table th,
+    .cgweb135-parity-table td {
+      padding: 8px 7px;
+      border-bottom: 1px solid rgba(128,128,128,.18);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .cgweb135-parity-table th:first-child,
+    .cgweb135-parity-table td:first-child {
+      text-align: left;
+    }
+
+    .cgweb135-ok {
+      font-weight: 700;
+    }
+
+    .cgweb135-blocked {
+      font-weight: 700;
+    }
+
+    .cgweb135-technical {
+      margin-top: 12px;
+      line-height: 1.5;
+    }
+
+    #cgweb135PrepareFitButton {
+      white-space: nowrap;
+    }
+
+    @media (max-width: 720px) {
+      .cgweb135-parity-table {
+        font-size: .9em;
+      }
+
+      .cgweb135-parity-table th,
+      .cgweb135-parity-table td {
+        padding: 6px 4px;
+      }
+    }
+  `;
+
+  document.head.appendChild(
+    style
+  );
+}
+
+
+function cgweb135Metric(
+  result,
+  metric
+) {
+  return (
+    result
+      ?.preview
+      ?.comparisons ||
+    []
+  ).find(
+    row =>
+      row?.metric ===
+      metric
+  ) || null;
+}
+
+
+function cgweb135Signed(
+  value,
+  unit,
+  digits = 0
+) {
+  const n =
+    Number(value);
+
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  const fixed =
+    n.toFixed(
+      digits
+    );
+
+  return (
+    (n > 0 ? "+" : "") +
+    fixed +
+    " " +
+    unit
+  );
+}
+
+
+function cgweb135SecondsLabel(
+  value
+) {
+  const seconds =
+    Number(value);
+
+  if (!Number.isFinite(seconds)) {
+    return "—";
+  }
+
+  return cgweb134FormatDuration(
+    seconds *
+    1000
+  );
+}
+
+
+function cgweb135MetricDisplay(
+  metric,
+  value
+) {
+  const n =
+    Number(value);
+
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  if (
+    metric ===
+      "distance_m"
+  ) {
+    return cgweb134FormatDistance(
+      n
+    );
+  }
+
+  if (
+    metric ===
+      "timer_time_s" ||
+    metric ===
+      "elapsed_time_s"
+  ) {
+    return cgweb135SecondsLabel(
+      n
+    );
+  }
+
+  if (
+    metric ===
+      "ascent_m"
+  ) {
+    return (
+      Math.round(n) +
+      " m"
+    );
+  }
+
+  if (
+    metric ===
+      "calories"
+  ) {
+    return (
+      Math.round(n) +
+      " kcal"
+    );
+  }
+
+  return String(n);
+}
+
+
+function cgweb135MetricDelta(
+  row
+) {
+  if (
+    !row ||
+    !Number.isFinite(
+      Number(
+        row.delta
+      )
+    )
+  ) {
+    return "—";
+  }
+
+  if (
+    row.metric ===
+      "distance_m"
+  ) {
+    return cgweb135Signed(
+      row.delta,
+      "m",
+      2
+    );
+  }
+
+  if (
+    row.metric ===
+      "timer_time_s" ||
+    row.metric ===
+      "elapsed_time_s"
+  ) {
+    return cgweb135Signed(
+      row.delta,
+      "s",
+      3
+    );
+  }
+
+  if (
+    row.metric ===
+      "ascent_m"
+  ) {
+    return cgweb135Signed(
+      row.delta,
+      "m",
+      1
+    );
+  }
+
+  if (
+    row.metric ===
+      "calories"
+  ) {
+    return cgweb135Signed(
+      row.delta,
+      "kcal",
+      0
+    );
+  }
+
+  return String(
+    row.delta
+  );
+}
+
+
+function cgweb135RowHtml(
+  result,
+  metric,
+  label
+) {
+  const row =
+    cgweb135Metric(
+      result,
+      metric
+    );
+
+  return `
+    <tr>
+      <td>${cgweb134Escape(label)}</td>
+
+      <td>
+        ${cgweb134Escape(
+          cgweb135MetricDisplay(
+            metric,
+            row?.source
+          )
+        )}
+      </td>
+
+      <td>
+        ${cgweb134Escape(
+          cgweb135MetricDisplay(
+            metric,
+            row?.fit
+          )
+        )}
+      </td>
+
+      <td>
+        ${cgweb134Escape(
+          cgweb135MetricDelta(
+            row
+          )
+        )}
+      </td>
+
+      <td class="${
+        row?.ok
+          ? "cgweb135-ok"
+          : "cgweb135-blocked"
+      }">
+        ${
+          row?.ok
+            ? "✓"
+            : "⚠"
+        }
+      </td>
+    </tr>
+  `;
+}
+
+
+function cgweb135ShowPreview(
+  activity,
+  result
+) {
+  const preview =
+    result?.preview ||
+    {};
+
+  const parityOk =
+    Boolean(
+      preview.parity_ok
+    );
+
+  const blockers =
+    Array.isArray(
+      preview.blockers
+    )
+      ? preview.blockers
+      : [];
+
+  const timer =
+    preview.timer_events ||
+    {};
+
+  cgweb134OpenDialog(
+    parityOk
+      ? "Strava · FIT candidat conforme"
+      : "Strava · FIT candidat bloqué",
+
+    `
+      <p>
+        ${
+          parityOk
+            ? (
+                "<strong>Parité CGWEB → FIT validée.</strong> " +
+                "Le fichier candidat redécodé restitue les statistiques attendues."
+              )
+            : (
+                "<strong>Parité insuffisante.</strong> " +
+                "Le futur upload Strava restera bloqué."
+              )
+        }
+      </p>
+
+      <table class="cgweb135-parity-table">
+        <thead>
+          <tr>
+            <th>Statistique</th>
+            <th>CGWEB</th>
+            <th>FIT relu</th>
+            <th>Écart</th>
+            <th></th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${cgweb135RowHtml(
+            result,
+            "distance_m",
+            "Distance"
+          )}
+
+          ${cgweb135RowHtml(
+            result,
+            "timer_time_s",
+            "Temps"
+          )}
+
+          ${cgweb135RowHtml(
+            result,
+            "elapsed_time_s",
+            "Temps écoulé"
+          )}
+
+          ${cgweb135RowHtml(
+            result,
+            "ascent_m",
+            "D+"
+          )}
+
+          ${cgweb135RowHtml(
+            result,
+            "calories",
+            "Calories"
+          )}
+        </tbody>
+      </table>
+
+      <div class="cgweb135-technical muted">
+        <div>
+          FIT :
+          <strong>${cgweb134Escape(
+            preview.file_name ||
+            "—"
+          )}</strong>
+        </div>
+
+        <div>
+          ${cgweb134Escape(
+            String(
+              preview.size_bytes ||
+              0
+            )
+          )} octets
+          · SHA-256
+          ${cgweb134Escape(
+            String(
+              preview.sha256 ||
+              ""
+            ).slice(
+              0,
+              16
+            )
+          )}…
+        </div>
+
+        <div>
+          Timer :
+          ${cgweb134Escape(
+            timer.mode ||
+            "—"
+          )}
+          ·
+          ${cgweb134Escape(
+            String(
+              timer.event_count ??
+              0
+            )
+          )}
+          événements
+          · pause encodée
+          ${cgweb134Escape(
+            Number(
+              timer.pause_seconds ||
+              0
+            ).toFixed(
+              1
+            )
+          )} s
+        </div>
+
+        ${
+          blockers.length
+            ? (
+                "<div>Blocages : " +
+                cgweb134Escape(
+                  blockers.join(
+                    " · "
+                  )
+                ) +
+                "</div>"
+              )
+            : ""
+        }
+      </div>
+
+      <p class="muted">
+        <strong>Aucun upload Strava n'a été effectué.</strong>
+        CGWEB135 stocke uniquement le FIT candidat contrôlé.
+        L'envoi réel restera réservé à CGWEB136.
+      </p>
+    `
+  );
+
+  cgweb135RefreshToolbarState(
+    activity
+  );
+}
+
+
+async function cgweb135PrepareCurrentFit(
+  preparedState
+) {
+  if (
+    cgweb135State.busy
+  ) {
+    return;
+  }
+
+  const activity =
+    currentDetailActivity();
+
+  if (!activity) {
+    return;
+  }
+
+  const key =
+    String(
+      activityKey(
+        activity
+      ) || ""
+    );
+
+  if (!key) {
+    return;
+  }
+
+  const lockState =
+    preparedState ||
+    cgweb134State
+      .byActivity
+      .get(key);
+
+  if (
+    lockState?.status !==
+      "READY_LOCKED" ||
+    !lockState
+      ?.lock_token
+  ) {
+    cgweb134OpenDialog(
+      "Strava · préflight requis",
+      `
+        <p>
+          Le verrou CGWEB134 n'est plus disponible.
+          Relance d'abord le bouton Strava.
+        </p>
+      `
+    );
+
+    return;
+  }
+
+  const api =
+    window
+      .SPORT_FIT_STRAVA_PREVIEW;
+
+  if (
+    !api ||
+    typeof api
+      .previewActivity !==
+      "function"
+  ) {
+    cgweb134OpenDialog(
+      "Strava · FIT indisponible",
+      `
+        <p>
+          L'API FIT CGWEB135 n'est pas chargée.
+          Recharge SPORT Web puis réessaie.
+        </p>
+      `
+    );
+
+    return;
+  }
+
+  cgweb135State.busy =
+    true;
+
+  const button =
+    document.getElementById(
+      "cgweb135PrepareFitButton"
+    );
+
+  if (button) {
+    button.disabled =
+      true;
+
+    button.textContent =
+      "Préparation du FIT…";
+  }
+
+  try {
+    cgweb134OpenDialog(
+      "Strava · préparation du FIT",
+      `
+        <p>
+          Génération du FIT candidat, redécodage intégral
+          et comparaison CGWEB → FIT…
+        </p>
+
+        <p class="muted">
+          Aucun appel d'upload vers Strava n'est effectué.
+        </p>
+      `
+    );
+
+    const result =
+      await api.previewActivity(
+        key,
+        lockState
+          .lock_token
+      );
+
+    cgweb135State
+      .byActivity
+      .set(
+        key,
+        result
+      );
+
+    cgweb135ShowPreview(
+      activity,
+      result
+    );
+
+  } catch (error) {
+    console.error(
+      "CGWEB135 preview",
+      error
+    );
+
+    cgweb134OpenDialog(
+      "Strava · préparation impossible",
+      `
+        <p>
+          ${cgweb134Escape(
+            error?.message ||
+            String(error)
+          )}
+        </p>
+
+        <p class="muted">
+          Aucun upload Strava n'a été effectué.
+        </p>
+      `
+    );
+
+  } finally {
+    cgweb135State.busy =
+      false;
+
+    cgweb135RefreshToolbarState(
+      activity
+    );
+  }
+}
+
+
+function cgweb135AugmentReadyDialog(
+  activity,
+  result
+) {
+  if (
+    result?.status !==
+      "READY_LOCKED"
+  ) {
+    return;
+  }
+
+  const actions =
+    document.querySelector(
+      "#cgweb134Dialog .cgweb134-dialog-actions"
+    );
+
+  if (!actions) {
+    return;
+  }
+
+  document
+    .getElementById(
+      "cgweb135PrepareFitButton"
+    )
+    ?.remove();
+
+  const button =
+    document.createElement(
+      "button"
+    );
+
+  button.id =
+    "cgweb135PrepareFitButton";
+
+  button.type =
+    "button";
+
+  button.className =
+    "primary";
+
+  button.textContent =
+    "Préparer le FIT candidat";
+
+  button.addEventListener(
+    "click",
+    () => {
+      void cgweb135PrepareCurrentFit(
+        result
+      );
+    }
+  );
+
+  actions.insertBefore(
+    button,
+    actions.firstChild
+  );
+}
+
+
+/*
+ * CGWEB134 reste propriétaire du préflight.
+ * CGWEB135 enrichit uniquement le résultat READY_LOCKED.
+ */
+const cgweb135BaseShowResult =
+  cgweb134ShowResult;
+
+cgweb134ShowResult =
+  function cgweb135ShowResultWrapper(
+    activity,
+    result
+  ) {
+    document
+      .getElementById(
+        "cgweb135PrepareFitButton"
+      )
+      ?.remove();
+
+    const out =
+      cgweb135BaseShowResult(
+        activity,
+        result
+      );
+
+    if (
+      result?.status ===
+        "READY_LOCKED"
+    ) {
+      cgweb135AugmentReadyDialog(
+        activity,
+        result
+      );
+    }
+
+    return out;
+  };
+
+
+function cgweb135RefreshToolbarState(
+  activity =
+    currentDetailActivity()
+) {
+  const button =
+    document.getElementById(
+      "cgweb134StravaButton"
+    );
+
+  if (
+    !button ||
+    !activity
+  ) {
+    return;
+  }
+
+  const key =
+    String(
+      activityKey(
+        activity
+      ) || ""
+    );
+
+  const result =
+    cgweb135State
+      .byActivity
+      .get(key);
+
+  if (!result) {
+    return;
+  }
+
+  if (
+    result
+      ?.preview
+      ?.parity_ok
+  ) {
+    cgweb134Fix1SetButtonText(
+      button,
+      "Strava · FIT ✓"
+    );
+
+    button.classList.remove(
+      "cgweb134-warning"
+    );
+
+    button.classList.add(
+      "cgweb134-ready"
+    );
+
+    button.title =
+      "FIT candidat CGWEB135 conforme. Aucun upload Strava effectué.";
+
+    return;
+  }
+
+  cgweb134Fix1SetButtonText(
+    button,
+    "Strava · FIT ⚠"
+  );
+
+  button.classList.remove(
+    "cgweb134-ready"
+  );
+
+  button.classList.add(
+    "cgweb134-warning"
+  );
+
+  button.title =
+    "FIT candidat non conforme : upload futur bloqué.";
+}
+
+
+/*
+ * On conserve le rendu CGWEB134, puis CGWEB135
+ * applique son état de parité s'il existe.
+ */
+const cgweb135BaseRefreshButton =
+  cgweb134RefreshButton;
+
+cgweb134RefreshButton =
+  function cgweb135RefreshButtonWrapper() {
+    const out =
+      cgweb135BaseRefreshButton();
+
+    cgweb135RefreshToolbarState();
+
+    return out;
+  };
+
+
+cgweb135EnsureStyle();
+
+
+window.CGWEB135_STATUS =
+  function () {
+    const activity =
+      currentDetailActivity();
+
+    const key =
+      activity
+        ? String(
+            activityKey(
+              activity
+            ) || ""
+          )
+        : "";
+
+    return {
+      build:
+        "CGWEB135",
+
+      fit_strava_parity:
+        "FIT_STRAVA_PARITY001",
+
+      total_calories_fit:
+        "TOTAL_CALORIES_FIT001",
+
+      timer_events:
+        "TIMER_EVENTS001",
+
+      preupload_roundtrip:
+        "PREUPLOAD_ROUNDTRIP001",
+
+      export_preview:
+        "EXPORT_PREVIEW001",
+
+      real_strava_upload:
+        false,
+
+      activity_key:
+        key ||
+        null,
+
+      preview:
+        key
+          ? cgweb135State
+              .byActivity
+              .get(key) ||
+            null
+          : null
+    };
+  };
+
+
+window.CGWEB135_PREVIEW_CURRENT =
+  function () {
+    const activity =
+      currentDetailActivity();
+
+    if (!activity) {
+      return;
+    }
+
+    const key =
+      String(
+        activityKey(
+          activity
+        ) || ""
+      );
+
+    void cgweb135PrepareCurrentFit(
+      cgweb134State
+        .byActivity
+        .get(key)
+    );
+  };
+
+
+console.info(
+  "CGWEB135 actif · " +
+  "FIT_STRAVA_PARITY001 / " +
+  "TOTAL_CALORIES_FIT001 / " +
+  "TIMER_EVENTS001 / " +
+  "PREUPLOAD_ROUNDTRIP001 / " +
+  "EXPORT_PREVIEW001"
+);
+
+/* CGWEB135_END */

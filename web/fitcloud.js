@@ -6671,3 +6671,69 @@ console.info(
   "CGWEB123 FIX4 actif dans fitcloud.js · CLIENT_PROGRESS_ONLY001"
 );
 /* CGWEB123_FIX4_SERVER_CLIENT_END */
+
+/* CGWEB135_FIT_STRAVA_PREVIEW_API_START */
+
+async function c135StravaExportPreview(
+  activityId,
+  lockToken
+) {
+  const id =
+    String(
+      activityId ||
+      ""
+    ).trim();
+
+  const token =
+    String(
+      lockToken ||
+      ""
+    ).trim();
+
+  if (!id) {
+    throw new Error(
+      "CGWEB135 : activity_id absent."
+    );
+  }
+
+  if (!token) {
+    throw new Error(
+      "CGWEB135 : verrou CGWEB134 absent."
+    );
+  }
+
+  return request(
+    "strava_export_preview",
+    {
+      method:
+        "POST",
+
+      headers:
+        {
+          "Content-Type":
+            "application/json"
+        },
+
+      body:
+        JSON.stringify({
+          activity_id:
+            id,
+
+          lock_token:
+            token
+        })
+    }
+  );
+}
+
+
+window.SPORT_FIT_STRAVA_PREVIEW =
+  Object.freeze({
+    version:
+      "CGWEB135",
+
+    previewActivity:
+      c135StravaExportPreview
+  });
+
+/* CGWEB135_FIT_STRAVA_PREVIEW_API_END */
