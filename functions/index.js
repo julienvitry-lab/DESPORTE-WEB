@@ -2420,6 +2420,41 @@ async function cgweb136ReconcileFromDetail(
     calories:
       strava.calories,
 
+    /*
+     * CGWEB137 · STRAVA_CANONICAL_METRICS001
+     *
+     * Copie immuable des valeurs BRUTES renvoyées par Strava.
+     * Aucune conversion km, aucun arrondi, aucune présentation UI ici.
+     */
+    strava_canonical_distance_m:
+      strava.distance_m,
+
+    strava_canonical_moving_time_s:
+      strava.timer_time_ms /
+      1000,
+
+    strava_canonical_elapsed_time_s:
+      strava.elapsed_time_ms /
+      1000,
+
+    strava_canonical_elevation_gain_m:
+      strava.ascent_m,
+
+    strava_canonical_calories:
+      strava.calories,
+
+    strava_canonical_activity_id:
+      stravaId,
+
+    strava_canonical_source:
+      "STRAVA_DETAILED_ACTIVITY",
+
+    strava_canonical_version:
+      "CGWEB137",
+
+    strava_canonical_at_ms:
+      Date.now(),
+
     strava_activity_id:
       stravaId,
 
@@ -5186,7 +5221,41 @@ async function cgweb136Fix1PostExportAudit(
               .persisted_load_fields_unchanged &&
             loadAudit
               .reconciliation_patch_preserved_load_fields
-          )
+          ),
+
+        /*
+         * CGWEB137 · backfill canonique d'une activité déjà réconciliée.
+         */
+        strava_canonical_distance_m:
+          currentStrava.distance_m,
+
+        strava_canonical_moving_time_s:
+          currentStrava.timer_time_ms != null
+            ? currentStrava.timer_time_ms / 1000
+            : null,
+
+        strava_canonical_elapsed_time_s:
+          currentStrava.elapsed_time_ms != null
+            ? currentStrava.elapsed_time_ms / 1000
+            : null,
+
+        strava_canonical_elevation_gain_m:
+          currentStrava.ascent_m,
+
+        strava_canonical_calories:
+          currentStrava.calories,
+
+        strava_canonical_activity_id:
+          stravaId,
+
+        strava_canonical_source:
+          "STRAVA_POST_EXPORT_AUDIT",
+
+        strava_canonical_version:
+          "CGWEB137",
+
+        strava_canonical_at_ms:
+          Date.now()
       },
       {
         merge:
@@ -5284,6 +5353,1451 @@ async function cgweb136Fix1PostExportAudit(
 
   return result;
 }
+
+
+
+/* CGWEB137_SERVER_START
+   STRAVA_CANONICAL_METRICS001
+   RAW_VALUE_PRESERVE001
+   AGGREGATE_FROM_RAW001
+   DISPLAY_ROUNDING_PARITY001
+   STRAVA_TOTALS_AUDIT001
+*/
+
+const CGWEB137_VERSION =
+  "CGWEB137";
+
+
+function cgweb137Finite(
+  value
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const n =
+    Number(value);
+
+  return Number.isFinite(n)
+    ? n
+    : null;
+}
+
+
+function cgweb137CanonicalSportMetrics(
+  activity
+) {
+  const canonicalDistance =
+    cgweb137Finite(
+      activity
+        ?.strava_canonical_distance_m
+    );
+
+  const canonicalMovingSeconds =
+    cgweb137Finite(
+      activity
+        ?.strava_canonical_moving_time_s
+    );
+
+  const canonicalElapsedSeconds =
+    cgweb137Finite(
+      activity
+        ?.strava_canonical_elapsed_time_s
+    );
+
+  const canonicalElevation =
+    cgweb137Finite(
+      activity
+        ?.strava_canonical_elevation_gain_m
+    );
+
+  const canonicalCalories =
+    cgweb137Finite(
+      activity
+        ?.strava_canonical_calories
+    );
+
+  /*
+   * Si l'ombre canonique n'existe pas encore,
+   * les champs principaux CGWEB136 sont déjà les valeurs Strava
+   * pour toute activité RECONCILED.
+   */
+  return {
+    distance_m:
+      canonicalDistance ??
+      cgweb137Finite(
+        activity?.distance_m
+      ) ??
+      0,
+
+    moving_time_s:
+      canonicalMovingSeconds ??
+      (
+        cgweb137Finite(
+          activity?.timer_time_ms
+        ) != null
+          ? cgweb137Finite(
+              activity.timer_time_ms
+            ) / 1000
+          : (
+              cgweb137Finite(
+                activity?.moving_time_ms
+              ) != null
+                ? cgweb137Finite(
+                    activity.moving_time_ms
+                  ) / 1000
+                : (
+                    cgweb137Finite(
+                      activity?.moving_time
+                    ) ??
+                    0
+                  )
+            )
+      ),
+
+    elapsed_time_s:
+      canonicalElapsedSeconds ??
+      (
+        cgweb137Finite(
+          activity?.elapsed_time_ms
+        ) != null
+          ? cgweb137Finite(
+              activity.elapsed_time_ms
+            ) / 1000
+          : 0
+      ),
+
+    elevation_gain_m:
+      canonicalElevation ??
+      cgweb137Finite(
+        activity?.ascent_m
+      ) ??
+      0,
+
+    calories:
+      canonicalCalories ??
+      cgweb137Finite(
+        activity?.calories
+      ),
+
+    canonical_shadow_complete:
+      (
+        canonicalDistance != null &&
+        canonicalMovingSeconds != null &&
+        canonicalElapsedSeconds != null &&
+        canonicalElevation != null &&
+        canonicalCalories != null
+      )
+  };
+}
+
+
+function cgweb137StravaMetrics(
+  row
+) {
+  return {
+    distance_m:
+      cgweb137Finite(
+        row?.distance
+      ) ??
+      0,
+
+    moving_time_s:
+      cgweb137Finite(
+        row?.moving_time
+      ) ??
+      0,
+
+    elapsed_time_s:
+      cgweb137Finite(
+        row?.elapsed_time
+      ) ??
+      0,
+
+    elevation_gain_m:
+      cgweb137Finite(
+        row
+          ?.total_elevation_gain
+      ) ??
+      0
+  };
+}
+
+
+/*
+ * Sommation compensée : aucun arrondi intermédiaire
+ * et réduction des erreurs binaires lors de milliers d'additions.
+ */
+function cgweb137KahanSum(
+  values
+) {
+  let sum = 0;
+  let correction = 0;
+
+  for (const value of values) {
+    const n =
+      Number(value);
+
+    if (!Number.isFinite(n)) {
+      continue;
+    }
+
+    const corrected =
+      n -
+      correction;
+
+    const next =
+      sum +
+      corrected;
+
+    correction =
+      (
+        next -
+        sum
+      ) -
+      corrected;
+
+    sum =
+      next;
+  }
+
+  return sum;
+}
+
+
+function cgweb137AggregateStrava(
+  rows
+) {
+  const metrics =
+    rows.map(
+      row =>
+        cgweb137StravaMetrics(
+          row
+        )
+    );
+
+  return {
+    count:
+      rows.length,
+
+    distance_m:
+      cgweb137KahanSum(
+        metrics.map(
+          row =>
+            row.distance_m
+        )
+      ),
+
+    moving_time_s:
+      cgweb137KahanSum(
+        metrics.map(
+          row =>
+            row.moving_time_s
+        )
+      ),
+
+    elapsed_time_s:
+      cgweb137KahanSum(
+        metrics.map(
+          row =>
+            row.elapsed_time_s
+        )
+      ),
+
+    elevation_gain_m:
+      cgweb137KahanSum(
+        metrics.map(
+          row =>
+            row.elevation_gain_m
+        )
+      )
+  };
+}
+
+
+function cgweb137AggregateSport(
+  rows
+) {
+  const metrics =
+    rows.map(
+      row =>
+        cgweb137CanonicalSportMetrics(
+          row
+        )
+    );
+
+  const calories =
+    metrics
+      .map(
+        row =>
+          row.calories
+      )
+      .filter(
+        value =>
+          value != null
+      );
+
+  return {
+    count:
+      rows.length,
+
+    distance_m:
+      cgweb137KahanSum(
+        metrics.map(
+          row =>
+            row.distance_m
+        )
+      ),
+
+    moving_time_s:
+      cgweb137KahanSum(
+        metrics.map(
+          row =>
+            row.moving_time_s
+        )
+      ),
+
+    elapsed_time_s:
+      cgweb137KahanSum(
+        metrics.map(
+          row =>
+            row.elapsed_time_s
+        )
+      ),
+
+    elevation_gain_m:
+      cgweb137KahanSum(
+        metrics.map(
+          row =>
+            row.elevation_gain_m
+        )
+      ),
+
+    calories:
+      cgweb137KahanSum(
+        calories
+      ),
+
+    calories_known_count:
+      calories.length,
+
+    canonical_shadow_complete_count:
+      metrics.filter(
+        row =>
+          row
+            .canonical_shadow_complete
+      ).length
+  };
+}
+
+
+function cgweb137NearlyEqual(
+  a,
+  b,
+  tolerance =
+    0.000001
+) {
+  const x =
+    Number(a);
+
+  const y =
+    Number(b);
+
+  return (
+    Number.isFinite(x) &&
+    Number.isFinite(y) &&
+    Math.abs(
+      x -
+      y
+    ) <=
+      tolerance
+  );
+}
+
+
+function cgweb137CompareTotals(
+  sport,
+  strava
+) {
+  const checks = {};
+
+  for (
+    const metric of [
+      "distance_m",
+      "moving_time_s",
+      "elapsed_time_s",
+      "elevation_gain_m"
+    ]
+  ) {
+    const sportValue =
+      Number(
+        sport?.[metric]
+      );
+
+    const stravaValue =
+      Number(
+        strava?.[metric]
+      );
+
+    const delta =
+      sportValue -
+      stravaValue;
+
+    checks[metric] = {
+      sport:
+        sportValue,
+
+      strava:
+        stravaValue,
+
+      delta,
+
+      equal:
+        cgweb137NearlyEqual(
+          sportValue,
+          stravaValue
+        )
+    };
+  }
+
+  return {
+    checks,
+
+    all_equal:
+      Object
+        .values(
+          checks
+        )
+        .every(
+          row =>
+            row.equal
+        )
+  };
+}
+
+
+function cgweb137LocalYearFromStrava(
+  row
+) {
+  const local =
+    String(
+      row
+        ?.start_date_local ||
+      ""
+    );
+
+  const match =
+    local.match(
+      /^(\d{4})-/
+    );
+
+  if (match) {
+    return Number(
+      match[1]
+    );
+  }
+
+  const fallback =
+    String(
+      row?.start_date ||
+      ""
+    )
+      .match(
+        /^(\d{4})-/
+      );
+
+  return fallback
+    ? Number(
+        fallback[1]
+      )
+    : null;
+}
+
+
+function cgweb137StravaCategory(
+  row
+) {
+  const text =
+    (
+      String(
+        row?.type ||
+        ""
+      ) +
+      " " +
+      String(
+        row?.sport_type ||
+        ""
+      )
+    );
+
+  if (
+    /Run/i.test(text)
+  ) {
+    return "RUN";
+  }
+
+  if (
+    /Ride|Bike/i.test(text)
+  ) {
+    return "RIDE";
+  }
+
+  if (
+    /Swim/i.test(text)
+  ) {
+    return "SWIM";
+  }
+
+  return "OTHER";
+}
+
+
+function cgweb137SportCategory(
+  row
+) {
+  const sport =
+    Number(
+      row?.sport
+    );
+
+  if (sport === 1) {
+    return "RUN";
+  }
+
+  if (sport === 2) {
+    return "RIDE";
+  }
+
+  if (sport === 5) {
+    return "SWIM";
+  }
+
+  return "OTHER";
+}
+
+
+async function cgweb137FetchStravaYear(
+  uid,
+  year
+) {
+  /*
+   * Requête volontairement élargie de 48 h.
+   * Le filtrage final se fait sur start_date_local afin de ne pas
+   * perdre une activité proche du changement d'année.
+   */
+  const startMs =
+    Date.UTC(
+      year,
+      0,
+      1
+    ) -
+    2 * 86400000;
+
+  const endMs =
+    Date.UTC(
+      year + 1,
+      0,
+      1
+    ) +
+    2 * 86400000;
+
+  const after =
+    Math.floor(
+      startMs /
+      1000
+    );
+
+  const before =
+    Math.ceil(
+      endMs /
+      1000
+    );
+
+  const rows = [];
+
+  const perPage =
+    200;
+
+  const maxPages =
+    50;
+
+  let truncated =
+    false;
+
+  for (
+    let page = 1;
+    page <= maxPages;
+    page += 1
+  ) {
+    const result =
+      await stravaGet(
+        uid,
+        (
+          "/athlete/activities" +
+          "?after=" +
+          after +
+          "&before=" +
+          before +
+          "&page=" +
+          page +
+          "&per_page=" +
+          perPage
+        )
+      );
+
+    const batch =
+      Array.isArray(result)
+        ? result
+        : [];
+
+    rows.push(
+      ...batch
+    );
+
+    if (
+      batch.length <
+      perPage
+    ) {
+      break;
+    }
+
+    if (
+      page ===
+      maxPages
+    ) {
+      truncated =
+        true;
+    }
+  }
+
+  return {
+    rows:
+      rows.filter(
+        row =>
+          cgweb137LocalYearFromStrava(
+            row
+          ) ===
+          year
+      ),
+
+    truncated
+  };
+}
+
+
+async function cgweb137FetchSportYear(
+  uid,
+  year
+) {
+  const startMs =
+    Date.UTC(
+      year,
+      0,
+      1
+    ) -
+    2 * 86400000;
+
+  const endMs =
+    Date.UTC(
+      year + 1,
+      0,
+      1
+    ) +
+    2 * 86400000;
+
+  const snap =
+    await firestore()
+      .collection(
+        `${ROOT}/${uid}/activities`
+      )
+      .where(
+        "start_time_ms",
+        ">=",
+        startMs
+      )
+      .where(
+        "start_time_ms",
+        "<",
+        endMs
+      )
+      .get();
+
+  return snap.docs
+    .map(
+      doc => ({
+        __docId:
+          doc.id,
+
+        ...doc.data()
+      })
+    )
+    .filter(
+      row =>
+        row
+          ?.deleted_at_ms == null
+    )
+    .filter(
+      row =>
+        cgweb134ParisParts(
+          row
+            ?.start_time_ms
+        )
+          ?.year ===
+        year
+    );
+}
+
+
+function cgweb137MainVsCanonical(
+  activity
+) {
+  const canonical =
+    cgweb137CanonicalSportMetrics(
+      activity
+    );
+
+  const checks = [];
+
+  const definitions = [
+    [
+      "distance_m",
+      activity?.distance_m,
+      canonical.distance_m
+    ],
+
+    [
+      "timer_time_ms",
+      activity?.timer_time_ms,
+      canonical.moving_time_s *
+        1000
+    ],
+
+    [
+      "elapsed_time_ms",
+      activity?.elapsed_time_ms,
+      canonical.elapsed_time_s *
+        1000
+    ],
+
+    [
+      "ascent_m",
+      activity?.ascent_m,
+      canonical.elevation_gain_m
+    ]
+  ];
+
+  for (
+    const [
+      metric,
+      main,
+      raw
+    ] of definitions
+  ) {
+    const a =
+      cgweb137Finite(main);
+
+    const b =
+      cgweb137Finite(raw);
+
+    checks.push({
+      metric,
+      main:
+        a,
+
+      canonical:
+        b,
+
+      equal:
+        (
+          a != null &&
+          b != null &&
+          cgweb137NearlyEqual(
+            a,
+            b
+          )
+        )
+    });
+  }
+
+  return {
+    complete:
+      canonical
+        .canonical_shadow_complete,
+
+    checks,
+
+    all_equal:
+      checks.every(
+        row =>
+          row.equal
+      )
+  };
+}
+
+
+function cgweb137CategorySummary(
+  sportRows,
+  stravaRows,
+  category
+) {
+  const sRows =
+    category ===
+      "ALL"
+      ? sportRows
+      : sportRows.filter(
+          row =>
+            cgweb137SportCategory(
+              row
+            ) ===
+            category
+        );
+
+  const tRows =
+    category ===
+      "ALL"
+      ? stravaRows
+      : stravaRows.filter(
+          row =>
+            cgweb137StravaCategory(
+              row
+            ) ===
+            category
+        );
+
+  const sport =
+    cgweb137AggregateSport(
+      sRows
+    );
+
+  const strava =
+    cgweb137AggregateStrava(
+      tRows
+    );
+
+  const comparison =
+    cgweb137CompareTotals(
+      sport,
+      strava
+    );
+
+  return {
+    category,
+    sport,
+    strava,
+    comparison
+  };
+}
+
+
+async function cgweb137TotalsAudit(
+  uid,
+  requestedYear
+) {
+  const year =
+    Number(
+      requestedYear
+    );
+
+  if (
+    !Number.isInteger(year) ||
+    year < 1990 ||
+    year > 2100
+  ) {
+    throw Object.assign(
+      new Error(
+        "CGWEB137 : année invalide."
+      ),
+      {
+        status:
+          400
+      }
+    );
+  }
+
+  const [
+    stravaResult,
+    sportRows
+  ] =
+    await Promise.all([
+      cgweb137FetchStravaYear(
+        uid,
+        year
+      ),
+
+      cgweb137FetchSportYear(
+        uid,
+        year
+      )
+    ]);
+
+  const stravaRows =
+    stravaResult.rows;
+
+  const stravaById =
+    new Map();
+
+  for (
+    const row of
+    stravaRows
+  ) {
+    const id =
+      String(
+        row?.id ||
+        ""
+      ).trim();
+
+    if (id) {
+      stravaById.set(
+        id,
+        row
+      );
+    }
+  }
+
+  const sportLinkedById =
+    new Map();
+
+  const duplicateSportLinks =
+    [];
+
+  const sportUnlinked = [];
+
+  for (
+    const row of
+    sportRows
+  ) {
+    const id =
+      String(
+        row
+          ?.strava_activity_id ||
+        ""
+      ).trim();
+
+    if (!id) {
+      sportUnlinked.push(
+        row
+      );
+
+      continue;
+    }
+
+    if (
+      sportLinkedById.has(
+        id
+      )
+    ) {
+      duplicateSportLinks.push({
+        strava_activity_id:
+          id,
+
+        activity_keys:
+          [
+            sportLinkedById
+              .get(id)
+              ?.__docId,
+            row.__docId
+          ]
+      });
+    }
+
+    sportLinkedById.set(
+      id,
+      row
+    );
+  }
+
+  const matchedSport = [];
+  const matchedStrava = [];
+
+  const cgwebLinkedMissingStrava = [];
+
+  for (
+    const [
+      id,
+      sportRow
+    ] of
+    sportLinkedById
+  ) {
+    const stravaRow =
+      stravaById.get(id);
+
+    if (stravaRow) {
+      matchedSport.push(
+        sportRow
+      );
+
+      matchedStrava.push(
+        stravaRow
+      );
+    } else {
+      cgwebLinkedMissingStrava.push({
+        activity_key:
+          sportRow.__docId,
+
+        strava_activity_id:
+          id
+      });
+    }
+  }
+
+  const stravaOnly =
+    stravaRows
+      .filter(
+        row =>
+          !sportLinkedById.has(
+            String(
+              row?.id ||
+              ""
+            )
+          )
+      )
+      .map(
+        row => ({
+          strava_activity_id:
+            String(
+              row?.id ||
+              ""
+            ),
+
+          date:
+            row
+              ?.start_date_local ||
+            row
+              ?.start_date ||
+            null,
+
+          name:
+            row?.name ||
+            null,
+
+          type:
+            row?.sport_type ||
+            row?.type ||
+            null
+        })
+      );
+
+  const matchedSportTotals =
+    cgweb137AggregateSport(
+      matchedSport
+    );
+
+  const matchedStravaTotals =
+    cgweb137AggregateStrava(
+      matchedStrava
+    );
+
+  const matchedComparison =
+    cgweb137CompareTotals(
+      matchedSportTotals,
+      matchedStravaTotals
+    );
+
+  const sportYearTotals =
+    cgweb137AggregateSport(
+      sportRows
+    );
+
+  const stravaYearTotals =
+    cgweb137AggregateStrava(
+      stravaRows
+    );
+
+  const fullComparison =
+    cgweb137CompareTotals(
+      sportYearTotals,
+      stravaYearTotals
+    );
+
+  /*
+   * Vérification activité par activité.
+   * Ainsi deux erreurs opposées ne peuvent pas s'annuler dans le total.
+   */
+  const individualMismatches = [];
+
+  let canonicalShadowCompleteCount =
+    0;
+
+  let mainCanonicalMismatchCount =
+    0;
+
+  for (
+    const sportRow of
+    matchedSport
+  ) {
+    const id =
+      String(
+        sportRow
+          ?.strava_activity_id ||
+        ""
+      );
+
+    const stravaRow =
+      stravaById.get(id);
+
+    if (!stravaRow) {
+      continue;
+    }
+
+    const sportMetric =
+      cgweb137CanonicalSportMetrics(
+        sportRow
+      );
+
+    const stravaMetric =
+      cgweb137StravaMetrics(
+        stravaRow
+      );
+
+    const checks = {};
+
+    for (
+      const metric of [
+        "distance_m",
+        "moving_time_s",
+        "elapsed_time_s",
+        "elevation_gain_m"
+      ]
+    ) {
+      const sportValue =
+        Number(
+          sportMetric[metric]
+        );
+
+      const stravaValue =
+        Number(
+          stravaMetric[metric]
+        );
+
+      checks[metric] = {
+        sport:
+          sportValue,
+
+        strava:
+          stravaValue,
+
+        delta:
+          sportValue -
+          stravaValue,
+
+        equal:
+          cgweb137NearlyEqual(
+            sportValue,
+            stravaValue
+          )
+      };
+    }
+
+    if (
+      sportMetric
+        .canonical_shadow_complete
+    ) {
+      canonicalShadowCompleteCount +=
+        1;
+    }
+
+    const mainAudit =
+      cgweb137MainVsCanonical(
+        sportRow
+      );
+
+    if (
+      !mainAudit.all_equal
+    ) {
+      mainCanonicalMismatchCount +=
+        1;
+    }
+
+    if (
+      !Object
+        .values(
+          checks
+        )
+        .every(
+          row =>
+            row.equal
+        )
+    ) {
+      if (
+        individualMismatches.length <
+        25
+      ) {
+        individualMismatches.push({
+          activity_key:
+            sportRow.__docId,
+
+          strava_activity_id:
+            id,
+
+          date:
+            stravaRow
+              ?.start_date_local ||
+            null,
+
+          checks
+        });
+      }
+    }
+  }
+
+  const coverageComplete =
+    (
+      sportUnlinked.length ===
+        0 &&
+      stravaOnly.length ===
+        0 &&
+      cgwebLinkedMissingStrava.length ===
+        0 &&
+      duplicateSportLinks.length ===
+        0 &&
+      sportRows.length ===
+        stravaRows.length
+    );
+
+  const matchedParity =
+    (
+      matchedComparison
+        .all_equal &&
+      individualMismatches.length ===
+        0 &&
+      mainCanonicalMismatchCount ===
+        0
+    );
+
+  const fullPeriodParity =
+    (
+      coverageComplete &&
+      fullComparison
+        .all_equal &&
+      matchedParity
+    );
+
+  const categories =
+    [
+      "ALL",
+      "RUN",
+      "RIDE",
+      "SWIM",
+      "OTHER"
+    ].map(
+      category =>
+        cgweb137CategorySummary(
+          sportRows,
+          stravaRows,
+          category
+        )
+    );
+
+  const result = {
+    ok:
+      matchedParity,
+
+    status:
+      fullPeriodParity
+        ? "FULL_PERIOD_PARITY"
+        : (
+            matchedParity
+              ? "MATCHED_PARITY_COVERAGE_INCOMPLETE"
+              : "PARITY_MISMATCH"
+          ),
+
+    version:
+      CGWEB137_VERSION,
+
+    year,
+
+    raw_value_policy:
+      "NO_INTERMEDIATE_ROUNDING",
+
+    strava_source:
+      "/athlete/activities",
+
+    includes_private_strava_activities:
+      true,
+
+    athlete_stats_endpoint_used:
+      false,
+
+    strava_list_truncated:
+      Boolean(
+        stravaResult
+          .truncated
+      ),
+
+    counts:
+      {
+        sport_activity_count:
+          sportRows.length,
+
+        strava_activity_count:
+          stravaRows.length,
+
+        sport_linked_count:
+          sportLinkedById.size,
+
+        matched_count:
+          matchedSport.length,
+
+        sport_unlinked_count:
+          sportUnlinked.length,
+
+        strava_only_count:
+          stravaOnly.length,
+
+        cgweb_linked_missing_strava_count:
+          cgwebLinkedMissingStrava.length,
+
+        duplicate_sport_link_count:
+          duplicateSportLinks.length,
+
+        canonical_shadow_complete_count:
+          canonicalShadowCompleteCount,
+
+        main_canonical_mismatch_count:
+          mainCanonicalMismatchCount
+      },
+
+    coverage_complete:
+      coverageComplete,
+
+    matched_parity:
+      matchedParity,
+
+    full_period_parity:
+      fullPeriodParity,
+
+    matched:
+      {
+        sport:
+          matchedSportTotals,
+
+        strava:
+          matchedStravaTotals,
+
+        comparison:
+          matchedComparison
+      },
+
+    full_period:
+      {
+        sport:
+          sportYearTotals,
+
+        strava:
+          stravaYearTotals,
+
+        comparison:
+          fullComparison
+      },
+
+    /*
+     * SummaryActivity ne fournit pas calories.
+     * Les calories restent garanties activité par activité
+     * par DetailedActivity lors de la réconciliation.
+     */
+    calories:
+      {
+        live_year_total_available_from_summary_api:
+          false,
+
+        cgweb_canonical_sum:
+          matchedSportTotals
+            .calories,
+
+        known_activity_count:
+          matchedSportTotals
+            .calories_known_count,
+
+        policy:
+          "PER_ACTIVITY_DETAILED_ACTIVITY_CANONICAL"
+      },
+
+    categories,
+
+    individual_mismatch_count:
+      individualMismatches.length,
+
+    individual_mismatches:
+      individualMismatches,
+
+    sport_unlinked_sample:
+      sportUnlinked
+        .slice(
+          0,
+          20
+        )
+        .map(
+          row => ({
+            activity_key:
+              row.__docId,
+
+            start_time_ms:
+              row.start_time_ms
+          })
+        ),
+
+    strava_only_sample:
+      stravaOnly.slice(
+        0,
+        20
+      ),
+
+    cgweb_linked_missing_strava_sample:
+      cgwebLinkedMissingStrava.slice(
+        0,
+        20
+      ),
+
+    duplicate_sport_links_sample:
+      duplicateSportLinks.slice(
+        0,
+        20
+      )
+  };
+
+  await cgweb136Audit(
+    uid,
+    "YEAR_" +
+      year,
+    "STRAVA_TOTALS_AUDIT",
+    {
+      cgweb137_version:
+        CGWEB137_VERSION,
+
+      year,
+
+      status:
+        result.status,
+
+      counts:
+        result.counts,
+
+      coverage_complete:
+        coverageComplete,
+
+      matched_parity:
+        matchedParity,
+
+      full_period_parity:
+        fullPeriodParity,
+
+      matched_comparison:
+        matchedComparison,
+
+      full_comparison:
+        fullComparison
+    }
+  );
+
+  return result;
+}
+
+
+/* CGWEB137_SERVER_END */
 
 
 /* CGWEB136_FIX1_SERVER_END */
@@ -5748,6 +7262,36 @@ exports.stravaBridge = onRequest(
       }
 
 
+
+
+
+      /* CGWEB137_ACTION_START */
+
+      if (
+        action ===
+          "totals_audit" &&
+        req.method ===
+          "POST"
+      ) {
+        const body =
+          req.body &&
+          typeof req.body ===
+            "object" &&
+          !Buffer.isBuffer(
+            req.body
+          )
+            ? req.body
+            : {};
+
+        return res.json(
+          await cgweb137TotalsAudit(
+            uid,
+            body?.year
+          )
+        );
+      }
+
+      /* CGWEB137_ACTION_END */
 
 
       /* CGWEB136_FIX1_ACTION_START */

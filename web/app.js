@@ -80281,3 +80281,1664 @@ console.info(
 );
 
 /* CGWEB136_FIX1_END */
+
+/* CGWEB137_START
+   STRAVA_CANONICAL_METRICS001
+   RAW_VALUE_PRESERVE001
+   AGGREGATE_FROM_RAW001
+   DISPLAY_ROUNDING_PARITY001
+   STRAVA_TOTALS_AUDIT001
+*/
+
+const cgweb137State = {
+  busy:
+    false,
+
+  audits:
+    new Map()
+};
+
+
+function cgweb137Finite(
+  value
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const n =
+    Number(value);
+
+  return Number.isFinite(n)
+    ? n
+    : null;
+}
+
+
+function cgweb137CanonicalMetric(
+  activity,
+  metric
+) {
+  if (!activity) {
+    return null;
+  }
+
+  if (
+    metric ===
+      "distance_m"
+  ) {
+    return (
+      cgweb137Finite(
+        activity
+          .strava_canonical_distance_m
+      ) ??
+      cgweb137Finite(
+        activity.distance_m
+      )
+    );
+  }
+
+  if (
+    metric ===
+      "moving_time_ms"
+  ) {
+    const canonical =
+      cgweb137Finite(
+        activity
+          .strava_canonical_moving_time_s
+      );
+
+    if (
+      canonical != null
+    ) {
+      return (
+        canonical *
+        1000
+      );
+    }
+
+    return (
+      cgweb137Finite(
+        activity.timer_time_ms
+      ) ??
+      cgweb137Finite(
+        activity.moving_time_ms
+      ) ??
+      (
+        cgweb137Finite(
+          activity.moving_time
+        ) != null
+          ? cgweb137Finite(
+              activity.moving_time
+            ) * 1000
+          : null
+      ) ??
+      cgweb137Finite(
+        activity.elapsed_time_ms
+      )
+    );
+  }
+
+  if (
+    metric ===
+      "elapsed_time_ms"
+  ) {
+    const canonical =
+      cgweb137Finite(
+        activity
+          .strava_canonical_elapsed_time_s
+      );
+
+    return (
+      canonical != null
+        ? canonical *
+          1000
+        : cgweb137Finite(
+            activity.elapsed_time_ms
+          )
+    );
+  }
+
+  if (
+    metric ===
+      "ascent_m"
+  ) {
+    return (
+      cgweb137Finite(
+        activity
+          .strava_canonical_elevation_gain_m
+      ) ??
+      cgweb137Finite(
+        activity.ascent_m
+      )
+    );
+  }
+
+  if (
+    metric ===
+      "calories"
+  ) {
+    return (
+      cgweb137Finite(
+        activity
+          .strava_canonical_calories
+      ) ??
+      cgweb137Finite(
+        activity.calories
+      )
+    );
+  }
+
+  return null;
+}
+
+
+function cgweb137CanonicalView(
+  activity
+) {
+  if (!activity) {
+    return activity;
+  }
+
+  const clone = {
+    ...activity
+  };
+
+  const distance =
+    cgweb137CanonicalMetric(
+      activity,
+      "distance_m"
+    );
+
+  const moving =
+    cgweb137CanonicalMetric(
+      activity,
+      "moving_time_ms"
+    );
+
+  const elapsed =
+    cgweb137CanonicalMetric(
+      activity,
+      "elapsed_time_ms"
+    );
+
+  const ascent =
+    cgweb137CanonicalMetric(
+      activity,
+      "ascent_m"
+    );
+
+  const calories =
+    cgweb137CanonicalMetric(
+      activity,
+      "calories"
+    );
+
+  if (distance != null) {
+    clone.distance_m =
+      distance;
+  }
+
+  if (moving != null) {
+    clone.timer_time_ms =
+      moving;
+
+    clone.moving_time_ms =
+      moving;
+
+    clone.moving_time =
+      moving /
+      1000;
+  }
+
+  if (elapsed != null) {
+    clone.elapsed_time_ms =
+      elapsed;
+  }
+
+  if (ascent != null) {
+    clone.ascent_m =
+      ascent;
+  }
+
+  if (calories != null) {
+    clone.calories =
+      calories;
+  }
+
+  return clone;
+}
+
+
+/* ================================================================
+   DISPLAY_ROUNDING_PARITY001
+   Les arrondis ne servent JAMAIS de source à un calcul.
+   ================================================================ */
+
+function cgweb137FormatDistanceMeters(
+  meters
+) {
+  const n =
+    Number(meters);
+
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  return (
+    (
+      n /
+      1000
+    ).toLocaleString(
+      "fr-FR",
+      {
+        minimumFractionDigits:
+          2,
+
+        maximumFractionDigits:
+          2
+      }
+    ) +
+    " km"
+  );
+}
+
+
+function cgweb137FormatMeters(
+  meters
+) {
+  const n =
+    Number(meters);
+
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  return (
+    Math.round(n)
+      .toLocaleString(
+        "fr-FR"
+      ) +
+    " m"
+  );
+}
+
+
+function cgweb137FormatDurationMs(
+  milliseconds
+) {
+  const n =
+    Number(
+      milliseconds
+    );
+
+  if (
+    !Number.isFinite(n) ||
+    n <= 0
+  ) {
+    return "0 s";
+  }
+
+  const seconds =
+    Math.round(
+      n /
+      1000
+    );
+
+  const hours =
+    Math.floor(
+      seconds /
+      3600
+    );
+
+  const minutes =
+    Math.floor(
+      (
+        seconds %
+        3600
+      ) /
+      60
+    );
+
+  const remainder =
+    seconds %
+    60;
+
+  if (hours > 0) {
+    return (
+      hours +
+      " h " +
+      String(minutes)
+        .padStart(
+          2,
+          "0"
+        ) +
+      " min " +
+      String(remainder)
+        .padStart(
+          2,
+          "0"
+        ) +
+      " s"
+    );
+  }
+
+  if (minutes > 0) {
+    return (
+      minutes +
+      " min " +
+      String(remainder)
+        .padStart(
+          2,
+          "0"
+        ) +
+      " s"
+    );
+  }
+
+  return (
+    remainder +
+    " s"
+  );
+}
+
+
+function cgweb137FormatRaw(
+  value,
+  unit
+) {
+  const n =
+    Number(value);
+
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  return (
+    n.toLocaleString(
+      "fr-FR",
+      {
+        minimumFractionDigits:
+          0,
+
+        maximumFractionDigits:
+          6,
+
+        useGrouping:
+          true
+      }
+    ) +
+    " " +
+    unit
+  );
+}
+
+
+/*
+ * Un seul contrat d'affichage pour les surfaces historiques principales.
+ */
+try {
+  formatDistance =
+    cgweb137FormatDistanceMeters;
+
+  formatMeters =
+    cgweb137FormatMeters;
+
+  formatDuration =
+    cgweb137FormatDurationMs;
+
+  web055FormatDistance =
+    cgweb137FormatDistanceMeters;
+
+  web055FormatAscent =
+    cgweb137FormatMeters;
+
+  web055FormatHms =
+    cgweb137FormatDurationMs;
+
+  cgweb134FormatDistance =
+    cgweb137FormatDistanceMeters;
+
+  cgweb134FormatDuration =
+    cgweb137FormatDurationMs;
+} catch (error) {
+  console.warn(
+    "CGWEB137 formatters",
+    error
+  );
+}
+
+
+/* ================================================================
+   AGGREGATE_FROM_RAW001
+   ================================================================ */
+
+const cgweb137BaseWeb055ActivityDurationMs =
+  web055ActivityDurationMs;
+
+web055ActivityDurationMs =
+  function cgweb137ActivityDurationMs(
+    activity
+  ) {
+    const canonical =
+      cgweb137CanonicalMetric(
+        activity,
+        "moving_time_ms"
+      );
+
+    if (
+      Number.isFinite(
+        canonical
+      ) &&
+      canonical > 0
+    ) {
+      return canonical;
+    }
+
+    return cgweb137BaseWeb055ActivityDurationMs(
+      activity
+    );
+  };
+
+
+const cgweb137BaseSafeChargeScore =
+  web055SafeChargeScore;
+
+web055SafeChargeScore =
+  function cgweb137SafeChargeScore(
+    activity
+  ) {
+    return cgweb137BaseSafeChargeScore(
+      cgweb137CanonicalView(
+        activity
+      )
+    );
+  };
+
+
+metricsFromRows =
+  function cgweb137MetricsFromRows(
+    rows,
+    sport =
+      dashboardSport
+  ) {
+    const metrics = {
+      activityCount:
+        0,
+
+      distance:
+        0,
+
+      duration:
+        0,
+
+      ascent:
+        0
+    };
+
+    for (
+      const row of
+      rows ||
+      []
+    ) {
+      if (
+        sport != null &&
+        Number(
+          row?.sport
+        ) !==
+        Number(sport)
+      ) {
+        continue;
+      }
+
+      if (
+        row
+          ?.deleted_at_ms !=
+        null
+      ) {
+        continue;
+      }
+
+      metrics.activityCount +=
+        1;
+
+      metrics.distance +=
+        cgweb137CanonicalMetric(
+          row,
+          "distance_m"
+        ) ||
+        0;
+
+      /*
+       * Le tableau de bord historique utilisait elapsed_time_ms.
+       * On conserve cette sémantique, mais avec la valeur brute Strava.
+       */
+      metrics.duration +=
+        cgweb137CanonicalMetric(
+          row,
+          "elapsed_time_ms"
+        ) ||
+        0;
+
+      metrics.ascent +=
+        cgweb137CanonicalMetric(
+          row,
+          "ascent_m"
+        ) ||
+        0;
+    }
+
+    return metrics;
+  };
+
+
+web055Metrics =
+  function cgweb137Web055Metrics(
+    rows
+  ) {
+    const metrics = {
+      distance:
+        0,
+
+      duration:
+        0,
+
+      ascent:
+        0,
+
+      load:
+        0,
+
+      loadKnown:
+        false,
+
+      gapWeighted:
+        0,
+
+      gapDistance:
+        0
+    };
+
+    for (
+      const row of
+      rows ||
+      []
+    ) {
+      if (
+        !row ||
+        row.deleted_at_ms !=
+          null
+      ) {
+        continue;
+      }
+
+      const raw =
+        cgweb137CanonicalView(
+          row
+        );
+
+      const distance =
+        Math.max(
+          0,
+          Number(
+            raw?.distance_m
+          ) || 0
+        );
+
+      metrics.distance +=
+        distance;
+
+      metrics.duration +=
+        web055ActivityDurationMs(
+          raw
+        );
+
+      metrics.ascent +=
+        Math.max(
+          0,
+          Number(
+            raw?.ascent_m
+          ) || 0
+        );
+
+      const charge =
+        web055SafeChargeScore(
+          raw
+        );
+
+      if (
+        Number.isFinite(
+          charge
+        )
+      ) {
+        metrics.load +=
+          charge;
+
+        metrics.loadKnown =
+          true;
+      }
+
+      if (
+        Number(
+          dashboardSport
+        ) ===
+        1
+      ) {
+        const gap =
+          web055SafeGapSecondsPerKm(
+            raw
+          );
+
+        if (
+          Number.isFinite(gap) &&
+          gap > 0
+        ) {
+          const weight =
+            distance > 0
+              ? distance
+              : 1;
+
+          metrics.gapWeighted +=
+            gap *
+            weight;
+
+          metrics.gapDistance +=
+            weight;
+        }
+      }
+    }
+
+    metrics.gap =
+      metrics.gapDistance > 0
+        ? (
+            metrics.gapWeighted /
+            metrics.gapDistance
+          )
+        : null;
+
+    return metrics;
+  };
+
+
+/* ================================================================
+   Canonical backfill côté navigateur après audit individuel
+   ================================================================ */
+
+const cgweb137BasePostExportAudit =
+  cgweb136Fix1AuditActivity;
+
+cgweb136Fix1AuditActivity =
+  async function cgweb137PostExportAuditWrapper(
+    activity,
+    mode =
+      "dialog"
+  ) {
+    const result =
+      await cgweb137BasePostExportAudit(
+        activity,
+        mode
+      );
+
+    const strava =
+      result?.strava;
+
+    if (
+      activity &&
+      strava
+    ) {
+      activity.strava_canonical_distance_m =
+        strava.distance_m;
+
+      activity.strava_canonical_moving_time_s =
+        strava.timer_time_ms !=
+          null
+          ? (
+              strava.timer_time_ms /
+              1000
+            )
+          : null;
+
+      activity.strava_canonical_elapsed_time_s =
+        strava.elapsed_time_ms !=
+          null
+          ? (
+              strava.elapsed_time_ms /
+              1000
+            )
+          : null;
+
+      activity.strava_canonical_elevation_gain_m =
+        strava.ascent_m;
+
+      activity.strava_canonical_calories =
+        strava.calories;
+
+      activity.strava_canonical_activity_id =
+        result
+          ?.strava_activity_id ||
+        activity
+          ?.strava_activity_id ||
+        null;
+
+      activity.strava_canonical_source =
+        "STRAVA_POST_EXPORT_AUDIT";
+
+      activity.strava_canonical_version =
+        "CGWEB137";
+    }
+
+    return result;
+  };
+
+
+/* ================================================================
+   STRAVA_TOTALS_AUDIT001 · interface Plus → Strava
+   ================================================================ */
+
+function cgweb137EnsureStyle() {
+  if (
+    document.getElementById(
+      "cgweb137Style"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement(
+      "style"
+    );
+
+  style.id =
+    "cgweb137Style";
+
+  style.textContent = `
+    #cgweb137TotalsCard {
+      margin: 14px 0;
+      padding: 14px;
+      border: 1px solid rgba(128,128,128,.22);
+      border-radius: 12px;
+      background: rgba(128,128,128,.035);
+    }
+
+    .cgweb137-audit-head {
+      display: flex;
+      gap: 10px;
+      align-items: end;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .cgweb137-audit-controls {
+      display: flex;
+      gap: 8px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+
+    .cgweb137-audit-controls label {
+      display: grid;
+      gap: 5px;
+    }
+
+    #cgweb137AuditYear {
+      width: 105px;
+    }
+
+    .cgweb137-status {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid rgba(128,128,128,.20);
+      border-radius: 10px;
+    }
+
+    .cgweb137-status.ok {
+      border-color: rgba(70,220,130,.42);
+    }
+
+    .cgweb137-status.warn {
+      border-color: rgba(255,180,70,.42);
+    }
+
+    .cgweb137-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+    }
+
+    .cgweb137-table th,
+    .cgweb137-table td {
+      padding: 7px 6px;
+      text-align: right;
+      border-bottom: 1px solid rgba(128,128,128,.16);
+      white-space: nowrap;
+    }
+
+    .cgweb137-table th:first-child,
+    .cgweb137-table td:first-child {
+      text-align: left;
+    }
+
+    .cgweb137-count-grid {
+      display: grid;
+      grid-template-columns: repeat(4,minmax(120px,1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .cgweb137-count-card {
+      padding: 9px;
+      border: 1px solid rgba(128,128,128,.18);
+      border-radius: 9px;
+    }
+
+    .cgweb137-count-card small,
+    .cgweb137-count-card strong {
+      display: block;
+    }
+
+    @media (max-width: 760px) {
+      .cgweb137-count-grid {
+        grid-template-columns: repeat(2,minmax(120px,1fr));
+      }
+
+      .cgweb137-table {
+        font-size: .88em;
+      }
+    }
+  `;
+
+  document.head.appendChild(
+    style
+  );
+}
+
+
+function cgweb137DefaultYear() {
+  try {
+    const activity =
+      currentDetailActivity();
+
+    const ms =
+      Number(
+        activity
+          ?.start_time_ms
+      );
+
+    if (
+      Number.isFinite(ms)
+    ) {
+      const year =
+        new Date(ms)
+          .getFullYear();
+
+      if (
+        year >= 1990 &&
+        year < 2026
+      ) {
+        return year;
+      }
+    }
+  } catch (_) {}
+
+  return 2025;
+}
+
+
+function cgweb137EnsureTotalsCard() {
+  cgweb137EnsureStyle();
+
+  const section =
+    document.getElementById(
+      "webStravaSection"
+    );
+
+  if (!section) {
+    return null;
+  }
+
+  let card =
+    document.getElementById(
+      "cgweb137TotalsCard"
+    );
+
+  if (card) {
+    return card;
+  }
+
+  card =
+    document.createElement(
+      "div"
+    );
+
+  card.id =
+    "cgweb137TotalsCard";
+
+  card.innerHTML = `
+    <div class="cgweb137-audit-head">
+      <div>
+        <strong>Parité annuelle SPORT ↔ Strava</strong>
+
+        <p class="muted">
+          Somme des valeurs brutes avant tout arrondi d'affichage.
+          Les activités privées Strava sont incluses.
+        </p>
+      </div>
+
+      <div class="cgweb137-audit-controls">
+        <label>
+          <span>Année</span>
+
+          <input
+            id="cgweb137AuditYear"
+            type="number"
+            min="1990"
+            max="2100"
+            step="1"
+          >
+        </label>
+
+        <button
+          id="cgweb137AuditButton"
+          class="secondary"
+          type="button"
+        >
+          Auditer l'année
+        </button>
+      </div>
+    </div>
+
+    <div
+      id="cgweb137AuditResult"
+      class="muted"
+    >
+      Aucun audit lancé.
+    </div>
+  `;
+
+  const foundation =
+    document.getElementById(
+      "cgweb134FoundationCard"
+    );
+
+  if (
+    foundation &&
+    foundation.parentElement ===
+      section
+  ) {
+    foundation.insertAdjacentElement(
+      "afterend",
+      card
+    );
+  } else {
+    const status =
+      document.getElementById(
+        "webStravaStatus"
+      );
+
+    if (status) {
+      status.insertAdjacentElement(
+        "afterend",
+        card
+      );
+    } else {
+      section.appendChild(
+        card
+      );
+    }
+  }
+
+  const yearInput =
+    document.getElementById(
+      "cgweb137AuditYear"
+    );
+
+  if (yearInput) {
+    yearInput.value =
+      String(
+        cgweb137DefaultYear()
+      );
+  }
+
+  document
+    .getElementById(
+      "cgweb137AuditButton"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        const year =
+          Number(
+            document
+              .getElementById(
+                "cgweb137AuditYear"
+              )
+              ?.value
+          );
+
+        void cgweb137RunTotalsAudit(
+          year
+        );
+      }
+    );
+
+  return card;
+}
+
+
+function cgweb137ComparisonRow(
+  audit,
+  metric,
+  label,
+  unit
+) {
+  const row =
+    audit
+      ?.matched
+      ?.comparison
+      ?.checks
+      ?.[metric];
+
+  if (!row) {
+    return "";
+  }
+
+  return `
+    <tr>
+      <td>${cgweb134Escape(label)}</td>
+
+      <td>
+        ${cgweb134Escape(
+          cgweb137FormatRaw(
+            row.sport,
+            unit
+          )
+        )}
+      </td>
+
+      <td>
+        ${cgweb134Escape(
+          cgweb137FormatRaw(
+            row.strava,
+            unit
+          )
+        )}
+      </td>
+
+      <td>
+        ${cgweb134Escape(
+          cgweb137FormatRaw(
+            row.delta,
+            unit
+          )
+        )}
+      </td>
+
+      <td>
+        ${row.equal ? "✓" : "⚠"}
+      </td>
+    </tr>
+  `;
+}
+
+
+function cgweb137RenderTotalsAudit(
+  audit
+) {
+  const host =
+    document.getElementById(
+      "cgweb137AuditResult"
+    );
+
+  if (!host) {
+    return;
+  }
+
+  const counts =
+    audit?.counts ||
+    {};
+
+  const matchedOk =
+    Boolean(
+      audit
+        ?.matched_parity
+    );
+
+  const fullOk =
+    Boolean(
+      audit
+        ?.full_period_parity
+    );
+
+  const coverage =
+    Boolean(
+      audit
+        ?.coverage_complete
+    );
+
+  let headline;
+
+  if (fullOk) {
+    headline =
+      "Parité annuelle complète ✓";
+  } else if (matchedOk) {
+    headline =
+      "Parité parfaite des activités déjà synchronisées ✓";
+  } else {
+    headline =
+      "Écart détecté ⚠";
+  }
+
+  host.className =
+    "cgweb137-status " +
+    (
+      matchedOk
+        ? "ok"
+        : "warn"
+    );
+
+  host.innerHTML = `
+    <strong>
+      ${cgweb134Escape(
+        String(
+          audit?.year ||
+          ""
+        )
+      )} · ${headline}
+    </strong>
+
+    <div class="cgweb137-count-grid">
+      <div class="cgweb137-count-card">
+        <small>Activités SPORT</small>
+        <strong>
+          ${cgweb134Escape(
+            String(
+              counts
+                .sport_activity_count ??
+              0
+            )
+          )}
+        </strong>
+      </div>
+
+      <div class="cgweb137-count-card">
+        <small>Activités Strava</small>
+        <strong>
+          ${cgweb134Escape(
+            String(
+              counts
+                .strava_activity_count ??
+              0
+            )
+          )}
+        </strong>
+      </div>
+
+      <div class="cgweb137-count-card">
+        <small>Appariées</small>
+        <strong>
+          ${cgweb134Escape(
+            String(
+              counts
+                .matched_count ??
+              0
+            )
+          )}
+        </strong>
+      </div>
+
+      <div class="cgweb137-count-card">
+        <small>SPORT non encore lié</small>
+        <strong>
+          ${cgweb134Escape(
+            String(
+              counts
+                .sport_unlinked_count ??
+              0
+            )
+          )}
+        </strong>
+      </div>
+    </div>
+
+    <table class="cgweb137-table">
+      <thead>
+        <tr>
+          <th>Métrique brute</th>
+          <th>SPORT</th>
+          <th>Strava</th>
+          <th>Écart SPORT − Strava</th>
+          <th></th>
+        </tr>
+      </thead>
+
+      <tbody>
+        ${cgweb137ComparisonRow(
+          audit,
+          "distance_m",
+          "Distance",
+          "m"
+        )}
+
+        ${cgweb137ComparisonRow(
+          audit,
+          "moving_time_s",
+          "Temps déplacement",
+          "s"
+        )}
+
+        ${cgweb137ComparisonRow(
+          audit,
+          "elapsed_time_s",
+          "Temps écoulé",
+          "s"
+        )}
+
+        ${cgweb137ComparisonRow(
+          audit,
+          "elevation_gain_m",
+          "D+",
+          "m"
+        )}
+      </tbody>
+    </table>
+
+    <p class="muted">
+      Ces sommes concernent uniquement les
+      <strong>${cgweb134Escape(
+        String(
+          counts
+            .matched_count ??
+          0
+        )
+      )}</strong>
+      activités présentes des deux côtés.
+      Aucun arrondi intermédiaire n'est effectué.
+    </p>
+
+    <p class="muted">
+      Calories canoniques connues :
+      <strong>
+        ${cgweb134Escape(
+          cgweb137FormatRaw(
+            audit
+              ?.calories
+              ?.cgweb_canonical_sum,
+            "kcal"
+          )
+        )}
+      </strong>
+      sur
+      ${cgweb134Escape(
+        String(
+          audit
+            ?.calories
+            ?.known_activity_count ??
+          0
+        )
+      )}
+      activité(s).
+      Strava ne fournit pas les calories dans la liste SummaryActivity :
+      leur égalité reste contrôlée activité par activité après export.
+    </p>
+
+    <p class="muted">
+      Ombre canonique complète :
+      ${cgweb134Escape(
+        String(
+          counts
+            .canonical_shadow_complete_count ??
+          0
+        )
+      )}
+      /
+      ${cgweb134Escape(
+        String(
+          counts
+            .matched_count ??
+          0
+        )
+      )}
+      · incohérences champ principal / valeur canonique :
+      <strong>
+        ${cgweb134Escape(
+          String(
+            counts
+              .main_canonical_mismatch_count ??
+            0
+          )
+        )}
+      </strong>.
+    </p>
+
+    ${
+      coverage
+        ? `
+          <p>
+            <strong>
+              Couverture annuelle complète :
+              SPORT et Strava contiennent le même univers d'activités.
+            </strong>
+          </p>
+        `
+        : `
+          <p class="muted">
+            Couverture annuelle encore incomplète :
+            SPORT non lié =
+            ${cgweb134Escape(
+              String(
+                counts
+                  .sport_unlinked_count ??
+                0
+              )
+            )}
+            · Strava sans activité SPORT correspondante =
+            ${cgweb134Escape(
+              String(
+                counts
+                  .strava_only_count ??
+                0
+              )
+            )}
+            · liens SPORT absents de Strava =
+            ${cgweb134Escape(
+              String(
+                counts
+                  .cgweb_linked_missing_strava_count ??
+                0
+              )
+            )}.
+          </p>
+        `
+    }
+
+    ${
+      Number(
+        audit
+          ?.individual_mismatch_count ||
+        0
+      ) > 0
+        ? `
+          <p>
+            <strong>
+              ${cgweb134Escape(
+                String(
+                  audit
+                    .individual_mismatch_count
+                )
+              )}
+              activité(s) présentent encore un écart brut.
+            </strong>
+          </p>
+        `
+        : `
+          <p class="muted">
+            Aucun écart brut détecté activité par activité
+            dans l'ensemble apparié.
+          </p>
+        `
+    }
+  `;
+}
+
+
+async function cgweb137RunTotalsAudit(
+  year
+) {
+  if (
+    cgweb137State.busy
+  ) {
+    return;
+  }
+
+  const host =
+    document.getElementById(
+      "cgweb137AuditResult"
+    );
+
+  const button =
+    document.getElementById(
+      "cgweb137AuditButton"
+    );
+
+  if (
+    !Number.isInteger(year) ||
+    year < 1990 ||
+    year > 2100
+  ) {
+    if (host) {
+      host.textContent =
+        "Année invalide.";
+    }
+
+    return;
+  }
+
+  cgweb137State.busy =
+    true;
+
+  if (button) {
+    button.disabled =
+      true;
+
+    button.textContent =
+      "Audit en cours…";
+  }
+
+  if (host) {
+    host.className =
+      "muted";
+
+    host.textContent =
+      (
+        "Lecture des activités SPORT et Strava " +
+        year +
+        " sans arrondi intermédiaire…"
+      );
+  }
+
+  try {
+    const result =
+      await webStravaFetch(
+        "totals_audit",
+        {
+          method:
+            "POST",
+
+          body:
+            {
+              year
+            }
+        }
+      );
+
+    cgweb137State
+      .audits
+      .set(
+        year,
+        result
+      );
+
+    cgweb137RenderTotalsAudit(
+      result
+    );
+
+  } catch (error) {
+    console.error(
+      "CGWEB137 totals audit",
+      error
+    );
+
+    if (host) {
+      host.className =
+        "cgweb137-status warn";
+
+      host.innerHTML = `
+        <strong>Audit impossible</strong>
+
+        <p>
+          ${cgweb134Escape(
+            error?.message ||
+            String(error)
+          )}
+        </p>
+      `;
+    }
+
+  } finally {
+    cgweb137State.busy =
+      false;
+
+    if (button) {
+      button.disabled =
+        false;
+
+      button.textContent =
+        "Auditer l'année";
+    }
+  }
+}
+
+
+queueMicrotask(
+  () => {
+    cgweb137EnsureStyle();
+    cgweb137EnsureTotalsCard();
+  }
+);
+
+
+/*
+ * Plus → Strava peut être reconstruit/réaffiché plusieurs fois.
+ * On garantit la présence de l'audit à chaque entrée.
+ */
+const cgweb137BaseRefreshStravaStatus =
+  refreshWebStravaStatus;
+
+refreshWebStravaStatus =
+  async function cgweb137RefreshStravaStatus(
+    options = {}
+  ) {
+    const result =
+      await cgweb137BaseRefreshStravaStatus(
+        options
+      );
+
+    cgweb137EnsureTotalsCard();
+
+    return result;
+  };
+
+
+window.CGWEB137_STATUS =
+  function () {
+    const activity =
+      currentDetailActivity();
+
+    const key =
+      activity
+        ? String(
+            activityKey(
+              activity
+            ) ||
+            ""
+          )
+        : "";
+
+    return {
+      build:
+        "CGWEB137",
+
+      strava_canonical_metrics:
+        "STRAVA_CANONICAL_METRICS001",
+
+      raw_value_preserve:
+        "RAW_VALUE_PRESERVE001",
+
+      aggregate_from_raw:
+        "AGGREGATE_FROM_RAW001",
+
+      display_rounding_parity:
+        "DISPLAY_ROUNDING_PARITY001",
+
+      strava_totals_audit:
+        "STRAVA_TOTALS_AUDIT001",
+
+      activity_key:
+        key ||
+        null,
+
+      canonical:
+        activity
+          ? {
+              distance_m:
+                cgweb137CanonicalMetric(
+                  activity,
+                  "distance_m"
+                ),
+
+              moving_time_ms:
+                cgweb137CanonicalMetric(
+                  activity,
+                  "moving_time_ms"
+                ),
+
+              elapsed_time_ms:
+                cgweb137CanonicalMetric(
+                  activity,
+                  "elapsed_time_ms"
+                ),
+
+              ascent_m:
+                cgweb137CanonicalMetric(
+                  activity,
+                  "ascent_m"
+                ),
+
+              calories:
+                cgweb137CanonicalMetric(
+                  activity,
+                  "calories"
+                )
+            }
+          : null
+    };
+  };
+
+
+window.CGWEB137_AUDIT_YEAR =
+  function (
+    year
+  ) {
+    cgweb137EnsureTotalsCard();
+
+    const input =
+      document.getElementById(
+        "cgweb137AuditYear"
+      );
+
+    if (input) {
+      input.value =
+        String(year);
+    }
+
+    return cgweb137RunTotalsAudit(
+      Number(year)
+    );
+  };
+
+
+console.info(
+  "CGWEB137 actif · " +
+  "STRAVA_CANONICAL_METRICS001 / " +
+  "RAW_VALUE_PRESERVE001 / " +
+  "AGGREGATE_FROM_RAW001 / " +
+  "DISPLAY_ROUNDING_PARITY001 / " +
+  "STRAVA_TOTALS_AUDIT001"
+);
+
+/* CGWEB137_END */
