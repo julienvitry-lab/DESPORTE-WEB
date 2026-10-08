@@ -6813,3 +6813,131 @@ window.SPORT_FIT_STRAVA_PREVIEW =
   });
 })();
 /* CGWEB139_FRONTEND_END */
+
+/* CGWEB139_FIX1_FRONTEND_START
+ * UI secured: manual confirmation required. No automatic Strava uploads.
+ */
+(() => {
+  const base = "https://europe-west1-sport-505813.cloudfunctions.net/stravaBridge";
+  async function api(action, data={}) {
+    const user=window.SPORT_WEB_BRIDGE?.getUser?.();
+    if(!user)throw new Error("CGWEB139 FIX1 : connexion SPORT Web requise.");
+    let response;
+    try {
+      response=await fetch(`${base}?action=${encodeURIComponent(action)}`,{
+        method:"POST",headers:{Authorization:`Bearer ${await user.getIdToken()}`,
+          "Content-Type":"application/json"},body:JSON.stringify(data)
+      });
+    } catch(error){throw new Error("Réseau vers stravaBridge indisponible : "+String(error?.message||error));}
+    const raw=await response.text();
+    let result;
+    try{result=JSON.parse(raw);}catch{result={error:raw.slice(0,300)};}
+    if(!response.ok)throw new Error(result?.error||`StravaBridge HTTP ${response.status}`);
+    return result;
+  }
+  function activityKeyByStravaId(id){
+    const bridge=window.SPORT_WEB_BRIDGE;
+    const matches=(bridge?.getActivities?.()||[])
+      .filter(a=>String(a?.strava_activity_id||"")===String(id));
+    if(matches.length!==1)throw new Error("Activité non trouvée de façon unique en mémoire. Ouvrir son détail CGWEB et réessayer.");
+    return String(bridge.activityKey(matches[0]));
+  }
+  function show(key, oldId){
+    if(document.getElementById("cg139fix1RecoveryDialog"))return;
+    const dialog=document.createElement("dialog");
+    dialog.id="cg139fix1RecoveryDialog";
+    dialog.style.cssText="max-width:min(700px,92vw);width:640px;border:1px solid #688948;border-radius:17px;background:#101713;color:#eef5e5;padding:22px;font-family:Comfortaa,system-ui,sans-serif;box-shadow:0 20px 90px #0009";
+    const h=document.createElement("h3");h.textContent="CGWEB139 FIX1 · Réimportation sécurisée";
+    const intro=document.createElement("p");intro.textContent=`Activité CGWEB : ${key} · Strava #${oldId}. Aucun nouveau FIT ne sera envoyé automatiquement.`;
+    const out=document.createElement("pre");out.style.cssText="white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 system-ui;color:#d0d8cd;max-height:250px;overflow:auto";
+    out.textContent="Vérification en lecture seule requise : compte, activité distante et doublons.";
+    const buttons=document.createElement("div");buttons.style.cssText="display:flex;flex-wrap:wrap;gap:10px;margin-top:15px";
+    function button(text,primary=false){const b=document.createElement("button");b.type="button";b.textContent=text;
+      b.style.cssText=`cursor:pointer;border:1px solid #4d5a43;border-radius:12px;padding:10px 15px;background:${primary?"#beff22":"#1c281f"};color:${primary?"#172011":"white"}`;return b;}
+    const check=button("Vérifier la suppression",true);
+    const unlock=button("Autoriser la réimportation");unlock.disabled=true;unlock.style.opacity=".45";
+    const close=button("Fermer");
+    buttons.append(check,unlock,close);dialog.append(h,intro,out,buttons);document.body.append(dialog);
+    let proof=null;
+    close.addEventListener("click",()=>dialog.close());
+    dialog.addEventListener("close",()=>dialog.remove());
+    check.addEventListener("click",async()=>{
+      proof=null;unlock.disabled=true;unlock.style.opacity=".45";check.disabled=true;
+      out.textContent="Interrogation de l'API Strava…";
+      try{
+        const result=await api("deleted_export_check",{activity_key:key});
+        out.textContent=[`Résultat : ${result.status}`,result.diagnostic||"",
+          `Identifiant : ${result.old_strava_activity_id||"-"}`,
+          (result.candidate_ids||[]).length?`Doublons possibles : ${result.candidate_ids.join(", ")}`:"",
+          result.warning||""].filter(Boolean).join("\n");
+        if(result.ok && result.status==="VERIFIED_NOT_FOUND" && result.old_strava_activity_id===oldId){
+          proof=result;unlock.disabled=false;unlock.style.opacity="1";
+        }
+      }catch(e){out.textContent="Vérification impossible : "+(e?.message||String(e));}
+      finally{check.disabled=false;}
+    });
+    unlock.addEventListener("click",async()=>{
+      if(!proof)return;
+      const required=proof.confirmation_text;
+      const typed=window.prompt(`Cette action archive l'ancien lien Strava #${oldId}, sans supprimer le FIT ni les métriques CGWEB.\n\nPour autoriser un NOUVEL export manuel, saisis exactement :\n${required}`);
+      if(typed!==required){out.textContent+="\nConfirmation absente ou incorrecte. Aucune modification.";return;}
+      check.disabled=true;unlock.disabled=true;
+      try{
+        const result=await api("deleted_export_unlink",{
+          activity_key:key,old_strava_activity_id:oldId,proof:proof.proof,confirmation:typed
+        });
+        out.textContent=`${result.status}\nAncien export archivé : ${result.archive_path}\nAucune activité envoyée à Strava. Actualise SPORT Web, puis démarre manuellement un nouvel export avec CGWEB139.`;
+        unlock.style.opacity=".45";
+      }catch(e){out.textContent="Libération refusée : "+(e?.message||String(e))+"\nRelance la vérification.";
+        check.disabled=false;proof=null;}
+    });
+    dialog.showModal();
+  }
+  const recovery=Object.freeze({
+    version:"CGWEB139_FIX1",
+    inspect:key=>api("deleted_export_check",{activity_key:String(key||"")}),
+    open:key=>{
+      const a=(window.SPORT_WEB_BRIDGE?.getActivities?.()||[]).find(x=>
+        String(window.SPORT_WEB_BRIDGE.activityKey(x))===String(key));
+      if(!a?.strava_activity_id)throw new Error("Cette activité n'a pas de lien Strava actif en mémoire.");
+      show(String(key),String(a.strava_activity_id));
+    },
+    openByStravaId:id=>show(activityKeyByStravaId(id),String(id))
+  });
+  window.SPORT_STRAVA_RECOVERY=recovery;
+  // Insert a contextual action beside the current Strava verification button,
+  // without replacing the existing modal or depending on application globals.
+  let scheduled=false;
+  function attach(){
+    scheduled=false;
+    for(const b of document.querySelectorAll("button")){
+      if(!/Vérifier la synchronisation/i.test(String(b.textContent||"")))continue;
+      if(b.nextElementSibling?.dataset?.cg139RecoveryButton==="1")continue;
+      let section=b.parentElement, context=null;
+      for(let i=0;i<6 && section && section!==document.body;i++,section=section.parentElement){
+        const t=String(section.textContent||"");
+        if(t.length<1500 && t.includes("Activité déjà liée à Strava") && /Strava\s*#\s*\d{8,24}/.test(t)){
+          context=t;break;
+        }
+      }
+      if(!context)continue;
+      const match=/Strava\s*#\s*(\d{8,24})/.exec(context);
+      if(!match)continue;
+      const button=document.createElement("button");button.type="button";
+      button.textContent="Réimporter une activité supprimée";
+      button.dataset.cg139RecoveryButton="1";
+      button.style.cssText="margin-left:10px;padding:10px 14px;background:#162318;color:#dcf8c4;border:1px solid #557544;border-radius:12px;cursor:pointer";
+      button.addEventListener("click",()=>{try{recovery.openByStravaId(match[1]);}catch(e){window.alert(e.message);}});
+      b.insertAdjacentElement("afterend",button);
+    }
+  }
+  const observer=new MutationObserver(()=>{
+    if(scheduled)return;
+    scheduled=true;
+    setTimeout(attach,180);
+  });
+  if(document.body){observer.observe(document.body,{subtree:true,childList:true});attach();}
+  else document.addEventListener("DOMContentLoaded",()=>{
+    observer.observe(document.body,{subtree:true,childList:true});attach();},{once:true});
+})();
+/* CGWEB139_FIX1_FRONTEND_END */

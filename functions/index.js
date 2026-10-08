@@ -5,6 +5,7 @@ const admin = require("firebase-admin");
 const crypto = require("crypto");
 const cgweb138Text = require("./cgweb138");
 const cgweb139 = require("./cgweb139");
+const cgweb139Fix1 = require("./cgweb139fix1");
 
 admin.initializeApp();
 
@@ -112,6 +113,7 @@ async function fetchJsonWithFallback(path, token) {
     `${STRAVA_API_FALLBACK_BASE}${path}`
   ];
   let lastError = null;
+  let firstHttpFailure = null;
 
   for (let index = 0; index < urls.length; index++) {
     let response = null;
@@ -120,7 +122,12 @@ async function fetchJsonWithFallback(path, token) {
         headers:{Authorization:`Bearer ${token}`}
       });
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      const reason=String(error?.message || error).slice(0,200);
+      lastError = Object.assign(new Error(
+        `Réseau Strava indisponible (${reason})` +
+        (firstHttpFailure ? ` ; premier endpoint : ${firstHttpFailure}` : "") +
+        `. Résultat non confirmé, aucun déverrouillage automatique.`
+      ), {status:503});
       if (index < urls.length - 1) continue;
       break;
     }
@@ -131,6 +138,7 @@ async function fetchJsonWithFallback(path, token) {
       payload = null;
     }
     if (response.ok) return payload;
+    if (index === 0) firstHttpFailure = `HTTP ${response.status}`;
 
     lastError = Object.assign(
       new Error(payload?.message || `Strava API ${response.status}`),
@@ -1829,21 +1837,16 @@ async function cgweb134AcquireOutboundLock(
                 "hex"
               );
 
-          const externalId =
-            (
-              "CGWEB_" +
-              String(
-                activityKey
-              )
-            )
-              .replace(
-                /[^A-Za-z0-9_.-]/g,
-                "_"
-              )
-              .slice(
-                0,
-                180
-              );
+           /* CGWEB139 FIX1 : new, stable-in-lock ID for explicitly reimported FITs.
+            * The generation is set ONLY after archived/manual verified unlink. */
+           const reimportGeneration = Math.max(0, Math.min(9999,
+             Math.floor(Number(activity?.strava_reimport_generation) || 0)));
+           const externalId = (
+             "CGWEB_" + String(activityKey) +
+             (reimportGeneration > 0
+               ? "_r" + reimportGeneration + "_" + crypto.randomBytes(6).toString("hex")
+               : "")
+           ).replace(/[^A-Za-z0-9_.-]/g,"_").slice(0,180);
 
           const row = {
             version:
@@ -6832,6 +6835,12 @@ const cgweb138Bridge = cgweb138Text.createBridge({
   FieldPath:admin.firestore.FieldPath
 });
 /* CGWEB138_SERVER_END */
+/* CGWEB139_FIX1_SERVER_START */
+const cgweb139Fix1Recovery = cgweb139Fix1.createRecovery({
+  db:firestore(), root:ROOT, admin, tokenDocument, refreshTokenIfNeeded,
+  apiBase:STRAVA_API_BASE, secret:()=>STRAVA_CLIENT_SECRET.value()
+});
+/* CGWEB139_FIX1_SERVER_END */
 
 exports.stravaBridge = onRequest(
   {region:REGION, secrets:[STRAVA_CLIENT_SECRET], timeoutSeconds:120, cors:false},
@@ -7291,6 +7300,17 @@ exports.stravaBridge = onRequest(
 
 
 
+
+      /* CGWEB139_FIX1_ACTIONS_START */
+      if (["deleted_export_check","deleted_export_unlink"].includes(action) && req.method === "POST") {
+        const body=req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)
+          ? req.body : {};
+        const key=String(body.activity_key||"").trim();
+        if(action==="deleted_export_check")
+          return res.json(await cgweb139Fix1Recovery.check(uid,key));
+        return res.json(await cgweb139Fix1Recovery.confirm(uid,body));
+      }
+      /* CGWEB139_FIX1_ACTIONS_END */
 
       /* CGWEB139_ACTIONS_START · read-only, never POST/PUT to Strava */
       if (action === "altitude_audit" && req.method === "POST") {
