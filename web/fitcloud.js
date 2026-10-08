@@ -6675,7 +6675,7 @@ console.info(
 /* CGWEB135_FIT_STRAVA_PREVIEW_API_START */
 
 async function c135StravaExportPreview(
-  activityId, lockToken
+  activityId, lockToken, consent = ""
 ) {
   const id = String(activityId || "").trim();
   const token = String(lockToken || "").trim();
@@ -6696,6 +6696,7 @@ async function c135StravaExportPreview(
       })
     });
 
+  if (consent) return fetchPreview(String(consent));
   const first = await fetchPreview("");
   const preview = first?.preview || {};
   const report = preview.cgweb139 || {};

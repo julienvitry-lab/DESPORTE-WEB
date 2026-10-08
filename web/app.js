@@ -79255,10 +79255,101 @@ cgweb135ShowPreview =
         result
       );
 
+    document.getElementById(
+      "cg139Fix2Fix1Approve"
+    )?.remove();
+
     cgweb136AddExportButton(
       activity,
       result
     );
+
+    const preview = result?.preview || {};
+    const report = preview.cgweb139 || {};
+    const blockers = preview.blockers || [];
+
+    if (
+      report.reduced_route_eligible === true &&
+      report.reduced_route_accepted !== true &&
+      blockers.length === 1 &&
+      blockers[0] === "SOURCE_RECORD_COUNT_MISMATCH" &&
+      report.reduced_route_confirmation_text
+    ) {
+      const actions = document.querySelector(
+        "#cgweb134Dialog .cgweb134-dialog-actions"
+      );
+
+      if (actions) {
+        const button = document.createElement("button");
+        button.id = "cg139Fix2Fix1Approve";
+        button.type = "button";
+        button.className = "primary";
+        button.textContent =
+          "Autoriser l'export avec " +
+          report.candidate_fit_record_count + " points";
+
+        button.addEventListener("click", async () => {
+          if (cgweb135State.busy) return;
+
+          const key = String(activityKey(activity));
+          const current = currentDetailActivity();
+          const lock = cgweb134State.byActivity.get(key);
+
+          if (
+            !current ||
+            String(activityKey(current)) !== key ||
+            lock?.status !== "READY_LOCKED" ||
+            !lock.lock_token
+          ) {
+            cgweb134OpenDialog(
+              "Strava · préflight nécessaire",
+              "<p>Relance le préflight Strava avant de confirmer.</p>"
+            );
+            return;
+          }
+
+          cgweb135State.busy = true;
+          button.disabled = true;
+          button.textContent = "Validation du FIT…";
+
+          try {
+            const approved =
+              await window.SPORT_FIT_STRAVA_PREVIEW.previewActivity(
+                key,
+                lock.lock_token,
+                report.reduced_route_confirmation_text
+              );
+
+            if (
+              approved?.status !== "FIT_PARITY_OK" ||
+              approved?.preview?.parity_ok !== true ||
+              approved?.preview?.cgweb139
+                ?.reduced_route_accepted !== true
+            ) {
+              throw new Error(
+                "La validation du FIT réduit a échoué."
+              );
+            }
+
+            cgweb135State.byActivity.set(key, approved);
+            cgweb135ShowPreview(activity, approved);
+
+          } catch (error) {
+            cgweb134OpenDialog(
+              "Strava · validation impossible",
+              "<p>" + cgweb134Escape(
+                error?.message || String(error)
+              ) + "</p>"
+            );
+          } finally {
+            cgweb135State.busy = false;
+            cgweb135RefreshToolbarState(activity);
+          }
+        });
+
+        actions.insertBefore(button, actions.firstChild);
+      }
+    }
 
     return out;
   };
