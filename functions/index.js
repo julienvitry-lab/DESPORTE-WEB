@@ -4,6 +4,7 @@ const {defineSecret, defineString} = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
 const cgweb138Text = require("./cgweb138");
+const cgweb139 = require("./cgweb139");
 
 admin.initializeApp();
 
@@ -2675,6 +2676,12 @@ async function cgweb136ReconcileFromDetail(
       cgweb136Fix1LoadAudit
   };
 
+  /* CGWEB139 : audit read-only on the already fetched Strava detail.
+   * Neither source CGWEB metrics nor remote Strava activity is modified. */
+  finalResult.altitude_audit = cgweb139.altitudeAudit({
+    activity:current, preview:lock?.fit_preview, strava:detail
+  });
+
   const batch =
     firestore()
       .batch();
@@ -2831,6 +2838,13 @@ async function cgweb136ReconcileFromDetail(
     }
   );
 
+  /* CGWEB139 · STRAVA_ALTITUDE_AUDIT001 */
+  try {
+    await cgweb136Audit(uid, key, "CGWEB139_ALTITUDE_AUDIT", finalResult.altitude_audit);
+  } catch (error) {
+    console.warn("CGWEB139 altitude audit log pending", key, error?.message || error);
+  }
+
   /* CGWEB138 · POST_UPLOAD_TEXT_AUDIT001
    * Text-only failure must never roll back five canonical Strava metrics.
    */
@@ -2975,6 +2989,15 @@ async function cgweb136ReadExactCandidate(
     lock
       ?.fit_preview ||
     {};
+
+  /* CGWEB139 : invalidate pre-upgrade candidates rather than silently
+   * uploading a 266-record FIT for a declared 1058-record source. */
+  if (preview?.cgweb139?.version !== "CGWEB139" ||
+      preview?.cgweb139?.full_record_parity_ok !== true) {
+    throw Object.assign(new Error(
+      "CGWEB139 : candidat antérieur ou incomplet. Regénérer l'aperçu FIT avant export."
+    ), {status:409});
+  }
 
   if (
     lock
@@ -7268,6 +7291,53 @@ exports.stravaBridge = onRequest(
 
 
 
+
+      /* CGWEB139_ACTIONS_START · read-only, never POST/PUT to Strava */
+      if (action === "altitude_audit" && req.method === "POST") {
+        const body = req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)
+          ? req.body : {};
+        const key = String(body.activity_key || "").trim();
+        if (!/^[A-Za-z0-9_.:-]{1,180}$/.test(key))
+          throw Object.assign(new Error("CGWEB139 : activity_key invalide."), {status:400});
+        const base = `${ROOT}/${uid}`;
+        const [a,r,lockSnap] = await Promise.all([
+          firestore().doc(`${base}/activities/${key}`).get(),
+          firestore().doc(`${base}/activity_routes/${key}`).get(),
+          firestore().doc(`${base}/strava_outbound_exports/${key}`).get()
+        ]);
+        if (!a.exists) throw Object.assign(new Error("CGWEB139 : activité introuvable."), {status:404});
+        const activity = a.data() || {};
+        const lock = lockSnap.exists ? lockSnap.data() || {} : {};
+        const id = String(lock.strava_activity_id || activity.strava_activity_id || "").trim();
+        let detail = null, remoteError = null;
+        if (/^\d{1,24}$/.test(id)) {
+          try { detail = await stravaGet(uid, `/activities/${encodeURIComponent(id)}?include_all_efforts=false`); }
+          catch(error) { remoteError = String(error?.message || error).slice(0,240); }
+        }
+        const audit = cgweb139.altitudeAudit({
+          activity, route:r.exists ? r.data() || {} : {},
+          preview:lock.fit_preview, strava:detail
+        });
+        /* Existing CGWEB candidate is read ON DEMAND; SHA and owner path checked.
+         * No FIT or remote Strava modification is ever performed here. */
+        let binaryFit=null, binaryError=null;
+        const candidate=lock?.fit_preview||{};
+        const path=String(candidate.object_path||"");
+        if (path.startsWith(`strava_exports/${uid}/previews/${key}/`) && /\.fit$/i.test(path)) {
+          try {
+            const [buffer] = await admin.storage().bucket("sport-505813.firebasestorage.app")
+              .file(path).download();
+            const expectedSha=String(candidate.sha256||"").toLowerCase();
+            const actualSha=crypto.createHash("sha256").update(buffer).digest("hex");
+            if (!/^[a-f0-9]{64}$/.test(expectedSha) || actualSha!==expectedSha)
+              throw new Error("SHA-256 FIT candidat different du verrou.");
+            binaryFit=await cgweb139.inspectFitBinary(buffer);
+          } catch(error) { binaryError=String(error?.message||error).slice(0,240); }
+        }
+        return res.json({ok:true,activity_key:key,strava_activity_id:id||null,
+          ...audit,binary_fit:binaryFit,binary_error:binaryError,remote_error:remoteError});
+      }
+      /* CGWEB139_ACTIONS_END */
 
       /* CGWEB138_ACTIONS_START */
       if (["text_backfill_preview","text_backfill_apply","text_audit"].includes(action)

@@ -6789,3 +6789,27 @@ window.SPORT_FIT_STRAVA_PREVIEW =
   });
 })();
 /* CGWEB138_FRONTEND_END */
+
+/* CGWEB139_FRONTEND_START · read-only Strava altitude audit */
+(() => {
+  const url = "https://europe-west1-sport-505813.cloudfunctions.net/stravaBridge?action=altitude_audit";
+  window.SPORT_STRAVA_ALTITUDE_AUDIT = Object.freeze({
+    version:"CGWEB139",
+    inspect:async function(activityKey) {
+      const user = window.SPORT_WEB_BRIDGE?.getUser?.();
+      if (!user) throw new Error("SPORT : connexion requise.");
+      const response = await fetch(url, {
+        method:"POST",
+        headers:{Authorization:`Bearer ${await user.getIdToken()}`,
+          "Content-Type":"application/json"},
+        body:JSON.stringify({activity_key:String(activityKey||"")})
+      });
+      const raw = await response.text();
+      let body;
+      try { body = JSON.parse(raw); } catch { body = {error:raw}; }
+      if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`);
+      return body;
+    }
+  });
+})();
+/* CGWEB139_FRONTEND_END */

@@ -21,6 +21,7 @@ const {getAuth} = require("firebase-admin/auth");
 const {getFirestore, FieldPath} = require("firebase-admin/firestore");
 const {getStorage} = require("firebase-admin/storage");
 const crypto = require("crypto");
+const cgweb139 = require("./cgweb139");
 
 if (!getApps().length) initializeApp();
 
@@ -14619,6 +14620,10 @@ async function c099GlobalDirectoryQuery(
     prepared.payload.total_calories =
       expected.calories;
 
+    /* CGWEB139: audit every record before encoding; preserve exact 0 m D+. */
+    const cgweb139Result = cgweb139.prepare(activity, route, prepared);
+    blockers.push(...cgweb139Result.blockers);
+
     const generated =
       await encodeCanonicalFit(
         prepared.payload
@@ -14714,6 +14719,10 @@ async function c099GlobalDirectoryQuery(
           row.ok
       );
 
+    if (Number(decoded.recordCount) !== Number(prepared.payload.points.length)) {
+      blockers.push("ENCODED_RECORD_COUNT_MISMATCH");
+    }
+
     const parityOk =
       Boolean(
         !blockers.length &&
@@ -14744,7 +14753,7 @@ async function c099GlobalDirectoryQuery(
     const [exists] =
       await object.exists();
 
-    if (!exists) {
+    if (!exists && !blockers.length) {
       await object.save(
         generated.buffer,
         {
@@ -14795,6 +14804,9 @@ async function c099GlobalDirectoryQuery(
     const preview = {
       version:
         CGWEB135_VERSION,
+
+      /* CGWEB139: immutable report attached to the candidate. */
+      cgweb139: cgweb139Result.report,
 
       generated_at_ms:
         now,
