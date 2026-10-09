@@ -79274,6 +79274,8 @@ cgweb135ShowPreview =
         note.textContent=`FIT original intégral : ${report.candidate_fit_record_count} enregistrements conservés · `+
           `${report.FC_records} valeurs FC · `+(report.device_profile === "GARMIN_FENIX_2_COMPATIBILITY" ?
           "Profil d'export Garmin Fenix 2" : "Appareil d'origine conservé");
+        if(report.time_alignment?.offset_seconds) note.textContent +=
+          " · Heure corrigée : " + (report.time_alignment.offset_seconds/3600) + " h (départ CGWEB confirmé)";
         actions.before(note);
       }
     }

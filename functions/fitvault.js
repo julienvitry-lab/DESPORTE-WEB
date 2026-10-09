@@ -14601,7 +14601,12 @@ async function c099GlobalDirectoryQuery(
     if(cgweb140.sha(originalBuffer)!==originalHash) throw new Error("CGWEB140 : SHA original non conforme.");
     const declared=Number(route.source_point_count)>0 ? Number(route.source_point_count)
       : Number(activity.record_count)>0 ? Number(activity.record_count) : null;
-    const integral=await cgweb140.candidate(originalBuffer,expected,declared);
+    const clock=await require("./cgweb140clock").align(
+      originalBuffer,activity.cgweb140_time_alignment,Number(activity.start_time_ms)
+    );
+    const integral=await cgweb140.candidate(clock.buffer,expected,declared);
+    integral.report.original_sha256=originalHash;
+    integral.report.time_alignment=clock.report;
     const startTime=integral.source.sessionMesgs?.[0]?.startTime;
     const sourceStart=startTime instanceof Date ? startTime.getTime() : NaN;
     if(!Number.isFinite(sourceStart) || Math.abs(sourceStart-Number(activity.start_time_ms))>1000)
