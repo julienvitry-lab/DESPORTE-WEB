@@ -78663,7 +78663,7 @@ function cgweb136ShowFinal(
       <div class="cgweb136-success">
         <strong>Export terminé.</strong>
         L'activité Strava a été créée puis relue.
-        CGWEB a adopté les statistiques finales Strava.
+        Les statistiques CGWEB sont conservées ; les valeurs Strava sont comparées séparément.
       </div>
 
       <table class="cgweb136-final-table">
@@ -78727,7 +78727,7 @@ function cgweb136ShowFinal(
         ${
           changed.length
             ? (
-                "Valeurs modifiées par Strava puis répercutées dans CGWEB : " +
+                "Écarts Strava détectés, sans modification des valeurs CGWEB : " +
                 cgweb134Escape(
                   changed.join(
                     " · "
@@ -79031,9 +79031,9 @@ async function cgweb136ExportCurrent(
           ) +
           "…",
         "",
-        "Après traitement, Strava sera l'autorité :",
+        "Après traitement, les valeurs CGWEB restent prioritaires :",
         "distance, temps, temps écoulé, D+ et calories",
-        "seront répercutés dans CGWEB en cas d'écart.",
+        "seront comparés aux valeurs Strava sans écrasement.",
         "",
         "Continuer ?"
       ].join(
@@ -79266,6 +79266,18 @@ cgweb135ShowPreview =
 
     const preview = result?.preview || {};
     const report = preview.cgweb139 || {};
+    if(report.version === "CGWEB140") {
+      activity.cgweb_metrics_authority="CGWEB140";
+      const actions=document.querySelector("#cgweb134Dialog .cgweb134-dialog-actions");
+      if(actions) {
+        const note=document.createElement("p");
+        note.textContent=`FIT original intégral : ${report.candidate_fit_record_count} enregistrements conservés · `+
+          `${report.FC_records} valeurs FC · `+(report.device_profile === "GARMIN_FENIX_2_COMPATIBILITY" ?
+          "Profil d'export Garmin Fenix 2" : "Appareil d'origine conservé");
+        actions.before(note);
+      }
+    }
+
     const blockers = preview.blockers || [];
 
     if (
@@ -80414,6 +80426,11 @@ function cgweb137CanonicalMetric(
   activity,
   metric
 ) {
+  if(activity?.cgweb_metrics_authority === "CGWEB140") {
+    if(metric === "moving_time_ms") return cgweb137Finite(activity.timer_time_ms) ?? cgweb137Finite(activity.moving_time_ms);
+    return cgweb137Finite(activity[metric]);
+  }
+
   if (!activity) {
     return null;
   }

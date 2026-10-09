@@ -22,6 +22,7 @@ const {getFirestore, FieldPath} = require("firebase-admin/firestore");
 const {getStorage} = require("firebase-admin/storage");
 const crypto = require("crypto");
 const cgweb139 = require("./cgweb139");
+const cgweb140 = require("./cgweb140");
 
 if (!getApps().length) initializeApp();
 
@@ -14582,63 +14583,39 @@ async function c099GlobalDirectoryQuery(
         expected
       );
 
-    /*
-     * V078 est retenu comme builder :
-     * - GPS si disponible ;
-     * - reconstruction minimale si absence de route ;
-     * - distinction elapsed / timer déjà maîtrisée.
-     */
-    const prepared =
-      v078BuildPayload(
-        activity,
-        route
-      );
-
-    prepared.payload.activity_id =
-      id;
-
-    prepared.payload.fit_signature_seed =
-      id;
-
-    prepared.payload.duration_s =
-      expected.elapsed_time_ms /
-      1000;
-
-    prepared.payload.total_elapsed_time_s =
-      expected.elapsed_time_ms /
-      1000;
-
-    prepared.payload.total_timer_time_s =
-      expected.timer_time_ms /
-      1000;
-
-    prepared.payload.distance_m =
-      expected.distance_m;
-
-    prepared.payload.total_ascent_m =
-      expected.ascent_m;
-
-    prepared.payload.total_calories =
-      expected.calories;
-
-    /* CGWEB139: audit every record before encoding; preserve exact 0 m D+. */
-    const cgweb139Result = cgweb139.prepare(
-      activity, route, prepared, {
-        activityId:id,
-        reducedRouteConfirmation:
-          String(reducedRouteConfirmation || "")
-      }
-    );
-    blockers.push(...cgweb139Result.blockers);
-
-    const generated =
-      await encodeCanonicalFit(
-        prepared.payload
-      );
+    // CGWEB140: only a verified ORIGINAL is a valid source. No route fallback.
+    const linked = await files(uid).where("activity_id", "==", id).get();
+    const originals = linked.docs.filter(d => {
+      const row=d.data();
+      return row.deleted_at_ms == null && c090Roles(row).includes(C090_ROLE_ORIGINAL);
+    });
+    if(originals.length !== 1) throw Object.assign(new Error(
+      "CGWEB140 : FIT original absent ou ambigu. Aucun export réduit autorisé."
+    ), {status:422});
+    const originalRow=originals[0].data();
+    const originalHash=String(originalRow.sha256 || originals[0].id);
+    if(!/^[a-f0-9]{64}$/.test(originalHash)) throw new Error("CGWEB140 : SHA original invalide.");
+    const originalPath=String(originalRow.object_path || objectPath(uid,originalHash,originalRow.start_time_ms));
+    if(!originalPath.startsWith(`sport_users/${uid}/fit_vault/`)) throw new Error("CGWEB140 : chemin original non autorisé.");
+    const [originalBuffer]=await bucket().file(originalPath).download();
+    if(cgweb140.sha(originalBuffer)!==originalHash) throw new Error("CGWEB140 : SHA original non conforme.");
+    const declared=Number(route.source_point_count)>0 ? Number(route.source_point_count)
+      : Number(activity.record_count)>0 ? Number(activity.record_count) : null;
+    const integral=await cgweb140.candidate(originalBuffer,expected,declared);
+    const startTime=integral.source.sessionMesgs?.[0]?.startTime;
+    const sourceStart=startTime instanceof Date ? startTime.getTime() : NaN;
+    if(!Number.isFinite(sourceStart) || Math.abs(sourceStart-Number(activity.start_time_ms))>1000)
+      throw Object.assign(new Error("CGWEB140 : horodatage original différent de l'activité."),{status:422});
+    const cgweb139Result={blockers:[],report:{...integral.report,original_object_path:originalPath}};
+    const generated={buffer:integral.buffer,fileName:canonicalFitFileName(activity.start_time_ms,"C"),
+      stats:{timerEventCount:(integral.decoded.eventMesgs||[]).length}};
+    // Protect even if Strava sends its webhook before export reconciliation.
+    if(!blockers.length) await activityRef.set({cgweb_metrics_authority:"CGWEB140",cgweb140_original_sha256:originalHash,
+      cgweb140_export_device_profile:integral.report.device_profile},{merge:true});
 
     const validation =
       await inspectFitBuffer(
-        generated.buffer
+        cgweb140.forInspection(generated.buffer)
       );
 
     if (!validation.ok) {
@@ -14655,7 +14632,7 @@ async function c099GlobalDirectoryQuery(
 
     const decoded =
       await decodeCanonicalFitSummary(
-        generated.buffer
+        cgweb140.forInspection(generated.buffer)
       );
 
     const comparisons = [
@@ -14726,7 +14703,7 @@ async function c099GlobalDirectoryQuery(
           row.ok
       );
 
-    if (Number(decoded.recordCount) !== Number(prepared.payload.points.length)) {
+    if (Number(decoded.recordCount) !== Number(integral.report.candidate_fit_record_count)) {
       blockers.push("ENCODED_RECORD_COUNT_MISMATCH");
     }
 

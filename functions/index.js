@@ -909,6 +909,14 @@ async function updateServerActivity(uid, existing, activity, route, webhookEvent
   const key = String(existing.__docId || existing.id || activity.id);
   const now = Date.now();
 
+  // CGWEB140: preserve protected summaries and stored route on webhook updates.
+  if(existing.cgweb_metrics_authority === "CGWEB140") {
+    for(const metric of ["distance_m","timer_time_ms","elapsed_time_ms","ascent_m","descent_m","calories",
+      "avg_hr","max_hr","record_count","gps_point_count","start_time_ms","avg_speed_mps","max_speed_mps"])
+      if(existing[metric] !== undefined) activity[metric]=existing[metric]; else delete activity[metric];
+    activity.cgweb_metrics_authority="CGWEB140";
+    route=null;
+  }
   // Les choix manuels et la corbeille SPORT restent prioritaires sur Strava.
   if (existing.deleted_at_ms != null) return {status:"ignored_deleted"};
   if (Number(existing.equipment_manual) === 1) {
@@ -2493,6 +2501,14 @@ async function cgweb136ReconcileFromDetail(
       Date.now()
   };
 
+  // CGWEB140: remote metrics remain available for audit, never as local authority.
+  for(const metric of ["distance_m","timer_time_ms","elapsed_time_ms","ascent_m","calories"])
+    delete patch[metric];
+  patch.cgweb_metrics_authority="CGWEB140";
+  patch.cgweb140_export_device_profile=lock?.fit_preview?.cgweb139?.device_profile || null;
+  for(const metric of ["distance_m","timer_time_ms","elapsed_time_ms","ascent_m","calories"])
+    patch[`pre_strava_export_${metric}`]=current[`pre_strava_export_${metric}`] ?? before[metric] ?? null;
+
   /*
    * CGWEB136 FIX1 · LOAD_IMMUTABILITY_AUDIT001
    *
@@ -2531,7 +2547,7 @@ async function cgweb136ReconcileFromDetail(
       "distance_m",
       before.distance_m,
       strava.distance_m,
-      patch.distance_m,
+      current.distance_m,
       "m"
     ),
 
@@ -2539,7 +2555,7 @@ async function cgweb136ReconcileFromDetail(
       "timer_time_ms",
       before.timer_time_ms,
       strava.timer_time_ms,
-      patch.timer_time_ms,
+      current.timer_time_ms,
       "ms"
     ),
 
@@ -2547,7 +2563,7 @@ async function cgweb136ReconcileFromDetail(
       "elapsed_time_ms",
       before.elapsed_time_ms,
       strava.elapsed_time_ms,
-      patch.elapsed_time_ms,
+      current.elapsed_time_ms,
       "ms"
     ),
 
@@ -2555,7 +2571,7 @@ async function cgweb136ReconcileFromDetail(
       "ascent_m",
       before.ascent_m,
       strava.ascent_m,
-      patch.ascent_m,
+      current.ascent_m,
       "m"
     ),
 
@@ -2563,7 +2579,7 @@ async function cgweb136ReconcileFromDetail(
       "calories",
       before.calories,
       strava.calories,
-      patch.calories,
+      current.calories,
       "kcal"
     )
   ];
@@ -2993,27 +3009,12 @@ async function cgweb136ReadExactCandidate(
       ?.fit_preview ||
     {};
 
-  /* CGWEB139 FIX2 : consentement vérifié côté serveur. */
-  const report139 = preview?.cgweb139 || {};
-  const reducedConfirmed =
-    report139.reduced_route_eligible === true &&
-    report139.reduced_route_accepted === true &&
-    report139.record_export_policy ===
-      "USER_ACCEPTED_REDUCED_ROUTE" &&
-    Number(report139.source_declared_point_count) >
-      Number(report139.candidate_fit_record_count) &&
-    Number(report139.candidate_fit_record_count) >= 2 &&
-    Number(report139.candidate_fit_record_count) ===
-      Number(report139.stored_route_sample_count) &&
-    Number(report139.candidate_fit_record_count) ===
-      Number(preview?.fit?.record_count);
-
-  if (report139.version !== "CGWEB139" ||
-      (report139.full_record_parity_ok !== true &&
-       !reducedConfirmed)) {
-    throw Object.assign(new Error(
-      "CGWEB139 FIX2 : FIT incomplet non autorisé."
-    ), {status:409});
+  const report140=preview.cgweb139 || {};
+  if(report140.version!=="CGWEB140" || report140.full_record_parity_ok!==true ||
+     report140.all_existing_bytes_verified!==true ||
+     report140.record_export_policy!=="STRICT_FULL_ORIGINAL_BINARY" ||
+     Number(report140.candidate_fit_record_count)!==Number(preview.fit?.record_count)) {
+    throw Object.assign(new Error("CGWEB140 : préparer un nouvel aperçu FIT intégral."),{status:409});
   }
 
   if (
@@ -5427,6 +5428,14 @@ function cgweb137Finite(
 function cgweb137CanonicalSportMetrics(
   activity
 ) {
+  if(activity?.cgweb_metrics_authority === "CGWEB140") return {
+    distance_m:cgweb137Finite(activity.distance_m) ?? 0,
+    moving_time_s:(cgweb137Finite(activity.timer_time_ms) ?? cgweb137Finite(activity.moving_time_ms) ?? 0)/1000,
+    elapsed_time_s:(cgweb137Finite(activity.elapsed_time_ms) ?? 0)/1000,
+    elevation_gain_m:cgweb137Finite(activity.ascent_m) ?? 0,
+    calories:cgweb137Finite(activity.calories) ?? 0
+  };
+
   const canonicalDistance =
     cgweb137Finite(
       activity
