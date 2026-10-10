@@ -14,42 +14,42 @@ const MAX_TITLE = 180;
 const clean = x => String(x == null ? "" : x).replace(/\r\n?/g, "\n").trim();
 const sha = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function httpError(status, message) { const e = new Error(message); e.status = status; return e; }
+// CGWEB145 : le titre public Strava n'expose jamais les secondes.
+function minuteTitleFromLegacy(text) {
+  const s = clean(text);
+  const m = /^(\d{4}_\d{2}_\d{2}_\d{2}_\d{2})(?:_\d{2})?_([A-Za-z])$/.exec(s);
+  return m ? `${m[1]}_${m[2].toUpperCase()}` : "";
+}
 function parisStamp(startMs, activity) {
   const stamp = Number(startMs);
   if (!Number.isFinite(stamp) || stamp <= 0) return "";
   const format = new Intl.DateTimeFormat("en-GB", {
-    timeZone:"Europe/Paris", year:"numeric", month:"2-digit", day:"2-digit",
-    hour:"2-digit", minute:"2-digit", second:"2-digit", hourCycle:"h23"
+    timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23"
   });
   const parts = Object.fromEntries(format.formatToParts(new Date(stamp))
-    .filter(x=>x.type!=="literal").map(x=>[x.type,x.value]));
-  const sport = Number(activity?.sport);
-  const subSport = Number(activity?.sub_sport);
-  const code = sport === 1 ? (subSport === 21 ? "T":"C")
-    : sport === 2 ? (subSport === 6 ? "H":"V")
+    .filter(x => x.type !== "literal").map(x => [x.type,x.value]));
+  const sport = Number(activity?.sport), subSport = Number(activity?.sub_sport);
+  const code = sport === 1 ? (subSport === 21 ? "T" : "C")
+    : sport === 2 ? (subSport === 6 ? "H" : "V")
     : sport === 11 ? "M" : "S";
   return [parts.year,parts.month,parts.day,parts.hour,parts.minute,code].join("_");
 }
 function houseTitle(activity) {
-  const canonical = parisStamp(activity?.start_time_ms, activity);
-  if (canonical) return canonical.slice(0, MAX_TITLE);
-  // If an activity lacks a start date, retain a normalized historical fallback.
-  // Explicit persisted text always wins. Never reuse custom_title: it is not
-  // necessarily the "horodatage maison" displayed by CGWEB.
+  // Le depart valide de CGWEB fait autorite. Ne jamais reprendre les secondes
+  // d'un ancien titre ou d'un nom de FIT.
+  const fromStart = parisStamp(activity?.start_time_ms, activity);
+  if (fromStart) return fromStart.slice(0,MAX_TITLE);
+  // Compatibilite uniquement pour les activites sans horodatage exploitable.
   const keys = ["house_timestamp_text","horodatage_maison","house_timestamp",
-    "home_timestamp","canonical_timestamp","house_timestamp_title"];
-  for(const key of keys) {
-    const original=activity?.[key];
-    if(typeof original!=="string")continue;
-    const value=clean(original);
-    if(value && !/^\d{12,}$/.test(value))return value.replace(/^(\d{4}_\d{2}_\d{2}_\d{2}_\d{2})_\d{2}_([A-Z])$/i,"$1_$2").slice(0,MAX_TITLE);
+    "home_timestamp","canonical_timestamp","house_timestamp_title",
+    "canonical_file_name","fit_filename","fit_file_name","file_name"];
+  for (const key of keys) {
+    const v = clean(activity?.[key]).split(/[\\/]/).pop().replace(/\.fit$/i,"");
+    const title = minuteTitleFromLegacy(v);
+    if (title) return title;
   }
-  const fileCandidates=[activity?.canonical_file_name,activity?.fit_filename,activity?.fit_file_name,activity?.file_name];
-  for(const file of fileCandidates) {
-    const hit = String(file||"").match(/(?:^|[\\/])(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}_[CVHTMS])(?:_\d{2})?\.fit$/i);
-    if(hit) return hit[1].toUpperCase().replace(/^(\d{4}_\d{2}_\d{2}_\d{2}_\d{2})_\d{2}_([A-Z])$/i,"$1_$2");
-  }
-  return parisStamp(activity?.start_time_ms,activity).slice(0,MAX_TITLE);
+  return "";
 }
 function permitted(activity, code) {
   const c=clean(code).toUpperCase(), sport=Number(activity?.sport);
