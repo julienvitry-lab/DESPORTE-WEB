@@ -2876,6 +2876,18 @@ async function cgweb136ReconcileFromDetail(
     console.warn("CGWEB138 post-upload text audit pending",key,error?.message||error);
     finalResult.text_bridge={status:"TEXT_AUDIT_PENDING",error:error?.message||String(error)};
   }
+  // CGWEB147 : l'upload Strava ne garantit pas le nom visible.
+  // Finalisation ciblée sur CE lien, même si l'ancien audit texte est en attente.
+  // Le moteur CGWEB146 ne peut écrire que {name: title} et confirme par un GET.
+  try {
+    finalResult.cgweb147_title_sync = await cgweb146TitleSync.sync(uid, key);
+  } catch (error) {
+    console.warn("CGWEB147 title finalization pending", key, error?.message || error);
+    finalResult.cgweb147_title_sync = {
+      status: "TITLE_SYNC_PENDING", updated: false,
+      error: String(error?.message || error).slice(0, 240)
+    };
+  }
   return finalResult;
 }
 
@@ -4182,19 +4194,22 @@ async function cgweb136PollSingle(
     ) ===
       "RECONCILED"
   ) {
-    return (
-      lock.final_result ||
-      {
-        ok:
-          true,
-
-        status:
-          "RECONCILED",
-
-        activity_key:
-          activityKey
-      }
-    );
+    const existingResult = lock.final_result || {
+      ok: true, status: "RECONCILED", activity_key: activityKey
+    };
+    // CGWEB147 : si le premier PUT a été trop précoce, le suivi utilisateur
+    // relance la correction du seul titre. Jamais un second POST de FIT.
+    let titleSync;
+    try {
+      titleSync = await cgweb146TitleSync.sync(uid, activityKey);
+    } catch (error) {
+      console.warn("CGWEB147 poll title pending", activityKey, error?.message || error);
+      titleSync = {
+        status: "TITLE_SYNC_PENDING", updated: false,
+        error: String(error?.message || error).slice(0, 240)
+      };
+    }
+    return {...existingResult, cgweb147_title_sync: titleSync};
   }
 
   if (
