@@ -4,6 +4,7 @@ const {defineSecret, defineString} = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
 const cgweb138Text = require("./cgweb138");
+const cgweb146Title = require("./cgweb146title");
 const cgweb139 = require("./cgweb139");
 const cgweb139Fix1 = require("./cgweb139fix1");
 const cgweb144Stats = require("./cgweb144stats");
@@ -6852,6 +6853,33 @@ const cgweb138Bridge = cgweb138Text.createBridge({
   FieldPath:admin.firestore.FieldPath
 });
 /* CGWEB138_SERVER_END */
+/* CGWEB146 · TITLE_SYNC_SINGLE_ACTIVITY001
+ * Only on an explicit action for a previously linked CGWEB activity.
+ * The only permitted Strava PUT body contains the name field.
+ */
+const cgweb146TitleSync = cgweb146Title.createTitleSync({
+  readActivity: async (uid, key) => {
+    const snapshot=await firestore().doc(`${ROOT}/${uid}/activities/${key}`).get();
+    return snapshot.exists ? snapshot.data() : null;
+  },
+  readIntegration: tokenDocument,
+  readRemote: (uid, id) => stravaGet(uid, `/activities/${encodeURIComponent(id)}?include_all_efforts=false`),
+  putRemoteTitle: async (uid, id, title) => {
+    const integration=await tokenDocument(uid);
+    const token=await refreshTokenIfNeeded(uid,integration);
+    const response=await fetch(`${STRAVA_API_BASE}/activities/${encodeURIComponent(id)}`,{
+      method:"PUT",
+      headers:{Authorization:`Bearer ${token.access_token}`,"Content-Type":"application/json"},
+      body:JSON.stringify({name:title})
+    });
+    if(!response.ok) {
+      const detail=(await response.text()).slice(0,250);
+      throw Object.assign(new Error(`CGWEB146: titre Strava non modifié: HTTP ${response.status} ${detail}`),{status:response.status});
+    }
+  },
+  canonicalTitle: cgweb138Text.houseTitle
+});
+/* CGWEB146_SERVER_END */
 /* CGWEB139_FIX1_SERVER_START */
 const cgweb139Fix1Recovery = cgweb139Fix1.createRecovery({
   db:firestore(), root:ROOT, admin, tokenDocument, refreshTokenIfNeeded,
@@ -7140,15 +7168,20 @@ exports.stravaBridge = onRequest(
           ).trim();
 
         if (linkedStravaId) {
+          // CGWEB146: l'utilisateur tente de synchroniser UNE activité déjà liée.
+          // Aucune réimportation ; éventuel PUT Strava sur name seulement.
+          let titleSync;
+          try {
+            titleSync=await cgweb146TitleSync.sync(uid,activityKey);
+          } catch(error) {
+            console.warn("CGWEB146 title update pending",activityKey,error?.message||error);
+            titleSync={status:"TITLE_SYNC_PENDING",updated:false};
+          }
           return res.json({
-            ok:
-              false,
-
-            status:
-              "ALREADY_LINKED",
-
-            strava_activity_id:
-              linkedStravaId
+            ok:false,
+            status:"ALREADY_LINKED",
+            strava_activity_id:linkedStravaId,
+            cgweb146_title_sync:titleSync
           });
         }
 
@@ -7440,16 +7473,18 @@ exports.stravaBridge = onRequest(
             ? req.body
             : {};
 
-        return res.json(
-          await cgweb136Fix1PostExportAudit(
-            uid,
-            String(
-              body
-                ?.activity_key ||
-              ""
-            ).trim()
-          )
-        );
+        const key=String(body?.activity_key||"").trim();
+        const result=await cgweb136Fix1PostExportAudit(uid,key);
+        // Réconciliation demandée par l'utilisateur : titre seulement,
+        // jamais de second upload, jamais de mutation FIT ou statistiques.
+        let titleSync;
+        try {
+          titleSync=await cgweb146TitleSync.sync(uid,key);
+        } catch(error) {
+          console.warn("CGWEB146 title verification pending",key,error?.message||error);
+          titleSync={status:"TITLE_SYNC_PENDING",updated:false};
+        }
+        return res.json({...result,cgweb146_title_sync:titleSync});
       }
 
       /* CGWEB136_FIX1_ACTION_END */

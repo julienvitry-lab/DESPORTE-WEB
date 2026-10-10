@@ -34,7 +34,9 @@ const m=require("./cgweb140");
   await assert.rejects(()=>m.candidate(b,expected,11),/ORIGINAL_RECORD_COUNT_MISMATCH/);
   const bad=Buffer.from(b);bad[40]^=1;
   await assert.rejects(()=>m.candidate(bad,expected,10),/CRC/);
-  await assert.rejects(()=>m.candidate(b,{...expected,ascent_m:3.2},10),/NOT_REPRESENTABLE/);
+  const fractional=await m.candidate(b,{...expected,ascent_m:3.2},10);
+  assert.equal(fractional.decoded.sessionMesgs[0].totalAscent,3);
+  assert.deepEqual(fractional.decoded.recordMesgs,fractional.source.recordMesgs);
   // Add an unknown message with opaque fields; it must survive without re-encoding.
   const opaque=Buffer.from([0x4f,0,0,0x30,0x75,1,200,4,13,15,1,2,3,4]);
   const header=Buffer.from(b.subarray(0,b[0]));header.writeUInt32LE(b.readUInt32LE(4)+opaque.length,4);
