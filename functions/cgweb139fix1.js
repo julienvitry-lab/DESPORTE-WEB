@@ -195,8 +195,8 @@ function createRecovery({db, root, admin, tokenDocument, refreshTokenIfNeeded, a
         strava_reimport_authorized_at_ms:now,strava_export_history_ref:archiveRef.path,
         __sportKey:key,__updatedAtMs:now};
       tx.create(archiveRef,{version:VERSION,activity_key:key,old_strava_activity_id:oldId,
-        old_activity_link:{strava_activity_id:a.strava_activity_id,strava_upload_id:a.strava_upload_id,
-          strava_export_state:a.strava_export_state,strava_canonical_distance_m:a.strava_canonical_distance_m??null,
+        old_activity_link:{strava_activity_id:a.strava_activity_id??null,strava_upload_id:a.strava_upload_id??null,
+          strava_export_state:a.strava_export_state??null,strava_canonical_distance_m:a.strava_canonical_distance_m??null,
           strava_canonical_elevation_gain_m:a.strava_canonical_elevation_gain_m??null,
           ascent_m:a.ascent_m??null,distance_m:a.distance_m??null,
           timer_time_ms:a.timer_time_ms??null,calories:a.calories??null},

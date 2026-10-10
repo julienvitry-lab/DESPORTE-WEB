@@ -9,6 +9,13 @@ const source=fs.readFileSync(path.join(__dirname,'cgweb139fix1.js'),'utf8');
 const KEY='5187',REMOTE='20502985541',UID='fixture-user',ROOT='sport_users';
 const START=Date.parse('2012-06-06T09:04:00Z');
 
+// Mock Firestore must reject undefined, even deeply nested in an archive.
+function rejectUndefined(value, location='$') {
+  if(value===undefined) throw new Error(`Firestore invalid undefined at ${location}`);
+  if(Array.isArray(value)) return value.forEach((v,i)=>rejectUndefined(v,`${location}[${i}]`));
+  if(value && typeof value==='object' && Object.getPrototypeOf(value)===Object.prototype)
+    for(const [k,v] of Object.entries(value))rejectUndefined(v,`${location}.${k}`);
+}
 function world({lock=null,remote='PRESENT',scope='activity:read_all activity:write',athlete='123',duplicate=false}={}) {
   const aPath=`${ROOT}/${UID}/activities/${KEY}`;
   const lPath=`${ROOT}/${UID}/strava_outbound_exports/${KEY}`;
@@ -22,8 +29,8 @@ function world({lock=null,remote='PRESENT',scope='activity:read_all activity:wri
   const snap=p=>({exists:docs.has(p),data:()=>docs.get(p),ref:ref(p)});
   const db={doc:ref,async runTransaction(fn){
     const queue=[];
-    const tx={get:async r=>snap(r.path),create(r,val){queue.push(['create',r.path,val]);},
-      delete(r){queue.push(['delete',r.path]);},set(r,val,opts){queue.push(['set',r.path,val,opts]);}};
+    const tx={get:async r=>snap(r.path),create(r,val){rejectUndefined(val,r.path);queue.push(['create',r.path,val]);},
+      delete(r){queue.push(['delete',r.path]);},set(r,val,opts){rejectUndefined(val,r.path);queue.push(['set',r.path,val,opts]);}};
     await fn(tx);
     for(const [op,p,data,opts] of queue){
       if(op==='create'){assert.ok(!docs.has(p));docs.set(p,data)}
@@ -86,6 +93,8 @@ test('CGWEB142/02 : legacy supprime = preuve puis confirmation manuelle, sans up
     const hist=[...w.docs].find(([p])=>p.includes('/strava_export_history/'));
     assert.equal(hist[1].legacy_link_mode,'LEGACY_NO_LOCK');
     assert.equal(hist[1].prior_export_lock,null);
+    assert.equal(hist[1].old_activity_link.strava_export_state,null);
+    assert.equal(hist[1].old_activity_link.strava_upload_id,null);
     assert.ok(!w.mutation.some(x=>x.includes('fit_vault')));
     assert.ok(w.requests.every(url=>!url.includes('/uploads')));
   } finally {w.restore();}
@@ -149,4 +158,23 @@ test('CGWEB142/10 : protection structurelle appels Strava sans POST automatique'
   assert.match(source,/if \(rescanned.status !== "VERIFIED_NOT_FOUND"\)/);
   assert.match(source,/if \(lSnap.exists\) tx.delete\(lRef\)/);
   assert.match(source,/proofLock\(managed\)/);
+});
+
+
+test('CGWEB142 FIX1/11 : les valeurs historiques presentes restent intactes',async()=>{
+  const w=world({remote:'DELETED'});
+  try {
+    const a=w.docs.get(w.aPath);
+    a.strava_upload_id='archive_upload_123';
+    a.strava_export_state='RECONCILED';
+    const proof=await w.app.check(UID,KEY);
+    const result=await w.app.confirm(UID,{activity_key:KEY,
+      old_strava_activity_id:REMOTE,proof:proof.proof,
+      confirmation:proof.confirmation_text});
+    assert.equal(result.ok,true);
+    const archive=[...w.docs].find(([k])=>k.includes('/strava_export_history/'))?.[1];
+    assert.equal(archive.old_activity_link.strava_upload_id,'archive_upload_123');
+    assert.equal(archive.old_activity_link.strava_export_state,'RECONCILED');
+    assert.ok(!w.requests.some(u=>u.includes('/uploads')));
+  } finally {w.restore();}
 });
