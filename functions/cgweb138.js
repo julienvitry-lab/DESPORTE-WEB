@@ -28,9 +28,12 @@ function parisStamp(startMs, activity) {
   const code = sport === 1 ? (subSport === 21 ? "T":"C")
     : sport === 2 ? (subSport === 6 ? "H":"V")
     : sport === 11 ? "M" : "S";
-  return [parts.year,parts.month,parts.day,parts.hour,parts.minute,parts.second,code].join("_");
+  return [parts.year,parts.month,parts.day,parts.hour,parts.minute,code].join("_");
 }
 function houseTitle(activity) {
+  const canonical = parisStamp(activity?.start_time_ms, activity);
+  if (canonical) return canonical.slice(0, MAX_TITLE);
+  // If an activity lacks a start date, retain a normalized historical fallback.
   // Explicit persisted text always wins. Never reuse custom_title: it is not
   // necessarily the "horodatage maison" displayed by CGWEB.
   const keys = ["house_timestamp_text","horodatage_maison","house_timestamp",
@@ -39,12 +42,12 @@ function houseTitle(activity) {
     const original=activity?.[key];
     if(typeof original!=="string")continue;
     const value=clean(original);
-    if(value && !/^\d{12,}$/.test(value))return value.slice(0,MAX_TITLE);
+    if(value && !/^\d{12,}$/.test(value))return value.replace(/^(\d{4}_\d{2}_\d{2}_\d{2}_\d{2})_\d{2}_([A-Z])$/i,"$1_$2").slice(0,MAX_TITLE);
   }
   const fileCandidates=[activity?.canonical_file_name,activity?.fit_filename,activity?.fit_file_name,activity?.file_name];
   for(const file of fileCandidates) {
     const hit = String(file||"").match(/(?:^|[\\/])(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}_[CVHTMS])(?:_\d{2})?\.fit$/i);
-    if(hit) return hit[1].toUpperCase();
+    if(hit) return hit[1].toUpperCase().replace(/^(\d{4}_\d{2}_\d{2}_\d{2}_\d{2})_\d{2}_([A-Z])$/i,"$1_$2");
   }
   return parisStamp(activity?.start_time_ms,activity).slice(0,MAX_TITLE);
 }
