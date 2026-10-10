@@ -156,7 +156,7 @@ test('INTEGRATION/05B: l activation remonte explicitement un nettoyage incomplet
   assert.equal(patch.fit_replacement_cleanup_ok,false);
   assert.equal(w.activity.get(w.id).fit_replacement_cleanup_ok,false);
   assert.equal(sha(w.storage.get(w.archivedPath(old.hash))),old.hash);
-  console.log('RISQUE IDENTIFIE · la reponse appelante peut rester ok:true avec cleanup_ok:false. Interdire le deploiement tant que ce statut n est pas traite.');
+  console.log('CONTROLE FIX4 · l activation preserve cleanup_ok:false ; la couche HTTP doit renvoyer FIT_PARTIAL_CLEANUP.');
 });
 
 test('INTEGRATION/06: refus d un export provenant d un FIT actif absent ou ambigu',()=>{

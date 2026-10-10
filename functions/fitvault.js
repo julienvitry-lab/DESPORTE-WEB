@@ -24,6 +24,7 @@ const crypto = require("crypto");
 const cgweb139 = require("./cgweb139");
 const cgweb140 = require("./cgweb140");
 const cgweb140fix3 = require("./cgweb140fix3");
+const cgweb140fix4 = require("./cgweb140fix4");
 
 if (!getApps().length) initializeApp();
 
@@ -2403,6 +2404,14 @@ function createFitVault() {
 
       patch.fit_replacement_cleanup_ok =
         replacement.ok === true;
+      patch.fit_replacement_cleanup_errors =
+        Array.isArray(replacement.errors) ? replacement.errors.slice(0, 20) : [];
+      patch.fit_replacement_archived_count =
+        Number(replacement.archived_objects || 0);
+      patch.fit_replaced_object_count =
+        Number(replacement.deleted_objects || 0);
+      patch.fit_replacement_status =
+        replacement.ok === true ? "COMPLETED" : "PARTIAL_CLEANUP";
 
       patch.fit_replacement_at_ms =
         Date.now();
@@ -15783,6 +15792,12 @@ async function c099GlobalDirectoryQuery(
               );
             }
 
+            // CGWEB140 FIX3 FIX4 : never report success after incomplete cleanup.
+            if (editorMode && body.activate_version === true) {
+              const warning = cgweb140fix4.partialCleanupResponse(activityId, hash, activityPatch);
+              if (warning) return res.status(409).json(warning);
+            }
+
             return res.json({
               ok: true,
               service: editorMode ? "FITEDITOR001" : "FITVERSION001",
@@ -15898,6 +15913,12 @@ async function c099GlobalDirectoryQuery(
             );
 
             metadata.is_active_version = true;
+          }
+
+          // CGWEB140 FIX3 FIX4 : never report success after incomplete cleanup.
+          if (editorMode && body.activate_version === true) {
+            const warning = cgweb140fix4.partialCleanupResponse(activityId, hash, activityPatch);
+            if (warning) return res.status(409).json(warning);
           }
 
           return res.json({
