@@ -909,12 +909,14 @@ async function updateServerActivity(uid, existing, activity, route, webhookEvent
   const key = String(existing.__docId || existing.id || activity.id);
   const now = Date.now();
 
-  // CGWEB140: preserve protected summaries and stored route on webhook updates.
-  if(existing.cgweb_metrics_authority === "CGWEB140") {
+  // CGWEB140 FIX3 FIX2: a webhook must never replace a full FIT-backed route.
+  // The post-export summary is already authoritative from Strava detailed API;
+  // subsequent detailed reconciliation may refresh it, not an incoming partial row.
+  if(["CGWEB140", "STRAVA_POST_EXPORT"].includes(String(existing.cgweb_metrics_authority || ""))) {
     for(const metric of ["distance_m","timer_time_ms","elapsed_time_ms","ascent_m","descent_m","calories",
       "avg_hr","max_hr","record_count","gps_point_count","start_time_ms","avg_speed_mps","max_speed_mps"])
       if(existing[metric] !== undefined) activity[metric]=existing[metric]; else delete activity[metric];
-    activity.cgweb_metrics_authority="CGWEB140";
+    activity.cgweb_metrics_authority=existing.cgweb_metrics_authority;
     route=null;
   }
   // Les choix manuels et la corbeille SPORT restent prioritaires sur Strava.
