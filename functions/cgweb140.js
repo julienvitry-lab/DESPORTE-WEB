@@ -1,6 +1,7 @@
 "use strict";
 // CGWEB140: patch existing bytes; never decode/re-encode the record stream.
 const crypto = require("crypto");
+const cgweb143 = require("./cgweb143session");
 const sha = b => crypto.createHash("sha256").update(b).digest("hex");
 function fail(code) { throw Object.assign(new Error(`CGWEB140 : ${code}`), {status:422}); }
 function crc(b) {
@@ -109,10 +110,15 @@ async function candidate(original,expected,declared) {
   if(unknown){set(out,identity[0],1,1,allowed);set(out,identity[0],2,1967,allowed);}
   // GPS/altitude/FC records, laps, events and developer fields remain byte-identical.
   const s=sessions[0];
+  const missing=[];
   for(const [field,n] of [[7,expected.elapsed_time_ms],[8,expected.timer_time_ms],[9,expected.distance_m*100],[11,expected.calories],[22,expected.ascent_m]]) {
     if(!Number.isFinite(n))fail("EXPECTED_METRIC_MISSING");
-    const rounded=Math.round(n);if(Math.abs(n-rounded)>0.001)fail("METRIC_NOT_REPRESENTABLE_IN_FIT");
-    set(out,s,field,rounded,allowed);
+    // FIT stores integer milliseconds, centimetres, kilocalories and metres.
+    // Keep CGWEB/Strava decimal precision in the database after reconciliation;
+    // write the nearest representable FIT unit into the Session summary only.
+    const rounded=cgweb143.quantize(field,n);
+    if(s.fields.some(f=>f.num===field))set(out,s,field,rounded,allowed);
+    else missing.push({field,value:rounded});
   }
   let extra=Buffer.alloc(0);
   if(unknown){
@@ -126,9 +132,12 @@ async function candidate(original,expected,declared) {
   }
   // Check EVERY existing byte: no change beyond the explicit allowlist.
   for(let i=parsed.header;i<parsed.end;i++)if(out[i]!==original[i]&&!allowed.has(i))fail("UNAUTHORIZED_BYTE_CHANGE");
-  const header=Buffer.from(out.subarray(0,parsed.header));header.writeUInt32LE(parsed.end-parsed.header+extra.length,4);
+  // Insert Session-only declarations without editing/rebuilding any Record,
+  // and restore the old local FIT definition immediately afterwards.
+  const data=cgweb143.extend(out,parsed,s,missing,crc);
+  const header=Buffer.from(out.subarray(0,parsed.header));header.writeUInt32LE(data.length+extra.length,4);
   if(parsed.header>=14)header.writeUInt16LE(crc(header.subarray(0,parsed.header-2)),parsed.header-2);
-  const body=Buffer.concat([header,out.subarray(parsed.header,parsed.end),extra]);
+  const body=Buffer.concat([header,data,extra]);
   const checksum=Buffer.alloc(2);checksum.writeUInt16LE(crc(body));const buffer=Buffer.concat([body,checksum]);
   const final=scan(buffer),after=recordDigest(buffer,final);
   if(after.count!==records.count||after.sha256!==records.sha256)fail("RECORD_BYTES_CHANGED");
