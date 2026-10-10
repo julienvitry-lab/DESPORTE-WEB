@@ -2501,10 +2501,9 @@ async function cgweb136ReconcileFromDetail(
       Date.now()
   };
 
-  // CGWEB140: remote metrics remain available for audit, never as local authority.
-  for(const metric of ["distance_m","timer_time_ms","elapsed_time_ms","ascent_m","calories"])
-    delete patch[metric];
-  patch.cgweb_metrics_authority="CGWEB140";
+  // CGWEB140 FIX3: once Strava has returned complete detailed metrics,
+  // overwrite ALL five CGWEB fields, including elapsed and moving times.
+  patch.cgweb_metrics_authority="STRAVA_POST_EXPORT";
   patch.cgweb140_export_device_profile=lock?.fit_preview?.cgweb139?.device_profile || null;
   for(const metric of ["distance_m","timer_time_ms","elapsed_time_ms","ascent_m","calories"])
     patch[`pre_strava_export_${metric}`]=current[`pre_strava_export_${metric}`] ?? before[metric] ?? null;
@@ -5428,14 +5427,6 @@ function cgweb137Finite(
 function cgweb137CanonicalSportMetrics(
   activity
 ) {
-  if(activity?.cgweb_metrics_authority === "CGWEB140") return {
-    distance_m:cgweb137Finite(activity.distance_m) ?? 0,
-    moving_time_s:(cgweb137Finite(activity.timer_time_ms) ?? cgweb137Finite(activity.moving_time_ms) ?? 0)/1000,
-    elapsed_time_s:(cgweb137Finite(activity.elapsed_time_ms) ?? 0)/1000,
-    elevation_gain_m:cgweb137Finite(activity.ascent_m) ?? 0,
-    calories:cgweb137Finite(activity.calories) ?? 0
-  };
-
   const canonicalDistance =
     cgweb137Finite(
       activity

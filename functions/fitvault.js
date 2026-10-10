@@ -23,6 +23,7 @@ const {getStorage} = require("firebase-admin/storage");
 const crypto = require("crypto");
 const cgweb139 = require("./cgweb139");
 const cgweb140 = require("./cgweb140");
+const cgweb140fix3 = require("./cgweb140fix3");
 
 if (!getApps().length) initializeApp();
 
@@ -2221,157 +2222,82 @@ function createFitVault() {
   */
 
   async function v121ReplaceFitFamily(
-    uid,
-    activityId,
-    keepSha,
-    keepFileName,
-    targetStartMs
+    uid, activityId, keepSha, keepFileName, targetStartMs
   ) {
-    const id = String(activityId || "").trim();
-    const keep = String(keepSha || "").trim().toLowerCase();
-
-    if (!id || !/^[a-f0-9]{64}$/.test(keep)) {
-      throw Object.assign(
-        new Error("SINGLE_FIT_REPLACEMENT001 : identifiants invalides."),
-        {status: 500}
-      );
-    }
-
-    const family = await files(uid)
-      .where("activity_id", "==", id)
-      .limit(500)
-      .get();
-
-    let deletedDocs = 0;
-    let deletedObjects = 0;
-    const cleanupErrors = [];
-
-    for (const docSnap of family.docs) {
-      const row = docSnap.data() || {};
-      const rowSha = String(
-        row.sha256 || docSnap.id || ""
-      ).trim().toLowerCase();
-
-      if (rowSha === keep) continue;
-
-      const objectName = String(
-        row.object_path || ""
-      ).trim();
-
-      if (objectName) {
-        try {
-          await bucket()
-            .file(objectName)
-            .delete({ignoreNotFound: true});
-          deletedObjects += 1;
-        } catch (error) {
-          const code = Number(error?.code || 0);
-          if (code !== 404) {
-            cleanupErrors.push({
-              sha256: rowSha || null,
-              stage: "STORAGE_DELETE",
-              error: error?.message || String(error)
-            });
-            continue;
-          }
-        }
+    /* CGWEB140 FIX3: archive & SHA-verify EVERYTHING before modifying the
+       operational manifest. Never delete a source not safely archived. */
+    const id=String(activityId||"").trim(), keep=String(keepSha||"").toLowerCase();
+    if(!/^[A-Za-z0-9_.:-]{1,180}$/.test(id)||!/^[a-f0-9]{64}$/.test(keep))
+      throw Object.assign(new Error("CGWEB140 FIX3 : identifiants invalides."),{status:422});
+    const family=await files(uid).where("activity_id","==",id).limit(500).get();
+    if(family.docs.length>=500) throw Object.assign(new Error("CGWEB140 FIX3 : famille FIT tronquée ; remplacement bloqué."),{status:422});
+    const current=await fileDoc(uid,keep).get();
+    if(!current.exists || current.data()?.deleted_at_ms!=null)
+      throw Object.assign(new Error("CGWEB140 FIX3 : nouveau FIT absent du coffre."),{status:422});
+    const currentPath=String(current.data()?.object_path||"");
+    if(!currentPath.startsWith(`sport_users/${uid}/fit_vault/`))
+      throw Object.assign(new Error("CGWEB140 FIX3 : chemin FIT actif invalide."),{status:422});
+    const [currentBytes]=await bucket().file(currentPath).download();
+    if(sha256(currentBytes)!==keep) throw Object.assign(new Error("CGWEB140 FIX3 : SHA du FIT actif incorrect."),{status:422});
+    const old=[];
+    for(const snap of family.docs) {
+      const row=snap.data()||{};
+      if(snap.id===keep || row.deleted_at_ms!=null)continue;
+      const hash=String(row.sha256||snap.id).toLowerCase();
+      const path=String(row.object_path||"");
+      if(!/^[a-f0-9]{64}$/.test(hash)||!path.startsWith(`sport_users/${uid}/fit_vault/`))
+        throw Object.assign(new Error(`CGWEB140 FIX3 : source ${snap.id} non archivable.`),{status:422});
+      const [data]=await bucket().file(path).download();
+      if(sha256(data)!==hash) throw Object.assign(new Error(`CGWEB140 FIX3 : SHA original incohérent ${snap.id}.`),{status:422});
+      const archivePath=`sport_users/${uid}/fit_superseded/${id}/${hash}.fit`;
+      const archive=bucket().file(archivePath);
+      const [exists]=await archive.exists();
+      if(exists){
+        const [archived]=await archive.download();
+        if(sha256(archived)!==hash)throw Object.assign(new Error(`CGWEB140 FIX3 : archive différente ${snap.id}.`),{status:422});
+      }else{
+        await archive.save(data,{resumable:false,validation:"crc32c",contentType:"application/vnd.ant.fit",
+          metadata:{cacheControl:"private, no-store",metadata:{owner_uid:uid,sha256:hash,source:"CGWEB140_FIX3_SUPERSEDED"}}});
+        const [verified]=await archive.download();
+        if(sha256(verified)!==hash)throw Object.assign(new Error(`CGWEB140 FIX3 : sauvegarde non vérifiée ${snap.id}.`),{status:422});
       }
-
-      try {
-        await docSnap.ref.delete();
-        deletedDocs += 1;
-      } catch (error) {
-        cleanupErrors.push({
-          sha256: rowSha || null,
-          stage: "FIRESTORE_DELETE",
-          error: error?.message || String(error)
-        });
-      }
+      old.push({snap,hash,path,archivePath});
     }
-
-    const currentName =
-      safeName(keepFileName || "activity.fit");
-
-    const keepRef = fileDoc(uid, keep);
-
-    await keepRef.set(
-      {
-        file_id: keep,
-        sha256: keep,
-        file_name: currentName,
-        original_name: currentName,
-        activity_id: id,
-        link_status: "LINKED_CURRENT",
-        source: "WEB_FITEDITOR_REPLACE",
-        upload_mode: "CURRENT_CANONICAL",
-        version_index: 1,
-        version_family_id: keep,
-        parent_sha256: null,
-        version_kind: "CURRENT_CANONICAL",
-        is_active_version: true,
-        active_changed_at_ms: Date.now(),
-        replaced_family_version:
-          "SINGLE_FIT_REPLACEMENT001",
-        deleted_at_ms: null,
-        last_seen_at_ms: Date.now()
-      },
-      {merge: true}
-    );
-
-    const remainingSnap = await files(uid)
-      .where("activity_id", "==", id)
-      .limit(500)
-      .get();
-
-    const remainingActive =
-      remainingSnap.docs.filter((snap) => {
-        const row = snap.data() || {};
-        return row.deleted_at_ms == null;
-      });
-
-    const cleanupOk =
-      cleanupErrors.length === 0 &&
-      remainingActive.length === 1 &&
-      String(
-        remainingActive[0]?.data()?.sha256 ||
-        remainingActive[0]?.id ||
-        ""
-      ).trim().toLowerCase() === keep;
-
-    const activityPatch = {
-      start_time_ms: Number(targetStartMs),
-      fit_active_sha256: keep,
-      fit_active_version_index: 1,
-      fit_active_file_name: currentName,
-      fit_replacement_version:
-        "SINGLE_FIT_REPLACEMENT001",
-      fit_replaced_old_count: deletedDocs,
-      fit_replaced_object_count: deletedObjects,
-      fit_replacement_remaining_count:
-        remainingActive.length,
-      fit_replacement_cleanup_ok: cleanupOk,
-      fit_replacement_cleanup_errors:
-        cleanupErrors.slice(0, 20),
-      fit_replacement_at_ms: Date.now()
-    };
-
-    await db.doc(
-      ROOT + "/" + uid + "/activities/" + id
-    ).set(
-      activityPatch,
-      {merge: true}
-    );
-
-    return {
-      ok: cleanupOk,
-      keep_sha256: keep,
-      keep_file_name: currentName,
-      deleted_docs: deletedDocs,
-      deleted_objects: deletedObjects,
-      remaining_count: remainingActive.length,
-      errors: cleanupErrors,
-      activity_patch: activityPatch
-    };
+    const now=Date.now(),currentName=safeName(keepFileName||"activity.fit");
+    const batch=db.batch();
+    for(const item of old)batch.set(item.snap.ref,{is_active_version:false,deleted_at_ms:now,
+      link_status:"SUPERSEDED_ARCHIVED",superseded_by_sha256:keep,
+      archived_object_path:item.archivePath,archived_at_ms:now},{merge:true});
+    batch.set(fileDoc(uid,keep),{file_id:keep,sha256:keep,file_name:currentName,original_name:currentName,
+      activity_id:id,link_status:"LINKED_CURRENT",source:"WEB_FITEDITOR_REPLACE",
+      upload_mode:"CURRENT_CANONICAL",version_index:1,version_family_id:keep,
+      parent_sha256:null,version_kind:"CURRENT_CANONICAL",is_active_version:true,
+      active_changed_at_ms:now,replaced_family_version:"CGWEB140_FIX3",
+      deleted_at_ms:null,last_seen_at_ms:now},{merge:true});
+    const activityRef=db.doc(`${ROOT}/${uid}/activities/${id}`);
+    const patch={start_time_ms:Number(targetStartMs),fit_active_sha256:keep,
+      fit_active_version_index:1,fit_active_file_name:currentName,
+      fit_replacement_version:"CGWEB140_FIX3",fit_replaced_old_count:old.length,
+      fit_replacement_remaining_count:1,fit_replacement_at_ms:now,
+      fit_replacement_archived_count:old.length,fit_replacement_cleanup_ok:false};
+    batch.set(activityRef,patch,{merge:true});
+    await batch.commit();
+    // Operational Storage objects may be deleted ONLY after archival + manifest commit.
+    const errors=[];let deletedObjects=0;
+    for(const item of old){
+      try{await bucket().file(item.path).delete({ignoreNotFound:true});deletedObjects++;}
+      catch(error){errors.push({sha256:item.hash,error:error?.message||String(error)});}
+    }
+    const remaining=await files(uid).where("activity_id","==",id).limit(500).get();
+    const active=remaining.docs.filter(s=>s.data()?.deleted_at_ms==null);
+    const ok=errors.length===0 && active.length===1 && active[0].id===keep;
+    patch.fit_replacement_cleanup_ok=ok;
+    patch.fit_replaced_object_count=deletedObjects;
+    patch.fit_replacement_cleanup_errors=errors.slice(0,20);
+    await activityRef.set(patch,{merge:true});
+    return {ok,keep_sha256:keep,keep_file_name:currentName,
+      deleted_docs:old.length,deleted_objects:deletedObjects,archived_objects:old.length,
+      remaining_count:active.length,errors,activity_patch:patch};
   }
 
   async function v085aActivateVersion(
@@ -2443,8 +2369,6 @@ function createFitVault() {
       {merge: true}
     );
 
-    await batch.commit();
-
     if (edited?.replace_existing_fit === true) {
       const replacement =
         await v121ReplaceFitFamily(
@@ -2489,8 +2413,10 @@ function createFitVault() {
         patch,
         {merge: true}
       );
+      return patch;
     }
 
+    await batch.commit();
     return patch;
   }
 
@@ -14585,13 +14511,14 @@ async function c099GlobalDirectoryQuery(
 
     // CGWEB140: only a verified ORIGINAL is a valid source. No route fallback.
     const linked = await files(uid).where("activity_id", "==", id).get();
-    const originals = linked.docs.filter(d => {
-      const row=d.data();
-      return row.deleted_at_ms == null && c090Roles(row).includes(C090_ROLE_ORIGINAL);
-    });
-    if(originals.length !== 1) throw Object.assign(new Error(
-      "CGWEB140 : FIT original absent ou ambigu. Aucun export réduit autorisé."
-    ), {status:422});
+    const activeHash=String(activity.fit_active_sha256||"").trim().toLowerCase();
+    const candidates=linked.docs.filter(d=>d.data()?.deleted_at_ms==null);
+    const originals=activeHash
+      ? candidates.filter(d=>d.id===activeHash && d.data()?.is_active_version===true)
+      : candidates.filter(d=>c090Roles(d.data()).includes(C090_ROLE_ORIGINAL));
+    if(originals.length!==1) throw Object.assign(new Error(
+      "CGWEB140 FIX3 : FIT de référence absent/ambigu ; export interdit."
+    ),{status:422});
     const originalRow=originals[0].data();
     const originalHash=String(originalRow.sha256 || originals[0].id);
     if(!/^[a-f0-9]{64}$/.test(originalHash)) throw new Error("CGWEB140 : SHA original invalide.");
@@ -14599,8 +14526,12 @@ async function c099GlobalDirectoryQuery(
     if(!originalPath.startsWith(`sport_users/${uid}/fit_vault/`)) throw new Error("CGWEB140 : chemin original non autorisé.");
     const [originalBuffer]=await bucket().file(originalPath).download();
     if(cgweb140.sha(originalBuffer)!==originalHash) throw new Error("CGWEB140 : SHA original non conforme.");
-    const declared=Number(route.source_point_count)>0 ? Number(route.source_point_count)
-      : Number(activity.record_count)>0 ? Number(activity.record_count) : null;
+    const originalRecordCount=cgweb140.recordDigest(originalBuffer,cgweb140.scan(originalBuffer)).count;
+    const declaredSourceCount=Math.max(0,Number(route.source_point_count)||0,Number(activity.record_count)||0);
+    if(originalRecordCount<declaredSourceCount) throw Object.assign(new Error(
+      `CGWEB140 FIX3 : FIT source réduit (${originalRecordCount}/${declaredSourceCount} points).`
+    ),{status:422});
+    const declared=originalRecordCount;
     const clock=await require("./cgweb140clock").align(
       originalBuffer,activity.cgweb140_time_alignment,Number(activity.start_time_ms)
     );
@@ -15734,12 +15665,54 @@ async function c099GlobalDirectoryQuery(
           const route = routeSnap.exists ? routeSnap.data() || {} : {};
           const prepared = v078BuildPayload(activity, route);
           const edited = v078ApplyOverrides(prepared, body);
-
-          edited.replace_existing_fit =
-            body.replace_existing_fit === true;
-
-          const generated = await encodeCanonicalFit(edited.payload);
-          const validation = await inspectFitBuffer(generated.buffer);
+          // An activated editor must always replace the operational FIT, never fork it.
+          edited.replace_existing_fit = editorMode && body.activate_version === true
+            ? true : body.replace_existing_fit === true;
+          const losslessEditor = editorMode && body.activate_version === true &&
+            edited.replace_existing_fit && body.apply_activity_changes === true;
+          if(editorMode && body.activate_version === true && !losslessEditor)
+            throw Object.assign(new Error("CGWEB140 FIX3 : édition active sans consentement explicite interdite."),{status:422});
+          let generated, validation;
+          if(losslessEditor){
+            if(!parentHash || !parent?.object_path ||
+              !String(parent.object_path).startsWith(`sport_users/${uid}/fit_vault/`))
+              throw Object.assign(new Error("CGWEB140 FIX3 : FIT parent complet indispensable."),{status:422});
+            if(!c090Roles(parent).includes(C090_ROLE_ORIGINAL) && parent.fit_lossless_verified !== true)
+              throw Object.assign(new Error("CGWEB140 FIX3 : source non certifiée intégrale ; récupérer le FIT historique."),{status:422});
+            const [sourceBytes]=await bucket().file(parent.object_path).download();
+            if(sha256(sourceBytes)!==parentHash)
+              throw Object.assign(new Error("CGWEB140 FIX3 : FIT parent altéré ; aucun remplacement."),{status:422});
+            const sourceScan=cgweb140.scan(sourceBytes);
+            const sourceRecordCount=cgweb140.recordDigest(sourceBytes,sourceScan).count;
+            const minimum=Math.max(0,Number(route?.source_point_count)||0,Number(activity?.record_count)||0);
+            if(!sourceRecordCount || sourceRecordCount < minimum)
+              throw Object.assign(new Error(`CGWEB140 FIX3 : ${sourceRecordCount} points FIT / ${minimum} requis ; remplacement bloqué.`),{status:422});
+            const inspected=await cgweb140.inspect(sourceBytes);
+            const parentStart=inspected.sessionMesgs?.[0]?.startTime?.getTime();
+            const targetStart=Math.round(Number(edited.payload.start_time_ms));
+            const offsetSeconds=(targetStart-parentStart)/1000;
+            if(!Number.isSafeInteger(offsetSeconds)||Math.abs(offsetSeconds)>86400)
+              throw Object.assign(new Error("CGWEB140 FIX3 : décalage horaire non représentable."),{status:422});
+            // Clicking 'Modifier réellement le FIT' is the one user confirmation.
+            const approval={state:"USER_CONFIRMED",original_sha256:parentHash,
+              original_start_time_ms:parentStart,target_start_time_ms:targetStart,
+              offset_seconds:offsetSeconds};
+            const aligned=await require("./cgweb140clock").align(sourceBytes,approval,targetStart);
+            let output=aligned.buffer;
+            if(edited.edits.heart_rate_mode==="SIMULATED"){
+              output=cgweb140fix3.augmentHeartRate(output,
+                edited.edits.avg_hr_override,edited.edits.max_hr_override).buffer;
+            }
+            const finalCount=cgweb140.recordDigest(output,cgweb140.scan(output)).count;
+            if(finalCount!==sourceRecordCount)
+              throw Object.assign(new Error("CGWEB140 FIX3 : perte d'enregistrements FIT."),{status:422});
+            generated={buffer:output,fileName:safeName(parent.file_name||"activity.fit"),
+              stats:{sport:edited.payload.sport,subSport:edited.payload.sub_sport,pointCount:finalCount}};
+            validation=await inspectFitBuffer(cgweb140.forInspection(output));
+          }else{
+            generated=await encodeCanonicalFit(edited.payload);
+            validation=await inspectFitBuffer(generated.buffer);
+          }
 
           if (!validation.ok) {
             return res.status(500).json({
@@ -15748,7 +15721,9 @@ async function c099GlobalDirectoryQuery(
             });
           }
 
-          const decodedFit = await decodeCanonicalFitSummary(generated.buffer);
+          const decodedFit = await decodeCanonicalFitSummary(
+            losslessEditor ? cgweb140.forInspection(generated.buffer) : generated.buffer
+          );
           if (!decodedFit.integrity || decodedFit.activityCount !== 1 || decodedFit.sessionCount !== 1) {
             return res.status(500).json({
               error: "FITVERSION001 : structure FIT non conforme.",

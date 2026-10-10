@@ -678,7 +678,10 @@ async function cgweb085aCreateActiveVersion(
         max_hr_override: options.max_hr_override ?? null,
         fit_editor_mode: "FITEDITOR001",
         activate_version: true,
-        apply_activity_changes: true
+        apply_activity_changes: true,
+        replace_existing_fit: true,
+        target_start_time_ms: Number.isFinite(Number(options.target_start_time_ms))
+          ? Number(options.target_start_time_ms) : null
       })
     }
   );
