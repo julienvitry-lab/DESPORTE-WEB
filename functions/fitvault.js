@@ -15756,6 +15756,15 @@ async function c099GlobalDirectoryQuery(
                 error: "FITVERSION001 : ce contenu existe déjà dans le coffre sous un autre lien ; aucun manifeste modifié."
               });
             }
+            if (losslessEditor) {
+              await ref.set({
+                fit_lossless_verified: true,
+                fit_lossless_source_sha256: parentHash,
+                fit_lossless_record_count: generated.stats.pointCount
+              }, {merge: true});
+              previous.fit_lossless_verified = true;
+            }
+
             let activityPatch = null;
 
             if (editorMode && body.activate_version === true) {
@@ -15853,6 +15862,9 @@ async function c099GlobalDirectoryQuery(
             fitwriter_version: "FITWRITER001",
             fitversion_version: "FITVERSION001",
             fit_editor_version: editorMode ? "FITEDITOR001" : null,
+            fit_lossless_verified: losslessEditor,
+            fit_lossless_source_sha256: losslessEditor ? parentHash : null,
+            fit_lossless_record_count: losslessEditor ? generated.stats.pointCount : null,
             version_index: versionIndex,
             version_family_id: familyId,
             parent_sha256: parentHash || null,
