@@ -13307,21 +13307,19 @@ function cgweb115CanonicalActivityTitle(activity) {
     );
 
   const sportCode =
-    sport === 1 && [1, 21].includes(subSport)
-      ? "T"
-      : sport === 1
-        ? "C"
-        : sport === 2 && [5, 6, 58].includes(subSport)
-          ? "H"
-          : sport === 2
-            ? "V"
-            : "C";
+    sport === 1 ? (subSport === 21 ? "T" : "C")
+    : sport === 2 ? (subSport === 6 ? "H" : "V")
+    : sport === 11 ? "M" : "S";
 
   if (!Number.isFinite(ms) || ms <= 0) {
-    return String(
+    const fallback = String(
       activity?.custom_title ||
       sportLabel ||
       "Activite"
+    );
+    return fallback.replace(
+      /^(\d{4}_\d{2}_\d{2}_\d{2}_\d{2})_\d{2}_([CVHTMS])$/i,
+      (_, prefix, code) => `${prefix}_${code.toUpperCase()}`
     );
   }
 
@@ -13334,7 +13332,6 @@ function cgweb115CanonicalActivityTitle(activity) {
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
-      second: "2-digit",
       hourCycle: "h23"
     });
 
@@ -13349,11 +13346,10 @@ function cgweb115CanonicalActivityTitle(activity) {
   const day = parts.day || "00";
   const hour = parts.hour || "00";
   const minute = parts.minute || "00";
-  const second = parts.second || "00";
 
   return (
     `${year}_${month}_${day}_` +
-    `${hour}_${minute}_${second}_` +
+    `${hour}_${minute}_` +
     `${sportCode}`
   );
 }
