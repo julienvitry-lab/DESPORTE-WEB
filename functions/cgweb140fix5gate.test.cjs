@@ -34,14 +34,14 @@ test('FIX5/02 : recuperation FIT conserve le consentement explicite',()=>{
 test('FIX5/03 : provenance SHA et preservation du nombre de Records sont obligatoires',()=>{
   for(const x of ['body.apply_activity_changes === true',
     'if(editorMode && body.activate_version === true && !losslessEditor)',
-    'sha256(sourceBytes)!==parentHash','sourceRecordCount < minimum',
+    'sha256(sourceBytes)!==parentHash','cgweb141count.fromFit(sourceRecordCount)',
     'finalCount!==sourceRecordCount']) assert.ok(endpoint.includes(x),x);
 });
 
 test('FIX5/04 : export Strava choisit le FIT actif valide, jamais la route reduite',()=>{
   const x=between(vault,'    const activeHash=String(activity.fit_active_sha256',
-    '    const declared=originalRecordCount;');
-  for(const marker of ['originals.length!==1','originalRecordCount<declaredSourceCount',
+    '    const clock=await require("./cgweb140clock")');
+  for(const marker of ['originals.length!==1','cgweb141count.fromFit(originalRecordCount)',
     'cgweb140.sha(originalBuffer)!==originalHash'])assert.ok(x.includes(marker),marker);
 });
 

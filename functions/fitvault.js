@@ -23,6 +23,7 @@ const {getStorage} = require("firebase-admin/storage");
 const crypto = require("crypto");
 const cgweb139 = require("./cgweb139");
 const cgweb140 = require("./cgweb140");
+const cgweb141count = require("./cgweb141count");
 const cgweb140fix3 = require("./cgweb140fix3");
 const cgweb140fix4 = require("./cgweb140fix4");
 
@@ -14536,11 +14537,9 @@ async function c099GlobalDirectoryQuery(
     const [originalBuffer]=await bucket().file(originalPath).download();
     if(cgweb140.sha(originalBuffer)!==originalHash) throw new Error("CGWEB140 : SHA original non conforme.");
     const originalRecordCount=cgweb140.recordDigest(originalBuffer,cgweb140.scan(originalBuffer)).count;
-    const declaredSourceCount=Math.max(0,Number(route.source_point_count)||0,Number(activity.record_count)||0);
-    if(originalRecordCount<declaredSourceCount) throw Object.assign(new Error(
-      `CGWEB140 FIX3 : FIT source réduit (${originalRecordCount}/${declaredSourceCount} points).`
-    ),{status:422});
-    const declared=originalRecordCount;
+    // CGWEB141: only the actual binary FIT Record count is authoritative.
+    // Firestore activity/route counts can come from merges or old imports.
+    const declared=cgweb141count.fromFit(originalRecordCount);
     const clock=await require("./cgweb140clock").align(
       originalBuffer,activity.cgweb140_time_alignment,Number(activity.start_time_ms)
     );
@@ -15693,9 +15692,8 @@ async function c099GlobalDirectoryQuery(
               throw Object.assign(new Error("CGWEB140 FIX3 : FIT parent altéré ; aucun remplacement."),{status:422});
             const sourceScan=cgweb140.scan(sourceBytes);
             const sourceRecordCount=cgweb140.recordDigest(sourceBytes,sourceScan).count;
-            const minimum=Math.max(0,Number(route?.source_point_count)||0,Number(activity?.record_count)||0);
-            if(!sourceRecordCount || sourceRecordCount < minimum)
-              throw Object.assign(new Error(`CGWEB140 FIX3 : ${sourceRecordCount} points FIT / ${minimum} requis ; remplacement bloqué.`),{status:422});
+            // CGWEB141: do not compare the FIT's Records with historical metadata.
+            cgweb141count.fromFit(sourceRecordCount);
             const inspected=await cgweb140.inspect(sourceBytes);
             const parentStart=inspected.sessionMesgs?.[0]?.startTime?.getTime();
             const targetStart=Math.round(Number(edited.payload.start_time_ms));

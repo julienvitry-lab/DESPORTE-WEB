@@ -165,7 +165,7 @@ test('INTEGRATION/06: refus d un export provenant d un FIT actif absent ou ambig
   const candidate=vault.slice(start,start+1500);
   assert.match(candidate,/originals\.length\s*!==\s*1/);
   assert.match(candidate,/FIT de référence absent\/ambigu/);
-  assert.match(candidate,/originalRecordCount\s*<\s*declaredSourceCount/);
+  assert.match(candidate,/cgweb141count\.fromFit\(originalRecordCount\)/);
 });
 
 test('INTEGRATION/07: Strava ecrase bien les CINQ statistiques principales, sans exception pour les temps',()=>{
@@ -187,7 +187,7 @@ test('INTEGRATION/08: aucune reconstruction des Record depuis une route reduite 
   assert.ok(a>=0);
   const section=vault.slice(a,a+3800);
   assert.match(section,/const \[sourceBytes\]=await bucket\(\)\.file\(parent\.object_path\)\.download\(\)/);
-  assert.match(section,/sourceRecordCount\s*<\s*minimum/);
+  assert.match(section,/cgweb141count\.fromFit\(sourceRecordCount\)/);
   assert.match(section,/finalCount\s*!==\s*sourceRecordCount/);
   assert.match(section,/cgweb140clock/);
 });
