@@ -47,18 +47,44 @@ function createRecovery({db, root, admin, tokenDocument, refreshTokenIfNeeded, a
   const rootDoc = uid => db.doc(`${root}/${uid}`);
   const activityRef = (uid, key) => db.doc(`${root}/${uid}/activities/${key}`);
   const lockRef = (uid, key) => db.doc(`${root}/${uid}/strava_outbound_exports/${key}`);
+  // CGWEB142: an old Strava link may predate the export-lock system.
+  // Never require a non-existent lock merely to CHECK the remote status.
+  // Existing, incomplete, or active export locks are not silently cleared.
   async function read(uid, key) {
-    if (!VALID_KEY.test(String(key || ""))) throw error(400, "Clé d'activité CGWEB invalide.");
+    if (!VALID_KEY.test(String(key || ""))) throw error(400, "Cle d'activite CGWEB invalide.");
     const [a, l] = await Promise.all([activityRef(uid,key).get(), lockRef(uid,key).get()]);
-    if (!a.exists || !l.exists) throw error(409, "Export lié absent ou incomplet : vérification manuelle requise.");
-    const activity = a.data() || {}, lock = l.data() || {};
-    const id = String(activity.strava_activity_id || "");
-    if (activity.deleted_at_ms != null || !VALID_REMOTE.test(id) ||
-        id !== String(lock.strava_activity_id || "") || lock.state !== "RECONCILED") {
-      throw error(409, "Le lien Strava et le verrou RECONCILED ne concordent pas : aucune libération possible.");
+    if (!a.exists) throw error(409, "Activite CGWEB absente : aucune liberation possible.");
+    const activity=a.data()||{}, id=String(activity.strava_activity_id||"");
+    if (activity.deleted_at_ms != null || !VALID_REMOTE.test(id))
+      throw error(409, "Lien Strava absent ou activite CGWEB supprimee : aucune liberation possible.");
+    const lock=l.exists ? l.data()||{} : {};
+    const remoteId=String(lock.strava_activity_id||"");
+    const state=String(lock.state||"");
+    let mode="LEGACY_NO_LOCK";
+    if (l.exists) {
+      if (remoteId && remoteId!==id)
+        throw error(409, "Verrou Strava lie a un autre identifiant : intervention manuelle requise.");
+      if (remoteId===id && state==="RECONCILED" && lock.lock_token) {
+        mode="MANAGED";
+      } else if (!lock.lock_token && (!remoteId || remoteId===id) &&
+                 (state==="" || state==="RECONCILED")) {
+        mode="LEGACY_INCOMPLETE_LOCK";
+      } else {
+        // PREPARED, UPLOADING and other live/unknown states are never bypassed.
+        throw error(409, "Verrou d'export actif ou contradictoire : aucune liberation automatique.");
+      }
     }
-    if (!lock.lock_token) throw error(409, "Verrou d'export sans token : libération interdite.");
-    return {activity, lock, id};
+    return {activity,lock,id,mode,lockExists:l.exists};
+  }
+
+  // Keep the original CGWEB139 proof unchanged for complete managed exports.
+  // For legacy links, bind the signature to the *absence* or exact incomplete
+  // lock state so a newly-created lock invalidates an older authorization.
+  function proofLock(managed) {
+    if (managed.mode==="MANAGED") return managed.lock;
+    const lock=managed.lock||{};
+    return {...lock,lock_token:["CGWEB142",managed.mode,
+      String(lock.state||""),String(lock.strava_activity_id||"")].join("|")};
   }
   async function api(token, path) {
     let response;
@@ -90,7 +116,7 @@ function createRecovery({db, root, admin, tokenDocument, refreshTokenIfNeeded, a
     if (String(integration.athlete?.id || "") !== String(athlete.data.id))
       return {status:"UNVERIFIABLE_OWNER",diagnostic:"Le compte Strava connecté n'est pas le compte de l'export initial."};
     const remote = await api(token.access_token, `/activities/${encodeURIComponent(id)}?include_all_efforts=false`);
-    if (remote.status === 200) return {status:"STILL_EXISTS",diagnostic:"L'activité liée est toujours visible par l'API Strava."};
+    if (remote.status === 200) return {status:"STILL_EXISTS",diagnostic:"L'activite existe toujours sur Strava : conserver le lien. Utiliser Verifier la synchronisation, sans nouvel upload."};
     if (remote.status !== 404) return {status:"UNVERIFIABLE_REMOTE", diagnostic:remote.diagnostic || `Réponse activité Strava HTTP ${remote.status||"réseau"}`,
       http_status:remote.status};
     const start = safeNumber(activity.start_time_ms);
@@ -121,9 +147,9 @@ function createRecovery({db, root, admin, tokenDocument, refreshTokenIfNeeded, a
     const scan=await remoteCheck(uid,managed.activity,managed.id);
     const good=scan.status === "VERIFIED_NOT_FOUND";
     const checked=Date.now();
-    const token=good ? sign(String(secret()),uid,key,managed.id,managed.lock,managed.activity,checked) : null;
+    const token=good ? sign(String(secret()),uid,key,managed.id,proofLock(managed),managed.activity,checked) : null;
     return {version:VERSION,ok:good,status:scan.status,activity_key:key,
-      old_strava_activity_id:managed.id,diagnostic:scan.diagnostic,
+      link_mode:managed.mode,old_strava_activity_id:managed.id,diagnostic:scan.diagnostic,
       candidate_ids:scan.candidate_ids || [],checked_at_ms:checked,
       requires_user_confirmation:true,confirmation_text:`REIMPORTER ${managed.id}`,
       proof:token,expires_at_ms:good ? checked+PROOF_LIFETIME_MS : null,
@@ -134,7 +160,7 @@ function createRecovery({db, root, admin, tokenDocument, refreshTokenIfNeeded, a
     const managed=await read(uid,key);
     if (oldId !== managed.id || String(body?.confirmation || "") !== `REIMPORTER ${oldId}`)
       throw error(400,"Confirmation explicite incorrecte : aucune donnée modifiée.");
-    if (!verify(String(secret()),body?.proof,uid,key,oldId,managed.lock,managed.activity))
+    if (!verify(String(secret()),body?.proof,uid,key,oldId,proofLock(managed),managed.activity))
       throw error(409,"Preuve expirée ou différente de l'activité liée. Relancer la vérification.");
     const rescanned=await remoteCheck(uid,managed.activity,oldId);
     if (rescanned.status !== "VERIFIED_NOT_FOUND")
@@ -145,11 +171,23 @@ function createRecovery({db, root, admin, tokenDocument, refreshTokenIfNeeded, a
     const aRef=activityRef(uid,key), lRef=lockRef(uid,key);
     await db.runTransaction(async tx=>{
       const [aSnap,lSnap] = await Promise.all([tx.get(aRef),tx.get(lRef)]);
-      if (!aSnap.exists || !lSnap.exists) throw error(409,"Activité ou verrou modifié entre-temps.");
-      const a=aSnap.data() || {}, l=lSnap.data() || {};
-      if (String(a.strava_activity_id||"") !== oldId || String(l.strava_activity_id||"") !== oldId ||
-          l.state !== "RECONCILED" || String(l.lock_token||"") !== String(managed.lock.lock_token))
-        throw error(409,"Conflit d'état : aucun lien Strava n'a été modifié.");
+      if (!aSnap.exists || Boolean(lSnap.exists)!==managed.lockExists)
+        throw error(409,"Activite ou presence du verrou modifiee entre-temps.");
+      const a=aSnap.data()||{}, l=lSnap.exists ? lSnap.data()||{} : {};
+      if (a.deleted_at_ms != null || String(a.strava_activity_id||"")!==oldId ||
+          String(a.start_time_ms||"")!==String(managed.activity.start_time_ms||""))
+        throw error(409,"Le lien Strava ou l'heure de depart a change : aucune modification.");
+      if (managed.mode==="MANAGED") {
+        if (String(l.strava_activity_id||"")!==oldId || l.state!=="RECONCILED" ||
+            String(l.lock_token||"")!==String(managed.lock.lock_token||""))
+          throw error(409,"Le verrou reconcilie a change : aucune modification.");
+      } else if (managed.mode==="LEGACY_INCOMPLETE_LOCK") {
+        for (const field of ["strava_activity_id","state","lock_token","updated_at_ms","created_at_ms"])
+          if (String(l[field]??"")!==String(managed.lock[field]??""))
+            throw error(409,"Verrou historique modifie : aucune modification.");
+      } else if (lSnap.exists) {
+        throw error(409,"Nouveau verrou detecte : aucune modification.");
+      }
       const generation = Math.min(9999,Math.max(0,Number(a.strava_reimport_generation)||0)+1);
       const patch={strava_activity_id:null,strava_upload_id:null,
         strava_export_state:"REMOTE_DELETED_ARCHIVED",strava_canonical_active:false,
@@ -162,11 +200,12 @@ function createRecovery({db, root, admin, tokenDocument, refreshTokenIfNeeded, a
           strava_canonical_elevation_gain_m:a.strava_canonical_elevation_gain_m??null,
           ascent_m:a.ascent_m??null,distance_m:a.distance_m??null,
           timer_time_ms:a.timer_time_ms??null,calories:a.calories??null},
-        prior_export_lock:l,verified_at_ms:rescanned.checked_at_ms||now,
+        prior_export_lock:lSnap.exists ? l : null,legacy_link_mode:managed.mode,
+        verified_at_ms:rescanned.checked_at_ms||now,
         verification:rescanned.diagnostic,user_confirmed:true,created_at_ms:now,
         archive_state:"HISTORICAL_RECORD_NO_REMOTE_DELETE"});
       tx.set(aRef,patch,{merge:true});
-      tx.delete(lRef);
+      if (lSnap.exists) tx.delete(lRef);
       tx.create(changeRef,{eventId:changeRef.id,deviceId:"CGWEB139_FIX1_REIMPORT",firebaseSeq:now,
         sourceChangeSeq:0,table:"activities",rowKey:key,operation:"UPSERT",changedAtMs:now,
         publishedAt:admin.firestore.FieldValue.serverTimestamp(),androidVersion:0,
