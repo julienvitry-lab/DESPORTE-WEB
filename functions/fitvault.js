@@ -27,6 +27,7 @@ const cgweb141count = require("./cgweb141count");
 const cgweb140fix3 = require("./cgweb140fix3");
 const cgweb149hr = require("./cgweb149hr");
 const cgweb152hr = require("./cgweb152hr");
+const cgweb152fix2authority = require("./cgweb152fix2authority");
 const cgweb140fix4 = require("./cgweb140fix4");
 
 if (!getApps().length) initializeApp();
@@ -15625,6 +15626,7 @@ async function c099GlobalDirectoryQuery(
            * The server—not the browser—chooses the verified active SHA.
            */
           const cgweb152Auto = action === "export_hr_prepare";
+          let cgweb152LegacyProof = null;
           if (cgweb152Auto) {
             const key = String(body.activity_id || "").trim();
             if (!/^[A-Za-z0-9_.:-]{1,180}$/.test(key))
@@ -15685,8 +15687,14 @@ async function c099GlobalDirectoryQuery(
               return res.json({ok:true,status:"HR_AUTHENTIC_PRESERVED",sha256:activeFile.sha,
                 activity_id:key,record_count:assessed.records,hr_audit:assessed,fit_changed:false});
             }
-            if(!c090Roles(activeFile.row).includes(C090_ROLE_ORIGINAL) && activeFile.row.fit_lossless_verified!==true)
-              throw Object.assign(new Error("CGWEB152 : FIT source non certifié intégral ; export bloqué."),{status:409});
+            if(!c090Roles(activeFile.row).includes(C090_ROLE_ORIGINAL) && activeFile.row.fit_lossless_verified!==true) {
+              // Only explicit auto-export, never general editing: trust the
+              // actual SHA/CRC-valid active FIT after independent SDK decoding.
+              // The Record count from this very FIT is the reference, NOT
+              // any old route, activity point_count or Strava statistic.
+              cgweb152LegacyProof=await cgweb152fix2authority.verifyCurrentBytes(
+                sourceBytes,activeFile.sha);
+            }
             body={activity_id:key,parent_sha256:activeFile.sha,start_offset_s:0,
               avg_hr_override:150,max_hr_override:170,fit_editor_mode:"FITEDITOR001",
               activate_version:true,apply_activity_changes:true,replace_existing_fit:true};
@@ -15760,13 +15768,17 @@ async function c099GlobalDirectoryQuery(
             if(!parentHash || !parent?.object_path ||
               !String(parent.object_path).startsWith(`sport_users/${uid}/fit_vault/`))
               throw Object.assign(new Error("CGWEB140 FIX3 : FIT parent complet indispensable."),{status:422});
-            if(!c090Roles(parent).includes(C090_ROLE_ORIGINAL) && parent.fit_lossless_verified !== true)
+            if(!c090Roles(parent).includes(C090_ROLE_ORIGINAL) && parent.fit_lossless_verified !== true &&
+              !(cgweb152Auto && cgweb152LegacyProof?.sha256===parentHash))
               throw Object.assign(new Error("CGWEB140 FIX3 : source non certifiée intégrale ; récupérer le FIT historique."),{status:422});
             const [sourceBytes]=await bucket().file(parent.object_path).download();
             if(sha256(sourceBytes)!==parentHash)
               throw Object.assign(new Error("CGWEB140 FIX3 : FIT parent altéré ; aucun remplacement."),{status:422});
             const sourceScan=cgweb140.scan(sourceBytes);
             const sourceRecordCount=cgweb140.recordDigest(sourceBytes,sourceScan).count;
+            if(cgweb152LegacyProof && (cgweb152LegacyProof.sha256!==parentHash ||
+              cgweb152LegacyProof.record_count!==sourceRecordCount))
+              throw Object.assign(new Error("CGWEB152 FIX2 : preuve de source périmée ; aucun remplacement."),{status:409});
             // CGWEB141: do not compare the FIT's Records with historical metadata.
             cgweb141count.fromFit(sourceRecordCount);
             const inspected=await cgweb140.inspect(sourceBytes);
@@ -15844,7 +15856,8 @@ async function c099GlobalDirectoryQuery(
               await ref.set({
                 fit_lossless_verified: true,
                 fit_lossless_source_sha256: parentHash,
-                fit_lossless_record_count: generated.stats.pointCount
+                fit_lossless_record_count: generated.stats.pointCount,
+                ...(cgweb152LegacyProof ? {fit_lossless_provenance:cgweb152LegacyProof.provenance} : {})
               }, {merge: true});
               previous.fit_lossless_verified = true;
             }
@@ -15955,6 +15968,7 @@ async function c099GlobalDirectoryQuery(
             fit_lossless_verified: losslessEditor,
             fit_lossless_source_sha256: losslessEditor ? parentHash : null,
             fit_lossless_record_count: losslessEditor ? generated.stats.pointCount : null,
+            fit_lossless_provenance: cgweb152LegacyProof ? cgweb152LegacyProof.provenance : null,
             version_index: versionIndex,
             version_family_id: familyId,
             parent_sha256: parentHash || null,
