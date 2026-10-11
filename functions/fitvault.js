@@ -25,6 +25,7 @@ const cgweb139 = require("./cgweb139");
 const cgweb140 = require("./cgweb140");
 const cgweb141count = require("./cgweb141count");
 const cgweb140fix3 = require("./cgweb140fix3");
+const cgweb149hr = require("./cgweb149hr");
 const cgweb140fix4 = require("./cgweb140fix4");
 
 if (!getApps().length) initializeApp();
@@ -15707,8 +15708,10 @@ async function c099GlobalDirectoryQuery(
             const aligned=await require("./cgweb140clock").align(sourceBytes,approval,targetStart);
             let output=aligned.buffer;
             if(edited.edits.heart_rate_mode==="SIMULATED"){
-              output=cgweb140fix3.augmentHeartRate(output,
-                edited.edits.avg_hr_override,edited.edits.max_hr_override).buffer;
+              // CGWEB149: coherent Record + Session + Lap HR; source FIT immutable.
+              const syntheticHr = await cgweb149hr.augmentSyntheticHeartRate(output,
+                edited.edits.avg_hr_override,edited.edits.max_hr_override);
+              output=syntheticHr.buffer;
             }
             const finalCount=cgweb140.recordDigest(output,cgweb140.scan(output)).count;
             if(finalCount!==sourceRecordCount)

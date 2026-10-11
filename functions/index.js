@@ -3230,7 +3230,13 @@ async function cgweb136UploadToStrava(
     ...(activity||{}),
     canonical_file_name: activity?.canonical_file_name || lock?.fit_preview?.file_name || ""
   });
-  if (textMetadata.title) form.append("name", textMetadata.title);
+  // CGWEB149: Strava can rebuild the activity title from the upload filename
+  // AFTER processing the FIT. Multipart name and uploaded basename must agree.
+  const cgweb149UploadTitle=String(textMetadata.title||"").trim();
+  if (!/^\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_[CVHTMS]$/.test(cgweb149UploadTitle)) {
+    throw Object.assign(new Error("CGWEB149 : titre de transfert Strava non canonique"),{status:422});
+  }
+  form.append("name", cgweb149UploadTitle);
   if (textMetadata.description) form.append("description", textMetadata.description);
 
   form.append(
@@ -3244,7 +3250,7 @@ async function cgweb136UploadToStrava(
           "application/vnd.ant.fit"
       }
     ),
-    candidate.fileName
+    cgweb149UploadTitle + ".fit"
   );
 
   /*
