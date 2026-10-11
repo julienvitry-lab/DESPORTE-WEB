@@ -177,11 +177,11 @@ function createBridge({db,root,tokenDocument,refreshTokenIfNeeded,stravaGet,audi
         throw httpError(409,"CGWEB138 : aperçu périmé (activité CGWEB ou Strava modifiée). Relancer l'aperçu.");
     }
     const target=targetFor(managed.activity,detail,mode);
-    const changed=target.title_changed||target.description_changed;
+    // CGWEB153 : description seulement. Le PUT name appartient a CGWEB146.
+    const changed=target.description_changed;
     if(changed) {
       const token=await refreshTokenIfNeeded(uid,integration);
       const payload={};
-      if(target.title_changed)payload.name=target.title;
       if(target.description_changed)payload.description=target.description;
       const response=await fetch(`${apiBase}/activities/${encodeURIComponent(managed.id)}`,{
         method:"PUT",headers:{Authorization:`Bearer ${token.access_token}`,"Content-Type":"application/json"},

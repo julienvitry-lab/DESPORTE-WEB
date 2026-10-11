@@ -4,6 +4,7 @@ const {defineSecret, defineString} = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
 const cgweb138Text = require("./cgweb138");
+const cgweb153TitlePolicy = require("./cgweb153titlepolicy");
 const cgweb146Title = require("./cgweb146title");
 const cgweb139 = require("./cgweb139");
 const cgweb139Fix1 = require("./cgweb139fix1");
@@ -2867,6 +2868,12 @@ async function cgweb136ReconcileFromDetail(
     console.warn("CGWEB139 altitude audit log pending", key, error?.message || error);
   }
 
+  /* CGWEB153 · STRAVA_TITLE_SINGLE_WRITER001
+   * Un webhook peut reconciler les statistiques, JAMAIS re-ecrire
+   * le nom ou la description distante (boucle Strava update -> webhook).
+   * CGWEB146 est le seul moteur de PUT name depuis stravaBridge.
+   */
+  if (cgweb153TitlePolicy.allowRemoteTextMutation(source)) {
   /* CGWEB138 · POST_UPLOAD_TEXT_AUDIT001
    * Text-only failure must never roll back five canonical Strava metrics.
    */
@@ -2886,6 +2893,12 @@ async function cgweb136ReconcileFromDetail(
     finalResult.cgweb147_title_sync = {
       status: "TITLE_SYNC_PENDING", updated: false,
       error: String(error?.message || error).slice(0, 240)
+    };
+  }
+  } else {
+    finalResult.cgweb153_title_policy = {
+      status:"WEBHOOK_TEXT_READ_ONLY", source:String(source||""),
+      title_put_count:0, description_put_count:0
     };
   }
   return finalResult;
@@ -7448,10 +7461,16 @@ exports.stravaBridge = onRequest(
         const key=String(body.activity_key||"").trim();
         if(action === "text_audit")
           return res.json(await cgweb138Bridge.inspect(uid,key));
-        return res.json(await cgweb138Bridge.sync(uid,key,{
+        const descriptionSync = await cgweb138Bridge.sync(uid,key,{
           mode:"backfill",source_hash:String(body.source_hash||""),
           remote_hash:String(body.remote_hash||"")
-        }));
+        });
+        // CGWEB153 : un seul ecrivain de name, y compris en backfill explicite.
+        const titleSync = await cgweb146TitleSync.sync(uid,key);
+        const titleStatus=String(titleSync?.status||"");
+        const titleAccepted=["TITLE_ALREADY_CORRECT","TITLE_UPDATED","CUSTOM_TITLE_PRESERVED"].includes(titleStatus);
+        return res.json({...descriptionSync, cgweb153_title_sync:titleSync,
+          ok:titleAccepted && descriptionSync.description_matches===true});
       }
       /* CGWEB138_ACTIONS_END */
 
