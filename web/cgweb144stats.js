@@ -1,8 +1,10 @@
-/* CGWEB155 · Analyse > Statistiques : 2026 => 12 mois, mois => semaines ISO chevauchantes.
+/* CGWEB156 · Analyse > Statistiques : 2026 => 12 mois, mois => semaines ISO chevauchantes.
  * Une seule requête / sélection, aucun FIT/Firestore/Strava modifié. */
 (() => {
   "use strict";
   const ROOT="cgweb144StatsPanel",NAV="cgweb144StatsSubtab";
+  /* CGWEB156 · affichage CGWEB seul, comparaison demandée */
+  let comparing=false,previouslyAnalysis=false;
   const URL="https://europe-west1-sport-505813.cloudfunctions.net/stravaBridge";
   const MONTHS=["Tous les mois","Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
   let active=false,original=[],scheduled=0,requestId=0,debounce=0,initialised=false;
@@ -13,15 +15,14 @@
   <div class="cg155-controls">
     <label>Année<select id="cg144Year" aria-label="Année"></select></label>
     <label>Mois<select id="cg144Month" aria-label="Mois"></select></label>
-    <label>Sport<select id="cg144Sport" aria-label="Sport"><option value="all">Tous les sports</option><option value="run">Course / Trail</option><option value="bike">Vélo</option></select></label>
-    <button type="button" id="cg144Compare" class="secondary">Actualiser</button>
+    <label>Sport<select id="cg144Sport" aria-label="Sport"><option value="all">Tous les sports</option><option value="run" selected>Course / Trail</option><option value="bike">Vélo</option></select></label>
+    <button type="button" id="cg144Compare" class="secondary" aria-pressed="false">Comparer avec Strava</button><button type="button" id="cg156Reload" class="secondary">Actualiser</button>
   </div>
-  <p id="cg144Status" class="muted cg155-status" role="status" aria-live="polite">Données à charger.</p>
-  <div class="cg155-explain"><span><b>CGWEB</b> : enregistrement local</span><span><b>STRAVA</b> : données relues séparément</span>
-    <span><b>—</b> : donnée indisponible ou incomplète</span></div>
+  <p id="cg144Status" class="muted cg155-status" role="status" aria-live="polite">Données CGWEB à charger.</p>
+  <div class="cg155-explain" id="cg156Explain"><span>Statistiques CGWEB uniquement · comparaison Strava sur demande</span><span><b>—</b> : donnée indisponible</span></div>
   <div class="cg155-overflow"><table class="cg155-table">
-    <thead><tr><th id="cg155PeriodHeader">Mois</th><th>Activités</th><th>Distance totale</th><th>Temps total <small>actif / écoulé</small></th>
-      <th>Dénivelé positif</th><th id="cg155SpeedHeader">Vitesse moyenne</th><th>GAP course</th><th>Calories</th></tr></thead>
+    <thead><tr><th id="cg155PeriodHeader">Mois</th><th>Distance totale</th><th>Temps total <small>actif / écoulé</small></th>
+      <th>Dénivelé positif</th><th id="cg155SpeedHeader">Vitesse moyenne</th><th>GAP course</th><th>Charge</th></tr></thead>
     <tbody id="cg144Body"></tbody><tfoot id="cg155Foot"></tfoot>
   </table></div>
   <p class="muted cg155-footer" id="cg144Coverage">Le temps total correspond au temps en mouvement ; la moyenne est calculée sur les distances et durées cumulées, jamais comme une moyenne simple des activités.</p>
@@ -69,17 +70,17 @@
     if(kind==='km')return format(n/1000,2)+' km';
     if(kind==='duration')return duration(n);
     if(kind==='m')return format(n,0)+' m';
-    if(kind==='cal')return format(n)+' kcal';
+    if(kind==='load')return format(n,0);
     if(kind==='gap')return sport==='bike'?'—':formatPace(n);
     return format(n);
   }
   function formatPace(n){if(!Number.isFinite(n)||n<=0)return '—';const s=Math.round(n);return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}/km`;}
-  const columns=[['activities','int'],['distance_m','km'],['moving_time_s','duration'],['ascent_m','m'],['speed','speed'],['gap_sec_per_km','gap'],['calories','cal']];
+  const columns=[['distance_m','km'],['moving_time_s','duration'],['ascent_m','m'],['speed','speed'],['gap_sec_per_km','gap'],['load','load']];
   function cellPair(cgweb,strava,key,kind,sport){
     const td=document.createElement('td'),div=document.createElement('div');div.className='cg155-pair';
-    for(const [label,obj,cls] of [['CG',cgweb,'cgweb'],['ST',strava,'strava']]){
+    for(const [label,obj,cls] of (comparing?[['CG',cgweb,'cgweb'],['ST',strava,'strava']]:[['',cgweb,'cgweb']])){
       const line=document.createElement('div');line.className=cls;
-      const b=document.createElement('span');b.className='cg155-source';b.textContent=label;
+      const b=document.createElement('span');b.className='cg155-source';b.textContent=label;b.hidden=!label;
       const s=document.createElement('span');const v=val(obj,key,kind,sport);s.textContent=v;if(v==='—')s.className='cg155-unavailable';
       line.append(b,s);
       if(kind==='duration'){const extra=document.createElement('small');extra.className='cg155-elapsed';extra.textContent=`écoulé : ${val(obj,'elapsed_time_s','duration',sport)}`;line.append(extra);}
@@ -100,29 +101,31 @@
     const rows=month?[]:MONTHS.slice(1).map(label=>({label,cgweb:null,strava:null}));
     draw(rows,null,node('cg144Sport')?.value||'all',month?'weeks':'months');}
   async function refresh(){
-    if(!active)return;const my=++requestId,b=node('cg144Compare'),status=node('cg144Status');b.disabled=true;
-    status.textContent='Chargement des statistiques CGWEB et Strava…';
+    if(!active)return;const my=++requestId,b=node('cg156Reload'),status=node('cg144Status');b.disabled=true;
+    status.textContent=comparing?'Chargement CGWEB et Strava…':'Chargement des statistiques CGWEB…';
     try{
       const user=window.SPORT_WEB_BRIDGE?.getUser?.();if(!user)throw new Error('Connecte-toi à SPORT Web pour lire les statistiques.');
       const token=await user.getIdToken();const selectedMonth=node('cg144Month').value;
-      const body={year:Number(node('cg144Year').value),month:selectedMonth?Number(selectedMonth):null,sport:node('cg144Sport').value};
+      const body={year:Number(node('cg144Year').value),month:selectedMonth?Number(selectedMonth):null,sport:node('cg144Sport').value,compare:comparing};
       const res=await fetch(`${URL}?action=period_breakdown`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
       const raw=await res.text();let data;try{data=JSON.parse(raw);}catch{data={error:raw.slice(0,300)};}
       if(my!==requestId||!active)return;
       if(!res.ok||!data?.ok)throw new Error(data?.error||`HTTP ${res.status}`);
       draw(data.rows,data.totals,body.sport,data.mode);
       const n=data.rows.length,kind=data.mode==='weeks'?'semaine(s) du mois':'mois';
-      status.textContent=`${body.year}${selectedMonth?' · '+MONTHS[Number(selectedMonth)]:''} · ${n} ${kind} · ${data.totals.cgweb.activities} activités CGWEB / ${data.totals.strava.activities} Strava.`;
+      status.textContent=`${body.year}${selectedMonth?' · '+MONTHS[Number(selectedMonth)]:''} · ${n} ${kind} · ${comparing?'CGWEB / Strava':'CGWEB uniquement'}.`;
       node('cg144Coverage').textContent='Temps total : valeur principale = temps en mouvement ; valeur secondaire = temps écoulé. Allure/vitesse = rapport des totaux, jamais moyenne simple. Les semaines ne comptent que les jours du mois sélectionné.';
-      node('cg155Notes').textContent=(body.sport==='bike'?'GAP non applicable au vélo. ':data.gap_note+' ')+data.calorie_note;
+      node('cg155Notes').textContent=body.sport==='bike'?'GAP non applicable au vélo.':(data.gap_note||'GAP trail V2 basé sur le tracé ; — si aucune mesure fiable.');
     }catch(e){if(my===requestId){status.textContent=`Statistiques indisponibles : ${e?.message||e}`;node('cg155Notes').textContent='Aucun chiffre partiel n’a été présenté comme complet.';}}
     finally{if(my===requestId)b.disabled=false;}
   }
   function scheduleRefresh(){clearTimeout(debounce);debounce=setTimeout(()=>{if(active)void refresh();},120);}
   function setup(){const year=node('cg144Year');for(let y=Math.max(new Date().getFullYear(),2026);y>=2000;y--)year.add(new Option(String(y),String(y)));
-    year.value='2026';const month=node('cg144Month');MONTHS.forEach((name,i)=>month.add(new Option(name,i===0?'':String(i))));month.value='';
+    year.value=String(Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Paris',year:'numeric'}).format(new Date())));const month=node('cg144Month');MONTHS.forEach((name,i)=>month.add(new Option(name,i===0?'':String(i))));month.value='';
     for(const id of ['cg144Year','cg144Month','cg144Sport'])node(id).addEventListener('change',()=>{skeleton();scheduleRefresh();});
-    node('cg144Compare').addEventListener('click',()=>void refresh());skeleton();}
+    node('cg144Sport').value='run';
+    node('cg144Compare').addEventListener('click',()=>{comparing=!comparing;const btn=node('cg144Compare');btn.textContent=comparing?'Afficher CGWEB uniquement':'Comparer avec Strava';btn.setAttribute('aria-pressed',String(comparing));skeleton();void refresh();});
+    node('cg156Reload').addEventListener('click',()=>void refresh());skeleton();}
   function ensure(){if(node(ROOT))return;const catalog=node('catalogView');if(!catalog)return;
     const style=document.createElement('style');style.textContent=css;document.head.append(style);
     const panel=document.createElement('section');panel.id=ROOT;panel.className='panel';panel.hidden=true;panel.innerHTML=html;catalog.prepend(panel);
@@ -139,13 +142,15 @@
     document.querySelectorAll('#uxSecondaryNav .ux-subnav-button:not(#cgweb144StatsSubtab)').forEach(b=>b.classList.remove('active'));
     void refresh();}
   function update(){ensure();const nav=node('uxSecondaryNav');if(!nav)return;
-    if(!onAnalysis()){leave();node(NAV)?.remove();return;}
+    if(!onAnalysis()){previouslyAnalysis=false;leave();node(NAV)?.remove();return;}
+    const enteringAnalysis=!previouslyAnalysis;previouslyAnalysis=true;
     const container=nav.querySelector('.ux-secondary-nav-inner')||nav;
     let button=node(NAV);
     if(!button){button=document.createElement('button');button.type='button';button.id=NAV;button.className='ux-subnav-button';button.textContent='Statistiques';
       button.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();enter();});}
     if(container.firstElementChild!==button)container.prepend(button);
     button.classList.toggle('active',active);
+    if(enteringAnalysis&&!active)enter();
     if(nav.classList.contains('hidden'))nav.classList.remove('hidden');
   }
   const schedule=()=>{if(scheduled)return;scheduled=setTimeout(()=>{scheduled=0;update();},90);};

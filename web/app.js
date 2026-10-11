@@ -8464,6 +8464,39 @@ if (!window.__cgweb083Fix9Installed) {
  */
 /* CGWEB083_FIX10_HEADERVALUECENTER001_END */
 
+/* CGWEB156_GAP · modèle trail V2 déjà utilisé dans le calcul kilométrique.
+ * Affichage sous le Temps pour préserver la grille et les alignements millimétriques. */
+const cg156GapV2Cache=new Map();
+function cg156GapLabel(a){
+ if(Number(a?.sport)!==1)return null;
+ const key=String(activityKey(a)||'');
+ const v=cg156GapV2Cache.has(key)?cg156GapV2Cache.get(key):web055SafeGapSecondsPerKm(a);
+ if(!Number.isFinite(v)||v<=30||v>=3600)return 'GAP —';
+ const n=Math.round(v);return `GAP ${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}/km`;
+}
+function cg156AttachGapToTime(cell,a){
+ if(Number(a?.sport)!==1)return cell;
+ const line=document.createElement('small');line.className='CGWEB156_GAP';
+ line.style.cssText='display:block;font-size:.69em;opacity:.78;margin-top:2px;white-space:nowrap;';
+ line.textContent=cg156GapLabel(a);cell.appendChild(line);
+ return cell;
+}
+function cg156EnrichVisibleGapCard(activity,card){
+ if(Number(activity?.sport)!==1||!card)return;
+ const key=String(activityKey(activity)||'');
+ if(!key||cg156GapV2Cache.has(key)||!window.IntersectionObserver)return;
+ const watch=new IntersectionObserver(async es=>{
+  if(!es.some(e=>e.isIntersecting))return;watch.disconnect();
+  if(!card.isConnected||cg156GapV2Cache.has(key))return;
+  try{
+   const route=await web055LoadRouteForGap(activity);
+   const result=route?.points?.length>1?cgweb121Fix6WeightedGap(route.points):null;
+   if(!Number.isFinite(result?.gap))return;
+   cg156GapV2Cache.set(key,result.gap);
+   if(card.isConnected){const el=card.querySelector('.CGWEB156_GAP');if(el)el.textContent=cg156GapLabel(activity);}
+  }catch(err){console.warn('CGWEB156 GAP lecture:',err);}
+ },{rootMargin:'160px'});watch.observe(card);
+}
 function renderActivities() {
   const activeLoadedCount = activities.filter((activity) => activity.deleted_at_ms == null).length;
   ui.loadedLabel.textContent =
@@ -8500,13 +8533,14 @@ function renderActivities() {
     button.appendChild(datum("Départ", formatActivityTimeWeb049(activity.start_time_ms), "activity-time-datum"));
     button.appendChild(datum("Distance", formatDistance(activity.distance_m)));
     button.appendChild(datum("D+", formatMeters(activity.ascent_m), "hide-sm"));
-    button.appendChild(datum("Durée", formatDuration(web059MovingTimeMs(activity)), "hide-sm"));
+    button.appendChild(cg156AttachGapToTime(datum("Durée", formatDuration(web059MovingTimeMs(activity)), "hide-sm"),activity));
     button.appendChild(datum("Matériel", activity.equipment_name || "—", "hide-md hide-sm"));
     button.appendChild(datum("Repères", markerSummary(activity), "hide-md hide-sm"));
     button.appendChild(datum("Charge", web072Fix11FormatCharge(activity), "hide-md hide-sm web072-fix11-charge-cell"));
 
     button.appendChild(v081CreateFitQuickControl(activity));
     fragment.appendChild(button);
+    queueMicrotask(()=>cg156EnrichVisibleGapCard(activity,button));
   }
 
   ui.activityList.appendChild(fragment);
@@ -10799,6 +10833,7 @@ function renderSummary(activity) {
   addDetailItem(ui.detailSummaryGrid, "Temps en mouvement", formatDuration(activity.timer_time_ms));
   addDetailItem(ui.detailSummaryGrid, "Dénivelé +", formatMeters(activity.ascent_m));
   addDetailItem(ui.detailSummaryGrid, "Dénivelé −", formatMeters(activity.descent_m));
+  if(Number(activity?.sport)===1)addDetailItem(ui.detailSummaryGrid,"GAP trail V2",cg156GapLabel(activity)?.replace(/^GAP /, "")||"—");
   const calories = activityCaloriesPresentation(activity);
   addDetailItem(ui.detailSummaryGrid, calories.label, calories.value);
 }
@@ -10859,6 +10894,13 @@ async function renderCartography(activity) {
     }
 
     const route = normalizeRoute(snapshot.data());
+    if(Number(activity?.sport)===1 && route.points.length>1){
+      const v2=cgweb121Fix6WeightedGap(route.points);
+      if(Number.isFinite(v2?.gap)){
+        cg156GapV2Cache.set(String(activityKey(activity)),v2.gap);
+        renderSummary(activity);
+      }
+    }
     if (route.points.length < 2) {
       showRouteUnavailable(
         `Le document activity_routes « ${routeKey} » existe mais ne contient pas assez de points exploitables.`
@@ -30255,7 +30297,7 @@ function cgweb099BuildShell(){
         '<label>Matériel<select id="cgweb099Equipment"><option value="all">Tous</option></select></label><label>FIT<select id="cgweb102FitProvenance"><option value="ALL">Tous</option><option value="ORIGINAL">Original</option><option value="CANONICAL">Canonique</option><option value="ABSENT">Sans FIT</option><option value="RESTORE">À restaurer</option></select></label>'+
         '<label>Repère<input id="cgweb099Marker" placeholder="B, Q, R…"></label>'+
         '<label>Recherche<input id="cgweb099Search" placeholder="Nom, date, source…"></label>'+
-        '<label>Ordre<select id="cgweb099Sort"><option value="newest">Plus récentes</option><option value="oldest">Plus anciennes</option></select></label>'+
+        '<label>Ordre<select id="cgweb099Sort"><option value="oldest" selected>Plus anciennes</option><option value="newest">Plus récentes</option></select></label>'+
       '</div>'+
       '<div class="cgweb099-statusbar">'+
         '<strong id="cgweb099Count">Chargement…</strong>'+
@@ -30466,7 +30508,7 @@ function cgweb099Filters(
         ?.value || "",
     sort:
       cgweb099Node("cgweb099Sort")
-        ?.value || "newest",
+        ?.value || "oldest",
     limit:
       cgweb099State.limit,
     offset:
@@ -31410,7 +31452,7 @@ function cgweb099Wire(){
             ["cgweb099Date",""],
             ["cgweb099Marker",""],
             ["cgweb099Search",""],
-            ["cgweb099Sort","newest"]
+            ["cgweb099Sort","oldest"]
           ]
         ){
           const node=

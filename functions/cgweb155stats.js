@@ -3,6 +3,7 @@
  * Read only. One Firestore range query + paginated Strava listing, not 12 API roundtrips.
  * GAP uses persisted activity summaries only. Never invent Strava GAP or calories. */
 const {periodBounds,cgwebSport,stravaSport}=require("./cgweb144stats");
+const cg156gap=require("./cgweb156gap");
 const ZONE="Europe/Paris";
 const partsFormat=new Intl.DateTimeFormat("en-GB",{timeZone:ZONE,year:"numeric",month:"2-digit",day:"2-digit"});
 const MONTHS=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
@@ -37,17 +38,29 @@ function buckets(year,month){
  }
  return output;
 }
+function cg156Load(a){
+ const specified=first(a.training_load,a.trainingLoad,a.load,a.activity_load,a.activityLoad,
+   a.trimp,a.charge_score,a.chargeScore,a.sport_load,a.sportLoad);
+ if(specified!==null&&specified>=0)return Math.round(specified);
+ const duration=first(a.timer_time_ms,a.moving_time_ms,a.duration_ms);
+ const km=num(a.distance_m),ascent=first(a.ascent_m,a.elevation_gain_m);
+ if(duration===null||km===null||ascent===null)return null;
+ const hr=first(a.avg_hr,a.average_heart_rate);
+ const factor=hr!==null&&hr>0?Math.max(.75,Math.min(1.5,hr/130)):1;
+ return Math.round((duration/60000+(km/1000)*2+ascent/100)*factor);
+}
 function cgwebMetrics(a){return {
  distance_m:num(a.distance_m),
  moving_time_s:(v=>v===null?null:v/1000)(first(a.timer_time_ms,a.moving_time_ms,a.duration_ms)),
  elapsed_time_s:(v=>v===null?null:v/1000)(first(a.elapsed_time_ms,a.duration_ms)),
  ascent_m:first(a.ascent_m,a.elevation_gain_m),
  calories:first(a.calories,a.total_calories,a.active_calories,a.kcal),
- gap_sec_per_km:first(a.personal_gap,a.personalGap,a.generic_gap,a.genericGap,a.gap_seconds_per_km,a.gap_s_per_km,a.gapSecondsPerKm,
+ load:cg156Load(a),
+ gap_sec_per_km:first(a.cgweb156_gap_sec_per_km,a.personal_gap,a.personalGap,a.generic_gap,a.genericGap,a.gap_seconds_per_km,a.gap_s_per_km,a.gapSecondsPerKm,
    a.grade_adjusted_pace_s_per_km,a.gap_sec_per_km,a.grade_adjusted_pace_sec_per_km)
 };}
-function stravaMetrics(a){return {distance_m:num(a.distance),moving_time_s:num(a.moving_time),elapsed_time_s:num(a.elapsed_time),ascent_m:num(a.total_elevation_gain),calories:num(a.calories),gap_sec_per_km:null};}
-const keys=["distance_m","moving_time_s","elapsed_time_s","ascent_m","calories"];
+function stravaMetrics(a){return {distance_m:num(a.distance),moving_time_s:num(a.moving_time),elapsed_time_s:num(a.elapsed_time),ascent_m:num(a.total_elevation_gain),calories:num(a.calories),load:null,gap_sec_per_km:null};}
+const keys=["distance_m","moving_time_s","elapsed_time_s","ascent_m","calories","load"];
 function aggregate(rows,source,sportFilter){
  const data=rows.map(a=>({sport:source==="cgweb"?cgwebSport(a):stravaSport(a),v:source==="cgweb"?cgwebMetrics(a):stravaMetrics(a)}));
  const metrics={};
@@ -67,22 +80,44 @@ function aggregate(rows,source,sportFilter){
  return {activities:data.length,metrics};
 }
 function bucketKey(ms,month){const local=localDate(ms);return month?isoWeek(local).key:local.slice(0,7);}
+/* Calcul GAP à la demande, sans écrire dans Firestore. Lectures bornées aux parcours
+ * nécessaires ; un GAP manquant reste « — » et n'est pas remplacé par l'allure plate. */
+async function cg156EnrichGap(db,root,uid,local){
+ if(typeof db?.doc!=="function")return {checked:0,skipped:0};
+ const runners=local.filter(a=>cgwebSport(a)==="run" && a.__docId);
+ // Limite explicite de consultation, pas de total inventé pour les autres.
+ const selected=runners.slice(0,600);let checked=0,skipped=0;
+ for(let start=0;start<selected.length;start+=12){
+   await Promise.all(selected.slice(start,start+12).map(async a=>{
+    try{
+     const snap=await db.doc(`${root}/${uid}/activity_routes/${a.__docId}`).get();
+     if(!snap.exists)return;
+     const result=cg156gap.calculate(snap.data()||{});
+     if(result){a.cgweb156_gap_sec_per_km=result.gap_sec_per_km;checked++;}
+    }catch(e){skipped++;}
+   }));
+ }
+ return {checked,skipped:skipped+Math.max(0,runners.length-selected.length)};
+}
 async function breakdown({db,root,uid,tokenDocument,stravaGet},input={}){
- const year=Number(input.year),month=input.month==null||input.month===""?null:Number(input.month),sport=String(input.sport||"all");
+ const year=Number(input.year),month=input.month==null||input.month===""?null:Number(input.month),sport=String(input.sport||"run"),compare=input.compare===true;
  if(!Number.isInteger(year)||year<2000||year>2100)throw httpError(400,"CGWEB155 : année invalide.");
  if(month!==null&&(!Number.isInteger(month)||month<1||month>12))throw httpError(400,"CGWEB155 : mois invalide.");
  if(!["all","run","bike"].includes(sport))throw httpError(400,"CGWEB155 : sport invalide.");
  const bounds=periodBounds({period:month?"month":"year",year,...(month?{month}:{})});
- const integration=await tokenDocument(uid);
- const scopes=new Set(String(integration?.scope||"").split(/[\s,]+/));
- if(!integration?.refresh_token||!scopes.has("activity:read_all"))throw httpError(403,"CGWEB155 : autorisation Strava activity:read_all nécessaire.");
+ if(compare){
+  const integration=await tokenDocument(uid);
+  const scopes=new Set(String(integration?.scope||"").split(/[\s,]+/));
+  if(!integration?.refresh_token||!scopes.has("activity:read_all"))throw httpError(403,"CGWEB156 : autorisation Strava activity:read_all nécessaire pour comparer.");
+ }
  const result=await db.collection(`${root}/${uid}/activities`)
   .where("start_time_ms",">=",bounds.start_ms).where("start_time_ms","<",bounds.end_ms).get();
- const local=result.docs.map(d=>d.data()||{}).filter(a=>a.deleted_at_ms==null&&Number.isFinite(num(a.start_time_ms))&&
+ const local=result.docs.map(d=>({...d.data(),__docId:d.id})).filter(a=>a.deleted_at_ms==null&&Number.isFinite(num(a.start_time_ms))&&
    a.start_time_ms>=bounds.start_ms&&a.start_time_ms<bounds.end_ms&&
    (sport==="all"||cgwebSport(a)===sport));
- const remote=[],seen=new Set();let complete=false;
- for(let page=1;page<=30;page++){
+ const gapAudit=await cg156EnrichGap(db,root,uid,local);
+ const remote=[],seen=new Set();let complete=!compare;
+ if(compare)for(let page=1;page<=30;page++){
    const part=await stravaGet(uid,`/athlete/activities?after=${Math.floor(bounds.start_ms/1000)-1}&before=${Math.ceil(bounds.end_ms/1000)}&page=${page}&per_page=200`);
    if(!Array.isArray(part))throw httpError(502,"CGWEB155 : pagination Strava invalide.");
    for(const a of part){const id=String(a?.id||"");if(!id||seen.has(id))continue;seen.add(id);
@@ -97,9 +132,9 @@ async function breakdown({db,root,uid,tokenDocument,stravaGet},input={}){
  for(const a of remote){const key=bucketKey(a._timestamp,month);if(!stravaGroups.has(key))stravaGroups.set(key,[]);stravaGroups.get(key).push(a);}
  const rows=buckets(year,month).map(b=>({...b,cgweb:aggregate(cgGroups.get(b.key)||[],"cgweb",sport),
   strava:aggregate(stravaGroups.get(b.key)||[],"strava",sport)}));
- return {ok:true,version:"CGWEB155",mode:month?"weeks":"months",year,month,sport,bounds,
+ return {ok:true,version:"CGWEB156",compare,mode:month?"weeks":"months",year,month,sport,bounds,
   rows,totals:{cgweb:aggregate(local,"cgweb",sport),strava:aggregate(remote,"strava",sport)},
   time_zone:ZONE,calorie_note:"Strava ne fournit pas systématiquement les calories dans la liste d'activités ; les totaux partiels sont affichés —.",
-  gap_note:"GAP course à pied calculé uniquement à partir des valeurs d'activité enregistrées dans CGWEB ; GAP Strava indisponible via les données de liste. Les valeurs manquantes restent —."};
+  gap_note:`GAP trail V2 : ${gapAudit.checked} parcours recalculés, ${gapAudit.skipped} indisponibles/ignorés ; le GAP n'est affiché que si toutes les courses ont une mesure exploitable. GAP Strava non disponible via l'API de liste.`};
 }
-module.exports={breakdown,buckets,isoWeek,localDate,aggregate,cgwebMetrics,stravaMetrics};
+module.exports={breakdown,buckets,isoWeek,localDate,aggregate,cgwebMetrics,stravaMetrics,cg156Load,cg156EnrichGap};

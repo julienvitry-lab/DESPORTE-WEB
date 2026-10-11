@@ -47,7 +47,7 @@ test('une demande annuelle lit Firestore une fois et Strava une fois pour 12 moi
  const db={collection:()=>({where(){return this;},async get(){dbReads++;return {docs:[{data:()=>({sport:1,start_time_ms:t,distance_m:7000,timer_time_ms:2100000,ascent_m:60,calories:490,gap_seconds_per_km:310})}]};}})};
  const r=await stats.breakdown({db,root:'sport_users',uid:'u',tokenDocument:async()=>({refresh_token:'x',scope:'activity:read_all'}),
   stravaGet:async(_uid,p)=>{calls.push(p);return [{id:123,start_date:'2026-10-04T08:00:00Z',distance:7000,moving_time:2100,elapsed_time:2120,total_elevation_gain:60,calories:490,sport_type:'Run'}];}},
- {year:2026,sport:'run'});
+ {year:2026,sport:'run',compare:true});
  assert.equal(r.rows.length,12);assert.equal(dbReads,1);assert.equal(calls.length,1);assert.equal(r.rows[9].cgweb.activities,1);
  assert.equal(r.totals.cgweb.metrics.distance_m.value,7000);assert.equal(r.totals.strava.metrics.distance_m.value,7000);
  assert.equal(r.rows[9].cgweb.metrics.average_pace_sec_per_km.value,300);
@@ -59,11 +59,11 @@ test('mois septembre 2026: semaine à cheval tronquée pour décompte sans doubl
  assert.equal(r.rows.length,5);assert.equal(r.rows[0].cgweb.activities,1);
 });
 test('protège les scopes Strava et les entrées invalides',async()=>{
- await assert.rejects(stats.breakdown({tokenDocument:async()=>({refresh_token:'yes',scope:'activity:read'})},{year:2026}),/activity:read_all/);
+ await assert.rejects(stats.breakdown({tokenDocument:async()=>({refresh_token:'yes',scope:'activity:read'})},{year:2026,compare:true}),/activity:read_all/);
  await assert.rejects(stats.breakdown({},{year:2026,month:13}),/mois invalide/);
 });
 test('UI : année 2026, 12 mois, semaine si mois, sous-onglet de classe native placé avant les autres',()=>{
- assert.match(source,/year\.value='2026'/);assert.match(source,/MONTHS\.slice\(1\)/);
+ assert.match(source,/timeZone:'Europe\/Paris',year:'numeric'/);assert.match(source,/MONTHS\.slice\(1\)/);
  assert.match(source,/container\.prepend\(button\)/);assert.match(source,/ux-subnav-button/);
  assert.match(source,/action=period_breakdown/);
  assert.doesNotMatch(source,/action=(?:version|upload|delete|unlink)/);
