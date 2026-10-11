@@ -9,6 +9,7 @@ const cgweb146Title = require("./cgweb146title");
 const cgweb139 = require("./cgweb139");
 const cgweb139Fix1 = require("./cgweb139fix1");
 const cgweb144Stats = require("./cgweb144stats");
+const cgweb155Stats = require("./cgweb155stats");
 
 admin.initializeApp();
 
@@ -7593,6 +7594,16 @@ exports.stravaBridge = onRequest(
 
 
       /* CGWEB144_PERIOD_TOTALS001_START */
+      /* CGWEB155_PERIOD_BREAKDOWN001_START : READ ONLY */
+      if (action === "period_breakdown" && req.method === "POST") {
+        const body = req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)
+          ? req.body : {};
+        return res.json(await cgweb155Stats.breakdown({
+          db: firestore(), root: ROOT, uid, stravaGet, tokenDocument
+        }, body));
+      }
+      /* CGWEB155_PERIOD_BREAKDOWN001_END */
+
       if (action === "period_totals" && req.method === "POST") {
         const body = req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)
           ? req.body : {};
