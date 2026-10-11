@@ -26,6 +26,7 @@ const cgweb140 = require("./cgweb140");
 const cgweb141count = require("./cgweb141count");
 const cgweb140fix3 = require("./cgweb140fix3");
 const cgweb149hr = require("./cgweb149hr");
+const cgweb152hr = require("./cgweb152hr");
 const cgweb140fix4 = require("./cgweb140fix4");
 
 if (!getApps().length) initializeApp();
@@ -15606,7 +15607,7 @@ async function c099GlobalDirectoryQuery(
         /* CGWEB122_ACTIONS_END */
 
 /* CGWEB078_FITVERSION001_ACTION_START */
-        if (action === "version") {
+        if (action === "version" || action === "export_hr_prepare") {
           if (req.method !== "POST") {
             return res.status(405).json({error: "POST requis."});
           }
@@ -15617,6 +15618,79 @@ async function c099GlobalDirectoryQuery(
             catch { body = null; }
           }
           if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
+
+          /* CGWEB152 · BEFORE_PREFLIGHT_HR_REPAIR001
+           * Never repair historical FITs in the background. Only a signed,
+           * per-activity call made from the Strava export button enters here.
+           * The server—not the browser—chooses the verified active SHA.
+           */
+          const cgweb152Auto = action === "export_hr_prepare";
+          if (cgweb152Auto) {
+            const key = String(body.activity_id || "").trim();
+            if (!/^[A-Za-z0-9_.:-]{1,180}$/.test(key))
+              throw Object.assign(new Error("CGWEB152 : identifiant activité invalide."), {status:400});
+            const activeRef = db.doc(`${ROOT}/${uid}/activities/${key}`);
+            const activeDoc = await activeRef.get();
+            if (!activeDoc.exists || activeDoc.data()?.deleted_at_ms != null)
+              throw Object.assign(new Error("CGWEB152 : activité absente/supprimée."), {status:404});
+            const current = activeDoc.data() || {};
+            if (String(current.strava_activity_id || "").trim())
+              throw Object.assign(new Error("CGWEB152 : activité déjà liée à Strava ; aucun FIT modifié."), {status:409});
+            const exportLock=await db.doc(`${ROOT}/${uid}/strava_outbound_exports/${key}`).get();
+            const lockState=String(exportLock.data()?.state || "");
+            if (["UPLOAD_REQUESTING","UPLOADED_PROCESSING","UPLOAD_UNKNOWN","POSTCHECK_INCOMPLETE","STRAVA_ERROR"].includes(lockState))
+              throw Object.assign(new Error("CGWEB152 : export précédent en cours/incertain ; aucun FIT modifié."), {status:409});
+            const selectedSha=String(current.fit_active_sha256 || "").trim().toLowerCase();
+            let activeFile;
+            if (selectedSha) {
+              if(!/^[a-f0-9]{64}$/.test(selectedSha))
+                throw Object.assign(new Error("CGWEB152 : SHA actif invalide."),{status:409});
+              const snap=await fileDoc(uid,selectedSha).get();
+              if(!snap.exists || snap.data()?.deleted_at_ms != null ||
+                 snap.data()?.is_active_version !== true ||
+                 String(snap.data()?.activity_id || "")!==key)
+                throw Object.assign(new Error("CGWEB152 : manifeste FIT actif incohérent."),{status:409});
+              activeFile={sha:selectedSha,row:snap.data()};
+            } else {
+              const group=await files(uid).where("activity_id","==",key).limit(500).get();
+              if(group.docs.length===500)
+                throw Object.assign(new Error("CGWEB152 : famille FIT non exhaustive."),{status:409});
+              const originals=group.docs.filter(d=>d.data()?.deleted_at_ms==null && c090Roles(d.data()).includes(C090_ROLE_ORIGINAL));
+              if(originals.length!==1)
+                throw Object.assign(new Error("CGWEB152 : FIT original absent ou ambigu."),{status:409});
+              activeFile={sha:originals[0].id,row:originals[0].data()};
+            }
+            const sourcePath=String(activeFile.row.object_path || "");
+            if(!sourcePath.startsWith(`sport_users/${uid}/fit_vault/`))
+              throw Object.assign(new Error("CGWEB152 : chemin FIT non autorisé."),{status:409});
+            const [sourceBytes]=await bucket().file(sourcePath).download();
+            if(sha256(sourceBytes)!==activeFile.sha)
+              throw Object.assign(new Error("CGWEB152 : SHA réel différent du manifeste."),{status:409});
+            const sourceScan=cgweb140.scan(sourceBytes);
+            const assessed=cgweb152hr.assess(sourceBytes,sourceScan,cgweb149hr.readNumber);
+            // Never tell Strava to preserve a seemingly valid Record series while
+            // its Session summary still advertises obviously corrupt 20/39 bpm.
+            if(assessed.mode==='PRESERVE') {
+              const summaries=sourceScan.rows.filter(r=>!r.definition&&r.global===18);
+              if(summaries.length!==1) {
+                throw Object.assign(new Error("CGWEB152 : structure Session FIT ambiguë."),{status:409});
+              }
+              const sessionAvg=cgweb149hr.readNumber(sourceBytes,summaries[0],16);
+              if(Number.isFinite(sessionAvg) && sessionAvg < 65 && assessed.avg >= 85)
+                throw Object.assign(new Error("CGWEB152 : FC Record authentique mais Session incohérente ; aucun export risqué."),{status:409});
+            }
+            if(assessed.mode==='BLOCK')
+              throw Object.assign(new Error("CGWEB152 : analyse FC incertaine ("+assessed.reason+") ; export bloqué."),{status:409});
+            if(assessed.mode==='PRESERVE') {
+              return res.json({ok:true,status:"HR_AUTHENTIC_PRESERVED",sha256:activeFile.sha,
+                activity_id:key,record_count:assessed.records,hr_audit:assessed,fit_changed:false});
+            }
+            if(!c090Roles(activeFile.row).includes(C090_ROLE_ORIGINAL) && activeFile.row.fit_lossless_verified!==true)
+              throw Object.assign(new Error("CGWEB152 : FIT source non certifié intégral ; export bloqué."),{status:409});
+            body={activity_id:key,parent_sha256:activeFile.sha,start_offset_s:0,
+              avg_hr_override:150,max_hr_override:170,fit_editor_mode:"FITEDITOR001",
+              activate_version:true,apply_activity_changes:true,replace_existing_fit:true};
+          }
 
           /*
            * CGWEB121 FIX8 FIX9 · VERSION_EDITOR_MODE_SCOPE001

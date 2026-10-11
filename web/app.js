@@ -76745,6 +76745,46 @@ async function cgweb134PreflightCurrent() {
       `
     );
 
+    /* CGWEB152: the FIRST Strava click audits the actual active FIT.
+       When synthetic HR is absent/invalid, fitVault archives the old version,
+       activates the 150/170 replacement, and returns the active SHA before
+       any Strava preflight/lock is created. No manual HR dialog. */
+    const cgweb152Result = await (async () => {
+      const token = await currentUser?.getIdToken?.();
+      if (!token) throw new Error("CGWEB152 : connexion Firebase requise.");
+      const endpoint = new URL("https://europe-west1-sport-505813.cloudfunctions.net/fitVault");
+      endpoint.searchParams.set("action", "export_hr_prepare");
+      const response = await fetch(endpoint.toString(), {
+        method:"POST",
+        headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+        body:JSON.stringify({activity_id:key})
+      });
+      const data = await response.json();
+      if (!response.ok || data?.ok !== true)
+        throw new Error(data?.error || "CGWEB152 : contrôle/réparation FC refusé.");
+      if (data.status === "HR_AUTHENTIC_PRESERVED") {
+        if (!/^[a-f0-9]{64}$/.test(String(data.sha256||"")))
+          throw new Error("CGWEB152 : FIT conservé sans SHA vérifié.");
+      } else if (data.service === "FITEDITOR001") {
+        const sha=String(data?.file?.sha256 || "");
+        const patch=data?.activity_patch || {};
+        if (!/^[a-f0-9]{64}$/.test(sha) || patch.fit_active_sha256!==sha ||
+            patch.fit_replacement_cleanup_ok !== true ||
+            Number(data?.file?.fit_lossless_record_count || 0)<3 ||
+            Number(patch.avg_hr)!==150 || Number(patch.max_hr)!==170)
+          throw new Error("CGWEB152 : FIT corrigé non confirmé comme unique version active.");
+        // Refresh displayed activity state; Firestore is already authoritative.
+        Object.assign(activity,{
+          avg_hr:150,max_hr:170,heart_rate_source:"SYNTHETIC",
+          fit_active_sha256:sha,fit_active_file_name:patch.fit_active_file_name || data.file.file_name
+        });
+        window.SPORT_FIT_QUICKDOWNLOAD?.invalidate?.();
+      } else {
+        throw new Error("CGWEB152 : réponse de réparation FC inattendue.");
+      }
+      return data;
+    })();
+
     const result =
       await webStravaFetch(
         "export_preflight",
