@@ -6870,34 +6870,35 @@ window.SPORT_FIT_STRAVA_PREVIEW =
     const dialog=document.createElement("dialog");
     dialog.id="cg139fix1RecoveryDialog";
     dialog.style.cssText="max-width:min(700px,92vw);width:640px;border:1px solid #688948;border-radius:17px;background:#101713;color:#eef5e5;padding:22px;font-family:Comfortaa,system-ui,sans-serif;box-shadow:0 20px 90px #0009";
-    const h=document.createElement("h3");h.textContent="CGWEB139 FIX1 · Réimportation sécurisée";
-    const intro=document.createElement("p");intro.textContent=`Activité CGWEB : ${key} · Strava #${oldId}. Aucun nouveau FIT ne sera envoyé automatiquement.`;
+    const h=document.createElement("h3");h.textContent="CGWEB151 · Dissocier Strava";
+    const intro=document.createElement("p");intro.textContent=`Activité CGWEB : ${key} · ancien Strava #${oldId}. Dissociation locale seulement : aucune suppression chez Strava et aucun FIT envoyé.`;
     const out=document.createElement("pre");out.style.cssText="white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 system-ui;color:#d0d8cd;max-height:250px;overflow:auto";
-    out.textContent="Vérification en lecture seule requise : compte, activité distante et doublons.";
+    out.textContent="Appuie sur Dissocier pour casser immédiatement le lien dans CGWEB. Aucun code à recopier, aucune vérification réseau Strava. Si l'ancienne activité existe encore chez Strava, supprime-la séparément avant tout réimport afin d'éviter un doublon.";
     const buttons=document.createElement("div");buttons.style.cssText="display:flex;flex-wrap:wrap;gap:10px;margin-top:15px";
     function button(text,primary=false){const b=document.createElement("button");b.type="button";b.textContent=text;
       b.style.cssText=`cursor:pointer;border:1px solid #4d5a43;border-radius:12px;padding:10px 15px;background:${primary?"#beff22":"#1c281f"};color:${primary?"#172011":"white"}`;return b;}
-    const check=button("Vérifier la suppression",true);
+    const check=button("Dissocier maintenant",true);
     const unlock=button("Autoriser la réimportation");unlock.disabled=true;unlock.style.opacity=".45";
     const close=button("Fermer");
-    buttons.append(check,unlock,close);dialog.append(h,intro,out,buttons);document.body.append(dialog);
+    buttons.append(check,close);dialog.append(h,intro,out,buttons);document.body.append(dialog);
     let proof=null;
     close.addEventListener("click",()=>dialog.close());
     dialog.addEventListener("close",()=>dialog.remove());
     check.addEventListener("click",async()=>{
-      proof=null;unlock.disabled=true;unlock.style.opacity=".45";check.disabled=true;
-      out.textContent="Interrogation de l'API Strava…";
-      try{
-        const result=await api("deleted_export_check",{activity_key:key});
-        out.textContent=[`Résultat : ${result.status}`,result.diagnostic||"",
-          `Identifiant : ${result.old_strava_activity_id||"-"}`,
-          (result.candidate_ids||[]).length?`Doublons possibles : ${result.candidate_ids.join(", ")}`:"",
-          result.warning||""].filter(Boolean).join("\n");
-        if(result.ok && result.status==="VERIFIED_NOT_FOUND" && result.old_strava_activity_id===oldId){
-          proof=result;unlock.disabled=false;unlock.style.opacity="1";
-        }
-      }catch(e){out.textContent="Vérification impossible : "+(e?.message||String(e));}
-      finally{check.disabled=false;}
+      check.disabled=true;
+      out.textContent="Dissociation locale en cours (sans appel Strava)…";
+      try {
+        const result=await api("manual_strava_unlink",{
+          activity_key:key,old_strava_activity_id:oldId
+        });
+        if(!result.ok || result.status!=="LOCAL_STRAVA_LINK_REMOVED")
+          throw new Error(result.error||"Dissociation non confirmée.");
+        out.textContent="Lien Strava dissocié. Ancien lien archivé. Actualisation de CGWEB…";
+        window.location.reload();
+      } catch(e) {
+        out.textContent="Dissociation refusée : "+(e?.message||String(e));
+        check.disabled=false;
+      }
     });
     unlock.addEventListener("click",async()=>{
       if(!proof)return;
@@ -6947,7 +6948,7 @@ window.SPORT_FIT_STRAVA_PREVIEW =
       const match=/Strava\s*#\s*(\d{8,24})/.exec(context);
       if(!match)continue;
       const button=document.createElement("button");button.type="button";
-      button.textContent="Réimporter une activité supprimée";
+      button.textContent="Dissocier Strava";
       button.dataset.cg139RecoveryButton="1";
       button.style.cssText="margin-left:10px;padding:10px 14px;background:#162318;color:#dcf8c4;border:1px solid #557544;border-radius:12px;cursor:pointer";
       button.addEventListener("click",()=>{try{recovery.openByStravaId(match[1]);}catch(e){window.alert(e.message);}});

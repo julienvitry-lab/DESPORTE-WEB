@@ -7372,6 +7372,14 @@ exports.stravaBridge = onRequest(
 
 
 
+      /* CGWEB151_INSTANT_STRAVA_UNLINK_START */
+      if (action === "manual_strava_unlink" && req.method === "POST") {
+        const body = req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body) ? req.body : {};
+        const unlink = require("./cgweb151unlink").create({db:firestore(),admin,root:ROOT});
+        return res.json(await unlink(uid, body));
+      }
+      /* CGWEB151_INSTANT_STRAVA_UNLINK_END */
+
       /* CGWEB139_FIX1_ACTIONS_START */
       if (["deleted_export_check","deleted_export_unlink"].includes(action) && req.method === "POST") {
         const body=req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)
