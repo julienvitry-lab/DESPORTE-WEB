@@ -82130,3 +82130,130 @@ console.info(
 );
 
 /* CGWEB137_END */
+
+
+/* SPORT_DIRECTORY_500_20261024_START */
+(() => {
+  const batch = 500;
+  let generation = 0, pending = false, ready = false, wanted = batch;
+  let committedKey = '', committedRows = [];
+  const originalFilters = cgweb099Filters;
+  const originalApply = applyFiltersAndRender;
+  const originalNext = loadNextPage;
+  const originalButtons = updateLoadButtons;
+  const active = () => !!document.getElementById('cgweb099GlobalDirectory');
+  function filters(refresh=false) {
+    const f = originalFilters(refresh);
+    const select = document.getElementById('cgweb099Sort');
+    f.sort = select?.value === 'newest' ? 'newest' : 'oldest';
+    f.offset = 0; f.limit = batch;
+    return f;
+  }
+  function key(f) {
+    const {offset,limit,force_refresh,...selection} = f;
+    return JSON.stringify(selection);
+  }
+  function buttons() {
+    if (!active()) return;
+    const b = ui.loadMoreButton;
+    if (b) {
+      b.classList.remove('cgweb099-legacy-hidden');
+      b.hidden = false;
+      b.disabled = pending || !ready || committedRows.length >= cgweb099State.total;
+      b.textContent = pending ? 'Chargement…' : committedRows.length < cgweb099State.total ? 'Charger 500 de plus' : 'Tout est affiché';
+    }
+  }
+  cgweb099Filters = filters;
+  updateLoadButtons = function(...args) { originalButtons(...args); buttons(); };
+  applyFiltersAndRender = function(...args) {
+    if (!active() || !ready) return originalApply(...args);
+    // The global query already applies every filter. Never re-filter its page
+    // with the hidden legacy controls or re-sort it with their default value.
+    const allowed = new Set(committedRows.map(r => String(r.activity_id)));
+    filteredActivities = activities.filter(a => allowed.has(String(a.activity_id ?? a.id ?? a.__docId)) && a.deleted_at_ms == null);
+    const direction = filters().sort === 'oldest' ? 1 : -1;
+    filteredActivities.sort((a,b) => direction * (Number(a.start_time_ms)-Number(b.start_time_ms)) || String(a.activity_id).localeCompare(String(b.activity_id)));
+    activityVisibleLimit = Math.max(batch, filteredActivities.length);
+    renderActivities();
+    markGlobalMapStale();
+    buttons();
+  };
+  cgweb099Load = async function(refresh=false, append=false) {
+    if (append && pending) return;
+    const api = window.SPORT_DIRECTORY_GLOBAL;
+    if (!api?.query) { cgweb099ScheduleAuthRetry(refresh, 'Répertoire en attente'); return; }
+    const f = filters(refresh), selection = key(f), ticket = ++generation;
+    const extending = append && ready && committedKey === selection;
+    wanted = extending ? committedRows.length + batch : batch;
+    const rows = extending ? committedRows.slice() : [];
+    let offset = rows.length, total = Infinity, metadata;
+    pending = true; cgweb099State.busy = true; buttons();
+    const count = document.getElementById('cgweb099Count');
+    if (count) count.textContent = 'Chargement des activités filtrées…';
+    try {
+      // Server versions cap pages at 100. Accumulate to 500 without a backend
+      // deployment, preserving the exact same filters and sort on every page.
+      do {
+        const data = await api.query({...f, offset, limit: Math.min(100, wanted-offset), force_refresh: refresh && offset === 0});
+        if (ticket !== generation || key(filters()) !== selection) return;
+        if (!data?.ok) throw new Error(data?.error || 'Réponse du répertoire invalide');
+        const page = Array.isArray(data.rows) ? data.rows : [];
+        total = Number(data.summary?.total_filtered);
+        if (!Number.isFinite(total)) throw new Error('Total du répertoire absent');
+        if (data.summary?.offset != null && Number(data.summary.offset) !== offset) throw new Error('Décalage de pagination incorrect');
+        metadata = data.metadata || metadata;
+        rows.push(...page); offset += page.length;
+        if (!page.length || !data.summary?.has_more) break;
+      } while (offset < wanted && offset < total);
+      if (ticket !== generation || key(filters()) !== selection) return;
+      const unique = new Map(rows.map(r => [String(r.activity_id),r]));
+      if (unique.size !== rows.length) throw new Error('Pagination incohérente : activités en double');
+      committedRows = rows; committedKey = selection; ready = true;
+      cgweb099State.rows = rows; cgweb099State.total = total;
+      cgweb099State.limit = batch; cgweb099State.offset = 0;
+      if (metadata) {
+        cgweb099State.meta = metadata;
+        for (const [id,values,all,label] of [
+          ['cgweb099Year',metadata.years,'ALL','Toutes'],
+          ['cgweb099Sport',metadata.sports,'all','Tous'],
+          ['cgweb099Equipment',metadata.equipment,'all','Tous']
+        ]) cgweb099FillSelect(id,values,all,label);
+      }
+      cgweb099ResetAuthRetry();
+      const y = window.scrollY;
+      cgweb099RenderRows(rows);
+      if (extending) requestAnimationFrame(() => window.scrollTo(0,y));
+      if (count) count.textContent = `${rows.length} / ${total} activité(s) filtrée(s)`;
+    } catch(error) {
+      if (ticket !== generation) return;
+      if (cgweb099IsAuthPending(error)) cgweb099ScheduleAuthRetry(refresh, 'Connexion SPORT');
+      else { if(count) count.textContent = 'Erreur : '+error.message; console.error('SPORT_DIRECTORY_500',error); }
+    } finally {
+      if(ticket === generation) { pending=false; cgweb099State.busy=false; buttons(); }
+    }
+  };
+  loadNextPage = function(...args) {
+    return active() ? cgweb099Load(false,true) : originalNext(...args);
+  };
+  cgweb099State.limit = batch;
+  const build = cgweb099BuildShell;
+  cgweb099BuildShell = function(...args) {
+    const host = build(...args);
+    const sort = document.getElementById('cgweb099Sort');
+    if (sort) sort.value = 'oldest';
+    return host;
+  };
+  // Capture before legacy listeners so their global cursor cannot run.
+  document.addEventListener('click', event => {
+    const button = event.target.closest?.('button');
+    if (!active() || button !== ui.loadMoreButton) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    void cgweb099Load(false,true);
+  },true);
+  if (active()) {
+    const sort=document.getElementById('cgweb099Sort');
+    if(sort) sort.value='oldest';
+    void cgweb099Load();
+  }
+})();
+/* SPORT_DIRECTORY_500_20261024_END */
